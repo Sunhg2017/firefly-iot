@@ -1,0 +1,29 @@
+package com.songhg.firefly.iot.rule.dto.ruleengine;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Data;
+
+import java.util.List;
+
+/**
+ * Rule engine update request.
+ */
+@Data
+@Schema(description = "规则引擎更新请求")
+public class RuleEngineUpdateDTO {
+
+    @Schema(description = "规则名称")
+    private String name;
+
+    @Schema(description = "描述")
+    private String description;
+
+    @Schema(description = "项目编号")
+    private Long projectId;
+
+    @Schema(description = "规则表达式")
+    private String sqlExpr;
+
+    @Schema(description = "规则动作")
+    private List<RuleActionDTO> actions;
+}

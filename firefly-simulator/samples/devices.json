@@ -1,0 +1,42 @@
+[
+  {
+    "name": "温湿度传感器-01",
+    "protocol": "HTTP",
+    "productKey": "pk_sensor_001",
+    "deviceName": "temp_humidity_01",
+    "deviceSecret": "secret_001",
+    "httpBaseUrl": "http://localhost:9070"
+  },
+  {
+    "name": "温湿度传感器-02",
+    "protocol": "HTTP",
+    "productKey": "pk_sensor_001",
+    "deviceName": "temp_humidity_02",
+    "deviceSecret": "secret_002",
+    "httpBaseUrl": "http://localhost:9070"
+  },
+  {
+    "name": "GPS追踪器-01",
+    "protocol": "HTTP",
+    "productKey": "pk_tracker_001",
+    "deviceName": "gps_tracker_01",
+    "deviceSecret": "secret_003",
+    "httpBaseUrl": "http://localhost:9070"
+  },
+  {
+    "name": "CoAP低功耗设备-01",
+    "protocol": "CoAP",
+    "productKey": "pk_lowpower_001",
+    "deviceName": "coap_device_01",
+    "deviceSecret": "secret_004",
+    "coapBaseUrl": "http://localhost:9070"
+  },
+  {
+    "name": "MQTT网关设备-01",
+    "protocol": "MQTT",
+    "mqttBrokerUrl": "mqtt://localhost:1883",
+    "mqttClientId": "sim-gateway-01",
+    "mqttUsername": "pk_gateway_001&mqtt_gw_01",
+    "mqttPassword": "secret_005"
+  }
+]

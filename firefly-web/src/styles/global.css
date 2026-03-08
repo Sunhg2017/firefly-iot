@@ -1,0 +1,328 @@
+:root {
+  --color-primary: #4f46e5;
+  --color-primary-light: #6366f1;
+  --color-primary-dark: #3730a3;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-info: #3b82f6;
+
+  --sidebar-bg: linear-gradient(180deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%);
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 80px;
+
+  --header-height: 64px;
+  --header-bg: rgba(255, 255, 255, 0.85);
+  --header-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+
+  --content-bg: #f5f7fa;
+  --card-bg: #ffffff;
+  --card-radius: 12px;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --card-shadow-hover: 0 10px 25px rgba(0, 0, 0, 0.08), 0 4px 10px rgba(0, 0, 0, 0.04);
+
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s ease;
+  --transition-slow: 0.4s ease;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--content-bg);
+  color: #1e293b;
+}
+
+/* Modern scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Ant Design Card overrides */
+.ant-card {
+  border-radius: var(--card-radius) !important;
+  border: 1px solid rgba(0, 0, 0, 0.04) !important;
+  box-shadow: var(--card-shadow) !important;
+  transition: box-shadow var(--transition-normal), transform var(--transition-normal) !important;
+}
+.ant-card:hover {
+  box-shadow: var(--card-shadow-hover) !important;
+}
+
+/* Ant Design Table refinements */
+.ant-table-wrapper .ant-table {
+  border-radius: var(--card-radius);
+}
+.ant-table-thead > tr > th {
+  font-weight: 600 !important;
+  color: #475569 !important;
+  background: #f8fafc !important;
+}
+
+/* Ant Design Button refinements */
+.ant-btn-primary {
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3) !important;
+}
+.ant-btn-primary:hover {
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4) !important;
+}
+
+/* Ant Design Tag refinements */
+.ant-tag {
+  border-radius: 6px !important;
+}
+
+/* Page title style helper */
+.page-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 20px;
+}
+
+/* Stat card gradient backgrounds */
+.stat-card-blue { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; }
+.stat-card-green { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%) !important; }
+.stat-card-orange { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%) !important; }
+.stat-card-purple { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%) !important; }
+
+/* Animation keyframes */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease forwards;
+}
+.animate-fade-in {
+  animation: fadeIn 0.4s ease forwards;
+}
+
+/* ===== Dark Sidebar Menu overrides ===== */
+.ant-layout-sider .ant-menu-dark {
+  background: transparent !important;
+}
+.ant-layout-sider .ant-menu-dark .ant-menu-item {
+  margin: 2px 0;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.7) !important;
+  transition: all 0.2s ease;
+}
+.ant-layout-sider .ant-menu-dark .ant-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #fff !important;
+}
+.ant-layout-sider .ant-menu-dark .ant-menu-item-selected {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.5), rgba(139, 92, 246, 0.4)) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
+}
+.ant-layout-sider .ant-menu-dark .ant-menu-submenu-title {
+  margin: 2px 0;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+.ant-layout-sider .ant-menu-dark .ant-menu-submenu-title:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #fff !important;
+}
+.ant-layout-sider .ant-menu-dark .ant-menu-sub {
+  background: transparent !important;
+}
+.ant-layout-sider .ant-menu-dark .ant-menu-sub .ant-menu-item {
+  padding-left: 48px !important;
+}
+
+/* ===== Loading screen ===== */
+.app-loading {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e9f0 100%);
+  gap: 16px;
+}
+.app-loading .ant-spin-dot-item {
+  background-color: #4f46e5 !important;
+}
+
+/* ===== Page toolbar (search + actions row) ===== */
+.ant-card > .ant-card-body > .ant-space:first-child {
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 16px;
+  width: 100%;
+}
+
+/* ===== Descriptions panel refinements ===== */
+.ant-descriptions-header {
+  margin-bottom: 12px !important;
+}
+.ant-descriptions-item-label {
+  color: #64748b !important;
+  font-weight: 500 !important;
+}
+
+/* ===== Drawer refinements ===== */
+.ant-drawer .ant-drawer-header {
+  border-bottom: 1px solid #f1f5f9;
+}
+.ant-drawer .ant-drawer-footer {
+  border-top: 1px solid #f1f5f9;
+}
+
+/* ===== Modal refinements ===== */
+.ant-modal .ant-modal-header {
+  padding: 20px 24px;
+}
+.ant-modal .ant-modal-title {
+  font-weight: 600;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+/* ===== Tabs refinements ===== */
+.ant-tabs .ant-tabs-tab {
+  font-weight: 500;
+}
+.ant-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  font-weight: 600;
+}
+
+/* ===== Empty state refinements ===== */
+.ant-empty-description {
+  color: #94a3b8 !important;
+}
+
+/* ===== Popconfirm refinements ===== */
+.ant-popconfirm .ant-popconfirm-buttons .ant-btn-primary {
+  border-radius: 6px;
+}
+
+/* ===== Badge refinements ===== */
+.ant-badge-count {
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3) !important;
+}
+
+/* ===== Input focus ring ===== */
+.ant-input:focus,
+.ant-input-focused,
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused,
+.ant-select-focused .ant-select-selector {
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1) !important;
+}
+
+/* ===== Login autofill background ===== */
+.login-page .ant-input,
+.login-page .ant-input-affix-wrapper {
+  background: #fff !important;
+}
+
+.login-page input:-webkit-autofill,
+.login-page input:-webkit-autofill:hover,
+.login-page input:-webkit-autofill:focus,
+.login-page input:-webkit-autofill:active {
+  -webkit-text-fill-color: #1a1a2e !important;
+  -webkit-box-shadow: 0 0 0 1000px #fff inset !important;
+  box-shadow: 0 0 0 1000px #fff inset !important;
+  transition: background-color 9999s ease-in-out 0s;
+  caret-color: #1a1a2e;
+}
+
+/* ===== Form label refinements ===== */
+.ant-form-item-label > label {
+  font-weight: 500 !important;
+  color: #334155 !important;
+}
+.ant-form-item-label > label.ant-form-item-required::before {
+  color: #ef4444 !important;
+}
+
+/* ===== Pagination refinements ===== */
+.ant-pagination .ant-pagination-item {
+  border-radius: 6px !important;
+  border-color: #e2e8f0 !important;
+}
+.ant-pagination .ant-pagination-item-active {
+  border-color: #4f46e5 !important;
+  font-weight: 600;
+}
+.ant-pagination .ant-pagination-item-active a {
+  color: #4f46e5 !important;
+}
+
+/* ===== Link button polish ===== */
+.ant-btn-link {
+  font-weight: 500 !important;
+  padding: 0 4px !important;
+}
+
+/* ===== Select dropdown ===== */
+.ant-select-dropdown {
+  border-radius: 10px !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1) !important;
+  padding: 4px !important;
+}
+.ant-select-item-option-selected {
+  font-weight: 500 !important;
+}
+
+/* ===== Popover refinements ===== */
+.ant-popover .ant-popover-inner {
+  border-radius: 12px !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12) !important;
+}
+
+/* ===== Collapse trigger (sidebar) ===== */
+.ant-layout-sider-trigger {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ===== Progress bar ===== */
+.ant-progress-bg {
+  border-radius: 3px !important;
+}
+
+/* ===== Breadcrumb in header ===== */
+.header-breadcrumb {
+  font-size: 14px;
+  color: #94a3b8;
+}
+.header-breadcrumb .separator {
+  margin: 0 8px;
+  color: #cbd5e1;
+}
+.header-breadcrumb .current {
+  color: #334155;
+  font-weight: 500;
+}

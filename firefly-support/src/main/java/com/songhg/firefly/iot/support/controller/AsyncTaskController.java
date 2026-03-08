@@ -1,0 +1,115 @@
+package com.songhg.firefly.iot.support.controller;
+
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.songhg.firefly.iot.common.result.R;
+import com.songhg.firefly.iot.common.security.RequiresLogin;
+import com.songhg.firefly.iot.common.security.RequiresPermission;
+import com.songhg.firefly.iot.support.convert.AsyncTaskConvert;
+import com.songhg.firefly.iot.support.dto.asynctask.AsyncTaskCreateDTO;
+import com.songhg.firefly.iot.support.dto.asynctask.AsyncTaskQueryDTO;
+import com.songhg.firefly.iot.support.dto.asynctask.AsyncTaskVO;
+import com.songhg.firefly.iot.support.entity.AsyncTask;
+import com.songhg.firefly.iot.support.service.AsyncTaskService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.io.File;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+
+@Tag(name = "异步任务中心", description = "异步任务管理（导出、导入、同步等）")
+@RestController
+@RequestMapping("/api/v1/async-tasks")
+@RequiredArgsConstructor
+@RequiresLogin
+public class AsyncTaskController {
+
+    private final AsyncTaskService asyncTaskService;
+
+    @Operation(summary = "创建异步任务")
+    @PostMapping
+    @RequiresPermission("export:create")
+    public R<AsyncTaskVO> createTask(@Valid @RequestBody AsyncTaskCreateDTO dto) {
+        AsyncTask task = asyncTaskService.createTask(
+                dto.getTaskName(), dto.getTaskType(), dto.getBizType(),
+                dto.getFileFormat(), dto.getQueryParams());
+        return R.ok(AsyncTaskConvert.INSTANCE.toVO(task));
+    }
+
+    @Operation(summary = "分页查询异步任务")
+    @PostMapping("/list")
+    @RequiresPermission("export:read")
+    public R<IPage<AsyncTaskVO>> listTasks(@RequestBody AsyncTaskQueryDTO query) {
+        return R.ok(asyncTaskService.listTasks(query)
+                .convert(AsyncTaskConvert.INSTANCE::toVO));
+    }
+
+    @Operation(summary = "查询我的异步任务（当前用户）")
+    @PostMapping("/mine/list")
+    public R<IPage<AsyncTaskVO>> listMyTasks(@RequestBody AsyncTaskQueryDTO query) {
+        return R.ok(asyncTaskService.listMyTasks(query)
+                .convert(AsyncTaskConvert.INSTANCE::toVO));
+    }
+
+    @Operation(summary = "获取任务详情")
+    @GetMapping("/{id}")
+    @RequiresPermission("export:read")
+    public R<AsyncTaskVO> getTask(@Parameter(description = "任务编号", required = true) @PathVariable Long id) {
+        return R.ok(AsyncTaskConvert.INSTANCE.toVO(asyncTaskService.getTask(id)));
+    }
+
+    @Operation(summary = "下载任务结果文件")
+    @GetMapping("/{id}/download")
+    @RequiresPermission("export:read")
+    public ResponseEntity<Resource> download(@Parameter(description = "任务编号", required = true) @PathVariable Long id) {
+        AsyncTask task = asyncTaskService.getTask(id);
+        if (task == null || task.getResultUrl() == null || !"COMPLETED".equals(task.getStatus())) {
+            return ResponseEntity.notFound().build();
+        }
+
+        File file = new File(task.getResultUrl());
+        if (!file.exists()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String suffix = task.getFileFormat() != null ? "." + task.getFileFormat().toLowerCase() : "";
+        String encodedName = URLEncoder.encode(task.getTaskName() + suffix, StandardCharsets.UTF_8);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedName)
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .contentLength(file.length())
+                .body(new FileSystemResource(file));
+    }
+
+    @Operation(summary = "取消任务")
+    @PutMapping("/{id}/cancel")
+    @RequiresPermission("export:update")
+    public R<Void> cancelTask(@Parameter(description = "任务编号", required = true) @PathVariable Long id) {
+        asyncTaskService.cancelTask(id);
+        return R.ok();
+    }
+
+    @Operation(summary = "删除任务")
+    @DeleteMapping("/{id}")
+    @RequiresPermission("export:delete")
+    public R<Void> deleteTask(@Parameter(description = "任务编号", required = true) @PathVariable Long id) {
+        asyncTaskService.deleteTask(id);
+        return R.ok();
+    }
+
+    @Operation(summary = "清理过期任务（7天前）")
+    @PostMapping("/clean")
+    @RequiresPermission("export:delete")
+    public R<Integer> cleanExpired() {
+        return R.ok(asyncTaskService.cleanExpiredTasks());
+    }
+}

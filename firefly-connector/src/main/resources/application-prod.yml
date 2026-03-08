@@ -1,0 +1,46 @@
+﻿server:
+  port: 9070
+
+spring:
+  config:
+    import: optional:nacos:${spring.application.name}-${spring.profiles.active}.${spring.cloud.nacos.config.file-extension},optional:nacos:${spring.application.name}.${spring.cloud.nacos.config.file-extension}
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
+
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR:localhost:8848}
+        namespace: ${SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE:firefly-prod}
+      config:
+        server-addr: ${SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR:localhost:8848}
+        namespace: ${SPRING_CLOUD_NACOS_CONFIG_NAMESPACE:firefly-prod}
+
+logging:
+  level:
+    root: INFO
+    com.songhg.firefly: INFO
+
+firefly:
+  mqtt:
+    enabled: ${FIREFLY_MQTT_ENABLED:true}
+    host: ${FIREFLY_MQTT_HOST:0.0.0.0}
+    port: ${FIREFLY_MQTT_PORT:1883}
+    allow-anonymous: ${FIREFLY_MQTT_ALLOW_ANONYMOUS:false}
+    persistence-enabled: ${FIREFLY_MQTT_PERSISTENCE_ENABLED:false}
+    data-path: ${FIREFLY_MQTT_DATA_PATH:data/mqtt}
+    max-message-size: ${FIREFLY_MQTT_MAX_MESSAGE_SIZE:65536}
+    node-id: ${FIREFLY_MQTT_NODE_ID:}
+    downstream-consumer-group: ${FIREFLY_MQTT_DOWNSTREAM_GROUP:}
+    route-ttl-seconds: ${FIREFLY_MQTT_ROUTE_TTL_SECONDS:120}
+    route-refresh-interval-seconds: ${FIREFLY_MQTT_ROUTE_REFRESH_INTERVAL_SECONDS:30}
+    node-heartbeat-ttl-seconds: ${FIREFLY_MQTT_NODE_HEARTBEAT_TTL_SECONDS:45}
+    node-heartbeat-interval-seconds: ${FIREFLY_MQTT_NODE_HEARTBEAT_INTERVAL_SECONDS:15}
+    downstream-qos: ${FIREFLY_MQTT_DOWNSTREAM_QOS:1}
+    relay-channel-prefix: ${FIREFLY_MQTT_RELAY_CHANNEL_PREFIX:connector:mqtt:downstream:}

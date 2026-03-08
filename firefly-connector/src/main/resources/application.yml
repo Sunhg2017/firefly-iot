@@ -1,0 +1,142 @@
+﻿server:
+  port: 9070
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+spring:
+  config:
+    import: optional:nacos:${spring.application.name}-${spring.profiles.active}.${spring.cloud.nacos.config.file-extension},optional:nacos:${spring.application.name}.${spring.cloud.nacos.config.file-extension}
+  application:
+    name: firefly-connector
+  profiles:
+    active: dev
+
+  data:
+    redis:
+      host: 192.168.123.102
+      port: 6379
+      password: ''
+      database: 0
+
+  kafka:
+    bootstrap-servers: 192.168.123.102:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 192.168.123.102:8848
+        namespace: firefly-dev
+      config:
+        server-addr: 192.168.123.102:8848
+        namespace: firefly-dev
+        file-extension: yml
+
+# 鍗忚閰嶇疆
+firefly:
+  mqtt:
+    enabled: true
+    host: 0.0.0.0
+    port: 1883
+    allow-anonymous: false
+    persistence-enabled: false
+    data-path: data/mqtt
+    max-message-size: 65536
+    route-ttl-seconds: 120
+    route-refresh-interval-seconds: 30
+    node-heartbeat-ttl-seconds: 45
+    node-heartbeat-interval-seconds: 15
+    downstream-qos: 1
+    relay-channel-prefix: connector:mqtt:downstream:
+
+  coap:
+    enabled: false
+    port: 5683
+    secure-port: 5684
+    max-message-size: 1024
+    block-size: 512
+    dtls-enabled: false
+
+  snmp:
+    enabled: true
+    retries: 2
+    timeout-ms: 3000
+    trap:
+      enabled: true
+      listen-address: 0.0.0.0
+      port: 162
+    collector:
+      enabled: true
+      pool-size: 5
+      default-interval-ms: 60000
+
+  modbus:
+    enabled: true
+    collector:
+      enabled: true
+      pool-size: 5
+      default-interval-ms: 60000
+
+  websocket:
+    enabled: true
+    path: /ws/device
+    allowed-origins: "*"
+    max-text-message-size: 65536
+    max-binary-message-size: 65536
+    idle-timeout-ms: 300000
+
+  tcp-udp:
+    enabled: true
+    tcp-enabled: true
+    tcp-port: 8900
+    udp-enabled: true
+    udp-port: 8901
+    tcp-frame-decoder: LINE
+    tcp-delimiter: "\n"
+    max-frame-length: 65536
+    idle-timeout-sec: 300
+    boss-threads: 1
+    worker-threads: 0
+    so-backlog: 128
+
+  lorawan:
+    enabled: true
+    network-server: CHIRPSTACK
+    api-url: http://localhost:8080
+    api-token: ""
+    webhook-path: /api/v1/lorawan/webhook
+    payload-codec: JSON
+    application-id: ""
+    downlink-class: CLASS_A
+    downlink-f-port: 1
+    downlink-confirmed: false
+    deduplication-window-ms: 5000
+
+# SpringDoc
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  tracing:
+    enabled: ${FIREFLY_TRACING_ENABLED:false}
+    sampling:
+      probability: ${FIREFLY_TRACING_SAMPLING:1.0}
+    propagation:
+      type: w3c
+  otlp:
+    tracing:
+      endpoint: ${FIREFLY_OTLP_TRACING_ENDPOINT:http://127.0.0.1:4318/v1/traces}
+

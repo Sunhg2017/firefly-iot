@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.system.mapper.ApiAccessLogMapper">
+
+    <select id="aggregateDailyStats" resultType="java.util.HashMap">
+        SELECT
+            api_key_id                                          AS apiKeyId,
+            tenant_id                                           AS tenantId,
+            COUNT(*)                                            AS totalCalls,
+            COUNT(*) FILTER (WHERE status_code BETWEEN 200 AND 399) AS successCalls,
+            COUNT(*) FILTER (WHERE status_code >= 400)          AS errorCalls,
+            COALESCE(AVG(latency_ms)::INT, 0)                   AS avgLatencyMs,
+            COALESCE(MAX(latency_ms), 0)                        AS maxLatencyMs,
+            COALESCE(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY latency_ms)::INT, 0) AS p99LatencyMs
+        FROM api_access_logs
+        WHERE created_at >= #{statDate}::DATE
+          AND created_at &lt; #{statDate}::DATE + INTERVAL '1 day'
+        GROUP BY api_key_id, tenant_id
+    </select>
+
+</mapper>

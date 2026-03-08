@@ -1,0 +1,378 @@
+package com.songhg.firefly.iot.media.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.enums.StreamMode;
+import com.songhg.firefly.iot.common.enums.StreamStatus;
+import com.songhg.firefly.iot.common.enums.VideoDeviceStatus;
+import com.songhg.firefly.iot.common.exception.BizException;
+import com.songhg.firefly.iot.common.mybatis.DataScope;
+import com.songhg.firefly.iot.common.result.ResultCode;
+import com.songhg.firefly.iot.media.convert.VideoConvert;
+import com.songhg.firefly.iot.media.dto.video.PtzControlDTO;
+import com.songhg.firefly.iot.media.dto.video.RecordingVO;
+import com.songhg.firefly.iot.media.dto.video.StreamSessionVO;
+import com.songhg.firefly.iot.media.dto.video.StreamStartDTO;
+import com.songhg.firefly.iot.media.dto.video.VideoChannelVO;
+import com.songhg.firefly.iot.media.dto.video.VideoDeviceCreateDTO;
+import com.songhg.firefly.iot.media.dto.video.VideoDeviceQueryDTO;
+import com.songhg.firefly.iot.media.dto.video.VideoDeviceUpdateDTO;
+import com.songhg.firefly.iot.media.dto.video.VideoDeviceVO;
+import com.songhg.firefly.iot.media.entity.StreamSession;
+import com.songhg.firefly.iot.media.entity.VideoChannel;
+import com.songhg.firefly.iot.media.entity.VideoDevice;
+import com.songhg.firefly.iot.media.mapper.StreamSessionMapper;
+import com.songhg.firefly.iot.media.mapper.VideoChannelMapper;
+import com.songhg.firefly.iot.media.mapper.VideoDeviceMapper;
+import com.songhg.firefly.iot.api.client.FileClient;
+import com.songhg.firefly.iot.media.gb28181.SipCommandSender;
+import com.songhg.firefly.iot.media.zlm.ZlmApiClient;
+import com.songhg.firefly.iot.media.zlm.ZlmResponse;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class VideoService {
+
+    private final VideoDeviceMapper videoDeviceMapper;
+    private final VideoChannelMapper videoChannelMapper;
+    private final StreamSessionMapper streamSessionMapper;
+    private final ZlmApiClient zlmApiClient;
+    private final FileClient fileClient;
+    private final SipCommandSender sipCommandSender;
+
+    // ==================== Video Device CRUD ====================
+
+    @Transactional
+    public VideoDeviceVO createDevice(VideoDeviceCreateDTO dto) {
+        Long tenantId = TenantContextHolder.getTenantId();
+        VideoDevice device = VideoConvert.INSTANCE.toDeviceEntity(dto);
+        device.setTenantId(tenantId);
+        device.setStatus(VideoDeviceStatus.OFFLINE);
+        device.setCreatedBy(UserContextHolder.getUserId());
+        videoDeviceMapper.insert(device);
+        log.info("Video device created: id={}, name={}, mode={}", device.getId(), dto.getName(), dto.getStreamMode());
+        return VideoConvert.INSTANCE.toDeviceVO(device);
+    }
+
+    public VideoDeviceVO getDeviceById(Long id) {
+        VideoDevice device = videoDeviceMapper.selectById(id);
+        if (device == null) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_NOT_FOUND);
+        }
+        return VideoConvert.INSTANCE.toDeviceVO(device);
+    }
+
+    @DataScope
+    public IPage<VideoDeviceVO> listDevices(VideoDeviceQueryDTO query) {
+        Long tenantId = TenantContextHolder.getTenantId();
+        Page<VideoDevice> page = new Page<>(query.getPageNum(), query.getPageSize());
+
+        LambdaQueryWrapper<VideoDevice> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(VideoDevice::getTenantId, tenantId);
+        if (query.getKeyword() != null && !query.getKeyword().isBlank()) {
+            wrapper.and(w -> w.like(VideoDevice::getName, query.getKeyword())
+                    .or().like(VideoDevice::getGbDeviceId, query.getKeyword())
+                    .or().like(VideoDevice::getIp, query.getKeyword()));
+        }
+        if (query.getStreamMode() != null) {
+            wrapper.eq(VideoDevice::getStreamMode, query.getStreamMode());
+        }
+        if (query.getStatus() != null) {
+            wrapper.eq(VideoDevice::getStatus, query.getStatus());
+        }
+        wrapper.orderByDesc(VideoDevice::getCreatedAt);
+
+        IPage<VideoDevice> result = videoDeviceMapper.selectPage(page, wrapper);
+        return result.convert(VideoConvert.INSTANCE::toDeviceVO);
+    }
+
+    @Transactional
+    public VideoDeviceVO updateDevice(Long id, VideoDeviceUpdateDTO dto) {
+        VideoDevice device = videoDeviceMapper.selectById(id);
+        if (device == null) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_NOT_FOUND);
+        }
+        VideoConvert.INSTANCE.updateDeviceEntity(dto, device);
+        videoDeviceMapper.updateById(device);
+        return VideoConvert.INSTANCE.toDeviceVO(device);
+    }
+
+    @Transactional
+    public void deleteDevice(Long id) {
+        VideoDevice device = videoDeviceMapper.selectById(id);
+        if (device == null) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_NOT_FOUND);
+        }
+        videoDeviceMapper.deleteById(id);
+        log.info("Video device deleted: id={}", id);
+    }
+
+    // ==================== Channel Management ====================
+
+    public List<VideoChannelVO> listChannels(Long videoDeviceId) {
+        VideoDevice device = videoDeviceMapper.selectById(videoDeviceId);
+        if (device == null) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_NOT_FOUND);
+        }
+
+        LambdaQueryWrapper<VideoChannel> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(VideoChannel::getVideoDeviceId, videoDeviceId).orderByAsc(VideoChannel::getChannelId);
+        return videoChannelMapper.selectList(wrapper)
+                .stream().map(VideoConvert.INSTANCE::toChannelVO).collect(Collectors.toList());
+    }
+
+    // ==================== GB28181 Queries ====================
+
+    public void queryCatalog(Long videoDeviceId) {
+        VideoDevice device = videoDeviceMapper.selectById(videoDeviceId);
+        if (device == null) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_NOT_FOUND);
+        }
+        if (device.getStreamMode() != StreamMode.GB28181 || device.getGbDeviceId() == null) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_OFFLINE);
+        }
+        sipCommandSender.queryCatalog(device);
+    }
+
+    public void queryDeviceInfo(Long videoDeviceId) {
+        VideoDevice device = videoDeviceMapper.selectById(videoDeviceId);
+        if (device == null) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_NOT_FOUND);
+        }
+        if (device.getStreamMode() != StreamMode.GB28181 || device.getGbDeviceId() == null) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_OFFLINE);
+        }
+        sipCommandSender.queryDeviceInfo(device);
+    }
+
+    // ==================== Stream Control ====================
+
+    @Transactional
+    public StreamSessionVO startStream(Long videoDeviceId, StreamStartDTO dto) {
+        Long tenantId = TenantContextHolder.getTenantId();
+        VideoDevice device = videoDeviceMapper.selectById(videoDeviceId);
+        if (device == null) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_NOT_FOUND);
+        }
+        if (device.getStatus() != VideoDeviceStatus.ONLINE) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_OFFLINE);
+        }
+
+        String streamId = tenantId + "_" + videoDeviceId + "_" + (dto.getChannelId() != null ? dto.getChannelId() : "0");
+        String app = "live";
+
+        // 根据接入方式调用不同的 ZLM API
+        try {
+            if (device.getStreamMode() == StreamMode.RTSP) {
+                // RTSP 拉流代理
+                String rtspUrl = "rtsp://" + device.getIp() + ":" + (device.getPort() != null ? device.getPort() : 554) + "/";
+                ZlmResponse<Map<String, Object>> resp = zlmApiClient.addStreamProxy(app, streamId, rtspUrl);
+                if (!resp.isSuccess()) {
+                    log.error("ZLM addStreamProxy failed: {}", resp.getMsg());
+                    throw new BizException(ResultCode.STREAM_START_FAILED);
+                }
+            } else if (device.getStreamMode() == StreamMode.GB28181) {
+                // GB28181: 通过 SIP INVITE 发起实时点播
+                String ssrc = String.format("%010d", (long) (Math.random() * 9000000000L + 1000000000L));
+                boolean sent = sipCommandSender.sendInvite(device, dto.getChannelId(), ssrc);
+                if (!sent) {
+                    log.warn("GB28181 INVITE send failed, recording session anyway: device={}", device.getGbDeviceId());
+                }
+            }
+            // RTMP: 设备主动推流到 ZLM，无需平台主动拉流
+        } catch (BizException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("ZLM stream start error: {}", e.getMessage());
+            throw new BizException(ResultCode.STREAM_START_FAILED);
+        }
+
+        StreamSession session = new StreamSession();
+        session.setTenantId(tenantId);
+        session.setVideoDeviceId(videoDeviceId);
+        session.setChannelId(dto.getChannelId());
+        session.setStreamId(streamId);
+        session.setStatus(StreamStatus.ACTIVE);
+        session.setFlvUrl(zlmApiClient.buildFlvUrl(app, streamId));
+        session.setHlsUrl(zlmApiClient.buildHlsUrl(app, streamId));
+        session.setWebrtcUrl(zlmApiClient.buildWebrtcUrl(app, streamId));
+        session.setStartedAt(LocalDateTime.now());
+        streamSessionMapper.insert(session);
+
+        log.info("Stream started: deviceId={}, streamId={}, mode={}", videoDeviceId, streamId, device.getStreamMode());
+        return VideoConvert.INSTANCE.toSessionVO(session);
+    }
+
+    @Transactional
+    public void stopStream(Long videoDeviceId) {
+        LambdaQueryWrapper<StreamSession> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(StreamSession::getVideoDeviceId, videoDeviceId)
+                .eq(StreamSession::getStatus, StreamStatus.ACTIVE);
+        List<StreamSession> sessions = streamSessionMapper.selectList(wrapper);
+
+        for (StreamSession session : sessions) {
+            try {
+                zlmApiClient.closeStream("live", session.getStreamId(), null);
+            } catch (Exception e) {
+                log.warn("ZLM close_stream error for streamId={}: {}", session.getStreamId(), e.getMessage());
+            }
+            session.setStatus(StreamStatus.CLOSED);
+            session.setStoppedAt(LocalDateTime.now());
+            streamSessionMapper.updateById(session);
+        }
+
+        log.info("Stream stopped: deviceId={}, closedCount={}", videoDeviceId, sessions.size());
+    }
+
+    public void ptzControl(Long videoDeviceId, PtzControlDTO dto) {
+        VideoDevice device = videoDeviceMapper.selectById(videoDeviceId);
+        if (device == null) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_NOT_FOUND);
+        }
+        if (device.getStatus() != VideoDeviceStatus.ONLINE) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_OFFLINE);
+        }
+
+        if (device.getStreamMode() == StreamMode.GB28181 && device.getGbDeviceId() != null) {
+            // GB28181 PTZ: 通过 SIP MESSAGE 发送 PTZ 二进制指令
+            int speed = dto.getSpeed() != null ? dto.getSpeed() : 128;
+            sipCommandSender.sendPtzControl(device, dto.getChannelId(), dto.getCommand(), speed);
+        } else {
+            log.info("PTZ control: deviceId={}, command={}, speed={} (non-GB28181, requires ONVIF)",
+                    videoDeviceId, dto.getCommand(), dto.getSpeed());
+        }
+    }
+
+    public String snapshot(Long videoDeviceId) {
+        VideoDevice device = videoDeviceMapper.selectById(videoDeviceId);
+        if (device == null) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_NOT_FOUND);
+        }
+        if (device.getStatus() != VideoDeviceStatus.ONLINE) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_OFFLINE);
+        }
+
+        // 查找该设备的活跃流会话
+        LambdaQueryWrapper<StreamSession> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(StreamSession::getVideoDeviceId, videoDeviceId)
+                .eq(StreamSession::getStatus, StreamStatus.ACTIVE)
+                .orderByDesc(StreamSession::getStartedAt)
+                .last("LIMIT 1");
+        StreamSession session = streamSessionMapper.selectOne(wrapper);
+
+        String imageUrl;
+        if (session != null) {
+            // 通过 ZLM getSnap API 截图（使用 RTSP 内部地址）
+            String rtspUrl = zlmApiClient.buildRtspUrl("live", session.getStreamId());
+            byte[] snapData = zlmApiClient.getSnap(rtspUrl, 10, 3);
+            if (snapData != null && snapData.length > 0) {
+                String objectName = TenantContextHolder.getTenantId() + "/video/" + videoDeviceId
+                        + "/snapshot_" + System.currentTimeMillis() + ".jpg";
+                imageUrl = fileClient.uploadBytes(objectName, "image/jpeg", snapData).getData().get("url");
+                log.info("Snapshot taken via ZLM and uploaded to MinIO: deviceId={}, size={} bytes, url={}",
+                        videoDeviceId, snapData.length, imageUrl);
+            } else {
+                imageUrl = "snapshot_failed";
+                log.warn("Snapshot failed via ZLM for deviceId={}", videoDeviceId);
+            }
+        } else {
+            imageUrl = "no_active_stream";
+            log.warn("No active stream for snapshot: deviceId={}", videoDeviceId);
+        }
+        return imageUrl;
+    }
+
+    // ==================== Recording Control ====================
+
+    public RecordingVO startRecording(Long videoDeviceId) {
+        VideoDevice device = videoDeviceMapper.selectById(videoDeviceId);
+        if (device == null) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_NOT_FOUND);
+        }
+        if (device.getStatus() != VideoDeviceStatus.ONLINE) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_OFFLINE);
+        }
+
+        // Find active stream session for this device
+        LambdaQueryWrapper<StreamSession> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(StreamSession::getVideoDeviceId, videoDeviceId)
+                .eq(StreamSession::getStatus, StreamStatus.ACTIVE)
+                .orderByDesc(StreamSession::getStartedAt)
+                .last("LIMIT 1");
+        StreamSession session = streamSessionMapper.selectOne(wrapper);
+        if (session == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "无活跃的视频流，请先开始播放");
+        }
+
+        try {
+            // type=1 表示 MP4 录制
+            ZlmResponse<Map<String, Object>> resp = zlmApiClient.startRecord("live", session.getStreamId(), 1);
+            if (!resp.isSuccess()) {
+                log.error("ZLM startRecord failed: {}", resp.getMsg());
+                throw new BizException(ResultCode.PARAM_ERROR, "开始录像失败: " + resp.getMsg());
+            }
+        } catch (BizException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("ZLM startRecord error: {}", e.getMessage());
+            throw new BizException(ResultCode.PARAM_ERROR, "开始录像失败");
+        }
+
+        RecordingVO vo = new RecordingVO();
+        vo.setVideoDeviceId(videoDeviceId);
+        vo.setStreamId(session.getStreamId());
+        vo.setRecording(true);
+        vo.setStartedAt(LocalDateTime.now());
+        log.info("Recording started: deviceId={}, streamId={}", videoDeviceId, session.getStreamId());
+        return vo;
+    }
+
+    public RecordingVO stopRecording(Long videoDeviceId) {
+        VideoDevice device = videoDeviceMapper.selectById(videoDeviceId);
+        if (device == null) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_NOT_FOUND);
+        }
+
+        // Find active stream session for this device
+        LambdaQueryWrapper<StreamSession> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(StreamSession::getVideoDeviceId, videoDeviceId)
+                .eq(StreamSession::getStatus, StreamStatus.ACTIVE)
+                .orderByDesc(StreamSession::getStartedAt)
+                .last("LIMIT 1");
+        StreamSession session = streamSessionMapper.selectOne(wrapper);
+        if (session == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "无活跃的视频流");
+        }
+
+        try {
+            ZlmResponse<Map<String, Object>> resp = zlmApiClient.stopRecord("live", session.getStreamId(), 1);
+            if (!resp.isSuccess()) {
+                log.warn("ZLM stopRecord response: {}", resp.getMsg());
+            }
+        } catch (Exception e) {
+            log.warn("ZLM stopRecord error for streamId={}: {}", session.getStreamId(), e.getMessage());
+        }
+
+        RecordingVO vo = new RecordingVO();
+        vo.setVideoDeviceId(videoDeviceId);
+        vo.setStreamId(session.getStreamId());
+        vo.setRecording(false);
+        vo.setStoppedAt(LocalDateTime.now());
+        log.info("Recording stopped: deviceId={}, streamId={}", videoDeviceId, session.getStreamId());
+        return vo;
+    }
+}

@@ -1,0 +1,123 @@
+# ============================================================
+# Java / Maven
+# ============================================================
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+.mvn/wrapper/maven-wrapper.jar
+!.mvn/wrapper/maven-wrapper.properties
+
+# ============================================================
+# Spring Boot
+# ============================================================
+application-local.yml
+application-local.properties
+spring-boot-devtools.properties
+
+# ============================================================
+# IDE
+# ============================================================
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+*.swp
+*.swo
+*~
+
+# Windsurf / Cursor / AI IDE
+.windsurfrules
+.windsurf/
+.cursor/
+.cascade/
+
+# ============================================================
+# OS
+# ============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# ============================================================
+# Node / Frontend
+# ============================================================
+node_modules/
+dist/
+dist-electron/
+release/
+.env
+.env.local
+.env.*.local
+*.tsbuildinfo
+.eslintcache
+.cache/
+.vite/
+.turbo/
+.pnpm-store/
+.npm/
+
+# ============================================================
+# Electron (Simulator)
+# ============================================================
+firefly-simulator/dist/
+firefly-simulator/dist-electron/
+firefly-simulator/release/
+firefly-simulator/electron-stdout.log
+firefly-simulator/electron-stderr.log
+
+# ============================================================
+# Runtime / Logs
+# ============================================================
+logs/
+*.log.*
+*.pid
+*.pid.lock
+*.out
+*.err
+hs_err_pid*
+replay_pid*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ============================================================
+# Docker
+# ============================================================
+deploy/data/
+
+# ============================================================
+# Temp / Upload / Task files
+# ============================================================
+uploads/
+temp/
+tmp/
+export-tasks/
+async-tasks/
+
+# ============================================================
+# Test / Coverage
+# ============================================================
+coverage/
+*.lcov
+test-results/
+.nyc_output/
+
+# ============================================================
+# Secrets
+# ============================================================
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore

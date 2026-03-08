@@ -1,0 +1,11 @@
+name,protocol,productKey,deviceName,deviceSecret,httpBaseUrl
+温湿度传感器-01,HTTP,pk_sensor_001,temp_humidity_01,secret_001,http://localhost:9070
+温湿度传感器-02,HTTP,pk_sensor_001,temp_humidity_02,secret_002,http://localhost:9070
+温湿度传感器-03,HTTP,pk_sensor_001,temp_humidity_03,secret_003,http://localhost:9070
+GPS追踪器-01,HTTP,pk_tracker_001,gps_tracker_01,secret_004,http://localhost:9070
+GPS追踪器-02,HTTP,pk_tracker_001,gps_tracker_02,secret_005,http://localhost:9070
+电力监测-01,HTTP,pk_power_001,power_meter_01,secret_006,http://localhost:9070
+电力监测-02,HTTP,pk_power_001,power_meter_02,secret_007,http://localhost:9070
+CoAP低功耗-01,CoAP,pk_lowpower_001,coap_device_01,secret_008,http://localhost:9070
+CoAP低功耗-02,CoAP,pk_lowpower_001,coap_device_02,secret_009,http://localhost:9070
+MQTT网关-01,MQTT,,,,,mqtt://localhost:1883,sim-mqtt-01,gateway&mqtt01,secret_010

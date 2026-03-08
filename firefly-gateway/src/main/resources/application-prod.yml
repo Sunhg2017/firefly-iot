@@ -1,0 +1,77 @@
+﻿server:
+  port: 8080
+
+spring:
+  config:
+    import: optional:nacos:${spring.application.name}-${spring.profiles.active}.${spring.cloud.nacos.config.file-extension},optional:nacos:${spring.application.name}.${spring.cloud.nacos.config.file-extension}
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
+
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR:localhost:8848}
+        namespace: ${SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE:firefly-prod}
+      config:
+        server-addr: ${SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR:localhost:8848}
+        namespace: ${SPRING_CLOUD_NACOS_CONFIG_NAMESPACE:firefly-prod}
+    gateway:
+      routes:
+        - id: system-route
+          uri: lb://firefly-system
+          predicates:
+            - Path=/SYSTEM/api/**
+          filters:
+            - RewritePath=/SYSTEM/api/(?<segment>.*), /api/${segment}
+        - id: data-route
+          uri: lb://firefly-data
+          predicates:
+            - Path=/DATA/api/**
+          filters:
+            - RewritePath=/DATA/api/(?<segment>.*), /api/${segment}
+        - id: media-route
+          uri: lb://firefly-media
+          predicates:
+            - Path=/MEDIA/api/**
+          filters:
+            - RewritePath=/MEDIA/api/(?<segment>.*), /api/${segment}
+        - id: support-route
+          uri: lb://firefly-support
+          predicates:
+            - Path=/SUPPORT/api/**
+          filters:
+            - RewritePath=/SUPPORT/api/(?<segment>.*), /api/${segment}
+        - id: rule-route
+          uri: lb://firefly-rule
+          predicates:
+            - Path=/RULE/api/**
+          filters:
+            - RewritePath=/RULE/api/(?<segment>.*), /api/${segment}
+        - id: device-route
+          uri: lb://firefly-device
+          predicates:
+            - Path=/DEVICE/api/**
+          filters:
+            - RewritePath=/DEVICE/api/(?<segment>.*), /api/${segment}
+        - id: connector-route
+          uri: lb://firefly-connector
+          predicates:
+            - Path=/CONNECTOR/api/**
+          filters:
+            - RewritePath=/CONNECTOR/api/(?<segment>.*), /api/${segment}
+
+    sentinel:
+      transport:
+        dashboard: ${SPRING_CLOUD_SENTINEL_TRANSPORT_DASHBOARD:localhost:8858}
+
+auth:
+  jwt:
+    public-key: ${AUTH_JWT_PUBLIC_KEY:}
+
+logging:
+  level:
+    root: INFO
+    org.springframework.cloud.gateway: WARN

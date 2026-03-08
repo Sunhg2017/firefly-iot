@@ -1,0 +1,114 @@
+﻿server:
+  port: 8080
+
+spring:
+  config:
+    import: optional:nacos:${spring.application.name}-${spring.profiles.active}.${spring.cloud.nacos.config.file-extension},optional:nacos:${spring.application.name}.${spring.cloud.nacos.config.file-extension}
+  application:
+    name: firefly-gateway
+  profiles:
+    active: dev
+
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 192.168.123.102:8848
+        namespace: firefly-dev
+        group: DEFAULT_GROUP
+        register-enabled: true
+      config:
+        server-addr: 192.168.123.102:8848
+        namespace: firefly-dev
+        file-extension: yml
+
+    gateway:
+      # ====================================================================
+      # 鍔ㄦ€佽矾鐢憋細DynamicServiceRouteLocator 鑷姩浠?Nacos 鍙戠幇 firefly-* 鏈嶅姟
+      # 绾﹀畾: /{SHORTNAME}/api/v1/** 鈫?lb://firefly-{shortName}
+      # 渚嬪: /DEVICE/api/v1/devices 鈫?lb://firefly-device 鈫?/api/v1/devices
+      #
+      # SHORTNAME 涓烘湇鍔＄煭鍚嶅叏澶у啓 (SYSTEM, DEVICE, RULE, SUPPORT, ...)
+      # 鏂板寰湇鍔″彧闇€娉ㄥ唽鍒?Nacos锛屾棤闇€淇敼姝ら厤缃枃浠躲€?      # 浠ヤ笅浠呬繚鐣欎笉閬靛惊绾﹀畾鐨勭壒娈婅矾鐢便€?      # ====================================================================
+      discovery:
+        locator:
+          enabled: false
+      routes:
+        - id: system-route
+          uri: http://127.0.0.1:8081
+          predicates:
+            - Path=/SYSTEM/api/**
+          filters:
+            - RewritePath=/SYSTEM/api/(?<segment>.*), /api/${segment}
+        - id: data-route
+          uri: http://127.0.0.1:9050
+          predicates:
+            - Path=/DATA/api/**
+          filters:
+            - RewritePath=/DATA/api/(?<segment>.*), /api/${segment}
+        - id: media-route
+          uri: http://127.0.0.1:9040
+          predicates:
+            - Path=/MEDIA/api/**
+          filters:
+            - RewritePath=/MEDIA/api/(?<segment>.*), /api/${segment}
+        - id: support-route
+          uri: http://127.0.0.1:9060
+          predicates:
+            - Path=/SUPPORT/api/**
+          filters:
+            - RewritePath=/SUPPORT/api/(?<segment>.*), /api/${segment}
+        - id: rule-route
+          uri: http://127.0.0.1:9030
+          predicates:
+            - Path=/RULE/api/**
+          filters:
+            - RewritePath=/RULE/api/(?<segment>.*), /api/${segment}
+        - id: device-route
+          uri: http://127.0.0.1:9020
+          predicates:
+            - Path=/DEVICE/api/**
+          filters:
+            - RewritePath=/DEVICE/api/(?<segment>.*), /api/${segment}
+        - id: connector-route
+          uri: http://127.0.0.1:9070
+          predicates:
+            - Path=/CONNECTOR/api/**
+          filters:
+            - RewritePath=/CONNECTOR/api/(?<segment>.*), /api/${segment}
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin
+
+    sentinel:
+      transport:
+        dashboard: 192.168.123.102:8858
+
+  data:
+    redis:
+      host: 192.168.123.102
+      port: 6379
+      password: ''
+      database: 0
+
+auth:
+  jwt:
+    public-key: ''  # Base64 encoded RSA public key, leave empty for dev passthrough mode
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  tracing:
+    enabled: ${FIREFLY_TRACING_ENABLED:false}
+    sampling:
+      probability: ${FIREFLY_TRACING_SAMPLING:1.0}
+    propagation:
+      type: w3c
+  otlp:
+    tracing:
+      endpoint: ${FIREFLY_OTLP_TRACING_ENDPOINT:http://127.0.0.1:4318/v1/traces}
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+

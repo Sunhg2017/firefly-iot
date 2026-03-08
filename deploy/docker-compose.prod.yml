@@ -1,0 +1,349 @@
+# ============================================================
+# Firefly IoT production deployment
+# Usage:
+#   cp .env.example .env
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d
+# ============================================================
+version: '3.8'
+
+x-java-service: &java-service
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  restart: unless-stopped
+  environment: &java-env
+    SPRING_PROFILES_ACTIVE: prod
+    SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-firefly_iot}
+    SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-firefly}
+    SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-firefly123}
+    DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-5}
+    DB_POOL_MIN_IDLE: ${DB_POOL_MIN_IDLE:-1}
+    DB_POOL_CONNECTION_TIMEOUT_MS: ${DB_POOL_CONNECTION_TIMEOUT_MS:-10000}
+    DB_POOL_IDLE_TIMEOUT_MS: ${DB_POOL_IDLE_TIMEOUT_MS:-60000}
+    DB_POOL_MAX_LIFETIME_MS: ${DB_POOL_MAX_LIFETIME_MS:-1800000}
+    FLYWAY_CONNECT_RETRIES: ${FLYWAY_CONNECT_RETRIES:-30}
+    SPRING_DATA_REDIS_HOST: ${REDIS_HOST:-redis}
+    SPRING_DATA_REDIS_PORT: ${REDIS_PORT:-6379}
+    SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_SERVERS:-kafka:9092}
+    SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: ${NACOS_ADDR:-nacos:8848}
+    SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: ${NACOS_NAMESPACE:-firefly-prod}
+    SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: ${NACOS_ADDR:-nacos:8848}
+    SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: ${NACOS_NAMESPACE:-firefly-prod}
+    JAVA_OPTS: ${JAVA_OPTS:--Xms256m -Xmx512m}
+  networks:
+    - firefly-net
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+    nacos:
+      condition: service_healthy
+
+services:
+  # ======================== Infrastructure ========================
+
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: firefly-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-firefly}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-firefly123}
+      POSTGRES_DB: ${POSTGRES_DB:-firefly_iot}
+    command: postgres -c max_connections=${POSTGRES_MAX_CONNECTIONS:-1000}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-firefly}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - firefly-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: firefly-redis
+    command: >
+      redis-server
+      --requirepass "${REDIS_PASSWORD:-}"
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - firefly-net
+
+  kafka:
+    image: apache/kafka:3.7.1
+    container_name: firefly-kafka
+    environment:
+      KAFKA_NODE_ID: 0
+      KAFKA_PROCESS_ROLES: controller,broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 0@firefly-kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_CONTROLLER_LOG_FLUSH_INTERVAL_MS: 1000
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - firefly-net
+
+  nacos:
+    image: nacos/nacos-server:v2.3.2
+    container_name: firefly-nacos
+    environment:
+      MODE: standalone
+      SPRING_DATASOURCE_PLATFORM: ''
+      NACOS_AUTH_ENABLE: "false"
+      JVM_XMS: 256m
+      JVM_XMX: 512m
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8848/nacos/v1/console/health/readiness"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks:
+      - firefly-net
+
+  minio:
+    image: minio/minio:latest
+    container_name: firefly-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin123}
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - firefly-net
+
+  sentinel:
+    image: bladex/sentinel-dashboard:1.8.7
+    container_name: firefly-sentinel
+    ports:
+      - "8858:8858"
+    networks:
+      - firefly-net
+
+  # ======================== Services ========================
+
+  gateway:
+    <<: *java-service
+    container_name: firefly-gateway
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        MODULE: firefly-gateway
+        PORT: 8080
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *java-env
+      SPRING_CLOUD_SENTINEL_TRANSPORT_DASHBOARD: ${SENTINEL_DASHBOARD:-sentinel:8858}
+      AUTH_JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+
+  system:
+    <<: *java-service
+    container_name: firefly-system
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        MODULE: firefly-system
+        PORT: 8081
+    ports:
+      - "8081:8081"
+
+  device:
+    <<: *java-service
+    container_name: firefly-device
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        MODULE: firefly-device
+        PORT: 9020
+    ports:
+      - "9020:9020"
+
+  rule:
+    <<: *java-service
+    container_name: firefly-rule
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        MODULE: firefly-rule
+        PORT: 9030
+    ports:
+      - "9030:9030"
+
+  media:
+    <<: *java-service
+    container_name: firefly-media
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        MODULE: firefly-media
+        PORT: 9040
+    ports:
+      - "9040:9040"
+      - "5060:5060/udp"
+    environment:
+      <<: *java-env
+      ZLMEDIAKIT_HOST: ${ZLM_HOST:-zlmediakit}
+      ZLMEDIAKIT_PORT: ${ZLM_PORT:-8080}
+      ZLMEDIAKIT_SECRET: ${ZLM_SECRET:-035c73f7-bb6b-4889-a715-d9eb2d1925cc}
+
+  data:
+    <<: *java-service
+    container_name: firefly-data
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        MODULE: firefly-data
+        PORT: 9050
+    ports:
+      - "9050:9050"
+
+  support:
+    <<: *java-service
+    container_name: firefly-support
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        MODULE: firefly-support
+        PORT: 9060
+    ports:
+      - "9060:9060"
+    environment:
+      <<: *java-env
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
+      MINIO_BUCKET: ${MINIO_BUCKET:-firefly-iot}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  connector:
+    <<: *java-service
+    container_name: firefly-connector
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        MODULE: firefly-connector
+        PORT: 9070
+    ports:
+      - "9070:9070"
+      - "${FIREFLY_MQTT_PORT:-1883}:${FIREFLY_MQTT_PORT:-1883}"
+      - "5683:5683/udp"
+    environment:
+      <<: *java-env
+      FIREFLY_MQTT_ENABLED: ${FIREFLY_MQTT_ENABLED:-true}
+      FIREFLY_MQTT_HOST: ${FIREFLY_MQTT_HOST:-0.0.0.0}
+      FIREFLY_MQTT_PORT: ${FIREFLY_MQTT_PORT:-1883}
+      FIREFLY_MQTT_ALLOW_ANONYMOUS: ${FIREFLY_MQTT_ALLOW_ANONYMOUS:-false}
+      FIREFLY_MQTT_PERSISTENCE_ENABLED: ${FIREFLY_MQTT_PERSISTENCE_ENABLED:-false}
+      FIREFLY_MQTT_DATA_PATH: ${FIREFLY_MQTT_DATA_PATH:-data/mqtt}
+      FIREFLY_MQTT_MAX_MESSAGE_SIZE: ${FIREFLY_MQTT_MAX_MESSAGE_SIZE:-65536}
+      FIREFLY_MQTT_NODE_ID: ${FIREFLY_MQTT_NODE_ID:-}
+      FIREFLY_MQTT_DOWNSTREAM_GROUP: ${FIREFLY_MQTT_DOWNSTREAM_GROUP:-}
+      FIREFLY_MQTT_ROUTE_TTL_SECONDS: ${FIREFLY_MQTT_ROUTE_TTL_SECONDS:-120}
+      FIREFLY_MQTT_ROUTE_REFRESH_INTERVAL_SECONDS: ${FIREFLY_MQTT_ROUTE_REFRESH_INTERVAL_SECONDS:-30}
+      FIREFLY_MQTT_NODE_HEARTBEAT_TTL_SECONDS: ${FIREFLY_MQTT_NODE_HEARTBEAT_TTL_SECONDS:-45}
+      FIREFLY_MQTT_NODE_HEARTBEAT_INTERVAL_SECONDS: ${FIREFLY_MQTT_NODE_HEARTBEAT_INTERVAL_SECONDS:-15}
+      FIREFLY_MQTT_DOWNSTREAM_QOS: ${FIREFLY_MQTT_DOWNSTREAM_QOS:-1}
+      FIREFLY_MQTT_RELAY_CHANNEL_PREFIX: ${FIREFLY_MQTT_RELAY_CHANNEL_PREFIX:-connector:mqtt:downstream:}
+    volumes:
+      - connector_mqtt_data:/app/data/mqtt
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+
+  # ======================== Frontend ========================
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    container_name: firefly-web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - gateway
+    networks:
+      - firefly-net
+
+volumes:
+  postgres_data:
+  redis_data:
+  kafka_data:
+  minio_data:
+  connector_mqtt_data:
+
+networks:
+  firefly-net:
+    driver: bridge

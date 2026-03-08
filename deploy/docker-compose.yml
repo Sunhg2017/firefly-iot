@@ -1,0 +1,183 @@
+version: '3.8'
+
+services:
+  # ============================================================
+  # PostgreSQL 16 + TimescaleDB
+  # ============================================================
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: firefly-postgres
+    environment:
+      POSTGRES_USER: firefly
+      POSTGRES_PASSWORD: firefly123
+      POSTGRES_DB: firefly_iot
+    command: postgres -c max_connections=${POSTGRES_MAX_CONNECTIONS:-500}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U firefly"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # Redis 7
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: firefly-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # Apache Kafka (KRaft mode, no ZooKeeper)
+  # ============================================================
+  kafka:
+    image: apache/kafka:3.7.1
+    container_name: firefly-kafka
+    environment:
+      KAFKA_NODE_ID: 0
+      KAFKA_PROCESS_ROLES: controller,broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 0@firefly-kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://192.168.123.102:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_CONTROLLER_LOG_FLUSH_INTERVAL_MS: 1000
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ============================================================
+  # Nacos 2.x
+  # ============================================================
+  nacos:
+    image: nacos/nacos-server:v2.3.2
+    container_name: firefly-nacos
+    environment:
+      MODE: standalone
+      SPRING_DATASOURCE_PLATFORM: ''
+      NACOS_AUTH_ENABLE: "false"
+      JVM_XMS: 256m
+      JVM_XMX: 512m
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8848/nacos/v1/console/health/readiness"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # ============================================================
+  # MinIO
+  # ============================================================
+  minio:
+    image: minio/minio:latest
+    container_name: firefly-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # Sentinel Dashboard
+  # ============================================================
+  sentinel:
+    image: bladex/sentinel-dashboard:1.8.7
+    container_name: firefly-sentinel
+    ports:
+      - "8858:8858"
+
+  # ============================================================
+  # Optional: firefly-connector with embedded MQTT broker
+  # Start with:
+  #   mvn -pl firefly-connector -am -DskipTests package
+  #   docker compose --profile connector up -d connector
+  # ============================================================
+  connector:
+    profiles: ["connector"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        MODULE: firefly-connector
+        PORT: 9070
+    container_name: firefly-connector
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ""
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: firefly-dev
+      SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: firefly-dev
+      JAVA_OPTS: -Xms256m -Xmx512m
+      FIREFLY_MQTT_ENABLED: "true"
+      FIREFLY_MQTT_HOST: 0.0.0.0
+      FIREFLY_MQTT_PORT: 1883
+      FIREFLY_MQTT_ALLOW_ANONYMOUS: "false"
+      FIREFLY_MQTT_PERSISTENCE_ENABLED: "false"
+      FIREFLY_MQTT_DATA_PATH: data/mqtt
+      FIREFLY_MQTT_MAX_MESSAGE_SIZE: 65536
+      FIREFLY_MQTT_NODE_ID: ${FIREFLY_MQTT_NODE_ID:-}
+      FIREFLY_MQTT_DOWNSTREAM_GROUP: ${FIREFLY_MQTT_DOWNSTREAM_GROUP:-}
+      FIREFLY_MQTT_ROUTE_TTL_SECONDS: ${FIREFLY_MQTT_ROUTE_TTL_SECONDS:-120}
+      FIREFLY_MQTT_ROUTE_REFRESH_INTERVAL_SECONDS: ${FIREFLY_MQTT_ROUTE_REFRESH_INTERVAL_SECONDS:-30}
+      FIREFLY_MQTT_NODE_HEARTBEAT_TTL_SECONDS: ${FIREFLY_MQTT_NODE_HEARTBEAT_TTL_SECONDS:-45}
+      FIREFLY_MQTT_NODE_HEARTBEAT_INTERVAL_SECONDS: ${FIREFLY_MQTT_NODE_HEARTBEAT_INTERVAL_SECONDS:-15}
+      FIREFLY_MQTT_DOWNSTREAM_QOS: ${FIREFLY_MQTT_DOWNSTREAM_QOS:-1}
+      FIREFLY_MQTT_RELAY_CHANNEL_PREFIX: ${FIREFLY_MQTT_RELAY_CHANNEL_PREFIX:-connector:mqtt:downstream:}
+    ports:
+      - "9070:9070"
+      - "1883:1883"
+      - "5683:5683/udp"
+    volumes:
+      - connector_mqtt_data:/app/data/mqtt
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  kafka_data:
+  minio_data:
+  connector_mqtt_data:
