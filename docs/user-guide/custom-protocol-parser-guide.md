@@ -2,54 +2,139 @@
 
 ## 1. 功能概览
 
-协议解析页面已经补齐以下交互能力：
+自定义协议解析页面已经具备完整可用能力：
 
-- 筛选区、规则编辑区、调试区优先使用下拉选择，减少手工输入。
-- 页面内置上行、下行完整模板，支持一键填充整套配置。
-- `matchRuleJson`、`frameConfigJson`、`parserConfigJson`、`releaseConfigJson` 支持预设按钮。
-- 上行调试、下行编码调试支持主题、消息类型、示例载荷一键填充。
-- 插件模式支持从运行时已安装插件和插件目录中直接选择 `pluginId` 和版本。
+- 产品级规则与租户默认级规则配置
+- 上行解析与下行编码双向支持
+- Script 与 Plugin 两种模式
+- 规则发布、回滚、启停、版本历史
+- 运行时指标、插件目录、插件重载
+- 轻量可视化编排与一键生成脚本
+- 上行调试与下行编码测试
 
-如果通过页面配置，推荐先选模板，再微调细节。
-如果通过接口配置，注意 `matchRuleJson`、`frameConfigJson`、`parserConfigJson`、`visualConfigJson`、`releaseConfigJson` 需要以字符串形式提交。
+本轮页面优化的重点是：
 
-## 2. 推荐配置流程
+- 尽量减少用户手工输入
+- 尽量不直接暴露数据库主键
+- 优先展示业务唯一键 `tenantCode`、`productKey`
 
-### 2.1 页面入口
+## 2. 页面使用原则
 
-- 菜单：设备中心 -> 协议解析
-- 菜单：设备中心 -> 设备管理 -> 定位器
+### 2.1 先模板后微调
 
-### 2.2 页面配置顺序
+推荐操作顺序：
 
 1. 先选择模板。
-2. 再确认作用域、产品、方向、传输方式。
-3. 使用 JSON 预设按钮补齐匹配、拆帧、解析和灰度配置。
-4. 在脚本模式下确认 `scriptContent`，或在插件模式下直接从下拉选择插件。
-5. 保存后先做在线调试，再发布和启用。
+2. 再选择作用域、产品、方向、协议与传输方式。
+3. 使用 JSON 预设按钮补齐匹配规则、拆帧配置、解析配置、灰度配置。
+4. 最后根据设备协议微调脚本或插件配置。
 
-### 2.3 作用域选择建议
+### 2.2 作用域选择
 
-- `PRODUCT`
-  适合单个产品的私有协议。
-- `TENANT`
-  适合作为租户默认协议，调试时建议显式传入 `productId`。
+- `产品级`
+  - 适用于单个产品的私有协议
+  - 页面会要求选择产品
+  - 配置会自动补齐 `tenantCode + productKey`
+- `租户默认级`
+  - 适用于租户范围的默认协议
+  - 页面无需选择产品
+  - 配置会自动补齐 `tenantCode`
 
-## 3. 完整配置示例
+### 2.3 主键使用口径
 
-### 3.1 MQTT JSON 属性上报
+当前页面不再要求用户理解或输入以下内部主键：
 
-页面模板：`MQTT JSON 属性上报`
+- `scopeId`
+- 规则内部 ID
+- 产品内部主键
+
+页面统一改为：
+
+- 产品下拉显示 `产品名称 (productKey)`
+- 规则作用域显示 `tenantCode` 或 `productKey`
+- 弹窗标题使用业务可识别名称
+
+## 3. 关键字段说明
+
+### 3.1 作用域 ID
+
+- 含义：后端内部归属字段。
+- 当前页面：隐藏，不需要人工填写。
+- 你只需要关注：
+  - 是“产品级”还是“租户默认级”
+  - 选了哪个产品
+
+### 3.2 协议
+
+- 用于匹配协议族或适配器类别。
+- 常见值：
+  - `TCP_UDP`
+  - `MQTT`
+  - `HTTP`
+  - `COAP`
+  - `WEBSOCKET`
+
+### 3.3 传输方式
+
+- 用于匹配运行时实际通道。
+- 常见值：
+  - `TCP`
+  - `UDP`
+  - `MQTT`
+  - `HTTP`
+  - `COAP`
+  - `WEBSOCKET`
+
+关键理解：
+
+- MQTT、HTTP 这类场景下，协议和传输方式可能相同。
+- TCP/UDP 场景下不相同：
+  - 协议使用 `TCP_UDP`
+  - 传输方式明确选 `TCP` 或 `UDP`
+
+### 3.4 解析配置 JSON
+
+`parserConfigJson` 会注入运行时 `ctx.config`，供脚本或插件读取。
+
+当前页面会自动补齐：
+
+- `tenantCode`
+- `productKey`
+
+因此建议你在脚本里优先使用这些业务标识，而不是依赖内部主键。
+
+## 4. 推荐配置流程
+
+1. 进入“设备中心 -> 自定义协议解析”。
+2. 点击“新建规则”。
+3. 选择模板。
+4. 选择作用域。
+5. 如果是产品级，选择产品。
+6. 选择协议、传输方式、方向。
+7. 检查预填的 `matchRuleJson`、`frameConfigJson`、`parserConfigJson`。
+8. 编辑脚本或选择插件。
+9. 保存草稿。
+10. 先调试，再发布，再启用。
+
+## 5. 完整配置示例
+
+以下示例使用统一的业务标识：
+
+- `tenantCode = demo-tenant`
+- 产品 A：`智慧照明网关 (light-gateway)`
+- 产品 B：`工业采集器 (collector-pro)`
+
+### 5.1 示例一：产品级 MQTT JSON 属性上报
 
 适用场景：
 
 - 设备通过 MQTT 上报标准 JSON
-- 载荷中包含 `properties`、`deviceName`、`timestamp`
+- 载荷中包含 `deviceName`、`timestamp`、`properties`
 
 页面字段：
 
-- 作用域：`PRODUCT`
-- 产品：`1001`
+- 作用域：`产品级`
+- 产品：`智慧照明网关 (light-gateway)`
 - 协议：`MQTT`
 - 传输方式：`MQTT`
 - 方向：`UPLINK`
@@ -81,7 +166,9 @@
   "payloadField": "properties",
   "deviceNameField": "deviceName",
   "timestampField": "timestamp",
-  "messageType": "PROPERTY_REPORT"
+  "messageType": "PROPERTY_REPORT",
+  "tenantCode": "demo-tenant",
+  "productKey": "light-gateway"
 }
 ```
 
@@ -103,32 +190,32 @@
 ```javascript
 function parse(ctx) {
   const config = ctx.config || {};
-  const rawBody = json.parse(ctx.payloadText || '{}');
-  const body = rawBody && typeof rawBody === 'object' ? rawBody : { value: rawBody };
-  const payloadField = config.payloadField || 'properties';
-  const timestampField = config.timestampField || 'timestamp';
-  const deviceNameField = config.deviceNameField || 'deviceName';
-  const nestedPayload = body[payloadField];
+  const body = JSON.parse(ctx.payloadText || "{}");
+  const payloadField = config.payloadField || "properties";
+  const deviceNameField = config.deviceNameField || "deviceName";
+  const timestampField = config.timestampField || "timestamp";
   const payload =
-    nestedPayload && !Array.isArray(nestedPayload) && typeof nestedPayload === 'object'
-      ? nestedPayload
+    body && typeof body === "object" && body[payloadField] && typeof body[payloadField] === "object"
+      ? body[payloadField]
       : body;
+
   return {
     messages: [
       {
-        type: config.messageType || 'PROPERTY_REPORT',
-        topic: ctx.topic || config.defaultTopic || '/up/property',
+        type: config.messageType || "PROPERTY_REPORT",
+        topic: ctx.topic || config.defaultTopic || "/up/property",
         payload,
         deviceName: body[deviceNameField] || undefined,
-        timestamp: body[timestampField] || Date.now(),
-      },
-    ],
+        timestamp: body[timestampField] || Date.now()
+      }
+    ]
   };
 }
 ```
 
 上行调试示例：
 
+- 调试产品：`智慧照明网关 (light-gateway)`
 - 协议：`MQTT`
 - 传输方式：`MQTT`
 - 主题：`/up/property`
@@ -136,29 +223,27 @@ function parse(ctx) {
 
 ```json
 {
-  "deviceName": "demo-device-01",
+  "deviceName": "light-01",
   "timestamp": 1710000000000,
   "properties": {
-    "temperature": 23.6,
-    "humidity": 48
+    "power": true,
+    "brightness": 80
   }
 }
 ```
 
-### 3.2 TCP 分隔符属性上报
-
-页面模板：`TCP 分隔符属性上报`
+### 5.2 示例二：租户默认级 TCP 文本键值对上报
 
 适用场景：
 
-- TCP 长连接上报文本报文
-- 报文按换行分帧
-- 单帧内容为 `key=value,key=value`
+- 多个产品共用一套租户级默认 TCP 文本协议
+- 报文按换行拆帧
+- 单帧内容是 `key=value,key=value`
 
 页面字段：
 
-- 作用域：`PRODUCT`
-- 产品：`1002`
+- 作用域：`租户默认级`
+- 产品：无需选择
 - 协议：`TCP_UDP`
 - 传输方式：`TCP`
 - 方向：`UPLINK`
@@ -172,7 +257,7 @@ function parse(ctx) {
 
 ```json
 {
-  "topicPrefix": "/tcp/telemetry"
+  "topicPrefix": "/tcp/data"
 }
 ```
 
@@ -189,10 +274,11 @@ function parse(ctx) {
 
 ```json
 {
-  "defaultTopic": "/tcp/telemetry",
+  "defaultTopic": "/tcp/data",
   "messageType": "PROPERTY_REPORT",
   "pairSeparator": ",",
-  "kvSeparator": "="
+  "kvSeparator": "=",
+  "tenantCode": "demo-tenant"
 }
 ```
 
@@ -200,11 +286,10 @@ function parse(ctx) {
 
 ```json
 {
-  "template": "JSON_PROPERTY",
-  "topic": "/tcp/telemetry",
-  "payloadField": "properties",
-  "deviceNameField": "deviceName",
-  "timestampField": "timestamp",
+  "template": "TEXT_KV",
+  "topic": "/tcp/data",
+  "pairSeparator": ",",
+  "kvSeparator": "=",
   "messageType": "PROPERTY_REPORT"
 }
 ```
@@ -213,9 +298,9 @@ function parse(ctx) {
 
 ```javascript
 function parseValue(raw) {
-  const text = String(raw || '').trim();
-  if (text === '') {
-    return '';
+  const text = String(raw || "").trim();
+  if (text === "") {
+    return "";
   }
   const numeric = Number(text);
   return Number.isNaN(numeric) ? text : numeric;
@@ -223,12 +308,13 @@ function parseValue(raw) {
 
 function parse(ctx) {
   const config = ctx.config || {};
-  const pairSeparator = config.pairSeparator || ',';
-  const kvSeparator = config.kvSeparator || '=';
-  const text = String(ctx.payloadText || '').trim();
+  const pairSeparator = config.pairSeparator || ",";
+  const kvSeparator = config.kvSeparator || "=";
+  const text = String(ctx.payloadText || "").trim();
   if (!text) {
     return { drop: true };
   }
+
   const payload = {};
   for (const segment of text.split(pairSeparator)) {
     const index = segment.indexOf(kvSeparator);
@@ -242,46 +328,49 @@ function parse(ctx) {
     }
     payload[key] = parseValue(value);
   }
+
   return {
     messages: [
       {
-        type: config.messageType || 'PROPERTY_REPORT',
-        topic: ctx.topic || config.defaultTopic || '/tcp/telemetry',
+        type: config.messageType || "PROPERTY_REPORT",
+        topic: ctx.topic || config.defaultTopic || "/tcp/data",
         payload,
-        timestamp: Date.now(),
-      },
-    ],
+        timestamp: Date.now()
+      }
+    ]
   };
 }
 ```
 
 上行调试示例：
 
+- 调试产品：`工业采集器 (collector-pro)`
 - 协议：`TCP_UDP`
 - 传输方式：`TCP`
-- 主题：`/tcp/telemetry`
+- 主题：`/tcp/data`
 - 载荷编码：`TEXT`
 
 ```text
-temp=23.6,humidity=48
+temperature=23.6,humidity=48
 ```
 
-如果设备实际上传十六进制，可以在页面里直接点击“填充 HEX 示例”。
+说明：
 
-### 3.3 MQTT 下行 JSON 指令
+- 虽然规则是“租户默认级”，调试时仍建议选择“调试产品”补齐运行时上下文。
+- 该示例中不会写入 `productKey`，因为规则本身是租户默认规则。
 
-页面模板：`MQTT 下行 JSON 指令`
+### 5.3 示例三：产品级 MQTT 下行 JSON 指令
 
 适用场景：
 
 - 平台向设备下发属性设置或服务调用
 - 设备订阅固定 MQTT 下行主题
-- 下行内容要求为 JSON 文本
+- 下行载荷要求是 JSON 文本
 
 页面字段：
 
-- 作用域：`PRODUCT`
-- 产品：`1003`
+- 作用域：`产品级`
+- 产品：`智慧照明网关 (light-gateway)`
 - 协议：`MQTT`
 - 传输方式：`MQTT`
 - 方向：`DOWNLINK`
@@ -314,7 +403,9 @@ temp=23.6,humidity=48
   "payloadEncoding": "JSON",
   "headers": {
     "qos": "1"
-  }
+  },
+  "tenantCode": "demo-tenant",
+  "productKey": "light-gateway"
 }
 ```
 
@@ -322,11 +413,9 @@ temp=23.6,humidity=48
 
 ```json
 {
-  "template": "JSON_ENCODE",
+  "template": "DOWNLINK_JSON",
   "topic": "/down/property",
-  "payloadField": "payload",
-  "payloadEncoding": "JSON",
-  "messageType": "PROPERTY_SET"
+  "payloadEncoding": "JSON"
 }
 ```
 
@@ -336,16 +425,17 @@ temp=23.6,humidity=48
 function encode(ctx) {
   const config = ctx.config || {};
   return {
-    topic: ctx.topic || config.defaultTopic || '/down/property',
-    payloadEncoding: config.payloadEncoding || 'JSON',
+    topic: ctx.topic || config.defaultTopic || "/down/property",
     payloadText: JSON.stringify(ctx.payload || {}),
-    headers: config.headers || {},
+    payloadEncoding: config.payloadEncoding || "JSON",
+    headers: config.headers || {}
   };
 }
 ```
 
-下行调试示例：
+下行编码测试示例：
 
+- 调试产品：`智慧照明网关 (light-gateway)`
 - 主题：`/down/property`
 - 消息类型：`PROPERTY_SET`
 
@@ -353,175 +443,57 @@ function encode(ctx) {
 {
   "payload": {
     "power": true,
-    "brightness": 80
+    "brightness": 60
   }
 }
 ```
 
-### 3.4 TCP 下行 HEX 指令
+## 6. 调试建议
 
-页面模板：`TCP 下行 HEX 指令`
+### 6.1 上行调试
 
-适用场景：
+优先补齐以下字段：
 
-- TCP 设备需要固定帧头
-- 指令中包含开关位和单字节参数
-- 输出要求为十六进制字符串
+- 调试产品
+- 传输方式
+- 主题
+- 载荷编码
+- 设备名称
 
-页面字段：
+一般情况下，先选择传输方式，再点击“填充示例载荷”即可快速开始。
 
-- 作用域：`PRODUCT`
-- 产品：`1004`
-- 协议：`TCP_UDP`
-- 传输方式：`TCP`
-- 方向：`DOWNLINK`
-- 解析方式：`SCRIPT`
-- 拆帧模式：`NONE`
-- 异常策略：`ERROR`
-- 超时时间：`50`
-- 发布方式：`ALL`
+### 6.2 下行编码测试
 
-`matchRuleJson`
+优先补齐以下字段：
 
-```json
-{
-  "topicPrefix": "/downstream",
-  "messageTypeEquals": "PROPERTY_SET"
-}
-```
+- 调试产品
+- 主题
+- 消息类型
+- 设备名称
+- 载荷 JSON
 
-`frameConfigJson`
+如果不确定载荷结构，可先点击：
 
-```json
-{}
-```
+- 属性设置示例
+- 服务调用示例
 
-`parserConfigJson`
+## 7. 常见问题
 
-```json
-{
-  "defaultTopic": "/downstream",
-  "payloadEncoding": "HEX",
-  "framePrefix": "AA55"
-}
-```
+### 7.1 为什么页面里没有“作用域 ID”了
 
-`visualConfigJson`
+因为 `scopeId` 是后端内部字段，当前页面已经隐藏，用户只需要关注业务范围和产品选择。
 
-```json
-{
-  "template": "JSON_ENCODE",
-  "topic": "/downstream",
-  "payloadField": "payload",
-  "payloadEncoding": "HEX",
-  "messageType": "PROPERTY_SET"
-}
-```
+### 7.2 为什么协议和传输方式要分开
 
-`scriptContent`
+因为运行时匹配和分帧都需要这两个维度，尤其是 TCP/UDP 共用一个协议族，但要靠传输方式区分具体通道。
 
-```javascript
-function toHexByte(value) {
-  const normalized = Number(value || 0);
-  return `00${normalized.toString(16).toUpperCase()}`.slice(-2);
-}
+### 7.3 为什么调试时还要选产品
 
-function encode(ctx) {
-  const config = ctx.config || {};
-  const payload = ctx.payload || {};
-  const body = payload.payload && typeof payload.payload === 'object' ? payload.payload : payload;
-  const power = body.power ? '01' : '00';
-  const brightness = toHexByte(body.brightness || 0);
-  return {
-    topic: ctx.topic || config.defaultTopic || '/downstream',
-    payloadEncoding: config.payloadEncoding || 'HEX',
-    payloadHex: `${config.framePrefix || 'AA55'}${power}${brightness}`,
-  };
-}
-```
+租户默认规则虽然不绑定单一产品，但调试和运行时通常仍然需要明确产品上下文，才能补齐正确的业务键和设备模型信息。
 
-下行调试示例：
+## 8. 使用建议
 
-- 主题：`/downstream`
-- 消息类型：`PROPERTY_SET`
-
-```json
-{
-  "payload": {
-    "power": true,
-    "brightness": 80
-  }
-}
-```
-
-预期结果：
-
-- 主题：`/downstream`
-- 编码：`HEX`
-- 载荷：`AA550150`
-
-### 3.5 灰度发布配置示例
-
-全量发布：
-
-```json
-{}
-```
-
-设备名单灰度：
-
-```json
-{
-  "deviceIds": [1001, 1002],
-  "deviceNames": ["demo-device-01", "demo-device-02"]
-}
-```
-
-哈希百分比灰度：
-
-```json
-{
-  "percent": 10
-}
-```
-
-## 4. 在线调试建议
-
-### 4.1 上行调试
-
-- MQTT、HTTP、CoAP 优先使用 `JSON` 载荷编码。
-- TCP、UDP 如果是文本协议，可直接使用 `TEXT` 示例载荷。
-- TCP、UDP 如果是原始报文，可直接使用页面里的 `HEX` 示例按钮。
-
-### 4.2 下行编码调试
-
-- 先选 `messageType`，再点示例按钮填充 `payloadText`。
-- 如果编码结果不符合预期，优先检查 `parserConfigJson` 和 `scriptContent`。
-- 如果规则是租户默认级，调试时务必补 `productId`。
-
-## 5. 设备定位器使用方式
-
-当上行报文里没有直接携带 `productKey + deviceName` 时，可以通过定位器识别设备。
-
-操作步骤：
-
-1. 进入设备管理。
-2. 找到目标设备。
-3. 点击“定位器”。
-4. 新增 `locatorType + locatorValue`。
-
-常见定位器类型：
-
-- `IMEI`
-- `ICCID`
-- `MAC`
-- `SERIAL`
-- `CLIENT_ID`
-
-## 6. 推荐实践
-
-- 新协议优先从 `SCRIPT + UPLINK` 起步，先把链路和调试跑通。
-- 下行编码独立建 `DOWNLINK` 规则，不要和上行规则混用。
-- 页面里能用模板和下拉的地方不要手工输入，避免协议名、插件 ID、消息类型拼写错误。
-- 灰度发布先用设备名单，再扩大到哈希百分比。
-- 插件模式优先用于强性能、强依赖 SDK 或复杂状态机场景。
+- 优先通过页面模板和预设按钮配置，不要从零手写整段 JSON。
+- 优先记住 `tenantCode`、`productKey`、`deviceName`，不要依赖数据库主键。
+- 规则保存后先调试、再发布、再启用。
+- 复杂协议脚本请保留必要注释，便于后续接手维护。

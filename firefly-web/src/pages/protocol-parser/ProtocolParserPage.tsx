@@ -32,7 +32,7 @@ import {
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
-import { productApi, protocolParserApi } from '../../services/api';
+import { productApi, protocolParserApi, tenantSelfApi } from '../../services/api';
 import useAuthStore from '../../store/useAuthStore';
 import { PROTOCOL_PARSER_TEMPLATES, ProtocolParserTemplate } from './parserTemplates';
 import ProtocolParserRuntimePanel, {
@@ -56,6 +56,18 @@ interface ProductOption {
   productKey: string;
   protocol?: string;
 }
+
+interface TenantOption {
+  id: number;
+  code: string;
+  name: string;
+  displayName?: string;
+}
+
+type BusinessIdentifierPatch = {
+  tenantCode?: string | null;
+  productKey?: string | null;
+};
 
 interface ProtocolParserRecord {
   id: number;
@@ -547,44 +559,96 @@ const buildFrameConfigPreset = (frameMode?: string) => {
   }
 };
 
-const buildJsonPropertyParserConfig = (transport?: string) =>
-  formatJson({
-    defaultTopic: defaultTopicByTransport(transport, 'UPLINK'),
-    payloadField: 'properties',
-    deviceNameField: 'deviceName',
-    timestampField: 'timestamp',
-    messageType: 'PROPERTY_REPORT',
-  });
+const withBusinessIdentifiers = (
+  baseConfig: Record<string, unknown>,
+  options: BusinessIdentifierPatch,
+) => {
+  const nextConfig: Record<string, unknown> = { ...baseConfig };
+  if ('tenantCode' in options) {
+    if (options.tenantCode) {
+      nextConfig.tenantCode = options.tenantCode;
+    } else {
+      delete nextConfig.tenantCode;
+    }
+  }
+  if ('productKey' in options) {
+    if (options.productKey) {
+      nextConfig.productKey = options.productKey;
+    } else {
+      delete nextConfig.productKey;
+    }
+  }
+  return formatJson(nextConfig);
+};
 
-const buildTextPairParserConfig = (transport?: string) =>
-  formatJson({
-    defaultTopic: defaultTopicByTransport(transport, 'UPLINK'),
-    messageType: 'PROPERTY_REPORT',
-    pairSeparator: ',',
-    kvSeparator: '=',
-  });
-
-const buildRawDataParserConfig = (transport?: string) =>
-  formatJson({
-    defaultTopic: defaultTopicByTransport(transport, 'UPLINK'),
-    messageType: 'RAW_DATA',
-  });
-
-const buildDownlinkJsonParserConfig = (transport?: string) =>
-  formatJson({
-    defaultTopic: defaultTopicByTransport(transport, 'DOWNLINK'),
-    payloadEncoding: 'JSON',
-    headers: {
-      qos: '1',
+const buildJsonPropertyParserConfig = (
+  transport?: string,
+  options: BusinessIdentifierPatch = {},
+) =>
+  withBusinessIdentifiers(
+    {
+      defaultTopic: defaultTopicByTransport(transport, 'UPLINK'),
+      payloadField: 'properties',
+      deviceNameField: 'deviceName',
+      timestampField: 'timestamp',
+      messageType: 'PROPERTY_REPORT',
     },
-  });
+    options,
+  );
 
-const buildDownlinkHexParserConfig = (transport?: string) =>
-  formatJson({
-    defaultTopic: defaultTopicByTransport(transport, 'DOWNLINK'),
-    payloadEncoding: 'HEX',
-    framePrefix: 'AA55',
-  });
+const buildTextPairParserConfig = (
+  transport?: string,
+  options: BusinessIdentifierPatch = {},
+) =>
+  withBusinessIdentifiers(
+    {
+      defaultTopic: defaultTopicByTransport(transport, 'UPLINK'),
+      messageType: 'PROPERTY_REPORT',
+      pairSeparator: ',',
+      kvSeparator: '=',
+    },
+    options,
+  );
+
+const buildRawDataParserConfig = (
+  transport?: string,
+  options: BusinessIdentifierPatch = {},
+) =>
+  withBusinessIdentifiers(
+    {
+      defaultTopic: defaultTopicByTransport(transport, 'UPLINK'),
+      messageType: 'RAW_DATA',
+    },
+    options,
+  );
+
+const buildDownlinkJsonParserConfig = (
+  transport?: string,
+  options: BusinessIdentifierPatch = {},
+) =>
+  withBusinessIdentifiers(
+    {
+      defaultTopic: defaultTopicByTransport(transport, 'DOWNLINK'),
+      payloadEncoding: 'JSON',
+      headers: {
+        qos: '1',
+      },
+    },
+    options,
+  );
+
+const buildDownlinkHexParserConfig = (
+  transport?: string,
+  options: BusinessIdentifierPatch = {},
+) =>
+  withBusinessIdentifiers(
+    {
+      defaultTopic: defaultTopicByTransport(transport, 'DOWNLINK'),
+      payloadEncoding: 'HEX',
+      framePrefix: 'AA55',
+    },
+    options,
+  );
 
 const buildUplinkPayloadExample = (transport?: string) => {
   const transportKey = (transport || '').toUpperCase();
@@ -637,6 +701,22 @@ const buildDownlinkPayloadExample = (messageType?: string) => {
 
 const UPLINK_HEX_PAYLOAD_EXAMPLE = '74656D703D32332E362C68756D69646974793D3438';
 
+const injectBusinessIdentifiersIntoJson = (
+  rawJson: string,
+  options: BusinessIdentifierPatch,
+) => {
+  try {
+    const source = rawJson?.trim() || '{}';
+    const parsed = JSON.parse(source) as Record<string, unknown>;
+    if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') {
+      return rawJson;
+    }
+    return withBusinessIdentifiers(parsed, options);
+  } catch {
+    return rawJson;
+  }
+};
+
 const formatReleaseSummary = (record: ProtocolParserRecord) => {
   const releaseMode = (record.releaseMode || 'ALL').toUpperCase();
   try {
@@ -666,6 +746,7 @@ const ProtocolParserPage: React.FC = () => {
 
   const [records, setRecords] = useState<ProtocolParserRecord[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
+  const [currentTenant, setCurrentTenant] = useState<TenantOption | null>(null);
   const [loading, setLoading] = useState(false);
   const [productLoading, setProductLoading] = useState(false);
   const [pageNum, setPageNum] = useState(1);
@@ -715,6 +796,7 @@ const ProtocolParserPage: React.FC = () => {
   const currentEditorTransport = Form.useWatch('transport', editorForm) || DEFAULT_EDITOR_VALUES.transport;
   const currentFrameMode = Form.useWatch('frameMode', editorForm) || DEFAULT_EDITOR_VALUES.frameMode;
   const currentPluginId = Form.useWatch('pluginId', editorForm);
+  const currentEditorProductId = Form.useWatch('productId', editorForm);
   const currentUplinkTransport = Form.useWatch('transport', uplinkDebugForm) || DEFAULT_EDITOR_VALUES.transport;
   const currentDownlinkMessageType =
     Form.useWatch('messageType', downlinkDebugForm) || DEFAULT_DOWNLINK_DEBUG_VALUES.messageType;
@@ -727,6 +809,8 @@ const ProtocolParserPage: React.FC = () => {
 
   const productMap = useMemo(() => new Map(products.map((item) => [item.id, item])), [products]);
   const selectedProduct = filterProductId ? productMap.get(filterProductId) : undefined;
+  const currentEditorProduct = currentEditorProductId ? productMap.get(currentEditorProductId) : undefined;
+  const currentTenantLabel = currentTenant?.displayName || currentTenant?.name || '当前租户';
   const productOptions = useMemo(
     () => products.map((item) => ({ value: item.id, label: `${item.name} (${item.productKey})` })),
     [products],
@@ -845,6 +929,36 @@ const ProtocolParserPage: React.FC = () => {
     [records],
   );
 
+  const editorBusinessIdentifiers = useMemo(() => {
+    const patch: BusinessIdentifierPatch = {};
+    if (currentTenant?.code) {
+      patch.tenantCode = currentTenant.code;
+    }
+    patch.productKey = currentScopeType === 'PRODUCT' ? currentEditorProduct?.productKey ?? null : null;
+    return patch;
+  }, [currentEditorProduct?.productKey, currentScopeType, currentTenant?.code]);
+
+  const editorScopeSummary = useMemo(() => {
+    if (currentScopeType === 'TENANT') {
+      return `租户默认级规则会自动绑定当前租户，界面展示为 tenantCode=${currentTenant?.code || '待加载'}。`;
+    }
+    if (currentEditorProduct) {
+      return `产品级规则会自动补齐 tenantCode=${currentTenant?.code || '待加载'} 与 ProductKey=${currentEditorProduct.productKey}。`;
+    }
+    return `产品级规则会在保存时补齐 tenantCode，选择产品后会自动带出 ProductKey。`;
+  }, [currentEditorProduct, currentScopeType, currentTenant?.code]);
+
+  const describeRecordScope = (record?: ProtocolParserRecord | null) => {
+    if (!record) {
+      return '';
+    }
+    if (record.scopeType === 'TENANT') {
+      return `${currentTenantLabel}${currentTenant?.code ? ` (${currentTenant.code})` : ''}`;
+    }
+    const product = record.productId ? productMap.get(record.productId) : undefined;
+    return product ? `${product.name} (${product.productKey})` : '产品规则';
+  };
+
   const fetchProducts = async () => {
     setProductLoading(true);
     try {
@@ -855,6 +969,15 @@ const ProtocolParserPage: React.FC = () => {
       message.error(getErrorMessage(error, '加载产品列表失败'));
     } finally {
       setProductLoading(false);
+    }
+  };
+
+  const fetchCurrentTenant = async () => {
+    try {
+      const response = await tenantSelfApi.get();
+      setCurrentTenant((response.data.data || null) as TenantOption | null);
+    } catch (error) {
+      message.warning(getErrorMessage(error, '加载当前租户信息失败，业务编码将暂时无法自动补齐'));
     }
   };
 
@@ -901,6 +1024,7 @@ const ProtocolParserPage: React.FC = () => {
   };
 
   useEffect(() => {
+    void fetchCurrentTenant();
     void fetchProducts();
   }, []);
 
@@ -911,6 +1035,21 @@ const ProtocolParserPage: React.FC = () => {
   useEffect(() => {
     void fetchRuntime();
   }, [canRead]);
+
+  useEffect(() => {
+    if (!editorOpen) {
+      return;
+    }
+    const parserConfigJson = (editorForm.getFieldValue('parserConfigJson') as string) || '{}';
+    const nextParserConfigJson = injectBusinessIdentifiersIntoJson(parserConfigJson, editorBusinessIdentifiers);
+    if (nextParserConfigJson !== parserConfigJson) {
+      // Keep copied config examples aligned with the visible tenant/product selection.
+      editorForm.setFieldsValue({
+        scopeId: undefined,
+        parserConfigJson: nextParserConfigJson,
+      });
+    }
+  }, [editorBusinessIdentifiers, editorForm, editorOpen]);
 
   // Auto-pick a detected version so plugin mode usually needs only one selection.
   useEffect(() => {
@@ -946,7 +1085,7 @@ const ProtocolParserPage: React.FC = () => {
       frameMode: template.frameMode,
       matchRuleJson: template.matchRuleJson,
       frameConfigJson: template.frameConfigJson,
-      parserConfigJson: template.parserConfigJson,
+      parserConfigJson: injectBusinessIdentifiersIntoJson(template.parserConfigJson, editorBusinessIdentifiers),
       visualConfigJson,
       scriptLanguage: template.scriptLanguage,
       scriptContent: template.scriptContent,
@@ -967,6 +1106,21 @@ const ProtocolParserPage: React.FC = () => {
     editorForm.setFieldsValue({
       protocol: inferProtocolByTransport(transport),
     });
+  };
+
+  const handleEditorScopeTypeChange = (scopeType: 'PRODUCT' | 'TENANT') => {
+    if (scopeType === 'TENANT') {
+      editorForm.setFieldsValue({
+        productId: undefined,
+        scopeId: undefined,
+      });
+      return;
+    }
+    editorForm.setFieldsValue({ scopeId: undefined });
+  };
+
+  const handleEditorProductChange = () => {
+    editorForm.setFieldsValue({ scopeId: undefined });
   };
 
   // Switching transport also aligns the protocol and default debug payload shape.
@@ -1004,11 +1158,21 @@ const ProtocolParserPage: React.FC = () => {
   };
 
   const openCreateModal = () => {
+    const createScopeType = filterProductId ? 'PRODUCT' : DEFAULT_EDITOR_VALUES.scopeType;
+    const defaultProduct = filterProductId ? productMap.get(filterProductId) : undefined;
+    const createBusinessIdentifiers: BusinessIdentifierPatch = {};
+    if (currentTenant?.code) {
+      createBusinessIdentifiers.tenantCode = currentTenant.code;
+    }
+    createBusinessIdentifiers.productKey =
+      createScopeType === 'PRODUCT' ? defaultProduct?.productKey ?? null : null;
     editorForm.resetFields();
     editorForm.setFieldsValue({
       ...DEFAULT_EDITOR_VALUES,
       productId: filterProductId,
-      scopeType: filterProductId ? 'PRODUCT' : DEFAULT_EDITOR_VALUES.scopeType,
+      scopeType: createScopeType,
+      scopeId: undefined,
+      parserConfigJson: injectBusinessIdentifiersIntoJson(DEFAULT_EDITOR_VALUES.parserConfigJson, createBusinessIdentifiers),
     });
     setCurrentRecord(null);
     setEditorMode('create');
@@ -1021,6 +1185,16 @@ const ProtocolParserPage: React.FC = () => {
     try {
       const response = await protocolParserApi.get(record.id);
       const detail = response.data.data as ProtocolParserRecord;
+      const detailProduct = detail.productId ? productMap.get(detail.productId) : undefined;
+      const detailBusinessIdentifiers: BusinessIdentifierPatch = {};
+      if (currentTenant?.code) {
+        detailBusinessIdentifiers.tenantCode = currentTenant.code;
+      }
+      if (detail.scopeType === 'TENANT') {
+        detailBusinessIdentifiers.productKey = null;
+      } else if (detailProduct?.productKey) {
+        detailBusinessIdentifiers.productKey = detailProduct.productKey;
+      }
       setCurrentRecord(detail);
       editorForm.resetFields();
       editorForm.setFieldsValue({
@@ -1034,7 +1208,9 @@ const ProtocolParserPage: React.FC = () => {
         frameMode: detail.frameMode || 'NONE',
         matchRuleJson: prettyJson(detail.matchRuleJson),
         frameConfigJson: prettyJson(detail.frameConfigJson),
-        parserConfigJson: prettyJson(detail.parserConfigJson),
+        parserConfigJson: prettyJson(
+          injectBusinessIdentifiersIntoJson(detail.parserConfigJson || '{}', detailBusinessIdentifiers),
+        ),
         visualConfigJson: prettyJson(
           detail.visualConfigJson ||
             defaultVisualConfigForDirection((detail.direction || 'UPLINK') as VisualFlowDirection),
@@ -1069,6 +1245,14 @@ const ProtocolParserPage: React.FC = () => {
       throw new Error('插件模式必须填写插件 ID');
     }
 
+    const payloadProduct = values.productId ? productMap.get(values.productId) : undefined;
+    const payloadBusinessIdentifiers: BusinessIdentifierPatch = {};
+    if (currentTenant?.code) {
+      payloadBusinessIdentifiers.tenantCode = currentTenant.code;
+    }
+    payloadBusinessIdentifiers.productKey =
+      values.scopeType === 'PRODUCT' ? payloadProduct?.productKey ?? null : null;
+
     return {
       productId: values.scopeType === 'PRODUCT' ? values.productId : undefined,
       scopeType: values.scopeType,
@@ -1080,7 +1264,10 @@ const ProtocolParserPage: React.FC = () => {
       frameMode: values.frameMode,
       matchRuleJson: ensureJsonObjectText(values.matchRuleJson, '匹配规则'),
       frameConfigJson: ensureJsonObjectText(values.frameConfigJson, '拆帧配置'),
-      parserConfigJson: ensureJsonObjectText(values.parserConfigJson, '解析配置'),
+      parserConfigJson: injectBusinessIdentifiersIntoJson(
+        ensureJsonObjectText(values.parserConfigJson, '解析配置'),
+        payloadBusinessIdentifiers,
+      ),
       visualConfigJson: ensureJsonObjectText(values.visualConfigJson, '可视化配置'),
       scriptLanguage: values.parserMode === 'SCRIPT' ? trimOptional(values.scriptLanguage) || 'JS' : undefined,
       scriptContent: values.parserMode === 'SCRIPT' ? values.scriptContent : undefined,
@@ -1378,10 +1565,13 @@ const ProtocolParserPage: React.FC = () => {
               <Tag color={record.scopeType === 'TENANT' ? 'gold' : 'blue'}>
                 {record.scopeType === 'TENANT' ? '租户默认级' : '产品级'}
               </Tag>
-              {record.productId ? <Text type="secondary">#{record.productId}</Text> : null}
             </Space>
-            <Text strong>{product ? product.name : record.scopeType === 'TENANT' ? '租户共享规则' : '未知产品'}</Text>
-            <Text type="secondary">作用域 ID：{record.scopeId || '-'}</Text>
+            <Text strong>{product ? product.name : record.scopeType === 'TENANT' ? currentTenantLabel : '未知产品'}</Text>
+            <Text type="secondary">
+              {record.scopeType === 'TENANT'
+                ? `tenantCode：${currentTenant?.code || '-'}`
+                : `ProductKey：${product?.productKey || '-'}`}
+            </Text>
           </Space>
         );
       },
@@ -1516,7 +1706,7 @@ const ProtocolParserPage: React.FC = () => {
         description={
           selectedProduct
             ? `共 ${total} 条规则，当前筛选产品：${selectedProduct.name} (${selectedProduct.productKey})`
-            : `共 ${total} 条规则，覆盖产品级与租户默认级规则`
+            : `共 ${total} 条规则，覆盖产品级与租户默认级规则${currentTenant?.code ? `，当前租户 ${currentTenantLabel} (${currentTenant.code})` : ''}`
         }
         extra={
           <Space wrap>
@@ -1729,7 +1919,7 @@ const ProtocolParserPage: React.FC = () => {
           <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item name="scopeType" label="作用域">
-                <Select options={SCOPE_TYPE_OPTIONS} />
+                <Select options={SCOPE_TYPE_OPTIONS} onChange={handleEditorScopeTypeChange} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
@@ -1754,24 +1944,34 @@ const ProtocolParserPage: React.FC = () => {
                   placeholder={currentScopeType === 'TENANT' ? '租户默认级规则无需选择产品' : '选择产品'}
                   options={productOptions}
                   optionFilterProp="label"
+                  onChange={handleEditorProductChange}
                 />
               </Form.Item>
             </Col>
-            <Col xs={24} md={8}>
-              <Form.Item name="scopeId" label="作用域 ID">
-                <InputNumber min={1} style={{ width: '100%' }} placeholder="可选覆盖值" />
-              </Form.Item>
-            </Col>
           </Row>
+          <Form.Item name="scopeId" hidden>
+            <InputNumber min={1} />
+          </Form.Item>
+          <Alert type="info" showIcon style={{ marginBottom: 16 }} message={editorScopeSummary} />
 
           <Row gutter={16}>
             <Col xs={24} md={6}>
-              <Form.Item name="protocol" label="协议" rules={[{ required: true, message: '请输入协议' }]}>
+              <Form.Item
+                name="protocol"
+                label="协议"
+                extra="用于匹配协议族，例如 TCP_UDP、MQTT、HTTP。"
+                rules={[{ required: true, message: '请选择协议' }]}
+              >
                 <Select showSearch options={protocolOptions} optionFilterProp="label" placeholder="选择协议" />
               </Form.Item>
             </Col>
             <Col xs={24} md={6}>
-              <Form.Item name="transport" label="传输方式" rules={[{ required: true, message: '请输入传输方式' }]}>
+              <Form.Item
+                name="transport"
+                label="传输方式"
+                extra="用于匹配实际通道；TCP/UDP 共用协议族 TCP_UDP，但运行时仍需区分 TCP 与 UDP。"
+                rules={[{ required: true, message: '请选择传输方式' }]}
+              >
                 <Select
                   showSearch
                   options={transportOptions}
@@ -1927,18 +2127,29 @@ const ProtocolParserPage: React.FC = () => {
             extra={
               <Space direction="vertical" size={4}>
                 <Text type="secondary">会注入到运行时的 ctx.config，供脚本或插件执行时使用。</Text>
+                <Text type="secondary">系统会自动补齐 tenantCode 和 ProductKey，避免把数据库主键暴露给页面用户。</Text>
                 <Space wrap>
                   {currentDirection === 'DOWNLINK' ? (
                     <>
                       <Button
                         size="small"
-                        onClick={() => applyEditorJsonPreset('parserConfigJson', buildDownlinkJsonParserConfig(currentEditorTransport))}
+                        onClick={() =>
+                          applyEditorJsonPreset(
+                            'parserConfigJson',
+                            buildDownlinkJsonParserConfig(currentEditorTransport, editorBusinessIdentifiers),
+                          )
+                        }
                       >
                         JSON 下发
                       </Button>
                       <Button
                         size="small"
-                        onClick={() => applyEditorJsonPreset('parserConfigJson', buildDownlinkHexParserConfig(currentEditorTransport))}
+                        onClick={() =>
+                          applyEditorJsonPreset(
+                            'parserConfigJson',
+                            buildDownlinkHexParserConfig(currentEditorTransport, editorBusinessIdentifiers),
+                          )
+                        }
                       >
                         HEX 下发
                       </Button>
@@ -1947,19 +2158,34 @@ const ProtocolParserPage: React.FC = () => {
                     <>
                       <Button
                         size="small"
-                        onClick={() => applyEditorJsonPreset('parserConfigJson', buildJsonPropertyParserConfig(currentEditorTransport))}
+                        onClick={() =>
+                          applyEditorJsonPreset(
+                            'parserConfigJson',
+                            buildJsonPropertyParserConfig(currentEditorTransport, editorBusinessIdentifiers),
+                          )
+                        }
                       >
                         JSON 属性
                       </Button>
                       <Button
                         size="small"
-                        onClick={() => applyEditorJsonPreset('parserConfigJson', buildTextPairParserConfig(currentEditorTransport))}
+                        onClick={() =>
+                          applyEditorJsonPreset(
+                            'parserConfigJson',
+                            buildTextPairParserConfig(currentEditorTransport, editorBusinessIdentifiers),
+                          )
+                        }
                       >
                         文本键值对
                       </Button>
                       <Button
                         size="small"
-                        onClick={() => applyEditorJsonPreset('parserConfigJson', buildRawDataParserConfig(currentEditorTransport))}
+                        onClick={() =>
+                          applyEditorJsonPreset(
+                            'parserConfigJson',
+                            buildRawDataParserConfig(currentEditorTransport, editorBusinessIdentifiers),
+                          )
+                        }
                       >
                         原始透传
                       </Button>
@@ -2150,7 +2376,7 @@ const ProtocolParserPage: React.FC = () => {
       </Modal>
 
       <Modal
-        title={`上行调试${debugRecord ? ` · #${debugRecord.id}` : ''}`}
+        title={debugRecord ? `上行调试 · ${describeRecordScope(debugRecord)}` : '上行调试'}
         open={uplinkDebugOpen}
         width={960}
         destroyOnHidden
@@ -2167,8 +2393,14 @@ const ProtocolParserPage: React.FC = () => {
           />
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item name="productId" label="调试产品 ID">
-                <InputNumber min={1} style={{ width: '100%' }} placeholder="租户默认级规则调试时必填" />
+              <Form.Item name="productId" label="调试产品">
+                <Select
+                  allowClear
+                  showSearch
+                  options={productOptions}
+                  optionFilterProp="label"
+                  placeholder="租户默认级规则调试时请选择产品"
+                />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
@@ -2288,7 +2520,6 @@ const ProtocolParserPage: React.FC = () => {
               {debugResult.identity ? (
                 <Descriptions bordered size="small" column={2}>
                   <Descriptions.Item label="识别模式">{debugResult.identity.mode || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="设备 ID">{debugResult.identity.deviceId || '-'}</Descriptions.Item>
                   <Descriptions.Item label="产品 Key">{debugResult.identity.productKey || '-'}</Descriptions.Item>
                   <Descriptions.Item label="设备名称">{debugResult.identity.deviceName || '-'}</Descriptions.Item>
                   <Descriptions.Item label="标识类型">{debugResult.identity.locatorType || '-'}</Descriptions.Item>
@@ -2339,7 +2570,7 @@ const ProtocolParserPage: React.FC = () => {
       </Modal>
 
       <Modal
-        title={`下行编码测试${debugRecord ? ` · #${debugRecord.id}` : ''}`}
+        title={debugRecord ? `下行编码测试 · ${describeRecordScope(debugRecord)}` : '下行编码测试'}
         open={downlinkDebugOpen}
         width={920}
         destroyOnHidden
@@ -2356,8 +2587,14 @@ const ProtocolParserPage: React.FC = () => {
           />
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item name="productId" label="调试产品 ID">
-                <InputNumber min={1} style={{ width: '100%' }} placeholder="租户默认级规则调试时必填" />
+              <Form.Item name="productId" label="调试产品">
+                <Select
+                  allowClear
+                  showSearch
+                  options={productOptions}
+                  optionFilterProp="label"
+                  placeholder="租户默认级规则调试时请选择产品"
+                />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
@@ -2371,7 +2608,7 @@ const ProtocolParserPage: React.FC = () => {
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="messageType" label="消息类型" rules={[{ required: true, message: '请输入消息类型' }]}>
+              <Form.Item name="messageType" label="消息类型" rules={[{ required: true, message: '请选择消息类型' }]}>
                 <Select showSearch options={messageTypeOptions} optionFilterProp="label" placeholder="选择消息类型" />
               </Form.Item>
             </Col>
@@ -2493,7 +2730,7 @@ const ProtocolParserPage: React.FC = () => {
       </Modal>
 
       <Modal
-        title={`版本历史${versionRecord ? ` · #${versionRecord.id}` : ''}`}
+        title={versionRecord ? `版本历史 · ${describeRecordScope(versionRecord)}` : '版本历史'}
         open={versionOpen}
         width={860}
         destroyOnHidden
@@ -2516,7 +2753,7 @@ const ProtocolParserPage: React.FC = () => {
       </Modal>
 
       <Modal
-        title={`发布规则${publishRecord ? ` · #${publishRecord.id}` : ''}`}
+        title={publishRecord ? `发布规则 · ${describeRecordScope(publishRecord)}` : '发布规则'}
         open={publishOpen}
         destroyOnHidden
         confirmLoading={publishSubmitting}
@@ -2540,7 +2777,7 @@ const ProtocolParserPage: React.FC = () => {
       </Modal>
 
       <Modal
-        title={`回滚规则${rollbackRecord ? ` · #${rollbackRecord.id}` : ''}`}
+        title={rollbackRecord ? `回滚规则 · ${describeRecordScope(rollbackRecord)}` : '回滚规则'}
         open={rollbackOpen}
         destroyOnHidden
         confirmLoading={rollbackSubmitting}
