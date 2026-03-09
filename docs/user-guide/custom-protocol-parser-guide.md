@@ -1,75 +1,65 @@
-# 自定义协议解析使用与运维指南
+# 自定义协议解析使用指南
 
-## 1. 适用对象
+## 1. 功能概览
 
-本文档面向以下角色:
+协议解析页面已经补齐以下交互能力：
 
-- 产品实施
-- 平台运维
-- 物联网接入开发
-- 联调测试人员
+- 筛选区、规则编辑区、调试区优先使用下拉选择，减少手工输入。
+- 页面内置上行、下行完整模板，支持一键填充整套配置。
+- `matchRuleJson`、`frameConfigJson`、`parserConfigJson`、`releaseConfigJson` 支持预设按钮。
+- 上行调试、下行编码调试支持主题、消息类型、示例载荷一键填充。
+- 插件模式支持从运行时已安装插件和插件目录中直接选择 `pluginId` 和版本。
 
-## 2. 功能入口
+如果通过页面配置，推荐先选模板，再微调细节。
+如果通过接口配置，注意 `matchRuleJson`、`frameConfigJson`、`parserConfigJson`、`visualConfigJson`、`releaseConfigJson` 需要以字符串形式提交。
 
-### Web 入口
+## 2. 推荐配置流程
 
-- 菜单: 设备中心 -> 协议解析
-- 菜单: 设备中心 -> 设备管理 -> 定位器
+### 2.1 页面入口
 
-### 后端入口
+- 菜单：设备中心 -> 协议解析
+- 菜单：设备中心 -> 设备管理 -> 定位器
 
-- 规则管理: `/api/v1/protocol-parsers/*`
-- 运行时面板: `/api/v1/protocol-parsers/runtime/*`
-- 设备定位器: `/api/v1/devices/{deviceId}/locators`
+### 2.2 页面配置顺序
 
-## 3. 规则配置流程
+1. 先选择模板。
+2. 再确认作用域、产品、方向、传输方式。
+3. 使用 JSON 预设按钮补齐匹配、拆帧、解析和灰度配置。
+4. 在脚本模式下确认 `scriptContent`，或在插件模式下直接从下拉选择插件。
+5. 保存后先做在线调试，再发布和启用。
 
-### 3.1 选择作用域
+### 2.3 作用域选择建议
 
 - `PRODUCT`
-  - 规则仅对指定产品生效。
+  适合单个产品的私有协议。
 - `TENANT`
-  - 作为租户默认规则。
-  - 调试和运行时需要结合产品上下文命中。
+  适合作为租户默认协议，调试时建议显式传入 `productId`。
 
-### 3.2 选择方向
+## 3. 完整配置示例
 
-- `UPLINK`
-  - 设备上行解析。
-- `DOWNLINK`
-  - 云端下行编码。
+### 3.1 MQTT JSON 属性上报
 
-### 3.3 选择执行模式
+页面模板：`MQTT JSON 属性上报`
 
-- `SCRIPT`
-  - 适合大多数私有 JSON/文本/简单二进制报文。
-- `PLUGIN`
-  - 适合依赖厂商 SDK、复杂状态机、复杂二进制协议。
+适用场景：
 
-### 3.4 填写关键配置
+- 设备通过 MQTT 上报标准 JSON
+- 载荷中包含 `properties`、`deviceName`、`timestamp`
 
-- `matchRuleJson`
-  - 决定规则是否命中。
-- `frameConfigJson`
-  - 决定 TCP/UDP 如何分帧。
-- `parserConfigJson`
-  - 业务配置，注入 `ctx.config`。
-- `visualConfigJson`
-  - 最小可视化配置，用于快速生成脚本。
-- `releaseMode`
-  - 决定灰度策略。
+页面字段：
 
-## 4. 常见配置示例
+- 作用域：`PRODUCT`
+- 产品：`1001`
+- 协议：`MQTT`
+- 传输方式：`MQTT`
+- 方向：`UPLINK`
+- 解析方式：`SCRIPT`
+- 拆帧模式：`NONE`
+- 异常策略：`ERROR`
+- 超时时间：`50`
+- 发布方式：`ALL`
 
-### 4.1 上行 JSON 属性上报
-
-适合:
-
-- MQTT
-- HTTP
-- CoAP
-
-推荐配置:
+`matchRuleJson`
 
 ```json
 {
@@ -77,8 +67,17 @@
 }
 ```
 
+`frameConfigJson`
+
+```json
+{}
+```
+
+`parserConfigJson`
+
 ```json
 {
+  "defaultTopic": "/up/property",
   "payloadField": "properties",
   "deviceNameField": "deviceName",
   "timestampField": "timestamp",
@@ -86,29 +85,390 @@
 }
 ```
 
-### 4.2 TCP 定长报文
-
-推荐配置:
+`visualConfigJson`
 
 ```json
 {
-  "fixedLength": 32
+  "template": "JSON_PROPERTY",
+  "topic": "/up/property",
+  "payloadField": "properties",
+  "deviceNameField": "deviceName",
+  "timestampField": "timestamp",
+  "messageType": "PROPERTY_REPORT"
 }
 ```
 
-`frameMode` 选择 `FIXED_LENGTH`。
+`scriptContent`
 
-### 4.3 灰度发布 10%
+```javascript
+function parse(ctx) {
+  const config = ctx.config || {};
+  const rawBody = json.parse(ctx.payloadText || '{}');
+  const body = rawBody && typeof rawBody === 'object' ? rawBody : { value: rawBody };
+  const payloadField = config.payloadField || 'properties';
+  const timestampField = config.timestampField || 'timestamp';
+  const deviceNameField = config.deviceNameField || 'deviceName';
+  const nestedPayload = body[payloadField];
+  const payload =
+    nestedPayload && !Array.isArray(nestedPayload) && typeof nestedPayload === 'object'
+      ? nestedPayload
+      : body;
+  return {
+    messages: [
+      {
+        type: config.messageType || 'PROPERTY_REPORT',
+        topic: ctx.topic || config.defaultTopic || '/up/property',
+        payload,
+        deviceName: body[deviceNameField] || undefined,
+        timestamp: body[timestampField] || Date.now(),
+      },
+    ],
+  };
+}
+```
+
+上行调试示例：
+
+- 协议：`MQTT`
+- 传输方式：`MQTT`
+- 主题：`/up/property`
+- 载荷编码：`JSON`
 
 ```json
 {
-  "percent": 10
+  "deviceName": "demo-device-01",
+  "timestamp": 1710000000000,
+  "properties": {
+    "temperature": 23.6,
+    "humidity": 48
+  }
 }
 ```
 
-`releaseMode` 选择 `HASH_PERCENT`。
+### 3.2 TCP 分隔符属性上报
 
-### 4.4 指定设备灰度
+页面模板：`TCP 分隔符属性上报`
+
+适用场景：
+
+- TCP 长连接上报文本报文
+- 报文按换行分帧
+- 单帧内容为 `key=value,key=value`
+
+页面字段：
+
+- 作用域：`PRODUCT`
+- 产品：`1002`
+- 协议：`TCP_UDP`
+- 传输方式：`TCP`
+- 方向：`UPLINK`
+- 解析方式：`SCRIPT`
+- 拆帧模式：`DELIMITER`
+- 异常策略：`ERROR`
+- 超时时间：`50`
+- 发布方式：`ALL`
+
+`matchRuleJson`
+
+```json
+{
+  "topicPrefix": "/tcp/telemetry"
+}
+```
+
+`frameConfigJson`
+
+```json
+{
+  "delimiterHex": "0A",
+  "stripDelimiter": true
+}
+```
+
+`parserConfigJson`
+
+```json
+{
+  "defaultTopic": "/tcp/telemetry",
+  "messageType": "PROPERTY_REPORT",
+  "pairSeparator": ",",
+  "kvSeparator": "="
+}
+```
+
+`visualConfigJson`
+
+```json
+{
+  "template": "JSON_PROPERTY",
+  "topic": "/tcp/telemetry",
+  "payloadField": "properties",
+  "deviceNameField": "deviceName",
+  "timestampField": "timestamp",
+  "messageType": "PROPERTY_REPORT"
+}
+```
+
+`scriptContent`
+
+```javascript
+function parseValue(raw) {
+  const text = String(raw || '').trim();
+  if (text === '') {
+    return '';
+  }
+  const numeric = Number(text);
+  return Number.isNaN(numeric) ? text : numeric;
+}
+
+function parse(ctx) {
+  const config = ctx.config || {};
+  const pairSeparator = config.pairSeparator || ',';
+  const kvSeparator = config.kvSeparator || '=';
+  const text = String(ctx.payloadText || '').trim();
+  if (!text) {
+    return { drop: true };
+  }
+  const payload = {};
+  for (const segment of text.split(pairSeparator)) {
+    const index = segment.indexOf(kvSeparator);
+    if (index < 0) {
+      continue;
+    }
+    const key = segment.slice(0, index).trim();
+    const value = segment.slice(index + kvSeparator.length).trim();
+    if (!key) {
+      continue;
+    }
+    payload[key] = parseValue(value);
+  }
+  return {
+    messages: [
+      {
+        type: config.messageType || 'PROPERTY_REPORT',
+        topic: ctx.topic || config.defaultTopic || '/tcp/telemetry',
+        payload,
+        timestamp: Date.now(),
+      },
+    ],
+  };
+}
+```
+
+上行调试示例：
+
+- 协议：`TCP_UDP`
+- 传输方式：`TCP`
+- 主题：`/tcp/telemetry`
+- 载荷编码：`TEXT`
+
+```text
+temp=23.6,humidity=48
+```
+
+如果设备实际上传十六进制，可以在页面里直接点击“填充 HEX 示例”。
+
+### 3.3 MQTT 下行 JSON 指令
+
+页面模板：`MQTT 下行 JSON 指令`
+
+适用场景：
+
+- 平台向设备下发属性设置或服务调用
+- 设备订阅固定 MQTT 下行主题
+- 下行内容要求为 JSON 文本
+
+页面字段：
+
+- 作用域：`PRODUCT`
+- 产品：`1003`
+- 协议：`MQTT`
+- 传输方式：`MQTT`
+- 方向：`DOWNLINK`
+- 解析方式：`SCRIPT`
+- 拆帧模式：`NONE`
+- 异常策略：`ERROR`
+- 超时时间：`50`
+- 发布方式：`ALL`
+
+`matchRuleJson`
+
+```json
+{
+  "topicPrefix": "/down/property",
+  "messageTypeEquals": "PROPERTY_SET"
+}
+```
+
+`frameConfigJson`
+
+```json
+{}
+```
+
+`parserConfigJson`
+
+```json
+{
+  "defaultTopic": "/down/property",
+  "payloadEncoding": "JSON",
+  "headers": {
+    "qos": "1"
+  }
+}
+```
+
+`visualConfigJson`
+
+```json
+{
+  "template": "JSON_ENCODE",
+  "topic": "/down/property",
+  "payloadField": "payload",
+  "payloadEncoding": "JSON",
+  "messageType": "PROPERTY_SET"
+}
+```
+
+`scriptContent`
+
+```javascript
+function encode(ctx) {
+  const config = ctx.config || {};
+  return {
+    topic: ctx.topic || config.defaultTopic || '/down/property',
+    payloadEncoding: config.payloadEncoding || 'JSON',
+    payloadText: JSON.stringify(ctx.payload || {}),
+    headers: config.headers || {},
+  };
+}
+```
+
+下行调试示例：
+
+- 主题：`/down/property`
+- 消息类型：`PROPERTY_SET`
+
+```json
+{
+  "payload": {
+    "power": true,
+    "brightness": 80
+  }
+}
+```
+
+### 3.4 TCP 下行 HEX 指令
+
+页面模板：`TCP 下行 HEX 指令`
+
+适用场景：
+
+- TCP 设备需要固定帧头
+- 指令中包含开关位和单字节参数
+- 输出要求为十六进制字符串
+
+页面字段：
+
+- 作用域：`PRODUCT`
+- 产品：`1004`
+- 协议：`TCP_UDP`
+- 传输方式：`TCP`
+- 方向：`DOWNLINK`
+- 解析方式：`SCRIPT`
+- 拆帧模式：`NONE`
+- 异常策略：`ERROR`
+- 超时时间：`50`
+- 发布方式：`ALL`
+
+`matchRuleJson`
+
+```json
+{
+  "topicPrefix": "/downstream",
+  "messageTypeEquals": "PROPERTY_SET"
+}
+```
+
+`frameConfigJson`
+
+```json
+{}
+```
+
+`parserConfigJson`
+
+```json
+{
+  "defaultTopic": "/downstream",
+  "payloadEncoding": "HEX",
+  "framePrefix": "AA55"
+}
+```
+
+`visualConfigJson`
+
+```json
+{
+  "template": "JSON_ENCODE",
+  "topic": "/downstream",
+  "payloadField": "payload",
+  "payloadEncoding": "HEX",
+  "messageType": "PROPERTY_SET"
+}
+```
+
+`scriptContent`
+
+```javascript
+function toHexByte(value) {
+  const normalized = Number(value || 0);
+  return `00${normalized.toString(16).toUpperCase()}`.slice(-2);
+}
+
+function encode(ctx) {
+  const config = ctx.config || {};
+  const payload = ctx.payload || {};
+  const body = payload.payload && typeof payload.payload === 'object' ? payload.payload : payload;
+  const power = body.power ? '01' : '00';
+  const brightness = toHexByte(body.brightness || 0);
+  return {
+    topic: ctx.topic || config.defaultTopic || '/downstream',
+    payloadEncoding: config.payloadEncoding || 'HEX',
+    payloadHex: `${config.framePrefix || 'AA55'}${power}${brightness}`,
+  };
+}
+```
+
+下行调试示例：
+
+- 主题：`/downstream`
+- 消息类型：`PROPERTY_SET`
+
+```json
+{
+  "payload": {
+    "power": true,
+    "brightness": 80
+  }
+}
+```
+
+预期结果：
+
+- 主题：`/downstream`
+- 编码：`HEX`
+- 载荷：`AA550150`
+
+### 3.5 灰度发布配置示例
+
+全量发布：
+
+```json
+{}
+```
+
+设备名单灰度：
 
 ```json
 {
@@ -117,46 +477,40 @@
 }
 ```
 
-`releaseMode` 选择 `DEVICE_LIST`。
+哈希百分比灰度：
 
-## 5. 在线调试
+```json
+{
+  "percent": 10
+}
+```
 
-### 5.1 上行调试
+## 4. 在线调试建议
 
-适用于验证:
+### 4.1 上行调试
 
-- 命中规则是否正确
-- 设备定位是否正确
-- 报文是否被解析成标准 `DeviceMessage`
+- MQTT、HTTP、CoAP 优先使用 `JSON` 载荷编码。
+- TCP、UDP 如果是文本协议，可直接使用 `TEXT` 示例载荷。
+- TCP、UDP 如果是原始报文，可直接使用页面里的 `HEX` 示例按钮。
 
-输入重点:
+### 4.2 下行编码调试
 
-- `productId`
-  - 当调试 `TENANT` scope 规则时建议显式传入。
-- `payloadEncoding`
-  - `HEX` 常用于 TCP/UDP。
-  - `JSON` 常用于 MQTT/HTTP/CoAP。
+- 先选 `messageType`，再点示例按钮填充 `payloadText`。
+- 如果编码结果不符合预期，优先检查 `parserConfigJson` 和 `scriptContent`。
+- 如果规则是租户默认级，调试时务必补 `productId`。
 
-### 5.2 下行编码调试
+## 5. 设备定位器使用方式
 
-适用于验证:
+当上行报文里没有直接携带 `productKey + deviceName` 时，可以通过定位器识别设备。
 
-- 下行主题是否正确
-- 编码结果是否为设备要求的文本/十六进制/JSON
-- 插件或脚本的 `encode(ctx)` 是否符合预期
-
-## 6. 设备定位器使用方法
-
-当设备上行报文里不直接携带 `productKey + deviceName` 时，可以通过定位器识别设备。
-
-操作步骤:
+操作步骤：
 
 1. 进入设备管理。
 2. 找到目标设备。
 3. 点击“定位器”。
 4. 新增 `locatorType + locatorValue`。
 
-常见定位器类型:
+常见定位器类型：
 
 - `IMEI`
 - `ICCID`
@@ -164,108 +518,10 @@
 - `SERIAL`
 - `CLIENT_ID`
 
-建议:
+## 6. 推荐实践
 
-- 同一类标识只保留一个主定位器。
-- 规则里优先输出稳定且唯一的外部标识。
-
-## 7. 插件部署指南
-
-### 7.1 部署方式
-
-插件支持两种来源:
-
-- Connector classpath
-- `plugins/protocol-parsers/*.jar`
-
-### 7.2 重载方式
-
-部署后执行:
-
-- 前端协议解析页点击 `Reload Plugins`
-- 或调用 `POST /api/v1/protocol-parsers/runtime/plugins/reload`
-
-### 7.3 验证方式
-
-检查:
-
-- `GET /api/v1/protocol-parsers/runtime/plugins`
-- `GET /api/v1/protocol-parsers/runtime/plugins/catalog`
-
-确认插件已安装、版本正确、支持的能力正确。
-
-## 8. 运行时观测
-
-前端运行时面板可查看:
-
-- 解析次数
-- 编码次数
-- 调试成功次数
-- 平均耗时
-- 已安装插件
-- 插件目录
-- transport 维度计数器
-
-适合日常巡检与联调复盘。
-
-## 9. 常见排障
-
-### 9.1 规则未命中
-
-优先检查:
-
-- `productId` 是否正确
-- `scopeType` 是否符合预期
-- `direction` 是否正确
-- `matchRuleJson` 是否与实际 topic/header/messageType 一致
-
-### 9.2 调试成功但正式链路无数据
-
-优先检查:
-
-- 是否已发布
-- 规则是否为 `ENABLED`
-- 灰度配置是否把当前设备排除
-- Connector 是否已收到缓存失效事件
-
-### 9.3 TCP/UDP 解析异常
-
-优先检查:
-
-- `frameMode`
-- `frameConfigJson`
-- 实际上报编码是否与 `payloadEncoding` 一致
-- 是否需要多包拼接
-
-### 9.4 插件已部署但页面看不到
-
-优先检查:
-
-- JAR 是否放在 `plugins/protocol-parsers` 目录
-- 是否包含正确的 `META-INF/services`
-- 是否执行过 reload
-- 插件依赖是否只依赖 `firefly-plugin-api`
-
-## 10. 验证命令
-
-### 前端
-
-```bash
-cd firefly-web
-npm run build
-```
-
-### 后端
-
-```bash
-mvn -pl firefly-device,firefly-connector -am test
-mvn -pl firefly-system -am -DskipTests compile
-```
-
-## 11. 推荐实践
-
-- 新协议先从 `SCRIPT + UPLINK` 起步，先打通链路。
-- 下行编码独立建 `DOWNLINK` 规则，不和上行混用。
-- 租户级公共协议用 `TENANT` scope，产品个性逻辑再用 `PRODUCT` scope 覆盖。
-- 灰度发布先小范围设备名单，再扩大到哈希比例。
-- 插件只留给高复杂度或强性能场景。
+- 新协议优先从 `SCRIPT + UPLINK` 起步，先把链路和调试跑通。
+- 下行编码独立建 `DOWNLINK` 规则，不要和上行规则混用。
+- 页面里能用模板和下拉的地方不要手工输入，避免协议名、插件 ID、消息类型拼写错误。
+- 灰度发布先用设备名单，再扩大到哈希百分比。
+- 插件模式优先用于强性能、强依赖 SDK 或复杂状态机场景。

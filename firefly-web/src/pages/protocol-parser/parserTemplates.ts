@@ -48,6 +48,38 @@ const JSON_PROPERTY_SCRIPT = joinScript([
   '}',
 ]);
 
+const MQTT_DOWNLINK_JSON_SCRIPT = joinScript([
+  'function encode(ctx) {',
+  '  const config = ctx.config || {};',
+  '  return {',
+  "    topic: ctx.topic || config.defaultTopic || '/down/property',",
+  "    payloadEncoding: config.payloadEncoding || 'JSON',",
+  '    payloadText: JSON.stringify(ctx.payload || {}),',
+  '    headers: config.headers || {},',
+  '  };',
+  '}',
+]);
+
+const TCP_DOWNLINK_HEX_SCRIPT = joinScript([
+  'function toHexByte(value) {',
+  '  const normalized = Number(value || 0);',
+  "  return (`00${normalized.toString(16).toUpperCase()}`).slice(-2);",
+  '}',
+  '',
+  'function encode(ctx) {',
+  '  const config = ctx.config || {};',
+  '  const payload = ctx.payload || {};',
+  "  const body = payload.payload && typeof payload.payload === 'object' ? payload.payload : payload;",
+  "  const power = body.power ? '01' : '00';",
+  '  const brightness = toHexByte(body.brightness || 0);',
+  '  return {',
+  "    topic: ctx.topic || config.defaultTopic || '/downstream',",
+  "    payloadEncoding: config.payloadEncoding || 'HEX',",
+  "    payloadHex: `${config.framePrefix || 'AA55'}${power}${brightness}`,",
+  '  };',
+  '}',
+]);
+
 export const PROTOCOL_PARSER_TEMPLATES: ProtocolParserTemplate[] = [
   {
     key: 'tcp-raw-pass-through',
@@ -216,5 +248,59 @@ export const PROTOCOL_PARSER_TEMPLATES: ProtocolParserTemplate[] = [
     }),
     scriptLanguage: 'JS',
     scriptContent: JSON_PROPERTY_SCRIPT,
+  },
+  {
+    key: 'mqtt-downlink-json',
+    label: 'MQTT 下行 JSON 指令',
+    description: '用于属性设置或服务调用场景，输出 JSON 文本载荷并自动带出默认下行主题。',
+    tip: '适合 MQTT 设备订阅固定下行主题，平台直接转发 JSON 指令的场景。',
+    tags: ['MQTT', 'DOWNLINK', 'JSON'],
+    protocol: 'MQTT',
+    transport: 'MQTT',
+    direction: 'DOWNLINK',
+    parserMode: 'SCRIPT',
+    frameMode: 'NONE',
+    timeoutMs: 50,
+    errorPolicy: 'ERROR',
+    matchRuleJson: prettyJson({
+      topicPrefix: '/down/property',
+      messageTypeEquals: 'PROPERTY_SET',
+    }),
+    frameConfigJson: prettyJson({}),
+    parserConfigJson: prettyJson({
+      defaultTopic: '/down/property',
+      payloadEncoding: 'JSON',
+      headers: {
+        qos: '1',
+      },
+    }),
+    scriptLanguage: 'JS',
+    scriptContent: MQTT_DOWNLINK_JSON_SCRIPT,
+  },
+  {
+    key: 'tcp-downlink-hex-command',
+    label: 'TCP 下行 HEX 指令',
+    description: '将标准下行消息编码成固定头 + 开关位 + 亮度字节的十六进制命令。',
+    tip: '适合私有 TCP 设备需要固定帧头和单字节参数的下行控制场景。',
+    tags: ['TCP', 'DOWNLINK', 'HEX'],
+    protocol: 'TCP_UDP',
+    transport: 'TCP',
+    direction: 'DOWNLINK',
+    parserMode: 'SCRIPT',
+    frameMode: 'NONE',
+    timeoutMs: 50,
+    errorPolicy: 'ERROR',
+    matchRuleJson: prettyJson({
+      topicPrefix: '/downstream',
+      messageTypeEquals: 'PROPERTY_SET',
+    }),
+    frameConfigJson: prettyJson({}),
+    parserConfigJson: prettyJson({
+      defaultTopic: '/downstream',
+      payloadEncoding: 'HEX',
+      framePrefix: 'AA55',
+    }),
+    scriptLanguage: 'JS',
+    scriptContent: TCP_DOWNLINK_HEX_SCRIPT,
   },
 ];

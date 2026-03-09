@@ -234,6 +234,37 @@ const SCOPE_TYPE_OPTIONS = [
   { value: 'TENANT', label: '租户默认级' },
 ];
 
+const PROTOCOL_OPTIONS = [
+  { value: 'TCP_UDP', label: 'TCP/UDP' },
+  { value: 'MQTT', label: 'MQTT' },
+  { value: 'HTTP', label: 'HTTP' },
+  { value: 'COAP', label: 'CoAP' },
+  { value: 'WEBSOCKET', label: 'WebSocket' },
+];
+
+const TRANSPORT_OPTIONS = [
+  { value: 'TCP', label: 'TCP' },
+  { value: 'UDP', label: 'UDP' },
+  { value: 'MQTT', label: 'MQTT' },
+  { value: 'HTTP', label: 'HTTP' },
+  { value: 'COAP', label: 'CoAP' },
+  { value: 'WEBSOCKET', label: 'WebSocket' },
+];
+
+const SCRIPT_LANGUAGE_OPTIONS = [{ value: 'JS', label: 'JavaScript (JS)' }];
+
+const MESSAGE_TYPE_OPTIONS = [
+  { value: 'PROPERTY_REPORT', label: '属性上报' },
+  { value: 'EVENT_REPORT', label: '事件上报' },
+  { value: 'RAW_DATA', label: '原始数据' },
+  { value: 'PROPERTY_SET', label: '属性设置' },
+  { value: 'SERVICE_INVOKE', label: '服务调用' },
+  { value: 'SERVICE_REPLY', label: '服务响应' },
+];
+
+const UPLINK_TOPIC_SUGGESTIONS = ['/up/property', '/data/report', '/coap/report', '/tcp/data', '/udp/data', '/ws/data'];
+const DOWNLINK_TOPIC_SUGGESTIONS = ['/down/property', '/command/send', '/downstream'];
+
 const STATUS_META: Record<string, { color: string; label: string }> = {
   DRAFT: { color: 'processing', label: '草稿' },
   ENABLED: { color: 'success', label: '已启用' },
@@ -249,8 +280,29 @@ const VERSION_STATUS_META: Record<string, string> = {
   ROLLED_BACK: '已回滚',
 };
 
+const PROTOCOL_LABEL_MAP = Object.fromEntries(PROTOCOL_OPTIONS.map((item) => [item.value, item.label])) as Record<
+  string,
+  string
+>;
+const TRANSPORT_LABEL_MAP = Object.fromEntries(TRANSPORT_OPTIONS.map((item) => [item.value, item.label])) as Record<
+  string,
+  string
+>;
+const MESSAGE_TYPE_LABEL_MAP = Object.fromEntries(
+  MESSAGE_TYPE_OPTIONS.map((item) => [item.value, item.label]),
+) as Record<string, string>;
+
 const findOptionLabel = (options: Array<{ value: string; label: string }>, value?: string) =>
   options.find((item) => item.value === value)?.label || value || '-';
+
+const buildStringOptions = (values: Array<string | undefined>, labelMap?: Record<string, string>) =>
+  Array.from(
+    new Set(
+      values
+        .map((item) => item?.trim())
+        .filter((item): item is string => Boolean(item)),
+    ),
+  ).map((value) => ({ value, label: labelMap?.[value] || value }));
 
 const DEFAULT_EDITOR_VALUES: EditorFormValues = {
   scopeType: 'PRODUCT',
@@ -369,6 +421,14 @@ const prettyJson = (value?: string) => {
 
 const formatJson = (value: unknown) => JSON.stringify(value ?? {}, null, 2);
 
+const inferProtocolByTransport = (transport?: string) => {
+  const transportKey = (transport || '').toUpperCase();
+  if (transportKey === 'TCP' || transportKey === 'UDP') {
+    return 'TCP_UDP';
+  }
+  return transportKey || DEFAULT_EDITOR_VALUES.protocol;
+};
+
 const defaultTopicByTransport = (transport?: string, direction: 'UPLINK' | 'DOWNLINK' = 'UPLINK') => {
   const transportKey = (transport || '').toUpperCase();
   if (direction === 'DOWNLINK') {
@@ -428,6 +488,154 @@ const releaseModePreset = (mode?: string) => {
       return '{}';
   }
 };
+
+const buildTopicOptions = (
+  direction: 'UPLINK' | 'DOWNLINK',
+  transport?: string,
+  values: Array<string | undefined> = [],
+) =>
+  buildStringOptions(
+    [
+      defaultTopicByTransport(transport, direction),
+      ...(direction === 'DOWNLINK' ? DOWNLINK_TOPIC_SUGGESTIONS : UPLINK_TOPIC_SUGGESTIONS),
+      ...values,
+    ],
+  );
+
+const buildMatchRulePreset = (transport?: string, direction: 'UPLINK' | 'DOWNLINK' = 'UPLINK') => {
+  const topic = defaultTopicByTransport(transport, direction);
+  if (direction === 'DOWNLINK') {
+    return formatJson({
+      topicPrefix: topic,
+      messageTypeEquals: 'PROPERTY_SET',
+    });
+  }
+  if ((transport || '').toUpperCase() === 'HTTP') {
+    return formatJson({
+      topicPrefix: topic,
+      headerEquals: {
+        'content-type': 'application/json',
+      },
+    });
+  }
+  return formatJson({
+    topicPrefix: topic,
+  });
+};
+
+const buildFrameConfigPreset = (frameMode?: string) => {
+  switch ((frameMode || '').toUpperCase()) {
+    case 'DELIMITER':
+      return formatJson({
+        delimiterHex: '0A',
+        stripDelimiter: true,
+      });
+    case 'FIXED_LENGTH':
+      return formatJson({
+        fixedLength: 32,
+      });
+    case 'LENGTH_FIELD':
+      return formatJson({
+        byteOrder: 'BIG_ENDIAN',
+        lengthFieldOffset: 1,
+        lengthFieldLength: 2,
+        lengthAdjust: 0,
+        initialBytesToStrip: 0,
+      });
+    default:
+      return '{}';
+  }
+};
+
+const buildJsonPropertyParserConfig = (transport?: string) =>
+  formatJson({
+    defaultTopic: defaultTopicByTransport(transport, 'UPLINK'),
+    payloadField: 'properties',
+    deviceNameField: 'deviceName',
+    timestampField: 'timestamp',
+    messageType: 'PROPERTY_REPORT',
+  });
+
+const buildTextPairParserConfig = (transport?: string) =>
+  formatJson({
+    defaultTopic: defaultTopicByTransport(transport, 'UPLINK'),
+    messageType: 'PROPERTY_REPORT',
+    pairSeparator: ',',
+    kvSeparator: '=',
+  });
+
+const buildRawDataParserConfig = (transport?: string) =>
+  formatJson({
+    defaultTopic: defaultTopicByTransport(transport, 'UPLINK'),
+    messageType: 'RAW_DATA',
+  });
+
+const buildDownlinkJsonParserConfig = (transport?: string) =>
+  formatJson({
+    defaultTopic: defaultTopicByTransport(transport, 'DOWNLINK'),
+    payloadEncoding: 'JSON',
+    headers: {
+      qos: '1',
+    },
+  });
+
+const buildDownlinkHexParserConfig = (transport?: string) =>
+  formatJson({
+    defaultTopic: defaultTopicByTransport(transport, 'DOWNLINK'),
+    payloadEncoding: 'HEX',
+    framePrefix: 'AA55',
+  });
+
+const buildUplinkPayloadExample = (transport?: string) => {
+  const transportKey = (transport || '').toUpperCase();
+  if (transportKey === 'TCP' || transportKey === 'UDP') {
+    return 'temp=23.6,humidity=48';
+  }
+  return formatJson({
+    deviceName: 'demo-device-01',
+    timestamp: 1710000000000,
+    properties: {
+      temperature: 23.6,
+      humidity: 48,
+    },
+  });
+};
+
+const buildUplinkHeadersExample = (transport?: string) => {
+  const transportKey = (transport || '').toUpperCase();
+  if (transportKey === 'HTTP') {
+    return formatJson({
+      'content-type': 'application/json',
+      'x-request-id': 'debug-http-001',
+    });
+  }
+  if (transportKey === 'MQTT') {
+    return formatJson({
+      clientId: 'mqtt-debug-client',
+      qos: '1',
+    });
+  }
+  return '{}';
+};
+
+const buildDownlinkPayloadExample = (messageType?: string) => {
+  if ((messageType || '').toUpperCase() === 'SERVICE_INVOKE') {
+    return formatJson({
+      service: 'togglePower',
+      payload: {
+        power: true,
+      },
+    });
+  }
+  return formatJson({
+    payload: {
+      power: true,
+      brightness: 80,
+    },
+  });
+};
+
+const UPLINK_HEX_PAYLOAD_EXAMPLE = '74656D703D32332E362C68756D69646974793D3438';
 
 const formatReleaseSummary = (record: ProtocolParserRecord) => {
   const releaseMode = (record.releaseMode || 'ALL').toUpperCase();
@@ -504,6 +712,12 @@ const ProtocolParserPage: React.FC = () => {
   const currentDirection = Form.useWatch('direction', editorForm) || DEFAULT_EDITOR_VALUES.direction;
   const currentScopeType = Form.useWatch('scopeType', editorForm) || DEFAULT_EDITOR_VALUES.scopeType;
   const currentReleaseMode = Form.useWatch('releaseMode', editorForm) || DEFAULT_EDITOR_VALUES.releaseMode;
+  const currentEditorTransport = Form.useWatch('transport', editorForm) || DEFAULT_EDITOR_VALUES.transport;
+  const currentFrameMode = Form.useWatch('frameMode', editorForm) || DEFAULT_EDITOR_VALUES.frameMode;
+  const currentPluginId = Form.useWatch('pluginId', editorForm);
+  const currentUplinkTransport = Form.useWatch('transport', uplinkDebugForm) || DEFAULT_EDITOR_VALUES.transport;
+  const currentDownlinkMessageType =
+    Form.useWatch('messageType', downlinkDebugForm) || DEFAULT_DOWNLINK_DEBUG_VALUES.messageType;
 
   const canCreate = hasPermission('protocol-parser:create');
   const canUpdate = hasPermission('protocol-parser:update');
@@ -524,6 +738,101 @@ const ProtocolParserPage: React.FC = () => {
   const selectedTemplate = useMemo(
     () => PROTOCOL_PARSER_TEMPLATES.find((item) => item.key === selectedTemplateKey),
     [selectedTemplateKey],
+  );
+  const quickTemplates = useMemo(() => PROTOCOL_PARSER_TEMPLATES, []);
+
+  // Keep dropdown choices aligned with products, existing rules, and built-in templates.
+  const protocolOptions = useMemo(
+    () =>
+      buildStringOptions(
+        [
+          ...PROTOCOL_OPTIONS.map((item) => item.value),
+          ...products.map((item) => item.protocol),
+          ...records.map((item) => item.protocol),
+          ...PROTOCOL_PARSER_TEMPLATES.map((item) => item.protocol),
+          currentRecord?.protocol,
+        ],
+        PROTOCOL_LABEL_MAP,
+      ),
+    [currentRecord?.protocol, products, records],
+  );
+  const transportOptions = useMemo(
+    () =>
+      buildStringOptions(
+        [
+          ...TRANSPORT_OPTIONS.map((item) => item.value),
+          ...records.map((item) => item.transport),
+          ...PROTOCOL_PARSER_TEMPLATES.map((item) => item.transport),
+          currentRecord?.transport,
+          debugRecord?.transport,
+        ],
+        TRANSPORT_LABEL_MAP,
+      ),
+    [currentRecord?.transport, debugRecord?.transport, records],
+  );
+  const messageTypeOptions = useMemo(
+    () =>
+      buildStringOptions(
+        [...MESSAGE_TYPE_OPTIONS.map((item) => item.value), currentDownlinkMessageType],
+        MESSAGE_TYPE_LABEL_MAP,
+      ),
+    [currentDownlinkMessageType],
+  );
+  const editorTopicOptions = useMemo(
+    () =>
+      buildTopicOptions(
+        currentDirection,
+        currentEditorTransport,
+        records
+          .filter((item) => item.direction === currentDirection)
+          .map((item) => {
+            try {
+              const parsed = JSON.parse(item.parserConfigJson || '{}') as Record<string, unknown>;
+              return typeof parsed.defaultTopic === 'string' ? parsed.defaultTopic : undefined;
+            } catch {
+              return undefined;
+            }
+          }),
+      ),
+    [currentDirection, currentEditorTransport, records],
+  );
+  const uplinkTopicOptions = useMemo(
+    () => buildTopicOptions('UPLINK', currentUplinkTransport),
+    [currentUplinkTransport],
+  );
+  const downlinkTopicOptions = useMemo(
+    () => buildTopicOptions('DOWNLINK', debugRecord?.transport),
+    [debugRecord?.transport],
+  );
+  const pluginOptions = useMemo(() => {
+    const options = new Map<string, { value: string; label: string }>();
+    runtimePlugins.forEach((item) => {
+      options.set(item.pluginId, {
+        value: item.pluginId,
+        label: `${item.displayName || item.pluginId}${item.version ? ` (${item.version})` : ''}`,
+      });
+    });
+    runtimeCatalog.forEach((item) => {
+      if (!options.has(item.pluginId)) {
+        options.set(item.pluginId, {
+          value: item.pluginId,
+          label: `${item.displayName || item.pluginId}${item.latestVersion ? ` (${item.latestVersion})` : ''}`,
+        });
+      }
+    });
+    return Array.from(options.values());
+  }, [runtimeCatalog, runtimePlugins]);
+  const pluginVersionOptions = useMemo(
+    () =>
+      buildStringOptions(
+        [
+          runtimePlugins.find((item) => item.pluginId === currentPluginId)?.version,
+          runtimeCatalog.find((item) => item.pluginId === currentPluginId)?.installedVersion,
+          runtimeCatalog.find((item) => item.pluginId === currentPluginId)?.latestVersion,
+          currentRecord?.pluginVersion,
+        ],
+      ),
+    [currentPluginId, currentRecord?.pluginVersion, runtimeCatalog, runtimePlugins],
   );
 
   const stats = useMemo(
@@ -603,6 +912,20 @@ const ProtocolParserPage: React.FC = () => {
     void fetchRuntime();
   }, [canRead]);
 
+  // Auto-pick a detected version so plugin mode usually needs only one selection.
+  useEffect(() => {
+    if (currentParserMode !== 'PLUGIN' || !currentPluginId) {
+      return;
+    }
+    if (trimOptional(editorForm.getFieldValue('pluginVersion') as string | undefined)) {
+      return;
+    }
+    const [firstVersionOption] = pluginVersionOptions;
+    if (firstVersionOption?.value) {
+      editorForm.setFieldsValue({ pluginVersion: firstVersionOption.value });
+    }
+  }, [currentParserMode, currentPluginId, editorForm, pluginVersionOptions]);
+
   const closeEditorModal = () => {
     setEditorOpen(false);
     setCurrentRecord(null);
@@ -619,7 +942,7 @@ const ProtocolParserPage: React.FC = () => {
       protocol: template.protocol,
       transport: template.transport,
       direction: template.direction as 'UPLINK' | 'DOWNLINK',
-      parserMode: 'SCRIPT',
+      parserMode: template.parserMode as 'SCRIPT' | 'PLUGIN',
       frameMode: template.frameMode,
       matchRuleJson: template.matchRuleJson,
       frameConfigJson: template.frameConfigJson,
@@ -631,6 +954,53 @@ const ProtocolParserPage: React.FC = () => {
       errorPolicy: template.errorPolicy,
     });
     message.success(`已应用模板：${template.label}`);
+  };
+
+  const applyEditorJsonPreset = (
+    field: 'matchRuleJson' | 'frameConfigJson' | 'parserConfigJson' | 'visualConfigJson' | 'releaseConfigJson',
+    value: string,
+  ) => {
+    editorForm.setFieldsValue({ [field]: value } as Partial<EditorFormValues>);
+  };
+
+  const handleEditorTransportChange = (transport: string) => {
+    editorForm.setFieldsValue({
+      protocol: inferProtocolByTransport(transport),
+    });
+  };
+
+  // Switching transport also aligns the protocol and default debug payload shape.
+  const handleUplinkTransportChange = (transport: string) => {
+    uplinkDebugForm.setFieldsValue({
+      protocol: inferProtocolByTransport(transport),
+      topic: defaultTopicByTransport(transport, 'UPLINK'),
+      payloadEncoding: transport === 'TCP' || transport === 'UDP' ? 'HEX' : 'JSON',
+      headersText: buildUplinkHeadersExample(transport),
+    });
+  };
+
+  const fillUplinkDebugPayload = (mode: 'AUTO' | 'HEX' = 'AUTO') => {
+    const transport = (uplinkDebugForm.getFieldValue('transport') || currentUplinkTransport) as string;
+    if (mode === 'HEX') {
+      uplinkDebugForm.setFieldsValue({
+        payloadEncoding: 'HEX',
+        payload: UPLINK_HEX_PAYLOAD_EXAMPLE,
+      });
+      return;
+    }
+    const payloadEncoding = transport === 'TCP' || transport === 'UDP' ? 'TEXT' : 'JSON';
+    uplinkDebugForm.setFieldsValue({
+      payloadEncoding,
+      payload: buildUplinkPayloadExample(transport),
+    });
+  };
+
+  const fillDownlinkDebugPayload = (messageType = currentDownlinkMessageType) => {
+    downlinkDebugForm.setFieldsValue({
+      messageType,
+      topic: defaultTopicByTransport(debugRecord?.transport, 'DOWNLINK'),
+      payloadText: buildDownlinkPayloadExample(messageType),
+    });
   };
 
   const openCreateModal = () => {
@@ -775,6 +1145,7 @@ const ProtocolParserPage: React.FC = () => {
       transport,
       topic: defaultTopicByTransport(transport, 'UPLINK'),
       payloadEncoding: transport === 'TCP' || transport === 'UDP' ? 'HEX' : 'JSON',
+      headersText: buildUplinkHeadersExample(transport),
     });
     setUplinkDebugOpen(true);
   };
@@ -788,6 +1159,7 @@ const ProtocolParserPage: React.FC = () => {
       ...DEFAULT_DOWNLINK_DEBUG_VALUES,
       productId: record.productId || filterProductId,
       topic: defaultTopicByTransport(record.transport, 'DOWNLINK'),
+      payloadText: buildDownlinkPayloadExample(DEFAULT_DOWNLINK_DEBUG_VALUES.messageType),
     });
     setDownlinkDebugOpen(true);
   };
@@ -1195,21 +1567,31 @@ const ProtocolParserPage: React.FC = () => {
             />
           </Col>
           <Col xs={24} md={5}>
-            <Input
+            <Select
+              allowClear
+              showSearch
               value={filterProtocol}
+              style={{ width: '100%' }}
               placeholder="协议"
-              onChange={(event) => {
-                setFilterProtocol(trimOptional(event.target.value));
+              options={protocolOptions}
+              optionFilterProp="label"
+              onChange={(value) => {
+                setFilterProtocol(value);
                 setPageNum(1);
               }}
             />
           </Col>
           <Col xs={24} md={5}>
-            <Input
+            <Select
+              allowClear
+              showSearch
               value={filterTransport}
+              style={{ width: '100%' }}
               placeholder="传输方式"
-              onChange={(event) => {
-                setFilterTransport(trimOptional(event.target.value));
+              options={transportOptions}
+              optionFilterProp="label"
+              onChange={(value) => {
+                setFilterTransport(value);
                 setPageNum(1);
               }}
             />
@@ -1289,7 +1671,7 @@ const ProtocolParserPage: React.FC = () => {
       >
         <Form form={editorForm} layout="vertical" preserve={false} onFinish={handleSubmitEditor}>
           <Card size="small" style={{ marginBottom: 16, borderRadius: 12 }}>
-            <Row gutter={[16, 16]} align="middle">
+            <Row gutter={[16, 16]}>
               <Col xs={24} lg={10}>
                 <Form.Item label="模板" style={{ marginBottom: 0 }}>
                   <Select
@@ -1302,6 +1684,21 @@ const ProtocolParserPage: React.FC = () => {
                     onChange={(value) => setSelectedTemplateKey(value)}
                   />
                 </Form.Item>
+                <Space wrap style={{ marginTop: 12 }}>
+                  {quickTemplates.map((item) => (
+                    <Button
+                      key={item.key}
+                      size="small"
+                      type={selectedTemplateKey === item.key ? 'primary' : 'default'}
+                      onClick={() => {
+                        setSelectedTemplateKey(item.key);
+                        applyTemplate(item);
+                      }}
+                    >
+                      {item.label}
+                    </Button>
+                  ))}
+                </Space>
               </Col>
               <Col xs={24} lg={14}>
                 {selectedTemplate ? (
@@ -1316,13 +1713,14 @@ const ProtocolParserPage: React.FC = () => {
                       ))}
                     </Space>
                     <Text type="secondary">{selectedTemplate.description}</Text>
+                    <Alert type="info" showIcon message={selectedTemplate.tip} />
                     <Space wrap>
                       <Button onClick={() => applyTemplate(selectedTemplate)}>应用模板</Button>
                       <Text type="secondary">模板只会覆盖解析相关字段，会保留你当前选择的作用域。</Text>
                     </Space>
                   </Space>
                 ) : (
-                  <Text type="secondary">模板可加速常见上行接入场景，后续仍可继续细化调整。</Text>
+                  <Text type="secondary">模板覆盖上行和下行常见场景，先一键填充，再做细化调整会更高效。</Text>
                 )}
               </Col>
             </Row>
@@ -1369,12 +1767,18 @@ const ProtocolParserPage: React.FC = () => {
           <Row gutter={16}>
             <Col xs={24} md={6}>
               <Form.Item name="protocol" label="协议" rules={[{ required: true, message: '请输入协议' }]}>
-                <Input placeholder="TCP_UDP / MQTT / HTTP / COAP" />
+                <Select showSearch options={protocolOptions} optionFilterProp="label" placeholder="选择协议" />
               </Form.Item>
             </Col>
             <Col xs={24} md={6}>
               <Form.Item name="transport" label="传输方式" rules={[{ required: true, message: '请输入传输方式' }]}>
-                <Input placeholder="TCP / UDP / MQTT / HTTP / COAP" />
+                <Select
+                  showSearch
+                  options={transportOptions}
+                  optionFilterProp="label"
+                  placeholder="选择传输方式"
+                  onChange={handleEditorTransportChange}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} md={6}>
@@ -1414,8 +1818,8 @@ const ProtocolParserPage: React.FC = () => {
             message="一条解析规则即可覆盖产品级、租户默认级、上行解码、下行编码、灰度发布和可视化流配置。"
             description={
               currentDirection === 'DOWNLINK'
-                ? '下行规则会用于运行时编码和编码测试接口。'
-                : '上行规则会用于运行时解析、设备标识匹配和调试解析接口。'
+                ? `下行规则会用于运行时编码和编码测试接口，当前推荐主题：${editorTopicOptions[0]?.value || defaultTopicByTransport(currentEditorTransport, 'DOWNLINK')}`
+                : `上行规则会用于运行时解析、设备标识匹配和调试解析接口，当前推荐主题：${editorTopicOptions[0]?.value || defaultTopicByTransport(currentEditorTransport, 'UPLINK')}`
             }
           />
 
@@ -1424,7 +1828,52 @@ const ProtocolParserPage: React.FC = () => {
               <Form.Item
                 name="matchRuleJson"
                 label="匹配规则 JSON"
-                extra="支持 topicPrefix、topicEquals、messageTypeEquals、deviceNameEquals、productKeyEquals、headerEquals 和 remoteAddressPrefix。"
+                extra={
+                  <Space direction="vertical" size={4}>
+                    <Text type="secondary">
+                      支持 topicPrefix、topicEquals、messageTypeEquals、deviceNameEquals、productKeyEquals、headerEquals 和
+                      remoteAddressPrefix。
+                    </Text>
+                    <Space wrap>
+                      <Button
+                        size="small"
+                        onClick={() =>
+                          applyEditorJsonPreset('matchRuleJson', buildMatchRulePreset(currentEditorTransport, currentDirection))
+                        }
+                      >
+                        按默认主题
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() =>
+                          applyEditorJsonPreset(
+                            'matchRuleJson',
+                            formatJson({
+                              topicEquals: defaultTopicByTransport(currentEditorTransport, currentDirection),
+                            }),
+                          )
+                        }
+                      >
+                        精确主题
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() =>
+                          applyEditorJsonPreset(
+                            'matchRuleJson',
+                            formatJson({
+                              headerEquals: {
+                                'content-type': 'application/json',
+                              },
+                            }),
+                          )
+                        }
+                      >
+                        按请求头
+                      </Button>
+                    </Space>
+                  </Space>
+                }
                 rules={[{ required: true, message: '请输入匹配规则 JSON' }]}
               >
                 <TextArea rows={8} style={{ fontFamily: 'monospace' }} />
@@ -1434,7 +1883,37 @@ const ProtocolParserPage: React.FC = () => {
               <Form.Item
                 name="frameConfigJson"
                 label="拆帧配置 JSON"
-                extra="可使用 delimiter、fixedLength 或长度字段配置完成 TCP/UDP 报文切分。"
+                extra={
+                  <Space direction="vertical" size={4}>
+                    <Text type="secondary">可使用 delimiter、fixedLength 或长度字段配置完成 TCP/UDP 报文切分。</Text>
+                    <Space wrap>
+                      <Button
+                        size="small"
+                        onClick={() => applyEditorJsonPreset('frameConfigJson', buildFrameConfigPreset(currentFrameMode))}
+                      >
+                        按当前模式
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => applyEditorJsonPreset('frameConfigJson', buildFrameConfigPreset('DELIMITER'))}
+                      >
+                        换行分隔
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => applyEditorJsonPreset('frameConfigJson', buildFrameConfigPreset('FIXED_LENGTH'))}
+                      >
+                        固定 32 字节
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => applyEditorJsonPreset('frameConfigJson', buildFrameConfigPreset('LENGTH_FIELD'))}
+                      >
+                        2 字节长度字段
+                      </Button>
+                    </Space>
+                  </Space>
+                }
                 rules={[{ required: true, message: '请输入拆帧配置 JSON' }]}
               >
                 <TextArea rows={8} style={{ fontFamily: 'monospace' }} />
@@ -1445,7 +1924,50 @@ const ProtocolParserPage: React.FC = () => {
           <Form.Item
             name="parserConfigJson"
             label="解析配置 JSON"
-            extra="会注入到运行时的 ctx.config，供脚本或插件执行时使用。"
+            extra={
+              <Space direction="vertical" size={4}>
+                <Text type="secondary">会注入到运行时的 ctx.config，供脚本或插件执行时使用。</Text>
+                <Space wrap>
+                  {currentDirection === 'DOWNLINK' ? (
+                    <>
+                      <Button
+                        size="small"
+                        onClick={() => applyEditorJsonPreset('parserConfigJson', buildDownlinkJsonParserConfig(currentEditorTransport))}
+                      >
+                        JSON 下发
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => applyEditorJsonPreset('parserConfigJson', buildDownlinkHexParserConfig(currentEditorTransport))}
+                      >
+                        HEX 下发
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        size="small"
+                        onClick={() => applyEditorJsonPreset('parserConfigJson', buildJsonPropertyParserConfig(currentEditorTransport))}
+                      >
+                        JSON 属性
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => applyEditorJsonPreset('parserConfigJson', buildTextPairParserConfig(currentEditorTransport))}
+                      >
+                        文本键值对
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => applyEditorJsonPreset('parserConfigJson', buildRawDataParserConfig(currentEditorTransport))}
+                      >
+                        原始透传
+                      </Button>
+                    </>
+                  )}
+                </Space>
+              </Space>
+            }
             rules={[{ required: true, message: '请输入解析配置 JSON' }]}
           >
             <TextArea rows={6} style={{ fontFamily: 'monospace' }} />
@@ -1458,12 +1980,27 @@ const ProtocolParserPage: React.FC = () => {
               <Space>
                 <Button
                   onClick={() =>
-                    editorForm.setFieldsValue({
-                      visualConfigJson: defaultVisualConfigForDirection(currentDirection as VisualFlowDirection),
-                    })
+                    applyEditorJsonPreset(
+                      'visualConfigJson',
+                      defaultVisualConfigForDirection(currentDirection as VisualFlowDirection),
+                    )
                   }
                 >
-                  使用默认值
+                  当前方向默认值
+                </Button>
+                <Button
+                  onClick={() =>
+                    applyEditorJsonPreset('visualConfigJson', defaultVisualConfigForDirection('UPLINK'))
+                  }
+                >
+                  上行默认值
+                </Button>
+                <Button
+                  onClick={() =>
+                    applyEditorJsonPreset('visualConfigJson', defaultVisualConfigForDirection('DOWNLINK'))
+                  }
+                >
+                  下行默认值
                 </Button>
                 <Button onClick={handleGenerateVisualScript}>生成脚本</Button>
               </Space>
@@ -1486,7 +2023,7 @@ const ProtocolParserPage: React.FC = () => {
               <Row gutter={16}>
                 <Col xs={24} md={8}>
                   <Form.Item name="scriptLanguage" label="脚本语言">
-                    <Input placeholder="JS" />
+                    <Select options={SCRIPT_LANGUAGE_OPTIONS} />
                   </Form.Item>
                 </Col>
               </Row>
@@ -1505,15 +2042,26 @@ const ProtocolParserPage: React.FC = () => {
                 label="插件 ID"
                 rules={[{ required: true, message: '请输入插件 ID' }]}
                 extra={
-                  runtimePlugins.length > 0
-                    ? `当前可用运行时插件：${runtimePlugins.map((item) => item.pluginId).join(', ')}`
+                  pluginOptions.length > 0
+                    ? '优先从下拉中选择已安装或目录可见的插件，减少手工输入错误。'
                     : '插件可从 classpath 或 plugins/protocol-parsers 目录加载。'
                 }
               >
-                <Input placeholder="demo-json-bridge" />
+                <Select
+                  showSearch
+                  options={pluginOptions}
+                  optionFilterProp="label"
+                  placeholder="选择插件"
+                />
               </Form.Item>
               <Form.Item name="pluginVersion" label="插件版本">
-                <Input placeholder="1.0.0" />
+                <Select
+                  allowClear
+                  showSearch
+                  options={pluginVersionOptions}
+                  optionFilterProp="label"
+                  placeholder="优先使用检测到的版本"
+                />
               </Form.Item>
             </>
           )}
@@ -1522,9 +2070,34 @@ const ProtocolParserPage: React.FC = () => {
             size="small"
             title="灰度发布"
             extra={
-              <Button onClick={() => editorForm.setFieldsValue({ releaseConfigJson: releaseModePreset(currentReleaseMode) })}>
-                填充预设
-              </Button>
+              <Space wrap>
+                <Button onClick={() => editorForm.setFieldsValue({ releaseMode: 'ALL', releaseConfigJson: '{}' })}>
+                  全量发布
+                </Button>
+                <Button
+                  onClick={() =>
+                    editorForm.setFieldsValue({
+                      releaseMode: 'DEVICE_LIST',
+                      releaseConfigJson: releaseModePreset('DEVICE_LIST'),
+                    })
+                  }
+                >
+                  设备名单
+                </Button>
+                <Button
+                  onClick={() =>
+                    editorForm.setFieldsValue({
+                      releaseMode: 'HASH_PERCENT',
+                      releaseConfigJson: releaseModePreset('HASH_PERCENT'),
+                    })
+                  }
+                >
+                  灰度 10%
+                </Button>
+                <Button onClick={() => editorForm.setFieldsValue({ releaseConfigJson: releaseModePreset(currentReleaseMode) })}>
+                  按当前模式填充
+                </Button>
+              </Space>
             }
             style={{ borderRadius: 12 }}
           >
@@ -1538,7 +2111,34 @@ const ProtocolParserPage: React.FC = () => {
                 <Form.Item
                   name="releaseConfigJson"
                   label="灰度配置 JSON"
-                  extra="ALL 使用 {}，DEVICE_LIST 使用 deviceIds/deviceNames，HASH_PERCENT 使用 { percent }。"
+                  extra={
+                    <Space direction="vertical" size={4}>
+                      <Text type="secondary">
+                        ALL 使用 {'{}'}，DEVICE_LIST 使用 deviceIds/deviceNames，HASH_PERCENT 使用 {'{ percent }'}。
+                      </Text>
+                      <Space wrap>
+                        <Button size="small" onClick={() => applyEditorJsonPreset('releaseConfigJson', '{}')}>
+                          空配置
+                        </Button>
+                        <Button
+                          size="small"
+                          onClick={() =>
+                            applyEditorJsonPreset('releaseConfigJson', releaseModePreset('DEVICE_LIST'))
+                          }
+                        >
+                          设备名单示例
+                        </Button>
+                        <Button
+                          size="small"
+                          onClick={() =>
+                            applyEditorJsonPreset('releaseConfigJson', releaseModePreset('HASH_PERCENT'))
+                          }
+                        >
+                          百分比示例
+                        </Button>
+                      </Space>
+                    </Space>
+                  }
                   rules={[{ required: true, message: '请输入灰度配置 JSON' }]}
                 >
                   <TextArea rows={6} style={{ fontFamily: 'monospace' }} />
@@ -1559,6 +2159,12 @@ const ProtocolParserPage: React.FC = () => {
         onOk={() => uplinkDebugForm.submit()}
       >
         <Form form={uplinkDebugForm} layout="vertical" preserve={false} onFinish={handleUplinkDebug}>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="优先使用下拉和示例填充，通常只需选择传输方式后再补设备标识即可完成调试。"
+          />
           <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item name="productId" label="调试产品 ID">
@@ -1567,19 +2173,30 @@ const ProtocolParserPage: React.FC = () => {
             </Col>
             <Col xs={24} md={8}>
               <Form.Item name="protocol" label="协议">
-                <Input />
+                <Select showSearch options={protocolOptions} optionFilterProp="label" placeholder="选择协议" />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
               <Form.Item name="transport" label="传输方式">
-                <Input />
+                <Select
+                  showSearch
+                  options={transportOptions}
+                  optionFilterProp="label"
+                  placeholder="选择传输方式"
+                  onChange={handleUplinkTransportChange}
+                />
               </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item name="topic" label="主题 / 路径">
-                <Input />
+                <Select
+                  showSearch
+                  options={uplinkTopicOptions}
+                  optionFilterProp="label"
+                  placeholder="选择主题"
+                />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
@@ -1610,10 +2227,46 @@ const ProtocolParserPage: React.FC = () => {
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="payload" label="载荷" rules={[{ required: true, message: '请输入载荷' }]}>
+          <Form.Item
+            name="payload"
+            label="载荷"
+            extra={
+              <Space wrap>
+                <Button size="small" onClick={() => fillUplinkDebugPayload('AUTO')}>
+                  填充示例载荷
+                </Button>
+                <Button size="small" onClick={() => fillUplinkDebugPayload('HEX')}>
+                  填充 HEX 示例
+                </Button>
+              </Space>
+            }
+            rules={[{ required: true, message: '请输入载荷' }]}
+          >
             <TextArea rows={6} style={{ fontFamily: 'monospace' }} />
           </Form.Item>
-          <Form.Item name="headersText" label="请求头 JSON">
+          <Form.Item
+            name="headersText"
+            label="请求头 JSON"
+            extra={
+              <Space wrap>
+                <Button
+                  size="small"
+                  onClick={() =>
+                    uplinkDebugForm.setFieldsValue({
+                      headersText: buildUplinkHeadersExample(
+                        (uplinkDebugForm.getFieldValue('transport') || currentUplinkTransport) as string,
+                      ),
+                    })
+                  }
+                >
+                  按传输方式填充
+                </Button>
+                <Button size="small" onClick={() => uplinkDebugForm.setFieldsValue({ headersText: '{}' })}>
+                  清空请求头
+                </Button>
+              </Space>
+            }
+          >
             <TextArea rows={6} style={{ fontFamily: 'monospace' }} />
           </Form.Item>
         </Form>
@@ -1695,6 +2348,12 @@ const ProtocolParserPage: React.FC = () => {
         onOk={() => downlinkDebugForm.submit()}
       >
         <Form form={downlinkDebugForm} layout="vertical" preserve={false} onFinish={handleDownlinkDebug}>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="优先选择主题和消息类型，再一键填充示例载荷，可以快速验证下行编码结果。"
+          />
           <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item name="productId" label="调试产品 ID">
@@ -1703,12 +2362,17 @@ const ProtocolParserPage: React.FC = () => {
             </Col>
             <Col xs={24} md={8}>
               <Form.Item name="topic" label="主题">
-                <Input />
+                <Select
+                  showSearch
+                  options={downlinkTopicOptions}
+                  optionFilterProp="label"
+                  placeholder="选择主题"
+                />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
               <Form.Item name="messageType" label="消息类型" rules={[{ required: true, message: '请输入消息类型' }]}>
-                <Input placeholder="PROPERTY_SET / SERVICE_INVOKE" />
+                <Select showSearch options={messageTypeOptions} optionFilterProp="label" placeholder="选择消息类型" />
               </Form.Item>
             </Col>
           </Row>
@@ -1744,6 +2408,16 @@ const ProtocolParserPage: React.FC = () => {
           <Form.Item
             name="payloadText"
             label="载荷 JSON"
+            extra={
+              <Space wrap>
+                <Button size="small" onClick={() => fillDownlinkDebugPayload('PROPERTY_SET')}>
+                  属性设置示例
+                </Button>
+                <Button size="small" onClick={() => fillDownlinkDebugPayload('SERVICE_INVOKE')}>
+                  服务调用示例
+                </Button>
+              </Space>
+            }
             rules={[{ required: true, message: '请输入载荷 JSON' }]}
           >
             <TextArea rows={8} style={{ fontFamily: 'monospace' }} />
