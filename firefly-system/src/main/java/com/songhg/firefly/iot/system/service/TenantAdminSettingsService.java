@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.context.UserContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
-import com.songhg.firefly.iot.system.config.properties.TenantAdminProperties;
 import com.songhg.firefly.iot.system.convert.PermissionResourceConvert;
 import com.songhg.firefly.iot.system.dto.permission.PermissionResourceVO;
 import com.songhg.firefly.iot.system.dto.system.TenantAdminDefaultPermissionsVO;
@@ -36,12 +35,11 @@ public class TenantAdminSettingsService {
     private static final String CONFIG_GROUP = "platform";
     private static final String CONFIG_KEY = "tenant.admin.default-permissions";
     private static final String CONFIG_VALUE_TYPE = "JSON";
+    private static final Long GLOBAL_CONFIG_TENANT_ID = 0L;
     private static final String SOURCE_SYSTEM_SETTINGS = "SYSTEM_SETTINGS";
-    private static final String SOURCE_APPLICATION_DEFAULT = "APPLICATION_DEFAULT";
     private static final String CONFIG_DESCRIPTION = "新租户管理员默认权限(JSON数组)";
     private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {};
 
-    private final TenantAdminProperties tenantAdminProperties;
     private final UserDomainService userDomainService;
     private final PermissionResourceService permissionResourceService;
     private final SystemConfigMapper systemConfigMapper;
@@ -86,16 +84,15 @@ public class TenantAdminSettingsService {
             }
         }
 
-        Long platformTenantId = userDomainService.getPlatformTenantId();
         Long operatorId = UserContextHolder.getUserId();
         SystemConfig existing = systemConfigMapper.selectOne(new LambdaQueryWrapper<SystemConfig>()
-                .eq(SystemConfig::getTenantId, platformTenantId)
+                .eq(SystemConfig::getTenantId, GLOBAL_CONFIG_TENANT_ID)
                 .eq(SystemConfig::getConfigKey, CONFIG_KEY)
                 .last("LIMIT 1"));
 
         if (existing == null) {
             SystemConfig created = new SystemConfig();
-            created.setTenantId(platformTenantId);
+            created.setTenantId(GLOBAL_CONFIG_TENANT_ID);
             created.setConfigGroup(CONFIG_GROUP);
             created.setConfigKey(CONFIG_KEY);
             created.setConfigValue(serializePermissions(normalizedPermissions));
@@ -123,15 +120,12 @@ public class TenantAdminSettingsService {
     }
 
     private ResolvedDefaultPermissions resolveDefaultPermissions() {
-        Long platformTenantId = userDomainService.getPlatformTenantId();
-        String configuredValue = systemConfigService.getValue(platformTenantId, CONFIG_KEY);
+        String configuredValue = systemConfigService.getValue(GLOBAL_CONFIG_TENANT_ID, CONFIG_KEY);
         List<String> configuredPermissions = parsePermissions(configuredValue);
         if (!configuredPermissions.isEmpty()) {
             return new ResolvedDefaultPermissions(configuredPermissions, SOURCE_SYSTEM_SETTINGS);
         }
-        return new ResolvedDefaultPermissions(
-                normalizePermissions(tenantAdminProperties.getDefaultPermissions()),
-                SOURCE_APPLICATION_DEFAULT);
+        throw new BizException(ResultCode.INTERNAL_ERROR, "tenant admin default permissions config is missing");
     }
 
     private List<PermissionResourceVO> listAvailablePermissions() {
@@ -159,7 +153,7 @@ public class TenantAdminSettingsService {
         try {
             return normalizePermissions(objectMapper.readValue(rawValue, STRING_LIST_TYPE));
         } catch (Exception ex) {
-            log.warn("Failed to parse tenant admin default permissions config, fallback to application defaults", ex);
+            log.warn("Failed to parse tenant admin default permissions config from system settings", ex);
             return List.of();
         }
     }

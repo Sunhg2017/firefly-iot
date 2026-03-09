@@ -16,11 +16,19 @@ public interface ProtocolParserDefinitionMapper extends BaseMapper<ProtocolParse
     @Select("""
             SELECT *
             FROM protocol_parser_definitions
-            WHERE product_id = #{productId}
-              AND published_version IS NOT NULL
+            WHERE published_version IS NOT NULL
               AND status = 'ENABLED'
               AND deleted_at IS NULL
-            ORDER BY updated_at DESC, id DESC
+              AND (
+                    (scope_type = 'PRODUCT' AND product_id = #{productId})
+                 OR (scope_type = 'TENANT' AND scope_id = #{tenantId})
+              )
+            ORDER BY
+              CASE WHEN scope_type = 'PRODUCT' THEN 0 ELSE 1 END,
+              CASE WHEN release_mode = 'ALL' THEN 1 ELSE 0 END,
+              updated_at DESC,
+              id DESC
             """)
-    List<ProtocolParserDefinition> selectPublishedByProductIdIgnoreTenant(@Param("productId") Long productId);
+    List<ProtocolParserDefinition> selectPublishedByProductAndTenantIgnoreTenant(@Param("productId") Long productId,
+                                                                                 @Param("tenantId") Long tenantId);
 }

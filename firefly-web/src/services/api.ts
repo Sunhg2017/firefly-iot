@@ -836,6 +836,13 @@ export const deviceApi = {
   getDelta: (id: number) => deviceRequest.get(`/devices/${id}/shadow/delta`),
   deleteShadow: (id: number) => deviceRequest.delete(`/devices/${id}/shadow`),
   clearDesired: (id: number) => deviceRequest.delete(`/devices/${id}/shadow/desired`),
+  listLocators: (deviceId: number) => deviceRequest.get(`/devices/${deviceId}/locators`),
+  createLocator: (deviceId: number, data: Record<string, unknown>) =>
+    deviceRequest.post(`/devices/${deviceId}/locators`, data),
+  updateLocator: (deviceId: number, locatorId: number, data: Record<string, unknown>) =>
+    deviceRequest.put(`/devices/${deviceId}/locators/${locatorId}`, data),
+  deleteLocator: (deviceId: number, locatorId: number) =>
+    deviceRequest.delete(`/devices/${deviceId}/locators/${locatorId}`),
 };
 
 // ==================== Product API ====================
@@ -859,6 +866,27 @@ export const productApi = {
     deviceRequest.put(`/products/${id}/thing-model`, data, {
       headers: { 'Content-Type': 'text/plain' },
     }),
+};
+
+// ==================== Protocol Parser API ====================
+export const protocolParserApi = {
+  list: (data: Record<string, unknown> = {}) => deviceRequest.post('/protocol-parsers/list', data),
+  get: (id: number) => deviceRequest.get(`/protocol-parsers/${id}`),
+  versions: (id: number) => deviceRequest.get(`/protocol-parsers/${id}/versions`),
+  create: (data: Record<string, unknown>) => deviceRequest.post('/protocol-parsers', data),
+  update: (id: number, data: Record<string, unknown>) => deviceRequest.put(`/protocol-parsers/${id}`, data),
+  test: (id: number, data: Record<string, unknown> = {}) => deviceRequest.post(`/protocol-parsers/${id}/test`, data),
+  encodeTest: (id: number, data: Record<string, unknown> = {}) =>
+    deviceRequest.post(`/protocol-parsers/${id}/encode-test`, data),
+  publish: (id: number, changeLog?: string) =>
+    deviceRequest.post(`/protocol-parsers/${id}/publish`, changeLog ? { changeLog } : {}),
+  rollback: (id: number, version: number) => deviceRequest.post(`/protocol-parsers/${id}/rollback/${version}`),
+  enable: (id: number) => deviceRequest.put(`/protocol-parsers/${id}/enable`),
+  disable: (id: number) => deviceRequest.put(`/protocol-parsers/${id}/disable`),
+  runtimePlugins: () => deviceRequest.get('/protocol-parsers/runtime/plugins'),
+  reloadRuntimePlugins: () => deviceRequest.post('/protocol-parsers/runtime/plugins/reload'),
+  pluginCatalog: () => deviceRequest.get('/protocol-parsers/runtime/plugins/catalog'),
+  runtimeMetrics: () => deviceRequest.get('/protocol-parsers/runtime/metrics'),
 };
 
 // ==================== Project API ====================

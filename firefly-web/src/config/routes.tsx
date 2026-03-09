@@ -103,6 +103,7 @@ const routeConfigs: RouteEntry[] = [
     icon: <HddOutlined />,
     children: [
       { path: '/product', label: '产品管理', icon: <AppstoreOutlined />, permission: 'product:read' },
+      { path: '/protocol-parser', label: '协议解析', icon: <ApiOutlined />, permission: 'protocol-parser:read' },
       { path: '/device', label: '设备管理', icon: <HddOutlined />, permission: 'device:read' },
       { path: '/device-group', label: '设备分组', icon: <GroupOutlined />, permission: 'device-group:read' },
       { path: '/device-tag', label: '设备标签', icon: <TagOutlined />, permission: 'device-tag:read' },

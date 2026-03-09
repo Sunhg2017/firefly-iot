@@ -2,75 +2,83 @@ package com.songhg.firefly.iot.device.protocolparser.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
-@Schema(description = "协议解析定义创建请求")
+@Schema(description = "Protocol parser create request")
 public class ProtocolParserCreateDTO {
 
-    @NotNull(message = "产品编号不能为空")
-    @Schema(description = "产品编号", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "Product id, required when scopeType=PRODUCT")
     private Long productId;
 
     @Size(max = 16)
-    @Schema(description = "作用域类型", example = "PRODUCT")
+    @Schema(description = "Scope type", example = "PRODUCT")
     private String scopeType;
 
-    @Schema(description = "作用域编号，默认为 productId")
+    @Schema(description = "Scope id, default is productId or tenantId")
     private Long scopeId;
 
-    @NotBlank(message = "协议不能为空")
+    @NotBlank(message = "protocol must not be blank")
     @Size(max = 32)
-    @Schema(description = "协议", example = "CUSTOM")
+    @Schema(description = "Protocol", example = "CUSTOM")
     private String protocol;
 
-    @NotBlank(message = "传输层不能为空")
+    @NotBlank(message = "transport must not be blank")
     @Size(max = 32)
-    @Schema(description = "传输层", example = "TCP")
+    @Schema(description = "Transport", example = "TCP")
     private String transport;
 
     @Size(max = 16)
-    @Schema(description = "方向", example = "UPLINK")
+    @Schema(description = "Direction", example = "UPLINK")
     private String direction;
 
     @Size(max = 16)
-    @Schema(description = "解析模式", example = "SCRIPT")
+    @Schema(description = "Parser mode", example = "SCRIPT")
     private String parserMode;
 
     @Size(max = 16)
-    @Schema(description = "拆包模式", example = "NONE")
+    @Schema(description = "Frame mode", example = "NONE")
     private String frameMode;
 
-    @Schema(description = "匹配规则 JSON")
+    @Schema(description = "Match rule JSON")
     private String matchRuleJson;
 
-    @Schema(description = "拆包配置 JSON")
+    @Schema(description = "Frame config JSON")
     private String frameConfigJson;
 
-    @Schema(description = "解析配置 JSON")
+    @Schema(description = "Parser config JSON")
     private String parserConfigJson;
 
+    @Schema(description = "Visual flow config JSON")
+    private String visualConfigJson;
+
     @Size(max = 16)
-    @Schema(description = "脚本语言", example = "JS")
+    @Schema(description = "Script language", example = "JS")
     private String scriptLanguage;
 
-    @Schema(description = "脚本内容")
+    @Schema(description = "Script content")
     private String scriptContent;
 
     @Size(max = 128)
-    @Schema(description = "插件编号")
+    @Schema(description = "Plugin id")
     private String pluginId;
 
     @Size(max = 64)
-    @Schema(description = "插件版本")
+    @Schema(description = "Plugin version")
     private String pluginVersion;
 
-    @Schema(description = "执行超时毫秒", example = "50")
+    @Schema(description = "Timeout in milliseconds", example = "50")
     private Integer timeoutMs;
 
     @Size(max = 16)
-    @Schema(description = "错误策略", example = "ERROR")
+    @Schema(description = "Error policy", example = "ERROR")
     private String errorPolicy;
+
+    @Size(max = 16)
+    @Schema(description = "Release mode", example = "ALL")
+    private String releaseMode;
+
+    @Schema(description = "Release config JSON")
+    private String releaseConfigJson;
 }

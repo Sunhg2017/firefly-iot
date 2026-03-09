@@ -2,6 +2,9 @@ package com.songhg.firefly.iot.connector.protocol.mqtt;
 
 import com.songhg.firefly.iot.common.message.DeviceMessage;
 import com.songhg.firefly.iot.connector.config.MqttProperties;
+import com.songhg.firefly.iot.connector.parser.model.DownlinkEncodeContext;
+import com.songhg.firefly.iot.connector.parser.model.ProtocolEncodeOutcome;
+import com.songhg.firefly.iot.connector.parser.service.ProtocolDownlinkEncodeService;
 import com.songhg.firefly.iot.connector.protocol.MessageCodec;
 import com.songhg.firefly.iot.connector.protocol.dto.MqttSessionRoute;
 import io.moquette.broker.Server;
@@ -39,6 +42,7 @@ public class EmbeddedMqttBroker {
     private final EmbeddedMqttConnectionManager connectionManager;
     private final MqttNodeRegistry nodeRegistry;
     private final MessageCodec messageCodec;
+    private final ProtocolDownlinkEncodeService protocolDownlinkEncodeService;
 
     private final ScheduledExecutorService routeRefreshExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread thread = new Thread(r, "firefly-mqtt-route-refresh");
@@ -105,12 +109,35 @@ public class EmbeddedMqttBroker {
             return false;
         }
 
-        String topic = message.getTopic();
-        if (topic == null || topic.isBlank()) {
-            topic = messageCodec.buildDownstreamTopic(route.getProductKey(), route.getDeviceName(), message.getType());
+        String defaultTopic = message.getTopic();
+        if (defaultTopic == null || defaultTopic.isBlank()) {
+            defaultTopic = messageCodec.buildDownstreamTopic(route.getProductKey(), route.getDeviceName(), message.getType());
         }
 
-        byte[] payload = messageCodec.encodeJson(message);
+        ProtocolEncodeOutcome encodeOutcome = protocolDownlinkEncodeService.encode(
+                DownlinkEncodeContext.builder()
+                        .protocol("MQTT")
+                        .transport("MQTT")
+                        .topic(defaultTopic)
+                        .messageType(message.getType() == null ? null : message.getType().name())
+                        .messageId(message.getMessageId())
+                        .payload(message.getPayload())
+                        .timestamp(message.getTimestamp())
+                        .tenantId(route.getTenantId())
+                        .productId(route.getProductId())
+                        .productKey(route.getProductKey())
+                        .deviceId(route.getDeviceId())
+                        .deviceName(route.getDeviceName())
+                        .headers(java.util.Map.of())
+                        .build()
+        );
+        if (encodeOutcome.isDrop()) {
+            log.warn("Downlink message dropped by custom encoder: deviceId={}, productId={}",
+                    route.getDeviceId(), route.getProductId());
+            return true;
+        }
+        String topic = encodeOutcome.isHandled() ? encodeOutcome.getTopic() : defaultTopic;
+        byte[] payload = encodeOutcome.isHandled() ? encodeOutcome.getPayload() : messageCodec.encodeJson(message);
         MqttPublishMessage publishMessage = MqttMessageBuilders.publish()
                 .topicName(topic)
                 .qos(MqttQoS.valueOf(mqttProperties.getDownstreamQos()))

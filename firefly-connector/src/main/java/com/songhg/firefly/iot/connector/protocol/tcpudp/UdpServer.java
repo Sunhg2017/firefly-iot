@@ -2,17 +2,24 @@ package com.songhg.firefly.iot.connector.protocol.tcpudp;
 
 import com.songhg.firefly.iot.connector.config.TcpUdpProperties;
 import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.*;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.util.CharsetUtil;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,7 +35,6 @@ public class UdpServer {
     private EventLoopGroup group;
     private Channel serverChannel;
 
-    /** 远端地址 -> 统计信息 */
     private final ConcurrentHashMap<String, UdpPeerInfo> peers = new ConcurrentHashMap<>();
     private final AtomicLong totalReceived = new AtomicLong(0);
 
@@ -40,7 +46,7 @@ public class UdpServer {
     @PostConstruct
     public void start() {
         if (!properties.isEnabled() || !properties.isUdpEnabled()) {
-            log.info("UDP 服务未启用");
+            log.info("UDP server disabled");
             return;
         }
 
@@ -55,10 +61,10 @@ public class UdpServer {
         try {
             ChannelFuture future = bootstrap.bind(properties.getUdpPort()).sync();
             serverChannel = future.channel();
-            log.info("UDP 服务启动成功, 端口: {}", properties.getUdpPort());
-        } catch (InterruptedException e) {
+            log.info("UDP server started on port {}", properties.getUdpPort());
+        } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            log.error("UDP 服务启动失败", e);
+            log.error("UDP server startup interrupted", ex);
         }
     }
 
@@ -67,12 +73,12 @@ public class UdpServer {
         if (serverChannel != null) {
             serverChannel.close();
         }
-        if (group != null) group.shutdownGracefully();
+        if (group != null) {
+            group.shutdownGracefully();
+        }
         peers.clear();
-        log.info("UDP 服务已停止");
+        log.info("UDP server stopped");
     }
-
-    // ==================== Peer info management ====================
 
     public Map<String, UdpPeerInfo> getPeers() {
         return peers;
@@ -91,9 +97,11 @@ public class UdpServer {
     }
 
     public boolean sendTo(String address, int port, String message) {
-        if (serverChannel == null || !serverChannel.isActive()) return false;
+        if (serverChannel == null || !serverChannel.isActive()) {
+            return false;
+        }
         InetSocketAddress target = new InetSocketAddress(address, port);
-        io.netty.buffer.ByteBuf buf = io.netty.buffer.Unpooled.copiedBuffer(message, CharsetUtil.UTF_8);
+        ByteBuf buf = Unpooled.copiedBuffer(message, CharsetUtil.UTF_8);
         serverChannel.writeAndFlush(new DatagramPacket(buf, target));
         return true;
     }
@@ -102,20 +110,19 @@ public class UdpServer {
         return address + ":" + port;
     }
 
-    // ==================== Channel Handler ====================
-
     private class UdpChannelHandler extends SimpleChannelInboundHandler<DatagramPacket> {
 
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) {
-            String content = packet.content().toString(CharsetUtil.UTF_8).trim();
+            ByteBuf content = packet.content();
+            byte[] payload = new byte[content.readableBytes()];
+            content.getBytes(content.readerIndex(), payload);
             InetSocketAddress sender = packet.sender();
             String senderKey = buildPeerKey(sender.getHostString(), sender.getPort());
 
             totalReceived.incrementAndGet();
 
-            // Track peer info
-            UdpPeerInfo peerInfo = peers.computeIfAbsent(senderKey, k -> {
+            UdpPeerInfo peerInfo = peers.computeIfAbsent(senderKey, key -> {
                 UdpPeerInfo info = new UdpPeerInfo();
                 info.setAddress(sender.getHostString());
                 info.setPort(sender.getPort());
@@ -125,19 +132,16 @@ public class UdpServer {
             peerInfo.setLastMessageTime(System.currentTimeMillis());
             peerInfo.incrementReceivedMessages();
 
-            log.debug("UDP 收到消息: from={}, msg={}", senderKey, content);
+            log.debug("UDP payload received: from={}, bytes={}", senderKey, payload.length);
 
-            // Publish to Kafka
-            protocolAdapter.handleUdpMessage(senderKey, peerInfo, content);
+            protocolAdapter.handleUdpMessage(senderKey, peerInfo, payload);
         }
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-            log.error("UDP 服务异常: {}", cause.getMessage());
+            log.error("UDP server error: {}", cause.getMessage());
         }
     }
-
-    // ==================== UDP Peer Info ====================
 
     @lombok.Data
     public static class UdpPeerInfo {

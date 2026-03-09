@@ -24,6 +24,10 @@
             <groupId>com.songhg.firefly.iot</groupId>
             <artifactId>firefly-api</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.songhg.firefly.iot</groupId>
+            <artifactId>firefly-plugin-api</artifactId>
+        </dependency>
 
         <!-- Spring Cloud OpenFeign -->
         <dependency>

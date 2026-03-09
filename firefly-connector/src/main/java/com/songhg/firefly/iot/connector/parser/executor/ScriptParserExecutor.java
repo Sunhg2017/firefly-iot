@@ -5,6 +5,8 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.api.dto.ProtocolParserPublishedDTO;
+import com.songhg.firefly.iot.connector.parser.model.DownlinkEncodeContext;
+import com.songhg.firefly.iot.connector.parser.model.EncodeExecutionResult;
 import com.songhg.firefly.iot.connector.parser.model.ParseContext;
 import com.songhg.firefly.iot.connector.parser.model.ParseExecutionResult;
 import jakarta.annotation.PreDestroy;
@@ -134,6 +136,18 @@ public class ScriptParserExecutor {
                     """,
             "firefly-parser-invoke.js"
     ).cached(true).buildLiteral();
+    private static final Source INVOKE_ENCODE_SOURCE = Source.newBuilder(
+            "js",
+            """
+                    JSON.stringify((function() {
+                      if (typeof encode !== 'function') {
+                        throw new Error('encode(ctx) must be defined');
+                      }
+                      return encode(ctx);
+                    })())
+                    """,
+            "firefly-encoder-invoke.js"
+    ).cached(true).buildLiteral();
 
     private final ObjectMapper objectMapper;
     private final Engine engine = Engine.newBuilder()
@@ -172,6 +186,23 @@ public class ScriptParserExecutor {
         }
     }
 
+    public EncodeExecutionResult encode(ProtocolParserPublishedDTO definition, DownlinkEncodeContext context) {
+        Future<EncodeExecutionResult> future = executorService.submit(() -> doEncode(definition, context));
+        try {
+            int timeoutMs = definition.getTimeoutMs() == null ? 50 : definition.getTimeoutMs();
+            return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException ex) {
+            future.cancel(true);
+            throw new IllegalStateException("Script encoder execution timeout");
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            future.cancel(true);
+            throw new IllegalStateException("Script encoder execution interrupted");
+        } catch (ExecutionException ex) {
+            throw unwrap(ex);
+        }
+    }
+
     public void invalidate(Long definitionId) {
         if (definitionId == null) {
             return;
@@ -199,6 +230,23 @@ public class ScriptParserExecutor {
             return objectMapper.readValue(resultJson, ParseExecutionResult.class);
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Failed to deserialize parser result", ex);
+        }
+    }
+
+    private EncodeExecutionResult doEncode(ProtocolParserPublishedDTO definition, DownlinkEncodeContext context) {
+        String contextJson = writeContextJson(context);
+        try (Context jsContext = newContext()) {
+            jsContext.getBindings("js").putMember("__ctxJson", contextJson);
+            jsContext.eval(HELPER_SOURCE);
+            jsContext.eval(CONTEXT_SOURCE);
+            jsContext.eval(resolveScriptSource(definition));
+            String resultJson = jsContext.eval(INVOKE_ENCODE_SOURCE).asString();
+            if (resultJson == null || resultJson.isBlank() || "null".equals(resultJson)) {
+                return new EncodeExecutionResult();
+            }
+            return objectMapper.readValue(resultJson, EncodeExecutionResult.class);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Failed to deserialize encoder result", ex);
         }
     }
 
@@ -271,6 +319,31 @@ public class ScriptParserExecutor {
             return objectMapper.writeValueAsString(model);
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Failed to serialize parser context", ex);
+        }
+    }
+
+    private String writeContextJson(DownlinkEncodeContext context) {
+        Map<String, Object> model = new LinkedHashMap<>();
+        model.put("protocol", context.getProtocol());
+        model.put("transport", context.getTransport());
+        model.put("topic", context.getTopic());
+        model.put("messageType", context.getMessageType());
+        model.put("messageId", context.getMessageId());
+        model.put("payload", context.getPayload() == null ? Map.of() : context.getPayload());
+        model.put("timestamp", context.getTimestamp());
+        model.put("tenantId", context.getTenantId());
+        model.put("productId", context.getProductId());
+        model.put("productKey", context.getProductKey());
+        model.put("deviceId", context.getDeviceId());
+        model.put("deviceName", context.getDeviceName());
+        model.put("headers", context.getHeaders() == null ? Map.of() : context.getHeaders());
+        model.put("sessionId", context.getSessionId());
+        model.put("remoteAddress", context.getRemoteAddress());
+        model.put("config", context.getConfig() == null ? Map.of() : context.getConfig());
+        try {
+            return objectMapper.writeValueAsString(model);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Failed to serialize encoder context", ex);
         }
     }
 

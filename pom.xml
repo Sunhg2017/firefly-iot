@@ -15,6 +15,7 @@
     <modules>
         <module>firefly-common</module>
         <module>firefly-api</module>
+        <module>firefly-plugin-api</module>
         <module>firefly-system</module>
         <module>firefly-device</module>
         <module>firefly-rule</module>
@@ -102,6 +103,11 @@
             <dependency>
                 <groupId>com.songhg.firefly.iot</groupId>
                 <artifactId>firefly-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.songhg.firefly.iot</groupId>
+                <artifactId>firefly-plugin-api</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

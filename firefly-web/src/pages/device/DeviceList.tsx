@@ -32,6 +32,7 @@ import type { ColumnsType } from 'antd/es/table';
 import type { TableRowSelection } from 'antd/es/table/interface';
 import * as XLSX from 'xlsx';
 import DeviceShadowDrawer from './DeviceShadowDrawer';
+import DeviceLocatorModal from './DeviceLocatorModal';
 import { deviceApi, productApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 
@@ -307,6 +308,7 @@ const DeviceList: React.FC = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [shadowDeviceId, setShadowDeviceId] = useState<number | null>(null);
   const [shadowOpen, setShadowOpen] = useState(false);
+  const [locatorDevice, setLocatorDevice] = useState<DeviceRecord | null>(null);
   const [importedBatchDevices, setImportedBatchDevices] = useState<ImportedBatchDevice[]>([]);
   const [batchImportFileName, setBatchImportFileName] = useState('');
   const batchImportInputRef = useRef<HTMLInputElement | null>(null);
@@ -723,7 +725,7 @@ const DeviceList: React.FC = () => {
     },
     {
       title: '操作',
-      width: 300,
+      width: 360,
       fixed: 'right',
       render: (_, record) => (
         <Space>
@@ -741,6 +743,9 @@ const DeviceList: React.FC = () => {
             onClick={() => void handleViewSecret(record)}
           >
             密钥
+          </Button>
+          <Button type="link" size="small" onClick={() => setLocatorDevice(record)}>
+            Locator
           </Button>
           <Button
             type="link"
@@ -1065,6 +1070,12 @@ const DeviceList: React.FC = () => {
       </Modal>
 
       <DeviceShadowDrawer deviceId={shadowDeviceId} open={shadowOpen} onClose={() => setShadowOpen(false)} />
+      <DeviceLocatorModal
+        deviceId={locatorDevice?.id || null}
+        deviceName={locatorDevice?.deviceName}
+        open={Boolean(locatorDevice)}
+        onClose={() => setLocatorDevice(null)}
+      />
     </div>
   );
 };

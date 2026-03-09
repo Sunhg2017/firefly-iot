@@ -75,29 +75,6 @@ auth:
 firefly:
   audit:
     enabled: false
-  tenant:
-    admin:
-      default-permissions:
-        - dashboard:read
-        - project:*
-        - share:*
-        - product:*
-        - device:*
-        - device-group:*
-        - device-tag:*
-        - geo-fence:*
-        - rule:*
-        - alarm:*
-        - notification:*
-        - message-template:*
-        - data:*
-        - analysis:*
-        - device-log:*
-        - export:*
-        - firmware:*
-        - ota:*
-        - video:*
-        - monitor:read
 
 mybatis-plus:
   configuration:

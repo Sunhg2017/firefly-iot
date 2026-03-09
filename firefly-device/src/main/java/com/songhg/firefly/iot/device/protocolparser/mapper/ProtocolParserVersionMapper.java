@@ -6,6 +6,8 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
+import java.util.List;
+
 @Mapper
 public interface ProtocolParserVersionMapper extends BaseMapper<ProtocolParserVersion> {
 
@@ -25,4 +27,12 @@ public interface ProtocolParserVersionMapper extends BaseMapper<ProtocolParserVe
             WHERE definition_id = #{definitionId}
             """)
     Integer selectMaxVersionNo(@Param("definitionId") Long definitionId);
+
+    @Select("""
+            SELECT *
+            FROM protocol_parser_versions
+            WHERE definition_id = #{definitionId}
+            ORDER BY version_no DESC, id DESC
+            """)
+    List<ProtocolParserVersion> selectListByDefinitionId(@Param("definitionId") Long definitionId);
 }

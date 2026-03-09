@@ -6,7 +6,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@Schema(description = "协议解析定义视图")
+@Schema(description = "Protocol parser view object")
 public class ProtocolParserVO {
 
     private Long id;
@@ -22,12 +22,15 @@ public class ProtocolParserVO {
     private String matchRuleJson;
     private String frameConfigJson;
     private String parserConfigJson;
+    private String visualConfigJson;
     private String scriptLanguage;
     private String scriptContent;
     private String pluginId;
     private String pluginVersion;
     private Integer timeoutMs;
     private String errorPolicy;
+    private String releaseMode;
+    private String releaseConfigJson;
     private String status;
     private Integer currentVersion;
     private Integer publishedVersion;

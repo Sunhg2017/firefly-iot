@@ -34,12 +34,20 @@ public class ProtocolParserDefinition extends TenantEntity {
     @TableField(typeHandler = JsonbStringTypeHandler.class, jdbcType = JdbcType.OTHER)
     private String parserConfigJson;
 
+    @TableField(typeHandler = JsonbStringTypeHandler.class, jdbcType = JdbcType.OTHER)
+    private String visualConfigJson;
+
     private String scriptLanguage;
     private String scriptContent;
     private String pluginId;
     private String pluginVersion;
     private Integer timeoutMs;
     private String errorPolicy;
+    private String releaseMode;
+
+    @TableField(typeHandler = JsonbStringTypeHandler.class, jdbcType = JdbcType.OTHER)
+    private String releaseConfigJson;
+
     private String status;
     private Integer currentVersion;
     private Integer publishedVersion;

@@ -9,6 +9,7 @@ import com.songhg.firefly.iot.common.context.UserContextHolder;
 import com.songhg.firefly.iot.common.event.EventPublisher;
 import com.songhg.firefly.iot.common.event.EventTopics;
 import com.songhg.firefly.iot.common.event.ProtocolParserChangedEvent;
+import com.songhg.firefly.iot.device.entity.Product;
 import com.songhg.firefly.iot.device.mapper.ProductMapper;
 import com.songhg.firefly.iot.device.protocolparser.entity.ProtocolParserDefinition;
 import com.songhg.firefly.iot.device.protocolparser.entity.ProtocolParserVersion;
@@ -21,6 +22,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -79,6 +83,7 @@ class ProtocolParserServiceTest {
         definition.setCurrentVersion(3);
         definition.setStatus("DRAFT");
 
+        mockProduct(1001L, 88L);
         when(definitionMapper.selectById(10L)).thenReturn(definition);
         when(versionMapper.selectByDefinitionIdAndVersionNo(10L, 3)).thenReturn(null);
 
@@ -125,6 +130,7 @@ class ProtocolParserServiceTest {
         definition.setTransport("MQTT");
 
         ProtocolParserPublishedDTO snapshot = new ProtocolParserPublishedDTO();
+        snapshot.setProductId(1001L);
         snapshot.setScopeType("PRODUCT");
         snapshot.setScopeId(1001L);
         snapshot.setProtocol("HTTP");
@@ -145,6 +151,7 @@ class ProtocolParserServiceTest {
         version.setVersionNo(2);
         version.setSnapshotJson(objectMapper.writeValueAsString(snapshot));
 
+        mockProduct(1001L, 88L);
         when(definitionMapper.selectById(10L)).thenReturn(definition);
         when(versionMapper.selectByDefinitionIdAndVersionNo(10L, 2)).thenReturn(version);
         when(versionMapper.selectMaxVersionNo(10L)).thenReturn(5);
@@ -173,6 +180,41 @@ class ProtocolParserServiceTest {
         assertThat(event.getDefinitionId()).isEqualTo(10L);
     }
 
+    @Test
+    void listVersionsShouldReturnVersionHistoryDescending() {
+        ProtocolParserDefinition definition = baseDefinition();
+        definition.setId(10L);
+
+        ProtocolParserVersion version3 = new ProtocolParserVersion();
+        version3.setId(301L);
+        version3.setDefinitionId(10L);
+        version3.setVersionNo(3);
+        version3.setPublishStatus("PUBLISHED");
+        version3.setChangeLog("add tcp delimiter");
+        version3.setCreatedBy(501L);
+        version3.setCreatedAt(LocalDateTime.of(2026, 3, 9, 10, 0));
+
+        ProtocolParserVersion version2 = new ProtocolParserVersion();
+        version2.setId(201L);
+        version2.setDefinitionId(10L);
+        version2.setVersionNo(2);
+        version2.setPublishStatus("PUBLISHED");
+        version2.setChangeLog("support mqtt topic match");
+        version2.setCreatedBy(501L);
+        version2.setCreatedAt(LocalDateTime.of(2026, 3, 8, 9, 30));
+
+        when(definitionMapper.selectById(10L)).thenReturn(definition);
+        when(versionMapper.selectListByDefinitionId(10L)).thenReturn(List.of(version3, version2));
+
+        var versions = protocolParserService.listVersions(10L);
+
+        assertThat(versions).hasSize(2);
+        assertThat(versions.get(0).getVersionNo()).isEqualTo(3);
+        assertThat(versions.get(0).getChangeLog()).isEqualTo("add tcp delimiter");
+        assertThat(versions.get(1).getVersionNo()).isEqualTo(2);
+        assertThat(versions.get(1).getChangeLog()).isEqualTo("support mqtt topic match");
+    }
+
     private ProtocolParserDefinition baseDefinition() {
         ProtocolParserDefinition definition = new ProtocolParserDefinition();
         definition.setTenantId(88L);
@@ -193,5 +235,12 @@ class ProtocolParserServiceTest {
         definition.setErrorPolicy("ERROR");
         definition.setCreatedBy(501L);
         return definition;
+    }
+
+    private void mockProduct(Long productId, Long tenantId) {
+        Product product = new Product();
+        product.setId(productId);
+        product.setTenantId(tenantId);
+        when(productMapper.selectByIdIgnoreTenant(productId)).thenReturn(product);
     }
 }

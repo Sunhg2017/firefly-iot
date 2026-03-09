@@ -4,25 +4,27 @@ import com.songhg.firefly.iot.connector.config.TcpUdpProperties;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.*;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.DelimiterBasedFrameDecoder;
-import io.netty.handler.codec.LineBasedFrameDecoder;
-import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
-import io.netty.handler.codec.string.StringDecoder;
-import io.netty.handler.codec.string.StringEncoder;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
-import io.netty.util.CharsetUtil;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,9 +41,7 @@ public class TcpServer {
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
 
-    /** sessionId -> SessionInfo */
     private final ConcurrentHashMap<String, TcpSessionInfo> sessions = new ConcurrentHashMap<>();
-    /** channelId -> sessionId mapping */
     private final ConcurrentHashMap<String, String> channelToSession = new ConcurrentHashMap<>();
 
     public TcpServer(TcpUdpProperties properties, TcpUdpProtocolAdapter protocolAdapter) {
@@ -52,7 +52,7 @@ public class TcpServer {
     @PostConstruct
     public void start() {
         if (!properties.isEnabled() || !properties.isTcpEnabled()) {
-            log.info("TCP 服务未启用");
+            log.info("TCP server disabled");
             return;
         }
 
@@ -69,34 +69,10 @@ public class TcpServer {
                     @Override
                     protected void initChannel(SocketChannel ch) {
                         ChannelPipeline pipeline = ch.pipeline();
-
-                        // Idle state handler
                         if (properties.getIdleTimeoutSec() > 0) {
                             pipeline.addLast(new IdleStateHandler(
                                     properties.getIdleTimeoutSec(), 0, 0, TimeUnit.SECONDS));
                         }
-
-                        // Frame decoder based on config
-                        switch (properties.getTcpFrameDecoder().toUpperCase()) {
-                            case "LENGTH":
-                                pipeline.addLast(new LengthFieldBasedFrameDecoder(
-                                        properties.getMaxFrameLength(), 0, 4, 0, 4));
-                                break;
-                            case "DELIMITER":
-                                ByteBuf delimiter = Unpooled.copiedBuffer(
-                                        properties.getTcpDelimiter(), CharsetUtil.UTF_8);
-                                pipeline.addLast(new DelimiterBasedFrameDecoder(
-                                        properties.getMaxFrameLength(), delimiter));
-                                break;
-                            case "LINE":
-                            default:
-                                pipeline.addLast(new LineBasedFrameDecoder(
-                                        properties.getMaxFrameLength()));
-                                break;
-                        }
-
-                        pipeline.addLast(new StringDecoder(CharsetUtil.UTF_8));
-                        pipeline.addLast(new StringEncoder(CharsetUtil.UTF_8));
                         pipeline.addLast(new TcpChannelHandler());
                     }
                 });
@@ -104,10 +80,10 @@ public class TcpServer {
         try {
             ChannelFuture future = bootstrap.bind(properties.getTcpPort()).sync();
             serverChannel = future.channel();
-            log.info("TCP 服务启动成功, 端口: {}", properties.getTcpPort());
-        } catch (InterruptedException e) {
+            log.info("TCP server started on port {}", properties.getTcpPort());
+        } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            log.error("TCP 服务启动失败", e);
+            log.error("TCP server startup interrupted", ex);
         }
     }
 
@@ -116,14 +92,16 @@ public class TcpServer {
         if (serverChannel != null) {
             serverChannel.close();
         }
-        if (bossGroup != null) bossGroup.shutdownGracefully();
-        if (workerGroup != null) workerGroup.shutdownGracefully();
+        if (bossGroup != null) {
+            bossGroup.shutdownGracefully();
+        }
+        if (workerGroup != null) {
+            workerGroup.shutdownGracefully();
+        }
         sessions.clear();
         channelToSession.clear();
-        log.info("TCP 服务已停止");
+        log.info("TCP server stopped");
     }
-
-    // ==================== Session management ====================
 
     public Map<String, TcpSessionInfo> getSessions() {
         return sessions;
@@ -142,14 +120,16 @@ public class TcpServer {
         if (info == null || info.getChannel() == null || !info.getChannel().isActive()) {
             return false;
         }
-        info.getChannel().writeAndFlush(message + "\n");
+        info.getChannel().writeAndFlush(Unpooled.copiedBuffer(message + "\n", StandardCharsets.UTF_8));
         info.incrementSentMessages();
         return true;
     }
 
     public boolean disconnectSession(String sessionId) {
         TcpSessionInfo info = sessions.remove(sessionId);
-        if (info == null) return false;
+        if (info == null) {
+            return false;
+        }
         channelToSession.remove(info.getChannelId());
         if (info.getChannel() != null && info.getChannel().isActive()) {
             info.getChannel().close();
@@ -161,7 +141,7 @@ public class TcpServer {
         int count = 0;
         for (TcpSessionInfo info : sessions.values()) {
             if (info.getChannel() != null && info.getChannel().isActive()) {
-                info.getChannel().writeAndFlush(message + "\n");
+                info.getChannel().writeAndFlush(Unpooled.copiedBuffer(message + "\n", StandardCharsets.UTF_8));
                 info.incrementSentMessages();
                 count++;
             }
@@ -169,9 +149,7 @@ public class TcpServer {
         return count;
     }
 
-    // ==================== Channel Handler ====================
-
-    private class TcpChannelHandler extends SimpleChannelInboundHandler<String> {
+    private class TcpChannelHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
@@ -190,7 +168,7 @@ public class TcpServer {
             sessions.put(sessionId, info);
             channelToSession.put(channelId, sessionId);
 
-            log.info("TCP 连接建立: {} -> {}", sessionId, info.getRemoteAddress());
+            log.info("TCP connection established: {} -> {}", sessionId, info.getRemoteAddress());
         }
 
         @Override
@@ -199,12 +177,12 @@ public class TcpServer {
             String sessionId = channelToSession.remove(channelId);
             if (sessionId != null) {
                 sessions.remove(sessionId);
-                log.info("TCP 连接断开: {}", sessionId);
+                log.info("TCP connection closed: {}", sessionId);
             }
         }
 
         @Override
-        protected void channelRead0(ChannelHandlerContext ctx, String msg) {
+        protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) {
             String channelId = ctx.channel().id().asLongText();
             String sessionId = channelToSession.get(channelId);
             TcpSessionInfo info = sessionId != null ? sessions.get(sessionId) : null;
@@ -213,10 +191,11 @@ public class TcpServer {
                 info.incrementReceivedMessages();
             }
 
-            log.debug("TCP 收到消息: session={}, msg={}", sessionId, msg);
+            byte[] payload = new byte[msg.readableBytes()];
+            msg.getBytes(msg.readerIndex(), payload);
+            log.debug("TCP payload received: session={}, bytes={}", sessionId, payload.length);
 
-            // Publish to Kafka via protocol adapter
-            protocolAdapter.handleTcpMessage(sessionId, info, msg);
+            protocolAdapter.handleTcpMessage(sessionId, info, payload);
         }
 
         @Override
@@ -224,7 +203,7 @@ public class TcpServer {
             if (evt instanceof IdleStateEvent) {
                 String channelId = ctx.channel().id().asLongText();
                 String sessionId = channelToSession.get(channelId);
-                log.info("TCP 连接空闲超时, 关闭: {}", sessionId);
+                log.info("TCP connection idle timeout: {}", sessionId);
                 ctx.close();
             }
         }
@@ -233,7 +212,7 @@ public class TcpServer {
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             String channelId = ctx.channel().id().asLongText();
             String sessionId = channelToSession.get(channelId);
-            log.error("TCP 连接异常: session={}, error={}", sessionId, cause.getMessage());
+            log.error("TCP connection error: session={}, error={}", sessionId, cause.getMessage());
             ctx.close();
         }
     }

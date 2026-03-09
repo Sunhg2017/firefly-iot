@@ -6,30 +6,39 @@ import lombok.Data;
 import java.util.Map;
 
 @Data
-@Schema(description = "协议解析调试请求")
+@Schema(description = "Protocol parser uplink debug request")
 public class ProtocolParserTestRequestDTO {
 
-    @Schema(description = "协议", example = "TCP_UDP")
+    @Schema(description = "Debug product id override, useful for tenant-scope rules")
+    private Long productId;
+
+    @Schema(description = "Protocol", example = "TCP_UDP")
     private String protocol;
 
-    @Schema(description = "传输层", example = "TCP")
+    @Schema(description = "Transport", example = "TCP")
     private String transport;
 
-    @Schema(description = "主题或路径", example = "/tcp/data")
+    @Schema(description = "Topic or path", example = "/tcp/data")
     private String topic;
 
-    @Schema(description = "负载编码", example = "HEX")
+    @Schema(description = "Payload encoding", example = "HEX")
     private String payloadEncoding;
 
-    @Schema(description = "原始负载")
+    @Schema(description = "Raw payload")
     private String payload;
 
-    @Schema(description = "请求头或扩展上下文")
+    @Schema(description = "Headers or extra context")
     private Map<String, String> headers;
 
-    @Schema(description = "会话编号")
+    @Schema(description = "Session id")
     private String sessionId;
 
-    @Schema(description = "远端地址")
+    @Schema(description = "Remote address")
     private String remoteAddress;
+
+    @Schema(description = "Debug device id override")
+    private Long deviceId;
+
+    @Schema(description = "Debug device name override")
+    private String deviceName;
 }

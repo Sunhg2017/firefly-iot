@@ -1,6 +1,9 @@
 package com.songhg.firefly.iot.connector.protocol;
 
 import com.songhg.firefly.iot.common.message.DeviceMessage;
+import com.songhg.firefly.iot.connector.parser.model.KnownDeviceContext;
+import com.songhg.firefly.iot.connector.parser.model.ProtocolParseOutcome;
+import com.songhg.firefly.iot.connector.parser.service.ProtocolParseEngine;
 import com.songhg.firefly.iot.connector.protocol.dto.DeviceAuthResult;
 import com.songhg.firefly.iot.connector.service.DeviceMessageProducer;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +40,7 @@ public class CoapProtocolAdapter implements ProtocolAdapter {
     private final DeviceAuthService authService;
     private final DeviceMessageProducer messageProducer;
     private final MessageCodec messageCodec;
+    private final ProtocolParseEngine protocolParseEngine;
 
     @Override
     public String getProtocol() {
@@ -76,6 +80,9 @@ public class CoapProtocolAdapter implements ProtocolAdapter {
             log.warn("CoAP property report: unauthorized token");
             return;
         }
+        if (handleByCustomParser("/coap/thing/property/post", payload, auth, DeviceMessage.MessageType.PROPERTY_REPORT)) {
+            return;
+        }
         DeviceMessage message = messageCodec.decodeJson(
                 "/coap/thing/property/post", payload,
                 auth.getDeviceId(), auth.getTenantId(), auth.getProductId());
@@ -93,6 +100,9 @@ public class CoapProtocolAdapter implements ProtocolAdapter {
         DeviceAuthResult auth = authService.authenticateByToken(token);
         if (!auth.isSuccess()) {
             log.warn("CoAP event report: unauthorized token");
+            return;
+        }
+        if (handleByCustomParser("/coap/thing/event/post", payload, auth, DeviceMessage.MessageType.EVENT_REPORT)) {
             return;
         }
         DeviceMessage message = messageCodec.decodeJson(
@@ -114,6 +124,9 @@ public class CoapProtocolAdapter implements ProtocolAdapter {
             log.warn("CoAP OTA progress: unauthorized token");
             return;
         }
+        if (handleByCustomParser("/coap/ota/progress", payload, auth, DeviceMessage.MessageType.OTA_PROGRESS)) {
+            return;
+        }
         DeviceMessage message = messageCodec.decodeJson(
                 "/coap/ota/progress", payload,
                 auth.getDeviceId(), auth.getTenantId(), auth.getProductId());
@@ -133,6 +146,31 @@ public class CoapProtocolAdapter implements ProtocolAdapter {
         DeviceAuthResult auth = authService.authenticateByToken(token);
         if (!auth.isSuccess()) return null;
 
+        ProtocolParseOutcome parseOutcome = protocolParseEngine.parse(
+                ProtocolParseEngine.buildContext(
+                        "COAP",
+                        "COAP",
+                        topic,
+                        payload,
+                        headers,
+                        null,
+                        headers == null ? null : headers.get("remoteAddress"),
+                        auth.getProductId(),
+                        null
+                ),
+                KnownDeviceContext.builder()
+                        .tenantId(auth.getTenantId())
+                        .productId(auth.getProductId())
+                        .deviceId(auth.getDeviceId())
+                        .build()
+        );
+        if (parseOutcome.isHandled() && !parseOutcome.getMessages().isEmpty()) {
+            return parseOutcome.getMessages().get(0);
+        }
+        if (parseOutcome.isHandled()) {
+            return null;
+        }
+
         DeviceMessage message = messageCodec.decodeJson(topic, payload, auth.getDeviceId(), auth.getTenantId(), auth.getProductId());
         if (message != null && topic != null) {
             if (topic.contains("property")) message.setType(DeviceMessage.MessageType.PROPERTY_REPORT);
@@ -146,5 +184,39 @@ public class CoapProtocolAdapter implements ProtocolAdapter {
     @Override
     public byte[] encode(DeviceMessage message) {
         return messageCodec.encodeJson(message);
+    }
+
+    private boolean handleByCustomParser(String topic,
+                                         byte[] payload,
+                                         DeviceAuthResult auth,
+                                         DeviceMessage.MessageType fallbackType) {
+        ProtocolParseOutcome parseOutcome = protocolParseEngine.parse(
+                ProtocolParseEngine.buildContext(
+                        "COAP",
+                        "COAP",
+                        topic,
+                        payload,
+                        Map.of(),
+                        null,
+                        null,
+                        auth.getProductId(),
+                        null
+                ),
+                KnownDeviceContext.builder()
+                        .tenantId(auth.getTenantId())
+                        .productId(auth.getProductId())
+                        .deviceId(auth.getDeviceId())
+                        .build()
+        );
+        if (!parseOutcome.isHandled()) {
+            return false;
+        }
+        parseOutcome.getMessages().forEach(message -> {
+            if (message.getType() == null) {
+                message.setType(fallbackType);
+            }
+            messageProducer.publishUpstream(message);
+        });
+        return true;
     }
 }

@@ -14,7 +14,18 @@ public interface ProductMapper extends BaseMapper<Product> {
     @Select("""
             SELECT *
             FROM products
+            WHERE id = #{id}
+              AND deleted_at IS NULL
+            LIMIT 1
+            """)
+    Product selectByIdIgnoreTenant(@Param("id") Long id);
+
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("""
+            SELECT *
+            FROM products
             WHERE product_key = #{productKey}
+              AND deleted_at IS NULL
             LIMIT 1
             """)
     Product selectByProductKeyIgnoreTenant(@Param("productKey") String productKey);

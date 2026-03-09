@@ -24,6 +24,7 @@ import com.songhg.firefly.iot.device.entity.Device;
 import com.songhg.firefly.iot.device.entity.Product;
 import com.songhg.firefly.iot.device.mapper.DeviceMapper;
 import com.songhg.firefly.iot.device.mapper.ProductMapper;
+import com.songhg.firefly.iot.device.protocolparser.service.DeviceLocatorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -48,6 +49,7 @@ public class DeviceService {
 
     private final DeviceMapper deviceMapper;
     private final ProductMapper productMapper;
+    private final DeviceLocatorService deviceLocatorService;
 
     private static final String CHARS = "abcdefghijklmnopqrstuvwxyz0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -181,6 +183,7 @@ public class DeviceService {
     @Transactional
     public void deleteDevice(Long id) {
         Device device = getActiveDevice(id);
+        deviceLocatorService.deleteByDeviceId(device.getId());
         device.setDeletedAt(LocalDateTime.now());
         device.setOnlineStatus(OnlineStatus.OFFLINE);
         deviceMapper.updateById(device);

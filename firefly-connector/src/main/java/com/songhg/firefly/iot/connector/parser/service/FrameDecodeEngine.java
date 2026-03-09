@@ -1,0 +1,420 @@
+package com.songhg.firefly.iot.connector.parser.service;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.songhg.firefly.iot.api.dto.ProtocolParserPublishedDTO;
+import com.songhg.firefly.iot.connector.config.TcpUdpProperties;
+import com.songhg.firefly.iot.connector.parser.model.FrameDecodeResult;
+import com.songhg.firefly.iot.connector.parser.model.KnownDeviceContext;
+import com.songhg.firefly.iot.connector.parser.model.ParseContext;
+import com.songhg.firefly.iot.connector.parser.support.PayloadCodec;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class FrameDecodeEngine {
+
+    private static final int DEFAULT_MAX_FRAME_LENGTH = 65_536;
+
+    private final ObjectMapper objectMapper;
+    private final TcpUdpProperties tcpUdpProperties;
+    private final PublishedProtocolParserService publishedProtocolParserService;
+    private final ProtocolParserMatcher protocolParserMatcher;
+    private final FrameSessionBufferStore frameSessionBufferStore;
+
+    public FrameDecodeResult decode(ParseContext parseContext, KnownDeviceContext knownDeviceContext) {
+        if (!isTcp(parseContext.getTransport())) {
+            return FrameDecodeResult.frames(List.of(payloadOrEmpty(parseContext.getPayload())));
+        }
+        Long productId = parseContext.getProductId() != null
+                ? parseContext.getProductId()
+                : knownDeviceContext == null ? null : knownDeviceContext.getProductId();
+        if (productId == null) {
+            return decodeLegacy(parseContext);
+        }
+        ProtocolParserPublishedDTO definition = publishedProtocolParserService.getPublishedDefinitions(productId).stream()
+                .filter(candidate -> protocolParserMatcher.matches(candidate, parseContext))
+                .findFirst()
+                .orElse(null);
+        if (definition == null) {
+            return decodeLegacy(parseContext);
+        }
+        return decode(definition, parseContext);
+    }
+
+    public FrameDecodeResult decode(ProtocolParserPublishedDTO definition, ParseContext parseContext) {
+        if (!isTcp(parseContext.getTransport())) {
+            return FrameDecodeResult.frames(List.of(payloadOrEmpty(parseContext.getPayload())));
+        }
+
+        String frameMode = definition == null ? "NONE" : upper(definition.getFrameMode());
+        if (frameMode == null || frameMode.isBlank() || "NONE".equals(frameMode)) {
+            clearSessionBuffer(parseContext);
+            return FrameDecodeResult.frames(List.of(payloadOrEmpty(parseContext.getPayload())));
+        }
+
+        byte[] incoming = payloadOrEmpty(parseContext.getPayload());
+        Map<String, Object> frameConfig = readJsonMap(definition == null ? null : definition.getFrameConfigJson());
+        try {
+            return switch (frameMode) {
+                case "DELIMITER" -> decodeDelimiter(parseContext, incoming, frameConfig);
+                case "FIXED_LENGTH" -> decodeFixedLength(parseContext, incoming, frameConfig);
+                case "LENGTH_FIELD" -> decodeLengthField(parseContext, incoming, frameConfig);
+                default -> {
+                    log.debug("Unsupported frame mode for now: {}", frameMode);
+                    clearSessionBuffer(parseContext);
+                    yield FrameDecodeResult.frames(List.of(incoming));
+                }
+            };
+        } catch (Exception ex) {
+            log.warn("Frame decode failed: transport={}, sessionId={}, error={}",
+                    parseContext.getTransport(), parseContext.getSessionId(), ex.getMessage());
+            clearSessionBuffer(parseContext);
+            return FrameDecodeResult.frames(List.of(incoming));
+        }
+    }
+
+    private FrameDecodeResult decodeDelimiter(ParseContext parseContext,
+                                              byte[] incoming,
+                                              Map<String, Object> frameConfig) {
+        byte[] delimiter = resolveDelimiter(frameConfig);
+        if (delimiter.length == 0) {
+            throw new IllegalArgumentException("delimiter or delimiterHex is required");
+        }
+        boolean stripDelimiter = getBoolean(frameConfig, "stripDelimiter", true);
+        byte[] combined = mergeWithSession(parseContext, incoming);
+        List<byte[]> frames = new ArrayList<>();
+        int cursor = 0;
+        int matchIndex;
+        while ((matchIndex = indexOf(combined, delimiter, cursor)) >= 0) {
+            int frameEnd = stripDelimiter ? matchIndex : matchIndex + delimiter.length;
+            frames.add(copyRange(combined, cursor, frameEnd));
+            cursor = matchIndex + delimiter.length;
+        }
+        storeRemainder(parseContext, combined, cursor);
+        return frames.isEmpty() ? FrameDecodeResult.needMoreData() : FrameDecodeResult.frames(frames);
+    }
+
+    private FrameDecodeResult decodeFixedLength(ParseContext parseContext,
+                                                byte[] incoming,
+                                                Map<String, Object> frameConfig) {
+        int fixedLength = getRequiredInt(frameConfig, "fixedLength", "frameLength");
+        if (fixedLength <= 0) {
+            throw new IllegalArgumentException("fixedLength must be greater than 0");
+        }
+        byte[] combined = mergeWithSession(parseContext, incoming);
+        List<byte[]> frames = new ArrayList<>();
+        int cursor = 0;
+        while (combined.length - cursor >= fixedLength) {
+            frames.add(copyRange(combined, cursor, cursor + fixedLength));
+            cursor += fixedLength;
+        }
+        storeRemainder(parseContext, combined, cursor);
+        return frames.isEmpty() ? FrameDecodeResult.needMoreData() : FrameDecodeResult.frames(frames);
+    }
+
+    private FrameDecodeResult decodeLengthField(ParseContext parseContext,
+                                                byte[] incoming,
+                                                Map<String, Object> frameConfig) {
+        int lengthFieldOffset = getInt(frameConfig, "lengthFieldOffset", 0);
+        int lengthFieldLength = getRequiredInt(frameConfig, "lengthFieldLength");
+        int lengthAdjustment = getInt(frameConfig, "lengthAdjustment", 0);
+        int initialBytesToStrip = getInt(frameConfig, "initialBytesToStrip", 0);
+        int maxFrameLength = getInt(frameConfig, "maxFrameLength", DEFAULT_MAX_FRAME_LENGTH);
+        boolean littleEndian = "LITTLE_ENDIAN".equals(upper(getString(frameConfig, "byteOrder", "endian")));
+
+        if (lengthFieldOffset < 0 || lengthFieldLength <= 0 || initialBytesToStrip < 0) {
+            throw new IllegalArgumentException("Invalid length field config");
+        }
+
+        byte[] combined = mergeWithSession(parseContext, incoming);
+        List<byte[]> frames = new ArrayList<>();
+        int cursor = 0;
+        while (true) {
+            if (combined.length - cursor < lengthFieldOffset + lengthFieldLength) {
+                break;
+            }
+            long payloadLength = readUnsignedNumber(combined, cursor + lengthFieldOffset, lengthFieldLength, littleEndian);
+            long frameLengthLong = lengthFieldOffset + lengthFieldLength + payloadLength + lengthAdjustment;
+            if (frameLengthLong <= 0 || frameLengthLong > Integer.MAX_VALUE) {
+                throw new IllegalArgumentException("Invalid resolved frame length: " + frameLengthLong);
+            }
+            int frameLength = (int) frameLengthLong;
+            if (frameLength > maxFrameLength) {
+                throw new IllegalArgumentException("Frame length exceeds maxFrameLength: " + frameLength);
+            }
+            if (initialBytesToStrip > frameLength) {
+                throw new IllegalArgumentException("initialBytesToStrip exceeds frame length");
+            }
+            if (combined.length - cursor < frameLength) {
+                break;
+            }
+            frames.add(copyRange(combined, cursor + initialBytesToStrip, cursor + frameLength));
+            cursor += frameLength;
+        }
+        storeRemainder(parseContext, combined, cursor);
+        return frames.isEmpty() ? FrameDecodeResult.needMoreData() : FrameDecodeResult.frames(frames);
+    }
+
+    private FrameDecodeResult decodeLegacy(ParseContext parseContext) {
+        String decoder = upper(tcpUdpProperties.getTcpFrameDecoder());
+        if ("DELIMITER".equals(decoder)) {
+            return decodeDelimiter(
+                    parseContext,
+                    payloadOrEmpty(parseContext.getPayload()),
+                    Map.of("delimiter", tcpUdpProperties.getTcpDelimiter())
+            );
+        }
+        if ("LENGTH".equals(decoder)) {
+            return decodeLengthField(
+                    parseContext,
+                    payloadOrEmpty(parseContext.getPayload()),
+                    Map.of(
+                            "lengthFieldOffset", 0,
+                            "lengthFieldLength", 4,
+                            "initialBytesToStrip", 4,
+                            "maxFrameLength", tcpUdpProperties.getMaxFrameLength()
+                    )
+            );
+        }
+        return decodeLine(parseContext, payloadOrEmpty(parseContext.getPayload()));
+    }
+
+    private FrameDecodeResult decodeLine(ParseContext parseContext, byte[] incoming) {
+        byte[] combined = mergeWithSession(parseContext, incoming);
+        List<byte[]> frames = new ArrayList<>();
+        int cursor = 0;
+        for (int i = 0; i < combined.length; i++) {
+            if (combined[i] != '\n') {
+                continue;
+            }
+            int frameEnd = i > cursor && combined[i - 1] == '\r' ? i - 1 : i;
+            frames.add(copyRange(combined, cursor, frameEnd));
+            cursor = i + 1;
+        }
+        storeRemainder(parseContext, combined, cursor);
+        return frames.isEmpty() ? FrameDecodeResult.needMoreData() : FrameDecodeResult.frames(frames);
+    }
+
+    private byte[] resolveDelimiter(Map<String, Object> frameConfig) {
+        String delimiterHex = getString(frameConfig, "delimiterHex");
+        if (delimiterHex != null && !delimiterHex.isBlank()) {
+            return PayloadCodec.decodeHex(delimiterHex);
+        }
+        String delimiter = getString(frameConfig, "delimiter");
+        if (delimiter == null) {
+            return new byte[0];
+        }
+        return unescape(delimiter).getBytes(StandardCharsets.UTF_8);
+    }
+
+    private byte[] mergeWithSession(ParseContext parseContext, byte[] incoming) {
+        String sessionKey = sessionKey(parseContext);
+        byte[] previous = frameSessionBufferStore.get(sessionKey);
+        if (previous == null || previous.length == 0) {
+            return incoming;
+        }
+        byte[] merged = new byte[previous.length + incoming.length];
+        System.arraycopy(previous, 0, merged, 0, previous.length);
+        System.arraycopy(incoming, 0, merged, previous.length, incoming.length);
+        return merged;
+    }
+
+    private void storeRemainder(ParseContext parseContext, byte[] combined, int consumedLength) {
+        String sessionKey = sessionKey(parseContext);
+        if (sessionKey == null) {
+            return;
+        }
+        int remaining = combined.length - consumedLength;
+        if (remaining <= 0) {
+            frameSessionBufferStore.clear(sessionKey);
+            return;
+        }
+        frameSessionBufferStore.put(sessionKey, copyRange(combined, consumedLength, combined.length));
+    }
+
+    private void clearSessionBuffer(ParseContext parseContext) {
+        frameSessionBufferStore.clear(sessionKey(parseContext));
+    }
+
+    private String sessionKey(ParseContext parseContext) {
+        if (parseContext == null) {
+            return null;
+        }
+        String identity = firstNotBlank(parseContext.getSessionId(), parseContext.getRemoteAddress());
+        if (identity == null) {
+            return null;
+        }
+        return upper(parseContext.getTransport()) + ":" + identity;
+    }
+
+    private byte[] payloadOrEmpty(byte[] payload) {
+        return payload == null ? new byte[0] : payload;
+    }
+
+    private int indexOf(byte[] source, byte[] target, int fromIndex) {
+        if (target.length == 0 || source.length < target.length) {
+            return -1;
+        }
+        for (int i = Math.max(0, fromIndex); i <= source.length - target.length; i++) {
+            boolean matched = true;
+            for (int j = 0; j < target.length; j++) {
+                if (source[i + j] != target[j]) {
+                    matched = false;
+                    break;
+                }
+            }
+            if (matched) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private byte[] copyRange(byte[] source, int start, int end) {
+        int actualStart = Math.max(0, start);
+        int actualEnd = Math.max(actualStart, Math.min(source.length, end));
+        byte[] result = new byte[actualEnd - actualStart];
+        System.arraycopy(source, actualStart, result, 0, result.length);
+        return result;
+    }
+
+    private long readUnsignedNumber(byte[] source, int offset, int length, boolean littleEndian) {
+        if (length > 8) {
+            throw new IllegalArgumentException("lengthFieldLength greater than 8 is not supported");
+        }
+        long value = 0;
+        if (littleEndian) {
+            for (int i = 0; i < length; i++) {
+                value |= ((long) source[offset + i] & 0xFF) << (8 * i);
+            }
+            return value;
+        }
+        for (int i = 0; i < length; i++) {
+            value = (value << 8) | ((long) source[offset + i] & 0xFF);
+        }
+        return value;
+    }
+
+    private String unescape(String value) {
+        ByteArrayOutputStream output = new ByteArrayOutputStream(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch != '\\' || i == value.length() - 1) {
+                output.write((byte) ch);
+                continue;
+            }
+            char next = value.charAt(++i);
+            switch (next) {
+                case 'n' -> output.write('\n');
+                case 'r' -> output.write('\r');
+                case 't' -> output.write('\t');
+                case '0' -> output.write(0);
+                case '\\' -> output.write('\\');
+                case 'x' -> {
+                    if (i + 2 > value.length() - 1) {
+                        throw new IllegalArgumentException("Invalid hex escape in delimiter");
+                    }
+                    String hex = value.substring(i + 1, i + 3);
+                    output.write(Integer.parseInt(hex, 16));
+                    i += 2;
+                }
+                default -> output.write((byte) next);
+            }
+        }
+        return output.toString(StandardCharsets.UTF_8);
+    }
+
+    private Map<String, Object> readJsonMap(String json) {
+        if (json == null || json.isBlank()) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<LinkedHashMap<String, Object>>() {});
+        } catch (Exception ex) {
+            log.warn("Parse frame config failed: {}", ex.getMessage());
+            return new LinkedHashMap<>();
+        }
+    }
+
+    private int getRequiredInt(Map<String, Object> config, String... keys) {
+        for (String key : keys) {
+            Object value = config.get(key);
+            if (value != null) {
+                return toInt(value, key);
+            }
+        }
+        throw new IllegalArgumentException("Missing required frame config: " + String.join("/", keys));
+    }
+
+    private int getInt(Map<String, Object> config, String key, int defaultValue) {
+        Object value = config.get(key);
+        return value == null ? defaultValue : toInt(value, key);
+    }
+
+    private boolean getBoolean(Map<String, Object> config, String key, boolean defaultValue) {
+        Object value = config.get(key);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        return Boolean.parseBoolean(value.toString());
+    }
+
+    private String getString(Map<String, Object> config, String... keys) {
+        for (String key : keys) {
+            Object value = config.get(key);
+            if (value != null) {
+                String text = value.toString();
+                if (!text.isEmpty()) {
+                    return text;
+                }
+            }
+        }
+        return null;
+    }
+
+    private int toInt(Object value, String key) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return Integer.parseInt(value.toString());
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Invalid integer config for " + key);
+        }
+    }
+
+    private boolean isTcp(String transport) {
+        return "TCP".equals(upper(transport));
+    }
+
+    private String upper(String value) {
+        return value == null ? null : value.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private String firstNotBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+}

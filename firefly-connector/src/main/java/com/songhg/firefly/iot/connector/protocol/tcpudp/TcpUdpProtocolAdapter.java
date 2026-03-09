@@ -2,10 +2,14 @@ package com.songhg.firefly.iot.connector.protocol.tcpudp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
+import com.songhg.firefly.iot.connector.parser.model.FrameDecodeResult;
 import com.songhg.firefly.iot.connector.parser.model.KnownDeviceContext;
+import com.songhg.firefly.iot.connector.parser.model.ParseContext;
 import com.songhg.firefly.iot.connector.parser.model.ProtocolParseOutcome;
-import com.songhg.firefly.iot.connector.protocol.ProtocolAdapter;
+import com.songhg.firefly.iot.connector.parser.service.FrameDecodeEngine;
 import com.songhg.firefly.iot.connector.parser.service.ProtocolParseEngine;
+import com.songhg.firefly.iot.connector.parser.support.PayloadCodec;
+import com.songhg.firefly.iot.connector.protocol.ProtocolAdapter;
 import com.songhg.firefly.iot.connector.service.DeviceMessageProducer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,9 +21,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * TCP/UDP 协议适配器 — 将原始 TCP/UDP 消息转为统一 DeviceMessage 并发布到 Kafka
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -28,6 +29,7 @@ public class TcpUdpProtocolAdapter implements ProtocolAdapter {
     private final ObjectMapper objectMapper;
     private final DeviceMessageProducer messageProducer;
     private final ProtocolParseEngine protocolParseEngine;
+    private final FrameDecodeEngine frameDecodeEngine;
 
     @Override
     public String getProtocol() {
@@ -43,16 +45,20 @@ public class TcpUdpProtocolAdapter implements ProtocolAdapter {
     public DeviceMessage decode(String topic, byte[] payload, Map<String, String> headers) {
         try {
             Map<String, Object> data;
-            String payloadStr = new String(payload, StandardCharsets.UTF_8).trim();
+            String payloadText = new String(payload, StandardCharsets.UTF_8);
+            String trimmedPayload = payloadText.trim();
 
-            // Try JSON parse first; fall back to raw text
             try {
                 @SuppressWarnings("unchecked")
-                Map<String, Object> parsed = objectMapper.readValue(payloadStr, LinkedHashMap.class);
+                Map<String, Object> parsed = objectMapper.readValue(trimmedPayload, LinkedHashMap.class);
                 data = parsed;
-            } catch (Exception e) {
+            } catch (Exception ex) {
                 data = new LinkedHashMap<>();
-                data.put("raw", payloadStr);
+                if (isPrintable(payloadText)) {
+                    data.put("raw", trimmedPayload);
+                } else {
+                    data.put("rawHex", PayloadCodec.toHex(payload));
+                }
             }
 
             String sessionId = headers != null ? headers.getOrDefault("sessionId", "") : "";
@@ -74,8 +80,8 @@ public class TcpUdpProtocolAdapter implements ProtocolAdapter {
                     .payload(data)
                     .timestamp(System.currentTimeMillis())
                     .build();
-        } catch (Exception e) {
-            log.error("Failed to decode TCP/UDP payload: {}", e.getMessage());
+        } catch (Exception ex) {
+            log.error("Failed to decode TCP/UDP payload: {}", ex.getMessage());
             return null;
         }
     }
@@ -84,90 +90,101 @@ public class TcpUdpProtocolAdapter implements ProtocolAdapter {
     public byte[] encode(DeviceMessage message) {
         try {
             return objectMapper.writeValueAsBytes(message.getPayload());
-        } catch (Exception e) {
-            log.error("Failed to encode TCP/UDP message: {}", e.getMessage());
+        } catch (Exception ex) {
+            log.error("Failed to encode TCP/UDP message: {}", ex.getMessage());
             return "{}".getBytes(StandardCharsets.UTF_8);
         }
     }
 
-    /**
-     * 处理 TCP 消息并发布到 Kafka
-     */
     public void handleTcpMessage(String sessionId, TcpSessionInfo info, String message) {
+        handleTcpMessage(sessionId, info, message == null ? new byte[0] : message.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public void handleTcpMessage(String sessionId, TcpSessionInfo info, byte[] payload) {
         try {
             Map<String, String> headers = buildHeaders(sessionId, "TCP", info);
-            ProtocolParseOutcome parseOutcome = protocolParseEngine.parse(
-                    ProtocolParseEngine.buildContext(
-                            "TCP_UDP",
-                            "TCP",
-                            "/tcp/data",
-                            message.getBytes(StandardCharsets.UTF_8),
-                            headers,
-                            sessionId,
-                            info != null ? info.getRemoteAddress() : null,
-                            parseLong(headers.get("productId")),
-                            headers.get("productKey")
-                    ),
-                    KnownDeviceContext.builder()
-                            .tenantId(parseLong(headers.get("tenantId")))
-                            .productId(parseLong(headers.get("productId")))
-                            .deviceId(parseLong(headers.get("deviceId")))
-                            .deviceName(headers.get("deviceName"))
-                            .productKey(headers.get("productKey"))
-                            .build()
+            KnownDeviceContext knownDeviceContext = buildKnownDeviceContext(headers);
+            ParseContext rawContext = buildParseContext(
+                    "TCP",
+                    "/tcp/data",
+                    payload,
+                    headers,
+                    sessionId,
+                    info != null ? info.getRemoteAddress() : null
             );
-            if (parseOutcome.isHandled()) {
-                parseOutcome.getMessages().forEach(messageProducer::publishUpstream);
+            FrameDecodeResult frameDecodeResult = frameDecodeEngine.decode(rawContext, knownDeviceContext);
+            if (frameDecodeResult.isNeedMoreData() && frameDecodeResult.getFrames().isEmpty()) {
                 return;
             }
-            DeviceMessage deviceMessage = decode("/tcp/data", message.getBytes(StandardCharsets.UTF_8), headers);
-            if (deviceMessage != null) {
-                messageProducer.publishUpstream(deviceMessage);
+            for (byte[] frame : frameDecodeResult.getFrames()) {
+                processInboundFrame("/tcp/data", "TCP", frame, headers, sessionId,
+                        info != null ? info.getRemoteAddress() : null, knownDeviceContext);
             }
-        } catch (Exception e) {
-            log.error("TCP 消息处理失败: session={}, error={}", sessionId, e.getMessage());
+        } catch (Exception ex) {
+            log.error("TCP payload handling failed: session={}, error={}", sessionId, ex.getMessage());
         }
     }
 
-    /**
-     * 处理 UDP 消息并发布到 Kafka
-     */
     public void handleUdpMessage(String sender, UdpServer.UdpPeerInfo peerInfo, String message) {
+        handleUdpMessage(sender, peerInfo, message == null ? new byte[0] : message.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public void handleUdpMessage(String sender, UdpServer.UdpPeerInfo peerInfo, byte[] payload) {
         try {
             Map<String, String> headers = buildHeaders(sender, "UDP", peerInfo == null ? null : peerInfo.getBinding(), sender);
-
-            ProtocolParseOutcome parseOutcome = protocolParseEngine.parse(
-                    ProtocolParseEngine.buildContext(
-                            "TCP_UDP",
-                            "UDP",
-                            "/udp/data",
-                            message.getBytes(StandardCharsets.UTF_8),
-                            headers,
-                            sender,
-                            sender,
-                            parseLong(headers.get("productId")),
-                            headers.get("productKey")
-                    ),
-                    KnownDeviceContext.builder()
-                            .tenantId(parseLong(headers.get("tenantId")))
-                            .productId(parseLong(headers.get("productId")))
-                            .deviceId(parseLong(headers.get("deviceId")))
-                            .deviceName(headers.get("deviceName"))
-                            .productKey(headers.get("productKey"))
-                            .build()
-            );
-            if (parseOutcome.isHandled()) {
-                parseOutcome.getMessages().forEach(messageProducer::publishUpstream);
-                return;
-            }
-
-            DeviceMessage deviceMessage = decode("/udp/data", message.getBytes(StandardCharsets.UTF_8), headers);
-            if (deviceMessage != null) {
-                messageProducer.publishUpstream(deviceMessage);
-            }
-        } catch (Exception e) {
-            log.error("UDP 消息处理失败: sender={}, error={}", sender, e.getMessage());
+            KnownDeviceContext knownDeviceContext = buildKnownDeviceContext(headers);
+            processInboundFrame("/udp/data", "UDP", payload, headers, sender, sender, knownDeviceContext);
+        } catch (Exception ex) {
+            log.error("UDP payload handling failed: sender={}, error={}", sender, ex.getMessage());
         }
+    }
+
+    private void processInboundFrame(String topic,
+                                     String transport,
+                                     byte[] payload,
+                                     Map<String, String> headers,
+                                     String sessionId,
+                                     String remoteAddress,
+                                     KnownDeviceContext knownDeviceContext) {
+        ParseContext parseContext = buildParseContext(transport, topic, payload, headers, sessionId, remoteAddress);
+        ProtocolParseOutcome parseOutcome = protocolParseEngine.parse(parseContext, knownDeviceContext);
+        if (parseOutcome.isHandled()) {
+            parseOutcome.getMessages().forEach(messageProducer::publishUpstream);
+            return;
+        }
+        DeviceMessage fallback = decode(topic, payload, headers);
+        if (fallback != null) {
+            messageProducer.publishUpstream(fallback);
+        }
+    }
+
+    private ParseContext buildParseContext(String transport,
+                                           String topic,
+                                           byte[] payload,
+                                           Map<String, String> headers,
+                                           String sessionId,
+                                           String remoteAddress) {
+        return ProtocolParseEngine.buildContext(
+                "TCP_UDP",
+                transport,
+                topic,
+                payload,
+                headers,
+                sessionId,
+                remoteAddress,
+                parseLong(headers.get("productId")),
+                headers.get("productKey")
+        );
+    }
+
+    private KnownDeviceContext buildKnownDeviceContext(Map<String, String> headers) {
+        return KnownDeviceContext.builder()
+                .tenantId(parseLong(headers.get("tenantId")))
+                .productId(parseLong(headers.get("productId")))
+                .deviceId(parseLong(headers.get("deviceId")))
+                .deviceName(headers.get("deviceName"))
+                .productKey(headers.get("productKey"))
+                .build();
     }
 
     private Map<String, String> buildHeaders(String sessionId, String protocol, TcpSessionInfo info) {
@@ -206,6 +223,21 @@ public class TcpUdpProtocolAdapter implements ProtocolAdapter {
 
     private String headerValue(Map<String, String> headers, String key) {
         return headers == null ? null : headers.get(key);
+    }
+
+    private boolean isPrintable(String payload) {
+        if (payload == null || payload.isEmpty()) {
+            return true;
+        }
+        int printable = 0;
+        for (int i = 0; i < payload.length(); i++) {
+            char ch = payload.charAt(i);
+            if (Character.isISOControl(ch) && !Character.isWhitespace(ch)) {
+                continue;
+            }
+            printable++;
+        }
+        return printable * 10 >= payload.length() * 8;
     }
 
     private Long parseLong(String value) {

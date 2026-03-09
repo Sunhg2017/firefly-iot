@@ -29,6 +29,9 @@ public class ProtocolParserChangedConsumer {
             if (productId > 0) {
                 publishedProtocolParserService.invalidate(productId);
                 invalidated = true;
+            } else if (node.has("productId")) {
+                publishedProtocolParserService.invalidateAll();
+                invalidated = true;
             }
             if (definitionId > 0) {
                 scriptParserExecutor.invalidate(definitionId);

@@ -37,6 +37,10 @@ public class PublishedProtocolParserService {
         }
     }
 
+    public void invalidateAll() {
+        definitionCache.invalidateAll();
+    }
+
     private List<ProtocolParserPublishedDTO> loadDefinitions(Long productId) {
         try {
             R<List<ProtocolParserPublishedDTO>> response = protocolParserClient.getPublishedByProductId(productId);

@@ -11,6 +11,10 @@ import com.songhg.firefly.iot.connector.parser.model.ParseExecutionResult;
 import com.songhg.firefly.iot.connector.parser.model.ParsedMessage;
 import com.songhg.firefly.iot.connector.parser.model.ProtocolParseOutcome;
 import com.songhg.firefly.iot.connector.parser.model.ResolvedDeviceContext;
+import com.songhg.firefly.iot.connector.parser.support.PayloadCodec;
+import com.songhg.firefly.iot.plugin.protocol.ProtocolParserPlugin;
+import com.songhg.firefly.iot.plugin.protocol.ProtocolPluginMessage;
+import com.songhg.firefly.iot.plugin.protocol.ProtocolPluginParseResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,22 +37,29 @@ public class ProtocolParseEngine {
     private final PublishedProtocolParserService publishedProtocolParserService;
     private final DeviceIdentityResolveService deviceIdentityResolveService;
     private final ScriptParserExecutor scriptParserExecutor;
+    private final ProtocolParserMatcher protocolParserMatcher;
+    private final ProtocolParserPluginRegistry pluginRegistry;
+    private final ProtocolParserMetricsService metricsService;
+    private final ProtocolParserReleaseMatcher releaseMatcher;
 
     public ProtocolParseOutcome parse(ParseContext parseContext, KnownDeviceContext knownDeviceContext) {
+        long start = System.currentTimeMillis();
         Long productId = parseContext.getProductId() != null
                 ? parseContext.getProductId()
                 : knownDeviceContext == null ? null : knownDeviceContext.getProductId();
         if (productId == null) {
+            metricsService.recordParse(parseContext.getTransport(), null, false, true, System.currentTimeMillis() - start);
             return ProtocolParseOutcome.notHandled();
         }
 
         List<ProtocolParserPublishedDTO> candidates = publishedProtocolParserService.getPublishedDefinitions(productId);
         if (candidates.isEmpty()) {
+            metricsService.recordParse(parseContext.getTransport(), null, false, true, System.currentTimeMillis() - start);
             return ProtocolParseOutcome.notHandled();
         }
 
         for (ProtocolParserPublishedDTO definition : candidates) {
-            if (!matchesDefinition(definition, parseContext)) {
+            if (!protocolParserMatcher.matches(definition, parseContext, DEFAULT_DIRECTION)) {
                 continue;
             }
             try {
@@ -58,6 +69,7 @@ public class ProtocolParseEngine {
                     continue;
                 }
                 if (executionResult.isDrop() || executionResult.isNeedMoreData()) {
+                    metricsService.recordParse(parseContext.getTransport(), definition.getParserMode(), true, true, System.currentTimeMillis() - start);
                     return ProtocolParseOutcome.handled(List.of());
                 }
 
@@ -69,7 +81,11 @@ public class ProtocolParseEngine {
                 if (resolvedDeviceContext == null) {
                     log.warn("Custom parser matched but device identity unresolved: productId={}, definitionId={}",
                             productId, definition.getDefinitionId());
+                    metricsService.recordParse(parseContext.getTransport(), definition.getParserMode(), true, true, System.currentTimeMillis() - start);
                     return ProtocolParseOutcome.handled(List.of());
+                }
+                if (!releaseMatcher.matches(definition, resolvedDeviceContext)) {
+                    continue;
                 }
 
                 List<DeviceMessage> messages = normalizeMessages(
@@ -77,14 +93,17 @@ public class ProtocolParseEngine {
                         effectiveContext,
                         resolvedDeviceContext
                 );
+                metricsService.recordParse(parseContext.getTransport(), definition.getParserMode(), true, true, System.currentTimeMillis() - start);
                 return ProtocolParseOutcome.handled(messages);
             } catch (Exception ex) {
                 log.warn("Custom parser execution failed: productId={}, definitionId={}, error={}",
                         productId, definition.getDefinitionId(), ex.getMessage());
+                metricsService.recordParse(parseContext.getTransport(), definition.getParserMode(), true, false, System.currentTimeMillis() - start);
                 return ProtocolParseOutcome.handled(List.of());
             }
         }
 
+        metricsService.recordParse(parseContext.getTransport(), null, false, true, System.currentTimeMillis() - start);
         return ProtocolParseOutcome.notHandled();
     }
 
@@ -104,7 +123,7 @@ public class ProtocolParseEngine {
                 .topic(topic)
                 .payload(actualPayload)
                 .payloadText(new String(actualPayload, StandardCharsets.UTF_8))
-                .payloadHex(toHex(actualPayload))
+                .payloadHex(PayloadCodec.toHex(actualPayload))
                 .headers(headers == null ? Map.of() : headers)
                 .sessionId(sessionId)
                 .remoteAddress(remoteAddress)
@@ -118,9 +137,66 @@ public class ProtocolParseEngine {
         if ("SCRIPT".equals(parserMode)) {
             return scriptParserExecutor.execute(definition, parseContext);
         }
+        if ("PLUGIN".equals(parserMode)) {
+            ProtocolParserPlugin plugin = pluginRegistry.find(definition.getPluginId(), definition.getPluginVersion());
+            if (plugin == null || !plugin.supportsParse()) {
+                throw new IllegalStateException("Plugin parser is not available");
+            }
+            return convertPluginResult(plugin.parse(toPluginContext(parseContext)));
+        }
         log.debug("Unsupported parser mode for now: definitionId={}, parserMode={}",
                 definition.getDefinitionId(), definition.getParserMode());
         return null;
+    }
+
+    private com.songhg.firefly.iot.plugin.protocol.ProtocolPluginParseContext toPluginContext(ParseContext parseContext) {
+        return com.songhg.firefly.iot.plugin.protocol.ProtocolPluginParseContext.builder()
+                .protocol(parseContext.getProtocol())
+                .transport(parseContext.getTransport())
+                .topic(parseContext.getTopic())
+                .payload(parseContext.getPayload())
+                .payloadText(parseContext.getPayloadText())
+                .payloadHex(parseContext.getPayloadHex())
+                .headers(parseContext.getHeaders())
+                .sessionId(parseContext.getSessionId())
+                .remoteAddress(parseContext.getRemoteAddress())
+                .productId(parseContext.getProductId())
+                .productKey(parseContext.getProductKey())
+                .config(parseContext.getConfig())
+                .build();
+    }
+
+    private ParseExecutionResult convertPluginResult(ProtocolPluginParseResult pluginResult) {
+        if (pluginResult == null) {
+            return null;
+        }
+        ParseExecutionResult result = new ParseExecutionResult();
+        result.setDrop(pluginResult.isDrop());
+        result.setNeedMoreData(pluginResult.isNeedMoreData());
+        if (pluginResult.getIdentity() != null) {
+            var identity = new com.songhg.firefly.iot.connector.parser.model.ParsedDeviceIdentity();
+            identity.setMode(pluginResult.getIdentity().getMode());
+            identity.setProductKey(pluginResult.getIdentity().getProductKey());
+            identity.setDeviceName(pluginResult.getIdentity().getDeviceName());
+            identity.setLocatorType(pluginResult.getIdentity().getLocatorType());
+            identity.setLocatorValue(pluginResult.getIdentity().getLocatorValue());
+            result.setIdentity(identity);
+        }
+        if (pluginResult.getMessages() != null) {
+            result.setMessages(pluginResult.getMessages().stream().map(this::convertPluginMessage).toList());
+        }
+        return result;
+    }
+
+    private ParsedMessage convertPluginMessage(ProtocolPluginMessage pluginMessage) {
+        ParsedMessage message = new ParsedMessage();
+        message.setMessageId(pluginMessage.getMessageId());
+        message.setType(pluginMessage.getType());
+        message.setTopic(pluginMessage.getTopic());
+        message.setPayload(pluginMessage.getPayload());
+        message.setTimestamp(pluginMessage.getTimestamp());
+        message.setDeviceName(pluginMessage.getDeviceName());
+        return message;
     }
 
     private ParseContext enrichContext(ParseContext parseContext,
@@ -151,73 +227,6 @@ public class ProtocolParseEngine {
                         asString(config.get("productKey"))))
                 .config(config)
                 .build();
-    }
-
-    private boolean matchesDefinition(ProtocolParserPublishedDTO definition, ParseContext parseContext) {
-        if (!equalsIgnoreCase(definition.getProtocol(), parseContext.getProtocol())) {
-            return false;
-        }
-        if (!equalsIgnoreCase(definition.getTransport(), parseContext.getTransport())) {
-            return false;
-        }
-        String direction = definition.getDirection() == null ? DEFAULT_DIRECTION : definition.getDirection();
-        if (!DEFAULT_DIRECTION.equals(upper(direction))) {
-            return false;
-        }
-
-        Map<String, Object> rule = readJsonMap(definition.getMatchRuleJson());
-        if (rule.isEmpty()) {
-            return true;
-        }
-
-        if (!matchStringRule(parseContext.getTopic(), rule.get("topicEquals"), rule.get("topicPrefix"), rule.get("topicContains"))) {
-            return false;
-        }
-        if (!matchStringRule(parseContext.getRemoteAddress(), rule.get("remoteAddressEquals"),
-                rule.get("remoteAddressPrefix"), rule.get("remoteAddressContains"))) {
-            return false;
-        }
-        if (!matchStringRule(parseContext.getSessionId(), rule.get("sessionIdEquals"),
-                rule.get("sessionIdPrefix"), rule.get("sessionIdContains"))) {
-            return false;
-        }
-        return matchHeaders(parseContext.getHeaders(), rule.get("headerEquals"));
-    }
-
-    private boolean matchStringRule(String actual, Object equalsRule, Object prefixRule, Object containsRule) {
-        if (equalsRule != null && !safeEquals(actual, asString(equalsRule))) {
-            return false;
-        }
-        if (prefixRule != null) {
-            String prefix = asString(prefixRule);
-            if (actual == null || prefix == null || !actual.startsWith(prefix)) {
-                return false;
-            }
-        }
-        if (containsRule != null) {
-            String contains = asString(containsRule);
-            if (actual == null || contains == null || !actual.contains(contains)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean matchHeaders(Map<String, String> headers, Object headerRule) {
-        if (!(headerRule instanceof Map<?, ?> expectedHeaders)) {
-            return true;
-        }
-        if (headers == null) {
-            return false;
-        }
-        for (Map.Entry<?, ?> entry : expectedHeaders.entrySet()) {
-            String key = entry.getKey() == null ? null : entry.getKey().toString();
-            String expectedValue = entry.getValue() == null ? null : entry.getValue().toString();
-            if (key == null || !safeEquals(headers.get(key), expectedValue)) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private List<DeviceMessage> normalizeMessages(List<ParsedMessage> parsedMessages,
@@ -267,20 +276,8 @@ public class ProtocolParseEngine {
         }
     }
 
-    private static String toHex(byte[] payload) {
-        StringBuilder builder = new StringBuilder(payload.length * 2);
-        for (byte value : payload) {
-            builder.append(String.format("%02X", value));
-        }
-        return builder.toString();
-    }
-
     private String upper(String value) {
         return value == null ? null : value.trim().toUpperCase(Locale.ROOT);
-    }
-
-    private boolean equalsIgnoreCase(String left, String right) {
-        return safeEquals(upper(left), upper(right));
     }
 
     private boolean safeEquals(String left, String right) {

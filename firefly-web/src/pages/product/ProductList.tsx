@@ -23,6 +23,7 @@ import {
 import type { FormInstance, UploadProps } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
+  ApiOutlined,
   AppstoreOutlined,
   CloudServerOutlined,
   ControlOutlined,
@@ -39,8 +40,10 @@ import {
   UsbOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
 import { productApi } from '../../services/api';
+import useAuthStore from '../../store/useAuthStore';
 
 const { Search, TextArea } = Input;
 const ProductThingModelDrawer = React.lazy(() => import('./ProductThingModelDrawer'));
@@ -312,6 +315,8 @@ const ProductImageUploader: React.FC<{
 };
 
 const ProductList: React.FC = () => {
+  const navigate = useNavigate();
+  const hasPermission = useAuthStore((state) => state.hasPermission);
   const [data, setData] = useState<ProductRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
@@ -570,6 +575,7 @@ const ProductList: React.FC = () => {
   const renderActionGroup = (record: ProductRecord, variant: 'card' | 'table') => {
     const isCard = variant === 'card';
     const supportsProductSecret = record.deviceAuthType === 'PRODUCT_SECRET';
+    const canViewProtocolParser = hasPermission('protocol-parser:read');
 
     return (
       <Space size={isCard ? 8 : 4} wrap>
@@ -597,6 +603,16 @@ const ProductList: React.FC = () => {
         >
           {supportsProductSecret ? '查看密钥' : '认证说明'}
         </Button>
+        {canViewProtocolParser ? (
+          <Button
+            type={isCard ? 'default' : 'link'}
+            size={isCard ? 'middle' : 'small'}
+            icon={<ApiOutlined />}
+            onClick={() => navigate(`/protocol-parser?productId=${record.id}`)}
+          >
+            协议解析
+          </Button>
+        ) : null}
         {record.status === 'PUBLISHED' && supportsProductSecret ? (
           <Button
             type={isCard ? 'default' : 'link'}

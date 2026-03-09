@@ -9,11 +9,16 @@ import com.songhg.firefly.iot.api.dto.ProtocolParserDebugResponseDTO;
 import com.songhg.firefly.iot.api.dto.ProtocolParserPublishedDTO;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
 import com.songhg.firefly.iot.connector.parser.executor.ScriptParserExecutor;
+import com.songhg.firefly.iot.connector.parser.model.FrameDecodeResult;
 import com.songhg.firefly.iot.connector.parser.model.ParseContext;
 import com.songhg.firefly.iot.connector.parser.model.ParseExecutionResult;
 import com.songhg.firefly.iot.connector.parser.model.ParsedDeviceIdentity;
 import com.songhg.firefly.iot.connector.parser.model.ParsedMessage;
 import com.songhg.firefly.iot.connector.parser.model.ResolvedDeviceContext;
+import com.songhg.firefly.iot.connector.parser.support.PayloadCodec;
+import com.songhg.firefly.iot.plugin.protocol.ProtocolParserPlugin;
+import com.songhg.firefly.iot.plugin.protocol.ProtocolPluginMessage;
+import com.songhg.firefly.iot.plugin.protocol.ProtocolPluginParseResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -34,6 +39,9 @@ public class ProtocolParserDebugService {
     private final ObjectMapper objectMapper;
     private final ScriptParserExecutor scriptParserExecutor;
     private final DeviceIdentityResolveService deviceIdentityResolveService;
+    private final FrameDecodeEngine frameDecodeEngine;
+    private final ProtocolParserPluginRegistry pluginRegistry;
+    private final ProtocolParserMetricsService metricsService;
 
     public ProtocolParserDebugResponseDTO debug(ProtocolParserDebugRequestDTO request) {
         long start = System.currentTimeMillis();
@@ -41,21 +49,32 @@ public class ProtocolParserDebugService {
         try {
             ProtocolParserPublishedDTO definition = requireDefinition(request);
             byte[] payload = decodePayload(request.getPayloadEncoding(), request.getPayload());
-            ParseContext parseContext = buildDebugContext(request, definition, payload);
-
-            ParseExecutionResult executionResult = execute(definition, parseContext);
-            ResolvedDeviceContext resolved = deviceIdentityResolveService.resolve(parseContext, null, executionResult.getIdentity());
+            ParseContext rawContext = buildDebugContext(request, definition, payload);
+            List<ParseContext> frameContexts = splitFrames(definition, rawContext);
 
             response.setSuccess(true);
             response.setMatchedVersion(definition.getVersionNo());
-            response.setIdentity(toIdentityDto(executionResult.getIdentity(), resolved));
-            response.setMessages(toMessageDtos(executionResult.getMessages(), resolved, parseContext));
+            response.setIdentity(null);
+            response.setMessages(new ArrayList<>());
+            for (ParseContext parseContext : frameContexts) {
+                ParseExecutionResult executionResult = execute(definition, parseContext);
+                if (executionResult == null || executionResult.isDrop() || executionResult.isNeedMoreData()) {
+                    continue;
+                }
+                ResolvedDeviceContext resolved = deviceIdentityResolveService.resolve(parseContext, null, executionResult.getIdentity());
+                if (response.getIdentity() == null) {
+                    response.setIdentity(toIdentityDto(executionResult.getIdentity(), resolved));
+                }
+                response.getMessages().addAll(toMessageDtos(executionResult.getMessages(), resolved, parseContext));
+            }
             response.setCostMs(System.currentTimeMillis() - start);
+            metricsService.recordDebug("UPLINK", true, response.getCostMs());
             return response;
         } catch (Exception ex) {
             response.setSuccess(false);
             response.setErrorMessage(ex.getMessage());
             response.setCostMs(System.currentTimeMillis() - start);
+            metricsService.recordDebug("UPLINK", false, response.getCostMs());
             return response;
         }
     }
@@ -69,10 +88,65 @@ public class ProtocolParserDebugService {
 
     private ParseExecutionResult execute(ProtocolParserPublishedDTO definition, ParseContext parseContext) {
         String parserMode = upper(definition.getParserMode());
-        if (!"SCRIPT".equals(parserMode)) {
-            throw new IllegalArgumentException("Debug currently supports SCRIPT parser only");
+        if ("SCRIPT".equals(parserMode)) {
+            return scriptParserExecutor.execute(definition, parseContext);
         }
-        return scriptParserExecutor.execute(definition, parseContext);
+        if ("PLUGIN".equals(parserMode)) {
+            ProtocolParserPlugin plugin = pluginRegistry.find(definition.getPluginId(), definition.getPluginVersion());
+            if (plugin == null || !plugin.supportsParse()) {
+                throw new IllegalArgumentException("Configured plugin is not available");
+            }
+            return convertPluginResult(plugin.parse(
+                    com.songhg.firefly.iot.plugin.protocol.ProtocolPluginParseContext.builder()
+                            .protocol(parseContext.getProtocol())
+                            .transport(parseContext.getTransport())
+                            .topic(parseContext.getTopic())
+                            .payload(parseContext.getPayload())
+                            .payloadText(parseContext.getPayloadText())
+                            .payloadHex(parseContext.getPayloadHex())
+                            .headers(parseContext.getHeaders())
+                            .sessionId(parseContext.getSessionId())
+                            .remoteAddress(parseContext.getRemoteAddress())
+                            .productId(parseContext.getProductId())
+                            .productKey(parseContext.getProductKey())
+                            .config(parseContext.getConfig())
+                            .build()
+            ));
+        }
+        throw new IllegalArgumentException("Unsupported parser mode for debug: " + parserMode);
+    }
+
+    private ParseExecutionResult convertPluginResult(ProtocolPluginParseResult pluginResult) {
+        if (pluginResult == null) {
+            return null;
+        }
+        ParseExecutionResult result = new ParseExecutionResult();
+        result.setDrop(pluginResult.isDrop());
+        result.setNeedMoreData(pluginResult.isNeedMoreData());
+        if (pluginResult.getIdentity() != null) {
+            ParsedDeviceIdentity identity = new ParsedDeviceIdentity();
+            identity.setMode(pluginResult.getIdentity().getMode());
+            identity.setProductKey(pluginResult.getIdentity().getProductKey());
+            identity.setDeviceName(pluginResult.getIdentity().getDeviceName());
+            identity.setLocatorType(pluginResult.getIdentity().getLocatorType());
+            identity.setLocatorValue(pluginResult.getIdentity().getLocatorValue());
+            result.setIdentity(identity);
+        }
+        if (pluginResult.getMessages() != null) {
+            result.setMessages(pluginResult.getMessages().stream().map(this::convertPluginMessage).toList());
+        }
+        return result;
+    }
+
+    private ParsedMessage convertPluginMessage(ProtocolPluginMessage pluginMessage) {
+        ParsedMessage message = new ParsedMessage();
+        message.setMessageId(pluginMessage.getMessageId());
+        message.setType(pluginMessage.getType());
+        message.setTopic(pluginMessage.getTopic());
+        message.setPayload(pluginMessage.getPayload());
+        message.setTimestamp(pluginMessage.getTimestamp());
+        message.setDeviceName(pluginMessage.getDeviceName());
+        return message;
     }
 
     private ParseContext buildDebugContext(ProtocolParserDebugRequestDTO request,
@@ -99,10 +173,10 @@ public class ProtocolParserDebugService {
                 .topic(topic)
                 .payload(payload)
                 .payloadText(new String(payload, StandardCharsets.UTF_8))
-                .payloadHex(toHex(payload))
+                .payloadHex(PayloadCodec.toHex(payload))
                 .headers(headers)
-                .sessionId(request.getSessionId())
-                .remoteAddress(request.getRemoteAddress())
+                .sessionId(firstNotBlank(request.getSessionId(), headers.get("sessionId")))
+                .remoteAddress(firstNotBlank(request.getRemoteAddress(), headers.get("remoteAddress")))
                 .productId(definition.getProductId())
                 .productKey(request.getProductKey())
                 .config(config)
@@ -176,15 +250,7 @@ public class ProtocolParserDebugService {
     }
 
     private byte[] decodeHex(String value) {
-        String hex = value.replaceAll("\\s+", "");
-        if (hex.length() % 2 != 0) {
-            throw new IllegalArgumentException("HEX payload length must be even");
-        }
-        byte[] result = new byte[hex.length() / 2];
-        for (int i = 0; i < hex.length(); i += 2) {
-            result[i / 2] = (byte) Integer.parseInt(hex.substring(i, i + 2), 16);
-        }
-        return result;
+        return PayloadCodec.decodeHex(value);
     }
 
     private Map<String, Object> readJsonMap(String json) {
@@ -214,11 +280,35 @@ public class ProtocolParserDebugService {
         return value == null ? null : value.trim().toUpperCase(Locale.ROOT);
     }
 
-    private String toHex(byte[] payload) {
-        StringBuilder builder = new StringBuilder(payload.length * 2);
-        for (byte value : payload) {
-            builder.append(String.format("%02X", value));
+    private List<ParseContext> splitFrames(ProtocolParserPublishedDTO definition, ParseContext rawContext) {
+        FrameDecodeResult frameDecodeResult = frameDecodeEngine.decode(definition, rawContext);
+        if (frameDecodeResult.getFrames().isEmpty()) {
+            if (frameDecodeResult.isNeedMoreData()) {
+                throw new IllegalArgumentException("Payload does not contain a complete frame under current frame config");
+            }
+            return List.of(rawContext);
         }
-        return builder.toString();
+        List<ParseContext> contexts = new ArrayList<>(frameDecodeResult.getFrames().size());
+        for (byte[] frame : frameDecodeResult.getFrames()) {
+            contexts.add(copyContextWithPayload(rawContext, frame));
+        }
+        return contexts;
+    }
+
+    private ParseContext copyContextWithPayload(ParseContext rawContext, byte[] payload) {
+        return ParseContext.builder()
+                .protocol(rawContext.getProtocol())
+                .transport(rawContext.getTransport())
+                .topic(rawContext.getTopic())
+                .payload(payload)
+                .payloadText(new String(payload, StandardCharsets.UTF_8))
+                .payloadHex(PayloadCodec.toHex(payload))
+                .headers(rawContext.getHeaders())
+                .sessionId(rawContext.getSessionId())
+                .remoteAddress(rawContext.getRemoteAddress())
+                .productId(rawContext.getProductId())
+                .productKey(rawContext.getProductKey())
+                .config(rawContext.getConfig())
+                .build();
     }
 }

@@ -2,6 +2,8 @@ package com.songhg.firefly.iot.api.client;
 
 import com.songhg.firefly.iot.api.dto.ProtocolParserDebugRequestDTO;
 import com.songhg.firefly.iot.api.dto.ProtocolParserDebugResponseDTO;
+import com.songhg.firefly.iot.api.dto.ProtocolParserEncodeRequestDTO;
+import com.songhg.firefly.iot.api.dto.ProtocolParserEncodeResponseDTO;
 import com.songhg.firefly.iot.common.result.R;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -12,4 +14,7 @@ public interface ProtocolParserDebugClient {
 
     @PostMapping("/debug")
     R<ProtocolParserDebugResponseDTO> debug(@RequestBody ProtocolParserDebugRequestDTO request);
+
+    @PostMapping("/debug-encode")
+    R<ProtocolParserEncodeResponseDTO> debugEncode(@RequestBody ProtocolParserEncodeRequestDTO request);
 }

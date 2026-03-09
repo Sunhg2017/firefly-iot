@@ -39,15 +39,30 @@ class ProtocolParseEngineTest {
     @Mock
     private ScriptParserExecutor scriptParserExecutor;
 
+    @Mock
+    private ProtocolParserPluginRegistry protocolParserPluginRegistry;
+
+    @Mock
+    private ProtocolParserMetricsService protocolParserMetricsService;
+
+    @Mock
+    private ProtocolParserReleaseMatcher protocolParserReleaseMatcher;
+
+    private ProtocolParserMatcher protocolParserMatcher;
     private ProtocolParseEngine protocolParseEngine;
 
     @BeforeEach
     void setUp() {
+        protocolParserMatcher = new ProtocolParserMatcher(new ObjectMapper());
         protocolParseEngine = new ProtocolParseEngine(
                 new ObjectMapper(),
                 publishedProtocolParserService,
                 deviceIdentityResolveService,
-                scriptParserExecutor
+                scriptParserExecutor,
+                protocolParserMatcher,
+                protocolParserPluginRegistry,
+                protocolParserMetricsService,
+                protocolParserReleaseMatcher
         );
     }
 
@@ -101,6 +116,7 @@ class ProtocolParseEngineTest {
         when(publishedProtocolParserService.getPublishedDefinitions(1001L)).thenReturn(List.of(definition));
         when(scriptParserExecutor.execute(eq(definition), any(ParseContext.class))).thenReturn(executionResult);
         when(deviceIdentityResolveService.resolve(any(ParseContext.class), eq(null), eq(identity))).thenReturn(resolved);
+        when(protocolParserReleaseMatcher.matches(definition, resolved)).thenReturn(true);
 
         ProtocolParseOutcome outcome = protocolParseEngine.parse(parseContext, null);
 
