@@ -167,7 +167,7 @@ bash deploy.sh up
 ## 文档
 
 - [架构文档](ARCHITECTURE.md)
-- [产品设计](docs/product-design.md)
-- [用户权限详细设计](docs/detailed-design-user-permissions.md)
-- [租户管理详细设计](docs/detailed-design-tenant-management.md)
-- [设备管理详细设计](docs/detailed-design-device-management.md)
+- [产品设计](docs/design/product-design.md)
+- [用户权限详细设计](docs/design/detailed-design-user-permissions.md)
+- [租户管理详细设计](docs/design/detailed-design-tenant-management.md)
+- [设备管理详细设计](docs/design/detailed-design-device-management.md)

@@ -752,4 +752,4 @@ POST /api/v1/auth/login
 
 ---
 
-> **文档维护**: 本文档随项目迭代持续更新，最新版本请以仓库 `docs/detailed-design-multi-platform-login.md` 为准。
+> **文档维护**: 本文档随项目迭代持续更新，最新版本请以仓库 `docs/design/detailed-design-multi-platform-login.md` 为准。

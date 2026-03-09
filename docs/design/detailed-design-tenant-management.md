@@ -1268,4 +1268,4 @@ L2: Redis 缓存
 
 ---
 
-> **文档维护**: 本文档随项目迭代持续更新，最新版本请以仓库 `docs/detailed-design-tenant-management.md` 为准。
+> **文档维护**: 本文档随项目迭代持续更新，最新版本请以仓库 `docs/design/detailed-design-tenant-management.md` 为准。

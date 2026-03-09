@@ -1039,4 +1039,4 @@ Content-Type: application/json
 
 ---
 
-> **文档维护**: 本文档随项目迭代持续更新，最新版本请以仓库 `docs/detailed-design-user-permissions.md` 为准。
+> **文档维护**: 本文档随项目迭代持续更新，最新版本请以仓库 `docs/design/detailed-design-user-permissions.md` 为准。
