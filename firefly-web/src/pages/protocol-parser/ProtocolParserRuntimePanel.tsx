@@ -63,7 +63,7 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
 }) => {
   const pluginColumns: ColumnsType<RuntimePlugin> = [
     {
-      title: 'Plugin',
+      title: '插件',
       dataIndex: 'displayName',
       render: (_, record) => (
         <Space direction="vertical" size={0}>
@@ -73,30 +73,30 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
       ),
     },
     {
-      title: 'Version',
+      title: '版本',
       dataIndex: 'version',
       width: 120,
       render: (value?: string) => value || '-',
     },
     {
-      title: 'Capability',
+      title: '能力',
       width: 180,
       render: (_, record) => (
         <Space wrap>
-          {record.supportsParse ? <Tag color="blue">Parse</Tag> : null}
-          {record.supportsEncode ? <Tag color="green">Encode</Tag> : null}
-          {!record.supportsParse && !record.supportsEncode ? <Tag>Unknown</Tag> : null}
+          {record.supportsParse ? <Tag color="blue">解析</Tag> : null}
+          {record.supportsEncode ? <Tag color="green">编码</Tag> : null}
+          {!record.supportsParse && !record.supportsEncode ? <Tag>未知</Tag> : null}
         </Space>
       ),
     },
     {
-      title: 'Source',
+      title: '来源',
       dataIndex: 'sourceType',
       width: 140,
-      render: (value?: string) => <Tag>{value || 'UNKNOWN'}</Tag>,
+      render: (value?: string) => <Tag>{value || '未知'}</Tag>,
     },
     {
-      title: 'Location',
+      title: '位置',
       dataIndex: 'sourceLocation',
       ellipsis: true,
       render: (value?: string) => value || '-',
@@ -105,7 +105,7 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
 
   const catalogColumns: ColumnsType<RuntimePluginCatalogItem> = [
     {
-      title: 'Catalog Item',
+      title: '目录项',
       dataIndex: 'displayName',
       render: (_, record) => (
         <Space direction="vertical" size={0}>
@@ -115,32 +115,32 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
       ),
     },
     {
-      title: 'Vendor',
+      title: '厂商',
       dataIndex: 'vendor',
       width: 140,
       render: (value?: string) => value || '-',
     },
     {
-      title: 'Latest',
+      title: '最新版本',
       dataIndex: 'latestVersion',
       width: 120,
       render: (value?: string) => value || '-',
     },
     {
-      title: 'Installed',
+      title: '安装状态',
       width: 180,
       render: (_, record) =>
         record.installed ? (
           <Space wrap>
-            <Tag color="success">Installed</Tag>
+            <Tag color="success">已安装</Tag>
             {record.installedVersion ? <Typography.Text>{record.installedVersion}</Typography.Text> : null}
           </Space>
         ) : (
-          <Tag>Not Installed</Tag>
+          <Tag>未安装</Tag>
         ),
     },
     {
-      title: 'Install Hint',
+      title: '安装提示',
       dataIndex: 'installHint',
       ellipsis: true,
       render: (value?: string) => value || '-',
@@ -152,14 +152,14 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
 
   return (
     <Card
-      title="Runtime"
+      title="运行时"
       extra={
         <Space>
           <Button icon={<SyncOutlined />} onClick={onRefresh} loading={loading}>
-            Refresh
+            刷新
           </Button>
           <Button type="primary" icon={<ReloadOutlined />} onClick={onReload} loading={reloading}>
-            Reload Plugins
+            重载插件
           </Button>
         </Space>
       }
@@ -168,22 +168,22 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={12} md={6}>
           <Card size="small">
-            <Statistic title="Parse" value={metrics?.parseHandledCount || 0} />
+            <Statistic title="解析次数" value={metrics?.parseHandledCount || 0} />
           </Card>
         </Col>
         <Col xs={12} md={6}>
           <Card size="small">
-            <Statistic title="Encode" value={metrics?.encodeHandledCount || 0} />
+            <Statistic title="编码次数" value={metrics?.encodeHandledCount || 0} />
           </Card>
         </Col>
         <Col xs={12} md={6}>
           <Card size="small">
-            <Statistic title="Debug Success" value={metrics?.debugSuccessCount || 0} />
+            <Statistic title="调试成功" value={metrics?.debugSuccessCount || 0} />
           </Card>
         </Col>
         <Col xs={12} md={6}>
           <Card size="small">
-            <Statistic title="Parse Avg (ms)" value={metrics?.avgParseCostMs || 0} precision={2} />
+            <Statistic title="平均解析耗时(ms)" value={metrics?.avgParseCostMs || 0} precision={2} />
           </Card>
         </Col>
       </Row>
@@ -192,8 +192,8 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
         <Col xs={24} xl={12}>
           <Card
             size="small"
-            title="Installed Plugins"
-            extra={<Typography.Text type="secondary">{plugins.length} loaded</Typography.Text>}
+            title="已安装插件"
+            extra={<Typography.Text type="secondary">已加载 {plugins.length} 个</Typography.Text>}
           >
             <Table
               rowKey={(record) => `${record.pluginId}:${record.version || 'latest'}`}
@@ -202,7 +202,7 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
               columns={pluginColumns}
               dataSource={plugins}
               pagination={false}
-              locale={{ emptyText: <Empty description="No runtime plugins" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+              locale={{ emptyText: <Empty description="暂无运行时插件" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
               scroll={{ x: 720 }}
             />
           </Card>
@@ -210,8 +210,8 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
         <Col xs={24} xl={12}>
           <Card
             size="small"
-            title="Plugin Catalog"
-            extra={<Typography.Text type="secondary">{catalog.length} items</Typography.Text>}
+            title="插件目录"
+            extra={<Typography.Text type="secondary">共 {catalog.length} 项</Typography.Text>}
           >
             <Table
               rowKey={(record) => record.pluginId}
@@ -220,7 +220,7 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
               columns={catalogColumns}
               dataSource={catalog}
               pagination={false}
-              locale={{ emptyText: <Empty description="No catalog items" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+              locale={{ emptyText: <Empty description="暂无目录项" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
               scroll={{ x: 720 }}
             />
           </Card>
@@ -229,7 +229,7 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24} xl={12}>
-          <Card size="small" title="Parse Counters">
+          <Card size="small" title="解析计数">
             {parseCounters.length > 0 ? (
               <Space wrap>
                 {parseCounters.map(([transport, count]) => (
@@ -239,12 +239,12 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
                 ))}
               </Space>
             ) : (
-              <Empty description="No parse counters" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <Empty description="暂无解析计数" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             )}
           </Card>
         </Col>
         <Col xs={24} xl={12}>
-          <Card size="small" title="Encode Counters">
+          <Card size="small" title="编码计数">
             {encodeCounters.length > 0 ? (
               <Space wrap>
                 {encodeCounters.map(([transport, count]) => (
@@ -254,7 +254,7 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
                 ))}
               </Space>
             ) : (
-              <Empty description="No encode counters" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <Empty description="暂无编码计数" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             )}
           </Card>
         </Col>

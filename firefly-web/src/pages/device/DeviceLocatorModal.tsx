@@ -63,7 +63,7 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
       const response = await deviceApi.listLocators(deviceId);
       setRecords((response.data.data || []) as DeviceLocatorRecord[]);
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to load locators'));
+      message.error(getErrorMessage(error, '加载设备标识失败'));
     } finally {
       setLoading(false);
     }
@@ -96,15 +96,15 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
       };
       if (editingRecord) {
         await deviceApi.updateLocator(deviceId, editingRecord.id, payload);
-        message.success('Locator updated');
+        message.success('设备标识已更新');
       } else {
         await deviceApi.createLocator(deviceId, payload);
-        message.success('Locator created');
+        message.success('设备标识已新增');
       }
       resetEditor();
       void fetchData();
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to save locator'));
+      message.error(getErrorMessage(error, '保存设备标识失败'));
     } finally {
       setSubmitting(false);
     }
@@ -116,42 +116,42 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
     }
     try {
       await deviceApi.deleteLocator(deviceId, locatorId);
-      message.success('Locator deleted');
+      message.success('设备标识已删除');
       if (editingRecord?.id === locatorId) {
         resetEditor();
       }
       void fetchData();
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to delete locator'));
+      message.error(getErrorMessage(error, '删除设备标识失败'));
     }
   };
 
   const columns: ColumnsType<DeviceLocatorRecord> = [
     {
-      title: 'Type',
+      title: '类型',
       dataIndex: 'locatorType',
       width: 140,
       render: (value: string) => <Tag color="blue">{value}</Tag>,
     },
     {
-      title: 'Value',
+      title: '标识值',
       dataIndex: 'locatorValue',
       render: (value: string) => <Typography.Text copyable={{ text: value }}>{value}</Typography.Text>,
     },
     {
-      title: 'Primary',
+      title: '主标识',
       dataIndex: 'primaryLocator',
       width: 100,
-      render: (value?: boolean) => (value ? <Tag color="success">Yes</Tag> : <Tag>No</Tag>),
+      render: (value?: boolean) => (value ? <Tag color="success">是</Tag> : <Tag>否</Tag>),
     },
     {
-      title: 'Updated At',
+      title: '更新时间',
       dataIndex: 'updatedAt',
       width: 180,
       render: (value?: string) => value || '-',
     },
     {
-      title: 'Actions',
+      title: '操作',
       width: 140,
       render: (_, record) => (
         <Space>
@@ -168,11 +168,11 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
               });
             }}
           >
-            Edit
+            编辑
           </Button>
-          <Popconfirm title="Delete this locator?" onConfirm={() => void handleDelete(record.id)}>
+          <Popconfirm title="确认删除该标识吗？" onConfirm={() => void handleDelete(record.id)}>
             <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-              Delete
+              删除
             </Button>
           </Popconfirm>
         </Space>
@@ -182,7 +182,7 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
 
   return (
     <Modal
-      title={`Device Locators${deviceName ? ` · ${deviceName}` : ''}`}
+      title={`设备标识${deviceName ? ` · ${deviceName}` : ''}`}
       open={open}
       width={900}
       destroyOnHidden
@@ -196,37 +196,37 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="Locators are used for custom protocol identification."
-        description="Typical examples are IMEI, ICCID, MAC, serial number, or any vendor-specific identifier carried by uplink packets."
+        message="设备标识用于自定义协议设备识别。"
+        description="常见示例包括 IMEI、ICCID、MAC、序列号，或设备上行报文中携带的任意厂商自定义标识。"
       />
 
       <Form form={form} layout="vertical" initialValues={DEFAULT_VALUES} onFinish={handleSubmit}>
         <Space align="start" style={{ display: 'flex', marginBottom: 16 }}>
           <Form.Item
             name="locatorType"
-            label="Locator Type"
-            rules={[{ required: true, message: 'Please enter locator type' }]}
+            label="标识类型"
+            rules={[{ required: true, message: '请输入标识类型' }]}
             style={{ minWidth: 180, marginBottom: 0 }}
           >
             <Input placeholder="IMEI / ICCID / MAC / SERIAL" />
           </Form.Item>
           <Form.Item
             name="locatorValue"
-            label="Locator Value"
-            rules={[{ required: true, message: 'Please enter locator value' }]}
+            label="标识值"
+            rules={[{ required: true, message: '请输入标识值' }]}
             style={{ flex: 1, marginBottom: 0 }}
           >
-            <Input placeholder="Actual identifier value reported by the device" />
+            <Input placeholder="设备实际上报的标识内容" />
           </Form.Item>
-          <Form.Item name="primaryLocator" label="Primary" valuePropName="checked" style={{ marginBottom: 0 }}>
-            <Switch checkedChildren="Yes" unCheckedChildren="No" />
+          <Form.Item name="primaryLocator" label="主标识" valuePropName="checked" style={{ marginBottom: 0 }}>
+            <Switch checkedChildren="是" unCheckedChildren="否" />
           </Form.Item>
           <Form.Item label=" " style={{ marginBottom: 0 }}>
             <Space>
               <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={submitting}>
-                {editingRecord ? 'Update' : 'Add'}
+                {editingRecord ? '更新' : '新增'}
               </Button>
-              {editingRecord ? <Button onClick={resetEditor}>Cancel</Button> : null}
+              {editingRecord ? <Button onClick={resetEditor}>取消</Button> : null}
             </Space>
           </Form.Item>
         </Space>

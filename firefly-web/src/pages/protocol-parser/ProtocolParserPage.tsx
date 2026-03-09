@@ -194,26 +194,26 @@ interface RollbackFormValues {
 }
 
 const PARSER_MODE_OPTIONS = [
-  { value: 'SCRIPT', label: 'Script' },
-  { value: 'PLUGIN', label: 'Plugin' },
+  { value: 'SCRIPT', label: '脚本' },
+  { value: 'PLUGIN', label: '插件' },
 ];
 
 const FRAME_MODE_OPTIONS = [
-  { value: 'NONE', label: 'None' },
-  { value: 'DELIMITER', label: 'Delimiter' },
-  { value: 'FIXED_LENGTH', label: 'Fixed Length' },
-  { value: 'LENGTH_FIELD', label: 'Length Field' },
+  { value: 'NONE', label: '无拆帧' },
+  { value: 'DELIMITER', label: '分隔符' },
+  { value: 'FIXED_LENGTH', label: '固定长度' },
+  { value: 'LENGTH_FIELD', label: '长度字段' },
 ];
 
 const DIRECTION_OPTIONS = [
-  { value: 'UPLINK', label: 'Uplink' },
-  { value: 'DOWNLINK', label: 'Downlink' },
+  { value: 'UPLINK', label: '上行' },
+  { value: 'DOWNLINK', label: '下行' },
 ];
 
 const ERROR_POLICY_OPTIONS = [
-  { value: 'ERROR', label: 'Error' },
-  { value: 'DROP', label: 'Drop' },
-  { value: 'RAW_DATA', label: 'Raw Data Fallback' },
+  { value: 'ERROR', label: '报错' },
+  { value: 'DROP', label: '丢弃' },
+  { value: 'RAW_DATA', label: '原始数据回退' },
 ];
 
 const PAYLOAD_ENCODING_OPTIONS = [
@@ -224,21 +224,33 @@ const PAYLOAD_ENCODING_OPTIONS = [
 ];
 
 const RELEASE_MODE_OPTIONS = [
-  { value: 'ALL', label: 'All Devices' },
-  { value: 'DEVICE_LIST', label: 'Device List' },
-  { value: 'HASH_PERCENT', label: 'Hash Percent' },
+  { value: 'ALL', label: '全部设备' },
+  { value: 'DEVICE_LIST', label: '指定设备' },
+  { value: 'HASH_PERCENT', label: '哈希百分比' },
 ];
 
 const SCOPE_TYPE_OPTIONS = [
-  { value: 'PRODUCT', label: 'Product Scope' },
-  { value: 'TENANT', label: 'Tenant Default Scope' },
+  { value: 'PRODUCT', label: '产品级' },
+  { value: 'TENANT', label: '租户默认级' },
 ];
 
 const STATUS_META: Record<string, { color: string; label: string }> = {
-  DRAFT: { color: 'processing', label: 'Draft' },
-  ENABLED: { color: 'success', label: 'Enabled' },
-  DISABLED: { color: 'default', label: 'Disabled' },
+  DRAFT: { color: 'processing', label: '草稿' },
+  ENABLED: { color: 'success', label: '已启用' },
+  DISABLED: { color: 'default', label: '已停用' },
 };
+
+const VERSION_STATUS_META: Record<string, string> = {
+  DRAFT: '草稿',
+  PUBLISHED: '已发布',
+  ENABLED: '已启用',
+  DISABLED: '已停用',
+  ROLLBACK: '已回滚',
+  ROLLED_BACK: '已回滚',
+};
+
+const findOptionLabel = (options: Array<{ value: string; label: string }>, value?: string) =>
+  options.find((item) => item.value === value)?.label || value || '-';
 
 const DEFAULT_EDITOR_VALUES: EditorFormValues = {
   scopeType: 'PRODUCT',
@@ -305,10 +317,10 @@ const ensureJsonObjectText = (raw: string, fieldName: string) => {
   try {
     parsed = JSON.parse(source);
   } catch {
-    throw new Error(`${fieldName} must be valid JSON`);
+    throw new Error(`${fieldName}必须是合法的 JSON`);
   }
   if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') {
-    throw new Error(`${fieldName} must be a JSON object`);
+    throw new Error(`${fieldName}必须是 JSON 对象`);
   }
   return JSON.stringify(parsed);
 };
@@ -322,10 +334,10 @@ const parseOptionalStringMap = (raw: string, fieldName: string) => {
   try {
     parsed = JSON.parse(source);
   } catch {
-    throw new Error(`${fieldName} must be valid JSON`);
+    throw new Error(`${fieldName}必须是合法的 JSON`);
   }
   if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') {
-    throw new Error(`${fieldName} must be a JSON object`);
+    throw new Error(`${fieldName}必须是 JSON 对象`);
   }
   return parsed as Record<string, string>;
 };
@@ -335,10 +347,10 @@ const parseRequiredObject = (raw: string, fieldName: string) => {
   try {
     parsed = JSON.parse(raw.trim() || '{}');
   } catch {
-    throw new Error(`${fieldName} must be valid JSON`);
+    throw new Error(`${fieldName}必须是合法的 JSON`);
   }
   if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') {
-    throw new Error(`${fieldName} must be a JSON object`);
+    throw new Error(`${fieldName}必须是 JSON 对象`);
   }
   return parsed as Record<string, unknown>;
 };
@@ -427,11 +439,11 @@ const formatReleaseSummary = (record: ProtocolParserRecord) => {
     if (releaseMode === 'DEVICE_LIST') {
       const deviceIds = Array.isArray(config.deviceIds) ? config.deviceIds.length : 0;
       const deviceNames = Array.isArray(config.deviceNames) ? config.deviceNames.length : 0;
-      return `${deviceIds + deviceNames} targets`;
+      return `${deviceIds + deviceNames} 个目标设备`;
     }
-    return 'All devices';
+    return '全部设备';
   } catch {
-    return releaseMode;
+    return findOptionLabel(RELEASE_MODE_OPTIONS, releaseMode);
   }
 };
 
@@ -531,7 +543,7 @@ const ProtocolParserPage: React.FC = () => {
       const page = response.data.data as { records?: ProductOption[] };
       setProducts(page.records || []);
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to load products'));
+      message.error(getErrorMessage(error, '加载产品列表失败'));
     } finally {
       setProductLoading(false);
     }
@@ -552,7 +564,7 @@ const ProtocolParserPage: React.FC = () => {
       setRecords(page.records || []);
       setTotal(page.total || 0);
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to load protocol parsers'));
+      message.error(getErrorMessage(error, '加载协议解析规则失败'));
     } finally {
       setLoading(false);
     }
@@ -573,7 +585,7 @@ const ProtocolParserPage: React.FC = () => {
       setRuntimePlugins((pluginsResponse.data.data || []) as RuntimePlugin[]);
       setRuntimeCatalog((catalogResponse.data.data || []) as RuntimePluginCatalogItem[]);
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to load runtime status'));
+      message.error(getErrorMessage(error, '加载运行时状态失败'));
     } finally {
       setRuntimeLoading(false);
     }
@@ -599,7 +611,7 @@ const ProtocolParserPage: React.FC = () => {
 
   const applyTemplate = (template?: ProtocolParserTemplate) => {
     if (!template) {
-      message.warning('Please select a template first');
+      message.warning('请先选择模板');
       return;
     }
     const visualConfigJson = defaultVisualConfigForDirection(template.direction as VisualFlowDirection);
@@ -618,7 +630,7 @@ const ProtocolParserPage: React.FC = () => {
       timeoutMs: template.timeoutMs,
       errorPolicy: template.errorPolicy,
     });
-    message.success(`Template applied: ${template.label}`);
+    message.success(`已应用模板：${template.label}`);
   };
 
   const openCreateModal = () => {
@@ -670,7 +682,7 @@ const ProtocolParserPage: React.FC = () => {
       setEditorMode('edit');
       setEditorOpen(true);
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to load parser detail'));
+      message.error(getErrorMessage(error, '加载解析规则详情失败'));
     } finally {
       setSubmitting(false);
     }
@@ -678,13 +690,13 @@ const ProtocolParserPage: React.FC = () => {
 
   const buildEditorPayload = (values: EditorFormValues) => {
     if (values.scopeType === 'PRODUCT' && !values.productId) {
-      throw new Error('Product scope requires a product');
+      throw new Error('产品级规则必须选择产品');
     }
     if (values.parserMode === 'SCRIPT' && !trimOptional(values.scriptContent)) {
-      throw new Error('Script mode requires script content');
+      throw new Error('脚本模式必须填写脚本内容');
     }
     if (values.parserMode === 'PLUGIN' && !trimOptional(values.pluginId)) {
-      throw new Error('Plugin mode requires pluginId');
+      throw new Error('插件模式必须填写插件 ID');
     }
 
     return {
@@ -696,10 +708,10 @@ const ProtocolParserPage: React.FC = () => {
       direction: values.direction,
       parserMode: values.parserMode,
       frameMode: values.frameMode,
-      matchRuleJson: ensureJsonObjectText(values.matchRuleJson, 'Match rule'),
-      frameConfigJson: ensureJsonObjectText(values.frameConfigJson, 'Frame config'),
-      parserConfigJson: ensureJsonObjectText(values.parserConfigJson, 'Parser config'),
-      visualConfigJson: ensureJsonObjectText(values.visualConfigJson, 'Visual config'),
+      matchRuleJson: ensureJsonObjectText(values.matchRuleJson, '匹配规则'),
+      frameConfigJson: ensureJsonObjectText(values.frameConfigJson, '拆帧配置'),
+      parserConfigJson: ensureJsonObjectText(values.parserConfigJson, '解析配置'),
+      visualConfigJson: ensureJsonObjectText(values.visualConfigJson, '可视化配置'),
       scriptLanguage: values.parserMode === 'SCRIPT' ? trimOptional(values.scriptLanguage) || 'JS' : undefined,
       scriptContent: values.parserMode === 'SCRIPT' ? values.scriptContent : undefined,
       pluginId: values.parserMode === 'PLUGIN' ? trimOptional(values.pluginId) : undefined,
@@ -707,7 +719,7 @@ const ProtocolParserPage: React.FC = () => {
       timeoutMs: values.timeoutMs,
       errorPolicy: values.errorPolicy,
       releaseMode: values.releaseMode,
-      releaseConfigJson: ensureJsonObjectText(values.releaseConfigJson, 'Release config'),
+      releaseConfigJson: ensureJsonObjectText(values.releaseConfigJson, '灰度配置'),
     };
   };
 
@@ -717,16 +729,16 @@ const ProtocolParserPage: React.FC = () => {
       const payload = buildEditorPayload(values);
       if (editorMode === 'create') {
         await protocolParserApi.create(payload);
-        message.success('Protocol parser created');
+        message.success('协议解析规则已创建');
       } else if (currentRecord) {
         await protocolParserApi.update(currentRecord.id, payload);
-        message.success('Protocol parser updated');
+        message.success('协议解析规则已更新');
       }
       closeEditorModal();
       void fetchData();
       void fetchRuntime();
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to save protocol parser'));
+      message.error(getErrorMessage(error, '保存协议解析规则失败'));
     } finally {
       setSubmitting(false);
     }
@@ -744,9 +756,9 @@ const ProtocolParserPage: React.FC = () => {
         visualConfigJson: normalizedVisualConfig,
         scriptContent,
       });
-      message.success('Script generated from visual config');
+      message.success('已根据可视化配置生成脚本');
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to generate script from visual config'));
+      message.error(getErrorMessage(error, '根据可视化配置生成脚本失败'));
     }
   };
 
@@ -786,7 +798,7 @@ const ProtocolParserPage: React.FC = () => {
     }
     setDebugSubmitting(true);
     try {
-      const headers = parseOptionalStringMap(values.headersText, 'Headers');
+      const headers = parseOptionalStringMap(values.headersText, '请求头');
       const response = await protocolParserApi.test(debugRecord.id, {
         productId: values.productId,
         protocol: trimOptional(values.protocol),
@@ -803,12 +815,12 @@ const ProtocolParserPage: React.FC = () => {
       const data = response.data.data as DebugResult;
       setDebugResult(data);
       if (data.success) {
-        message.success('Uplink debug completed');
+        message.success('上行调试完成');
       } else {
-        message.warning(data.errorMessage || 'Uplink debug returned an error');
+        message.warning(data.errorMessage || '上行调试返回异常');
       }
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to run uplink debug'));
+      message.error(getErrorMessage(error, '执行上行调试失败'));
     } finally {
       setDebugSubmitting(false);
     }
@@ -820,8 +832,8 @@ const ProtocolParserPage: React.FC = () => {
     }
     setDebugSubmitting(true);
     try {
-      const headers = parseOptionalStringMap(values.headersText, 'Headers');
-      const payload = parseRequiredObject(values.payloadText, 'Payload');
+      const headers = parseOptionalStringMap(values.headersText, '请求头');
+      const payload = parseRequiredObject(values.payloadText, '载荷');
       const response = await protocolParserApi.encodeTest(debugRecord.id, {
         productId: values.productId,
         topic: trimOptional(values.topic),
@@ -836,12 +848,12 @@ const ProtocolParserPage: React.FC = () => {
       const data = response.data.data as EncodeDebugResult;
       setEncodeResult(data);
       if (data.success) {
-        message.success('Downlink encode test completed');
+        message.success('下行编码测试完成');
       } else {
-        message.warning(data.errorMessage || 'Downlink encode test returned an error');
+        message.warning(data.errorMessage || '下行编码测试返回异常');
       }
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to run downlink encode test'));
+      message.error(getErrorMessage(error, '执行下行编码测试失败'));
     } finally {
       setDebugSubmitting(false);
     }
@@ -855,7 +867,7 @@ const ProtocolParserPage: React.FC = () => {
       setVersionItems(items);
       return items;
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to load version history'));
+      message.error(getErrorMessage(error, '加载版本历史失败'));
       return [];
     } finally {
       setVersionLoading(false);
@@ -881,13 +893,13 @@ const ProtocolParserPage: React.FC = () => {
     setPublishSubmitting(true);
     try {
       await protocolParserApi.publish(publishRecord.id, trimOptional(values.changeLog));
-      message.success('Protocol parser published');
+      message.success('协议解析规则已发布');
       setPublishOpen(false);
       setPublishRecord(null);
       void fetchData();
       void fetchRuntime();
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to publish protocol parser'));
+      message.error(getErrorMessage(error, '发布协议解析规则失败'));
     } finally {
       setPublishSubmitting(false);
     }
@@ -911,13 +923,13 @@ const ProtocolParserPage: React.FC = () => {
     setRollbackSubmitting(true);
     try {
       await protocolParserApi.rollback(rollbackRecord.id, values.version);
-      message.success('Protocol parser rolled back');
+      message.success('协议解析规则已回滚');
       setRollbackOpen(false);
       setRollbackRecord(null);
       void fetchData();
       void fetchRuntime();
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to rollback protocol parser'));
+      message.error(getErrorMessage(error, '回滚协议解析规则失败'));
     } finally {
       setRollbackSubmitting(false);
     }
@@ -927,15 +939,15 @@ const ProtocolParserPage: React.FC = () => {
     try {
       if (record.status === 'ENABLED') {
         await protocolParserApi.disable(record.id);
-        message.success('Protocol parser disabled');
+        message.success('协议解析规则已停用');
       } else {
         await protocolParserApi.enable(record.id);
-        message.success('Protocol parser enabled');
+        message.success('协议解析规则已启用');
       }
       void fetchData();
       void fetchRuntime();
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to change parser status'));
+      message.error(getErrorMessage(error, '切换规则状态失败'));
     }
   };
 
@@ -943,10 +955,10 @@ const ProtocolParserPage: React.FC = () => {
     setRuntimeReloading(true);
     try {
       await protocolParserApi.reloadRuntimePlugins();
-      message.success('Runtime plugins reloaded');
+      message.success('运行时插件已重载');
       await fetchRuntime();
     } catch (error) {
-      message.error(getErrorMessage(error, 'Failed to reload runtime plugins'));
+      message.error(getErrorMessage(error, '重载运行时插件失败'));
     } finally {
       setRuntimeReloading(false);
     }
@@ -954,24 +966,24 @@ const ProtocolParserPage: React.FC = () => {
 
   const versionColumns: ColumnsType<ProtocolParserVersionRecord> = [
     {
-      title: 'Version',
+      title: '版本',
       dataIndex: 'versionNo',
       width: 100,
       render: (value: number) => <Tag color="blue">v{value}</Tag>,
     },
     {
-      title: 'Status',
+      title: '状态',
       dataIndex: 'publishStatus',
       width: 140,
-      render: (value?: string) => value || '-',
+      render: (value?: string) => (value ? VERSION_STATUS_META[value] || value : '-'),
     },
     {
-      title: 'Change Log',
+      title: '变更说明',
       dataIndex: 'changeLog',
       render: (value?: string) => value || '-',
     },
     {
-      title: 'Created At',
+      title: '创建时间',
       dataIndex: 'createdAt',
       width: 180,
       render: (value?: string) => value || '-',
@@ -984,7 +996,7 @@ const ProtocolParserPage: React.FC = () => {
 
   const columns: ColumnsType<ProtocolParserRecord> = [
     {
-      title: 'Scope',
+      title: '作用域',
       width: 220,
       render: (_, record) => {
         const product = record.productId ? productMap.get(record.productId) : undefined;
@@ -992,38 +1004,42 @@ const ProtocolParserPage: React.FC = () => {
           <Space direction="vertical" size={2}>
             <Space wrap>
               <Tag color={record.scopeType === 'TENANT' ? 'gold' : 'blue'}>
-                {record.scopeType === 'TENANT' ? 'Tenant Default' : 'Product'}
+                {record.scopeType === 'TENANT' ? '租户默认级' : '产品级'}
               </Tag>
               {record.productId ? <Text type="secondary">#{record.productId}</Text> : null}
             </Space>
-            <Text strong>{product ? product.name : record.scopeType === 'TENANT' ? 'Tenant Shared Rule' : 'Unknown Product'}</Text>
-            <Text type="secondary">scopeId: {record.scopeId || '-'}</Text>
+            <Text strong>{product ? product.name : record.scopeType === 'TENANT' ? '租户共享规则' : '未知产品'}</Text>
+            <Text type="secondary">作用域 ID：{record.scopeId || '-'}</Text>
           </Space>
         );
       },
     },
     {
-      title: 'Protocol',
+      title: '协议',
       width: 220,
       render: (_, record) => (
         <Space direction="vertical" size={4}>
           <Space wrap>
             <Tag color={transportColor(record.transport)}>{record.transport}</Tag>
             <Tag>{record.protocol}</Tag>
-            <Tag color={record.direction === 'DOWNLINK' ? 'purple' : 'green'}>{record.direction}</Tag>
+            <Tag color={record.direction === 'DOWNLINK' ? 'purple' : 'green'}>
+              {findOptionLabel(DIRECTION_OPTIONS, record.direction)}
+            </Tag>
           </Space>
-          <Text type="secondary">{record.frameMode || 'NONE'}</Text>
+          <Text type="secondary">{findOptionLabel(FRAME_MODE_OPTIONS, record.frameMode || 'NONE')}</Text>
         </Space>
       ),
     },
     {
-      title: 'Execution',
+      title: '执行方式',
       width: 220,
       render: (_, record) => (
         <Space direction="vertical" size={4}>
           <Space wrap>
-            <Tag color={record.parserMode === 'PLUGIN' ? 'magenta' : 'geekblue'}>{record.parserMode}</Tag>
-            <Tag>{record.errorPolicy || 'ERROR'}</Tag>
+            <Tag color={record.parserMode === 'PLUGIN' ? 'magenta' : 'geekblue'}>
+              {findOptionLabel(PARSER_MODE_OPTIONS, record.parserMode)}
+            </Tag>
+            <Tag>{findOptionLabel(ERROR_POLICY_OPTIONS, record.errorPolicy || 'ERROR')}</Tag>
           </Space>
           <Text type="secondary">
             {record.parserMode === 'PLUGIN'
@@ -1034,29 +1050,31 @@ const ProtocolParserPage: React.FC = () => {
       ),
     },
     {
-      title: 'Release',
+      title: '灰度发布',
       width: 180,
       render: (_, record) => (
         <Space direction="vertical" size={4}>
-          <Tag color={record.releaseMode === 'ALL' ? 'default' : 'orange'}>{record.releaseMode || 'ALL'}</Tag>
+          <Tag color={record.releaseMode === 'ALL' ? 'default' : 'orange'}>
+            {findOptionLabel(RELEASE_MODE_OPTIONS, record.releaseMode || 'ALL')}
+          </Tag>
           <Text type="secondary">{formatReleaseSummary(record)}</Text>
         </Space>
       ),
     },
     {
-      title: 'Version',
+      title: '版本',
       width: 140,
       render: (_, record) => (
         <Space direction="vertical" size={2}>
-          <Text>Draft v{record.currentVersion || 1}</Text>
+          <Text>草稿 v{record.currentVersion || 1}</Text>
           <Text type="secondary">
-            Published {record.publishedVersion ? `v${record.publishedVersion}` : '-'}
+            已发布 {record.publishedVersion ? `v${record.publishedVersion}` : '-'}
           </Text>
         </Space>
       ),
     },
     {
-      title: 'Status',
+      title: '状态',
       dataIndex: 'status',
       width: 120,
       render: (value: string) => {
@@ -1065,43 +1083,43 @@ const ProtocolParserPage: React.FC = () => {
       },
     },
     {
-      title: 'Updated At',
+      title: '更新时间',
       dataIndex: 'updatedAt',
       width: 180,
       render: (value?: string) => value || '-',
     },
     {
-      title: 'Actions',
+      title: '操作',
       width: 380,
       fixed: 'right',
       render: (_, record) => (
         <Space wrap>
           {canUpdate ? (
             <Button type="link" size="small" icon={<EditOutlined />} onClick={() => void openEditModal(record)}>
-              Edit
+              编辑
             </Button>
           ) : null}
           {canTest && record.direction === 'UPLINK' ? (
             <Button type="link" size="small" icon={<BugOutlined />} onClick={() => openUplinkDebugModal(record)}>
-              Debug
+              调试
             </Button>
           ) : null}
           {canTest && record.direction === 'DOWNLINK' ? (
             <Button type="link" size="small" icon={<BugOutlined />} onClick={() => openDownlinkDebugModal(record)}>
-              Encode Test
+              编码测试
             </Button>
           ) : null}
           <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => void openVersionModal(record)}>
-            Versions
+            版本
           </Button>
           {canPublish ? (
             <Button type="link" size="small" icon={<RocketOutlined />} onClick={() => openPublishModal(record)}>
-              Publish
+              发布
             </Button>
           ) : null}
           {canPublish ? (
             <Button type="link" size="small" icon={<RollbackOutlined />} onClick={() => void openRollbackModal(record)}>
-              Rollback
+              回滚
             </Button>
           ) : null}
           {canUpdate ? (
@@ -1111,7 +1129,7 @@ const ProtocolParserPage: React.FC = () => {
               icon={record.status === 'ENABLED' ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
               onClick={() => void handleToggleStatus(record)}
             >
-              {record.status === 'ENABLED' ? 'Disable' : 'Enable'}
+              {record.status === 'ENABLED' ? '停用' : '启用'}
             </Button>
           ) : null}
         </Space>
@@ -1122,21 +1140,21 @@ const ProtocolParserPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        title="Custom Protocol Parsers"
+        title="自定义协议解析"
         description={
           selectedProduct
-            ? `${total} rules · current filter: ${selectedProduct.name} (${selectedProduct.productKey})`
-            : `${total} rules across product and tenant scopes`
+            ? `共 ${total} 条规则，当前筛选产品：${selectedProduct.name} (${selectedProduct.productKey})`
+            : `共 ${total} 条规则，覆盖产品级与租户默认级规则`
         }
         extra={
           <Space wrap>
             {canCreate ? (
               <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
-                New Parser
+                新建规则
               </Button>
             ) : null}
             <Button icon={<ApiOutlined />} onClick={() => void fetchData()}>
-              Refresh Rules
+              刷新规则
             </Button>
           </Space>
         }
@@ -1144,10 +1162,10 @@ const ProtocolParserPage: React.FC = () => {
 
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         {[
-          { title: 'Enabled', value: stats.enabled, color: '#16a34a' },
-          { title: 'Draft', value: stats.drafts, color: '#2563eb' },
-          { title: 'Downlink', value: stats.downlink, color: '#c2410c' },
-          { title: 'Tenant Default', value: stats.tenantDefault, color: '#7c3aed' },
+          { title: '已启用', value: stats.enabled, color: '#16a34a' },
+          { title: '草稿', value: stats.drafts, color: '#2563eb' },
+          { title: '下行', value: stats.downlink, color: '#c2410c' },
+          { title: '租户默认级', value: stats.tenantDefault, color: '#7c3aed' },
         ].map((item) => (
           <Col xs={12} md={6} key={item.title}>
             <Card size="small" style={{ borderRadius: 16 }}>
@@ -1167,7 +1185,7 @@ const ProtocolParserPage: React.FC = () => {
               loading={productLoading}
               value={filterProductId}
               style={{ width: '100%' }}
-              placeholder="Filter by product"
+              placeholder="按产品筛选"
               options={productOptions}
               optionFilterProp="label"
               onChange={(value) => {
@@ -1179,7 +1197,7 @@ const ProtocolParserPage: React.FC = () => {
           <Col xs={24} md={5}>
             <Input
               value={filterProtocol}
-              placeholder="Protocol"
+              placeholder="协议"
               onChange={(event) => {
                 setFilterProtocol(trimOptional(event.target.value));
                 setPageNum(1);
@@ -1189,7 +1207,7 @@ const ProtocolParserPage: React.FC = () => {
           <Col xs={24} md={5}>
             <Input
               value={filterTransport}
-              placeholder="Transport"
+              placeholder="传输方式"
               onChange={(event) => {
                 setFilterTransport(trimOptional(event.target.value));
                 setPageNum(1);
@@ -1201,7 +1219,7 @@ const ProtocolParserPage: React.FC = () => {
               allowClear
               value={filterStatus}
               style={{ width: '100%' }}
-              placeholder="Status"
+              placeholder="状态"
               options={Object.entries(STATUS_META).map(([value, meta]) => ({ value, label: meta.label }))}
               onChange={(value) => {
                 setFilterStatus(value);
@@ -1220,9 +1238,9 @@ const ProtocolParserPage: React.FC = () => {
                   setPageNum(1);
                 }}
               >
-                Reset
+                重置
               </Button>
-              <Button onClick={() => void fetchRuntime()}>Refresh Runtime</Button>
+              <Button onClick={() => void fetchRuntime()}>刷新运行时</Button>
             </Space>
           </Col>
         </Row>
@@ -1245,13 +1263,13 @@ const ProtocolParserPage: React.FC = () => {
           columns={columns}
           dataSource={records}
           scroll={{ x: 1700 }}
-          locale={{ emptyText: <Empty description="No protocol parser rules" /> }}
+          locale={{ emptyText: <Empty description="暂无协议解析规则" /> }}
           pagination={{
             current: pageNum,
             pageSize,
             total,
             showSizeChanger: true,
-            showTotal: (count) => `${count} items`,
+            showTotal: (count) => `共 ${count} 条`,
             onChange: (nextPage, nextPageSize) => {
               setPageNum(nextPage);
               setPageSize(nextPageSize);
@@ -1261,7 +1279,7 @@ const ProtocolParserPage: React.FC = () => {
       </Card>
 
       <Modal
-        title={editorMode === 'create' ? 'New Protocol Parser' : 'Edit Protocol Parser'}
+        title={editorMode === 'create' ? '新建协议解析规则' : '编辑协议解析规则'}
         open={editorOpen}
         width={1080}
         destroyOnHidden
@@ -1273,11 +1291,11 @@ const ProtocolParserPage: React.FC = () => {
           <Card size="small" style={{ marginBottom: 16, borderRadius: 12 }}>
             <Row gutter={[16, 16]} align="middle">
               <Col xs={24} lg={10}>
-                <Form.Item label="Template" style={{ marginBottom: 0 }}>
+                <Form.Item label="模板" style={{ marginBottom: 0 }}>
                   <Select
                     allowClear
                     showSearch
-                    placeholder="Choose a parser template"
+                    placeholder="选择解析模板"
                     value={selectedTemplateKey}
                     options={templateOptions}
                     optionFilterProp="label"
@@ -1292,19 +1310,19 @@ const ProtocolParserPage: React.FC = () => {
                       <Text strong>{selectedTemplate.label}</Text>
                       <Tag color={transportColor(selectedTemplate.transport)}>{selectedTemplate.transport}</Tag>
                       <Tag>{selectedTemplate.protocol}</Tag>
-                      <Tag color="green">{selectedTemplate.direction}</Tag>
+                      <Tag color="green">{findOptionLabel(DIRECTION_OPTIONS, selectedTemplate.direction)}</Tag>
                       {selectedTemplate.tags.map((tag) => (
                         <Tag key={tag}>{tag}</Tag>
                       ))}
                     </Space>
                     <Text type="secondary">{selectedTemplate.description}</Text>
                     <Space wrap>
-                      <Button onClick={() => applyTemplate(selectedTemplate)}>Apply Template</Button>
-                      <Text type="secondary">Template only updates parser-related fields and keeps your scope choice.</Text>
+                      <Button onClick={() => applyTemplate(selectedTemplate)}>应用模板</Button>
+                      <Text type="secondary">模板只会覆盖解析相关字段，会保留你当前选择的作用域。</Text>
                     </Space>
                   </Space>
                 ) : (
-                  <Text type="secondary">Templates speed up common uplink onboarding and can be refined afterward.</Text>
+                  <Text type="secondary">模板可加速常见上行接入场景，后续仍可继续细化调整。</Text>
                 )}
               </Col>
             </Row>
@@ -1312,19 +1330,19 @@ const ProtocolParserPage: React.FC = () => {
 
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item name="scopeType" label="Scope">
+              <Form.Item name="scopeType" label="作用域">
                 <Select options={SCOPE_TYPE_OPTIONS} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
               <Form.Item
                 name="productId"
-                label="Product"
+                label="产品"
                 rules={[
                   {
                     validator: (_, value) => {
                       if (currentScopeType === 'PRODUCT' && !value) {
-                        return Promise.reject(new Error('Product scope requires a product'));
+                        return Promise.reject(new Error('产品级规则必须选择产品'));
                       }
                       return Promise.resolve();
                     },
@@ -1335,37 +1353,37 @@ const ProtocolParserPage: React.FC = () => {
                   allowClear
                   showSearch
                   disabled={currentScopeType === 'TENANT'}
-                  placeholder={currentScopeType === 'TENANT' ? 'Tenant scope uses tenant default' : 'Select product'}
+                  placeholder={currentScopeType === 'TENANT' ? '租户默认级规则无需选择产品' : '选择产品'}
                   options={productOptions}
                   optionFilterProp="label"
                 />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="scopeId" label="Scope ID">
-                <InputNumber min={1} style={{ width: '100%' }} placeholder="Optional override" />
+              <Form.Item name="scopeId" label="作用域 ID">
+                <InputNumber min={1} style={{ width: '100%' }} placeholder="可选覆盖值" />
               </Form.Item>
             </Col>
           </Row>
 
           <Row gutter={16}>
             <Col xs={24} md={6}>
-              <Form.Item name="protocol" label="Protocol" rules={[{ required: true, message: 'Please enter protocol' }]}>
+              <Form.Item name="protocol" label="协议" rules={[{ required: true, message: '请输入协议' }]}>
                 <Input placeholder="TCP_UDP / MQTT / HTTP / COAP" />
               </Form.Item>
             </Col>
             <Col xs={24} md={6}>
-              <Form.Item name="transport" label="Transport" rules={[{ required: true, message: 'Please enter transport' }]}>
+              <Form.Item name="transport" label="传输方式" rules={[{ required: true, message: '请输入传输方式' }]}>
                 <Input placeholder="TCP / UDP / MQTT / HTTP / COAP" />
               </Form.Item>
             </Col>
             <Col xs={24} md={6}>
-              <Form.Item name="direction" label="Direction">
+              <Form.Item name="direction" label="方向">
                 <Select options={DIRECTION_OPTIONS} />
               </Form.Item>
             </Col>
             <Col xs={24} md={6}>
-              <Form.Item name="timeoutMs" label="Timeout (ms)" rules={[{ required: true, message: 'Please enter timeout' }]}>
+              <Form.Item name="timeoutMs" label="超时时间（ms）" rules={[{ required: true, message: '请输入超时时间' }]}>
                 <InputNumber min={1} max={60000} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
@@ -1373,17 +1391,17 @@ const ProtocolParserPage: React.FC = () => {
 
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item name="parserMode" label="Parser Mode">
+              <Form.Item name="parserMode" label="解析方式">
                 <Select options={PARSER_MODE_OPTIONS} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="frameMode" label="Frame Mode">
+              <Form.Item name="frameMode" label="拆帧模式">
                 <Select options={FRAME_MODE_OPTIONS} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="errorPolicy" label="Error Policy">
+              <Form.Item name="errorPolicy" label="异常策略">
                 <Select options={ERROR_POLICY_OPTIONS} />
               </Form.Item>
             </Col>
@@ -1393,11 +1411,11 @@ const ProtocolParserPage: React.FC = () => {
             type="info"
             showIcon
             style={{ marginBottom: 16 }}
-            message="One parser definition now covers product scope, tenant default scope, uplink decode, downlink encode, gray release, and visual flow config."
+            message="一条解析规则即可覆盖产品级、租户默认级、上行解码、下行编码、灰度发布和可视化流配置。"
             description={
               currentDirection === 'DOWNLINK'
-                ? 'Downlink rules are used by runtime encoding and the encode-test endpoint.'
-                : 'Uplink rules are used by runtime parse, device locator matching, and the debug parse endpoint.'
+                ? '下行规则会用于运行时编码和编码测试接口。'
+                : '上行规则会用于运行时解析、设备标识匹配和调试解析接口。'
             }
           />
 
@@ -1405,9 +1423,9 @@ const ProtocolParserPage: React.FC = () => {
             <Col xs={24} lg={12}>
               <Form.Item
                 name="matchRuleJson"
-                label="Match Rule JSON"
-                extra="Supports topicPrefix, topicEquals, messageTypeEquals, deviceNameEquals, productKeyEquals, headerEquals, and remoteAddressPrefix."
-                rules={[{ required: true, message: 'Please enter match rule JSON' }]}
+                label="匹配规则 JSON"
+                extra="支持 topicPrefix、topicEquals、messageTypeEquals、deviceNameEquals、productKeyEquals、headerEquals 和 remoteAddressPrefix。"
+                rules={[{ required: true, message: '请输入匹配规则 JSON' }]}
               >
                 <TextArea rows={8} style={{ fontFamily: 'monospace' }} />
               </Form.Item>
@@ -1415,9 +1433,9 @@ const ProtocolParserPage: React.FC = () => {
             <Col xs={24} lg={12}>
               <Form.Item
                 name="frameConfigJson"
-                label="Frame Config JSON"
-                extra="Use delimiter, fixedLength, or length field settings for TCP/UDP packet splitting."
-                rules={[{ required: true, message: 'Please enter frame config JSON' }]}
+                label="拆帧配置 JSON"
+                extra="可使用 delimiter、fixedLength 或长度字段配置完成 TCP/UDP 报文切分。"
+                rules={[{ required: true, message: '请输入拆帧配置 JSON' }]}
               >
                 <TextArea rows={8} style={{ fontFamily: 'monospace' }} />
               </Form.Item>
@@ -1426,16 +1444,16 @@ const ProtocolParserPage: React.FC = () => {
 
           <Form.Item
             name="parserConfigJson"
-            label="Parser Config JSON"
-            extra="Injected into runtime ctx.config for script or plugin execution."
-            rules={[{ required: true, message: 'Please enter parser config JSON' }]}
+            label="解析配置 JSON"
+            extra="会注入到运行时的 ctx.config，供脚本或插件执行时使用。"
+            rules={[{ required: true, message: '请输入解析配置 JSON' }]}
           >
             <TextArea rows={6} style={{ fontFamily: 'monospace' }} />
           </Form.Item>
 
           <Card
             size="small"
-            title="Visual Flow"
+            title="可视化流"
             extra={
               <Space>
                 <Button
@@ -1445,18 +1463,18 @@ const ProtocolParserPage: React.FC = () => {
                     })
                   }
                 >
-                  Use Default
+                  使用默认值
                 </Button>
-                <Button onClick={handleGenerateVisualScript}>Generate Script</Button>
+                <Button onClick={handleGenerateVisualScript}>生成脚本</Button>
               </Space>
             }
             style={{ marginBottom: 16, borderRadius: 12 }}
           >
             <Form.Item
               name="visualConfigJson"
-              label="Visual Config JSON"
-              extra="Phase 3 minimal visual orchestration: maintain a structured config and generate the JS script with one click."
-              rules={[{ required: true, message: 'Please enter visual config JSON' }]}
+              label="可视化配置 JSON"
+              extra="三期轻量可视化编排：维护结构化配置，并一键生成 JS 脚本。"
+              rules={[{ required: true, message: '请输入可视化配置 JSON' }]}
               style={{ marginBottom: 0 }}
             >
               <TextArea rows={8} style={{ fontFamily: 'monospace' }} />
@@ -1467,15 +1485,15 @@ const ProtocolParserPage: React.FC = () => {
             <>
               <Row gutter={16}>
                 <Col xs={24} md={8}>
-                  <Form.Item name="scriptLanguage" label="Script Language">
+                  <Form.Item name="scriptLanguage" label="脚本语言">
                     <Input placeholder="JS" />
                   </Form.Item>
                 </Col>
               </Row>
               <Form.Item
                 name="scriptContent"
-                label="Script Content"
-                rules={[{ required: true, message: 'Please enter script content' }]}
+                label="脚本内容"
+                rules={[{ required: true, message: '请输入脚本内容' }]}
               >
                 <TextArea rows={14} style={{ fontFamily: 'monospace' }} />
               </Form.Item>
@@ -1484,17 +1502,17 @@ const ProtocolParserPage: React.FC = () => {
             <>
               <Form.Item
                 name="pluginId"
-                label="Plugin ID"
-                rules={[{ required: true, message: 'Please enter plugin ID' }]}
+                label="插件 ID"
+                rules={[{ required: true, message: '请输入插件 ID' }]}
                 extra={
                   runtimePlugins.length > 0
-                    ? `Available runtime plugins: ${runtimePlugins.map((item) => item.pluginId).join(', ')}`
-                    : 'Plugin can be loaded from classpath or plugins/protocol-parsers directory.'
+                    ? `当前可用运行时插件：${runtimePlugins.map((item) => item.pluginId).join(', ')}`
+                    : '插件可从 classpath 或 plugins/protocol-parsers 目录加载。'
                 }
               >
                 <Input placeholder="demo-json-bridge" />
               </Form.Item>
-              <Form.Item name="pluginVersion" label="Plugin Version">
+              <Form.Item name="pluginVersion" label="插件版本">
                 <Input placeholder="1.0.0" />
               </Form.Item>
             </>
@@ -1502,26 +1520,26 @@ const ProtocolParserPage: React.FC = () => {
 
           <Card
             size="small"
-            title="Gray Release"
+            title="灰度发布"
             extra={
               <Button onClick={() => editorForm.setFieldsValue({ releaseConfigJson: releaseModePreset(currentReleaseMode) })}>
-                Fill Preset
+                填充预设
               </Button>
             }
             style={{ borderRadius: 12 }}
           >
             <Row gutter={16}>
               <Col xs={24} md={8}>
-                <Form.Item name="releaseMode" label="Release Mode">
+                <Form.Item name="releaseMode" label="发布方式">
                   <Select options={RELEASE_MODE_OPTIONS} />
                 </Form.Item>
               </Col>
               <Col xs={24} md={16}>
                 <Form.Item
                   name="releaseConfigJson"
-                  label="Release Config JSON"
-                  extra="ALL uses {}, DEVICE_LIST uses deviceIds/deviceNames, HASH_PERCENT uses { percent }."
-                  rules={[{ required: true, message: 'Please enter release config JSON' }]}
+                  label="灰度配置 JSON"
+                  extra="ALL 使用 {}，DEVICE_LIST 使用 deviceIds/deviceNames，HASH_PERCENT 使用 { percent }。"
+                  rules={[{ required: true, message: '请输入灰度配置 JSON' }]}
                 >
                   <TextArea rows={6} style={{ fontFamily: 'monospace' }} />
                 </Form.Item>
@@ -1532,7 +1550,7 @@ const ProtocolParserPage: React.FC = () => {
       </Modal>
 
       <Modal
-        title={`Uplink Debug${debugRecord ? ` · #${debugRecord.id}` : ''}`}
+        title={`上行调试${debugRecord ? ` · #${debugRecord.id}` : ''}`}
         open={uplinkDebugOpen}
         width={960}
         destroyOnHidden
@@ -1543,59 +1561,59 @@ const ProtocolParserPage: React.FC = () => {
         <Form form={uplinkDebugForm} layout="vertical" preserve={false} onFinish={handleUplinkDebug}>
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item name="productId" label="Debug Product ID">
-                <InputNumber min={1} style={{ width: '100%' }} placeholder="Required for tenant default rules" />
+              <Form.Item name="productId" label="调试产品 ID">
+                <InputNumber min={1} style={{ width: '100%' }} placeholder="租户默认级规则调试时必填" />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="protocol" label="Protocol">
+              <Form.Item name="protocol" label="协议">
                 <Input />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="transport" label="Transport">
+              <Form.Item name="transport" label="传输方式">
                 <Input />
               </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item name="topic" label="Topic / Path">
+              <Form.Item name="topic" label="主题 / 路径">
                 <Input />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="payloadEncoding" label="Payload Encoding">
+              <Form.Item name="payloadEncoding" label="载荷编码">
                 <Select options={PAYLOAD_ENCODING_OPTIONS} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="sessionId" label="Session ID">
+              <Form.Item name="sessionId" label="会话 ID">
                 <Input />
               </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item name="remoteAddress" label="Remote Address">
+              <Form.Item name="remoteAddress" label="远端地址">
                 <Input placeholder="10.0.0.10:9000" />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="deviceId" label="Device ID">
+              <Form.Item name="deviceId" label="设备 ID">
                 <InputNumber min={1} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="deviceName" label="Device Name">
+              <Form.Item name="deviceName" label="设备名称">
                 <Input />
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="payload" label="Payload" rules={[{ required: true, message: 'Please enter payload' }]}>
+          <Form.Item name="payload" label="载荷" rules={[{ required: true, message: '请输入载荷' }]}>
             <TextArea rows={6} style={{ fontFamily: 'monospace' }} />
           </Form.Item>
-          <Form.Item name="headersText" label="Headers JSON">
+          <Form.Item name="headersText" label="请求头 JSON">
             <TextArea rows={6} style={{ fontFamily: 'monospace' }} />
           </Form.Item>
         </Form>
@@ -1606,39 +1624,39 @@ const ProtocolParserPage: React.FC = () => {
               <Alert
                 type={debugResult.success ? 'success' : 'error'}
                 showIcon
-                message={debugResult.success ? 'Uplink debug succeeded' : 'Uplink debug failed'}
+                message={debugResult.success ? '上行调试成功' : '上行调试失败'}
                 description={
                   debugResult.success
-                    ? `matched version v${debugResult.matchedVersion || '-'}, cost ${debugResult.costMs || 0} ms`
-                    : debugResult.errorMessage || 'Unknown error'
+                    ? `匹配版本 v${debugResult.matchedVersion || '-'}，耗时 ${debugResult.costMs || 0} ms`
+                    : debugResult.errorMessage || '未知错误'
                 }
               />
 
               {debugResult.identity ? (
                 <Descriptions bordered size="small" column={2}>
-                  <Descriptions.Item label="Identity Mode">{debugResult.identity.mode || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="Device ID">{debugResult.identity.deviceId || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="Product Key">{debugResult.identity.productKey || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="Device Name">{debugResult.identity.deviceName || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="Locator Type">{debugResult.identity.locatorType || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="Locator Value">{debugResult.identity.locatorValue || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="识别模式">{debugResult.identity.mode || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="设备 ID">{debugResult.identity.deviceId || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="产品 Key">{debugResult.identity.productKey || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="设备名称">{debugResult.identity.deviceName || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="标识类型">{debugResult.identity.locatorType || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="标识值">{debugResult.identity.locatorValue || '-'}</Descriptions.Item>
                 </Descriptions>
               ) : null}
 
               <div>
-                <Text strong>Output Messages ({debugResult.messages?.length || 0})</Text>
+                <Text strong>输出消息（{debugResult.messages?.length || 0}）</Text>
                 {debugResult.messages && debugResult.messages.length > 0 ? (
                   <Space direction="vertical" size={12} style={{ width: '100%', marginTop: 12 }}>
                     {debugResult.messages.map((item, index) => (
                       <Card key={`${item.messageId || 'msg'}-${index}`} size="small">
                         <Descriptions bordered size="small" column={2}>
-                          <Descriptions.Item label="Message ID">{item.messageId || '-'}</Descriptions.Item>
-                          <Descriptions.Item label="Type">{item.type || '-'}</Descriptions.Item>
-                          <Descriptions.Item label="Topic" span={2}>
+                          <Descriptions.Item label="消息 ID">{item.messageId || '-'}</Descriptions.Item>
+                          <Descriptions.Item label="类型">{item.type || '-'}</Descriptions.Item>
+                          <Descriptions.Item label="主题" span={2}>
                             {item.topic || '-'}
                           </Descriptions.Item>
-                          <Descriptions.Item label="Device Name">{item.deviceName || '-'}</Descriptions.Item>
-                          <Descriptions.Item label="Timestamp">{item.timestamp || '-'}</Descriptions.Item>
+                          <Descriptions.Item label="设备名称">{item.deviceName || '-'}</Descriptions.Item>
+                          <Descriptions.Item label="时间戳">{item.timestamp || '-'}</Descriptions.Item>
                         </Descriptions>
                         <Paragraph style={{ marginTop: 12, marginBottom: 0 }}>
                           <pre
@@ -1659,7 +1677,7 @@ const ProtocolParserPage: React.FC = () => {
                     ))}
                   </Space>
                 ) : (
-                  <Empty description="No messages returned" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  <Empty description="未返回消息" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                 )}
               </div>
             </Space>
@@ -1668,7 +1686,7 @@ const ProtocolParserPage: React.FC = () => {
       </Modal>
 
       <Modal
-        title={`Downlink Encode Test${debugRecord ? ` · #${debugRecord.id}` : ''}`}
+        title={`下行编码测试${debugRecord ? ` · #${debugRecord.id}` : ''}`}
         open={downlinkDebugOpen}
         width={920}
         destroyOnHidden
@@ -1679,54 +1697,54 @@ const ProtocolParserPage: React.FC = () => {
         <Form form={downlinkDebugForm} layout="vertical" preserve={false} onFinish={handleDownlinkDebug}>
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item name="productId" label="Debug Product ID">
-                <InputNumber min={1} style={{ width: '100%' }} placeholder="Required for tenant default rules" />
+              <Form.Item name="productId" label="调试产品 ID">
+                <InputNumber min={1} style={{ width: '100%' }} placeholder="租户默认级规则调试时必填" />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="topic" label="Topic">
+              <Form.Item name="topic" label="主题">
                 <Input />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="messageType" label="Message Type" rules={[{ required: true, message: 'Please enter message type' }]}>
+              <Form.Item name="messageType" label="消息类型" rules={[{ required: true, message: '请输入消息类型' }]}>
                 <Input placeholder="PROPERTY_SET / SERVICE_INVOKE" />
               </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item name="deviceId" label="Device ID">
+              <Form.Item name="deviceId" label="设备 ID">
                 <InputNumber min={1} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="deviceName" label="Device Name">
+              <Form.Item name="deviceName" label="设备名称">
                 <Input />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="sessionId" label="Session ID">
+              <Form.Item name="sessionId" label="会话 ID">
                 <Input />
               </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col xs={24} md={12}>
-              <Form.Item name="remoteAddress" label="Remote Address">
+              <Form.Item name="remoteAddress" label="远端地址">
                 <Input placeholder="10.0.0.10:9000" />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item name="headersText" label="Headers JSON">
+              <Form.Item name="headersText" label="请求头 JSON">
                 <TextArea rows={4} style={{ fontFamily: 'monospace' }} />
               </Form.Item>
             </Col>
           </Row>
           <Form.Item
             name="payloadText"
-            label="Payload JSON"
-            rules={[{ required: true, message: 'Please enter payload JSON' }]}
+            label="载荷 JSON"
+            rules={[{ required: true, message: '请输入载荷 JSON' }]}
           >
             <TextArea rows={8} style={{ fontFamily: 'monospace' }} />
           </Form.Item>
@@ -1738,20 +1756,20 @@ const ProtocolParserPage: React.FC = () => {
               <Alert
                 type={encodeResult.success ? 'success' : 'error'}
                 showIcon
-                message={encodeResult.success ? 'Encode test succeeded' : 'Encode test failed'}
+                message={encodeResult.success ? '编码测试成功' : '编码测试失败'}
                 description={
                   encodeResult.success
-                    ? `matched version v${encodeResult.matchedVersion || '-'}, cost ${encodeResult.costMs || 0} ms`
-                    : encodeResult.errorMessage || 'Unknown error'
+                    ? `匹配版本 v${encodeResult.matchedVersion || '-'}，耗时 ${encodeResult.costMs || 0} ms`
+                    : encodeResult.errorMessage || '未知错误'
                 }
               />
               <Descriptions bordered size="small" column={2}>
-                <Descriptions.Item label="Topic">{encodeResult.topic || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Encoding">{encodeResult.payloadEncoding || '-'}</Descriptions.Item>
+                <Descriptions.Item label="主题">{encodeResult.topic || '-'}</Descriptions.Item>
+                <Descriptions.Item label="编码">{encodeResult.payloadEncoding || '-'}</Descriptions.Item>
               </Descriptions>
               {encodeResult.payloadText ? (
                 <div>
-                  <Text strong>Payload Text</Text>
+                  <Text strong>文本载荷</Text>
                   <Paragraph>
                     <pre
                       style={{
@@ -1771,13 +1789,13 @@ const ProtocolParserPage: React.FC = () => {
               ) : null}
               {encodeResult.payloadHex ? (
                 <div>
-                  <Text strong>Payload Hex</Text>
+                  <Text strong>十六进制载荷</Text>
                   <Paragraph copyable={{ text: encodeResult.payloadHex }}>{encodeResult.payloadHex}</Paragraph>
                 </div>
               ) : null}
               {encodeResult.headers ? (
                 <div>
-                  <Text strong>Headers</Text>
+                  <Text strong>请求头</Text>
                   <Paragraph>
                     <pre
                       style={{
@@ -1801,7 +1819,7 @@ const ProtocolParserPage: React.FC = () => {
       </Modal>
 
       <Modal
-        title={`Version History${versionRecord ? ` · #${versionRecord.id}` : ''}`}
+        title={`版本历史${versionRecord ? ` · #${versionRecord.id}` : ''}`}
         open={versionOpen}
         width={860}
         destroyOnHidden
@@ -1819,12 +1837,12 @@ const ProtocolParserPage: React.FC = () => {
           columns={versionColumns}
           dataSource={versionItems}
           pagination={false}
-          locale={{ emptyText: <Empty description="No version history" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+          locale={{ emptyText: <Empty description="暂无版本历史" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
         />
       </Modal>
 
       <Modal
-        title={`Publish Parser${publishRecord ? ` · #${publishRecord.id}` : ''}`}
+        title={`发布规则${publishRecord ? ` · #${publishRecord.id}` : ''}`}
         open={publishOpen}
         destroyOnHidden
         confirmLoading={publishSubmitting}
@@ -1839,16 +1857,16 @@ const ProtocolParserPage: React.FC = () => {
             type="info"
             showIcon
             style={{ marginBottom: 16 }}
-            message="Publishing refreshes connector runtime caches and makes the current draft available for live traffic."
+            message="发布后会刷新连接器运行时缓存，并让当前草稿版本正式生效。"
           />
-          <Form.Item name="changeLog" label="Change Log">
-            <TextArea rows={5} maxLength={500} showCount placeholder="Describe what changed in this release" />
+          <Form.Item name="changeLog" label="变更说明">
+            <TextArea rows={5} maxLength={500} showCount placeholder="描述本次发布的变更内容" />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title={`Rollback Parser${rollbackRecord ? ` · #${rollbackRecord.id}` : ''}`}
+        title={`回滚规则${rollbackRecord ? ` · #${rollbackRecord.id}` : ''}`}
         open={rollbackOpen}
         destroyOnHidden
         confirmLoading={rollbackSubmitting}
@@ -1863,13 +1881,13 @@ const ProtocolParserPage: React.FC = () => {
             type="warning"
             showIcon
             style={{ marginBottom: 16 }}
-            message="Rollback restores a historical snapshot and creates a new working draft version."
+            message="回滚会恢复历史快照，并基于该快照生成新的工作草稿版本。"
             description={
-              rollbackRecord?.publishedVersion ? `Current published version: v${rollbackRecord.publishedVersion}` : 'No published version yet'
+              rollbackRecord?.publishedVersion ? `当前已发布版本：v${rollbackRecord.publishedVersion}` : '当前尚未发布任何版本'
             }
           />
-          <Form.Item name="version" label="Target Version" rules={[{ required: true, message: 'Please choose a version' }]}>
-            <Select loading={versionLoading} placeholder="Choose a historical version" options={rollbackVersionOptions} />
+          <Form.Item name="version" label="目标版本" rules={[{ required: true, message: '请选择目标版本' }]}>
+            <Select loading={versionLoading} placeholder="选择历史版本" options={rollbackVersionOptions} />
           </Form.Item>
         </Form>
       </Modal>

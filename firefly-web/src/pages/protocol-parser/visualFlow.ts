@@ -40,7 +40,7 @@ const parseObject = (raw: string) => {
   const source = raw.trim() || '{}';
   const parsed = JSON.parse(source) as unknown;
   if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') {
-    throw new Error('visualConfigJson must be a JSON object');
+    throw new Error('可视化配置必须是 JSON 对象');
   }
   return parsed as Record<string, unknown>;
 };

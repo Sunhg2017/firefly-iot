@@ -745,7 +745,7 @@ const DeviceList: React.FC = () => {
             密钥
           </Button>
           <Button type="link" size="small" onClick={() => setLocatorDevice(record)}>
-            Locator
+            标识
           </Button>
           <Button
             type="link"
