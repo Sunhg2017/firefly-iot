@@ -52,7 +52,7 @@ firefly:
     node-heartbeat-ttl-seconds: 45
     node-heartbeat-interval-seconds: 15
     downstream-qos: 1
-    relay-channel-prefix: connector:mqtt:downstream:
+    relay-channel-prefix: "connector:mqtt:downstream:"
 
   coap:
     enabled: false

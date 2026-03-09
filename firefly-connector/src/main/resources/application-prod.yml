@@ -43,4 +43,4 @@ firefly:
     node-heartbeat-ttl-seconds: ${FIREFLY_MQTT_NODE_HEARTBEAT_TTL_SECONDS:45}
     node-heartbeat-interval-seconds: ${FIREFLY_MQTT_NODE_HEARTBEAT_INTERVAL_SECONDS:15}
     downstream-qos: ${FIREFLY_MQTT_DOWNSTREAM_QOS:1}
-    relay-channel-prefix: ${FIREFLY_MQTT_RELAY_CHANNEL_PREFIX:connector:mqtt:downstream:}
+    relay-channel-prefix: "${FIREFLY_MQTT_RELAY_CHANNEL_PREFIX:connector:mqtt:downstream:}"
