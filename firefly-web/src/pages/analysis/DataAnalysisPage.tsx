@@ -1,15 +1,26 @@
-import React, { useState } from 'react';
-import { Tabs, Card, Form, Input, InputNumber, Select, Button, Table, message, DatePicker, Row, Col, Statistic } from 'antd';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Tabs, Card, Form, Input, Select, Button, Table, message, DatePicker, Row, Col, Statistic } from 'antd';
 import { SearchOutlined, DownloadOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined, ExportOutlined } from '@ant-design/icons';
-import { dataAnalysisApi } from '../../services/api';
+import { dataAnalysisApi, deviceApi } from '../../services/api';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
 
 const { RangePicker } = DatePicker;
 
+// 设备选项类型
+interface DeviceOption {
+  id: number;
+  deviceName: string;
+}
+
+// Tab Props
+interface TabProps {
+  deviceOptions: DeviceOption[];
+}
+
 // ==================== Time Series Tab ====================
 
-const TimeSeriesTab: React.FC = () => {
+const TimeSeriesTab: React.FC<TabProps> = ({ deviceOptions }) => {
   const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
@@ -47,7 +58,15 @@ const TimeSeriesTab: React.FC = () => {
     <div>
       <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Form form={form} layout="inline" onFinish={handleQuery}>
-          <Form.Item name="deviceId" label="设备ID" rules={[{ required: true }]}><InputNumber style={{ width: 120 }} /></Form.Item>
+          <Form.Item name="deviceId" label="目标设备" rules={[{ required: true, message: '请选择设备' }]}>
+            <Select
+              placeholder="请选择设备"
+              showSearch
+              optionFilterProp="label"
+              style={{ width: 200 }}
+              options={deviceOptions.map(d => ({ value: d.id, label: d.deviceName }))}
+            />
+          </Form.Item>
           <Form.Item name="properties" label="属性"><Input placeholder="逗号分隔" style={{ width: 200 }} /></Form.Item>
           <Form.Item name="timeRange" label="时间范围"><RangePicker showTime /></Form.Item>
           <Form.Item><Button type="primary" htmlType="submit" icon={<SearchOutlined />} loading={loading}>查询</Button></Form.Item>
@@ -65,7 +84,7 @@ const TimeSeriesTab: React.FC = () => {
 
 // ==================== Aggregation Tab ====================
 
-const AggregationTab: React.FC = () => {
+const AggregationTab: React.FC<TabProps> = ({ deviceOptions }) => {
   const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(false);
   const [form] = Form.useForm();
@@ -74,8 +93,9 @@ const AggregationTab: React.FC = () => {
     setLoading(true);
     try {
       const timeRange = values.timeRange as [unknown, unknown] | undefined;
+      const deviceIds = values.deviceIds as number[] | undefined;
       const query = {
-        deviceIds: values.deviceIds ? String(values.deviceIds).split(',').map((s: string) => Number(s.trim())).filter(Boolean) : [],
+        deviceIds: deviceIds || [],
         property: values.property,
         interval: values.interval,
         aggregation: values.aggregation,
@@ -109,7 +129,16 @@ const AggregationTab: React.FC = () => {
     <div>
       <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Form form={form} layout="inline" onFinish={handleQuery} initialValues={{ interval: '1h', aggregation: 'AVG' }}>
-          <Form.Item name="deviceIds" label="设备ID" rules={[{ required: true }]}><Input placeholder="逗号分隔" style={{ width: 150 }} /></Form.Item>
+          <Form.Item name="deviceIds" label="设备" rules={[{ required: true, message: '请选择设备' }]}>
+            <Select
+              placeholder="选择设备（可多选）"
+              mode="multiple"
+              showSearch
+              optionFilterProp="label"
+              style={{ width: 200 }}
+              options={deviceOptions.map(d => ({ value: d.id, label: d.deviceName }))}
+            />
+          </Form.Item>
           <Form.Item name="property" label="属性" rules={[{ required: true }]}><Input style={{ width: 130 }} /></Form.Item>
           <Form.Item name="interval" label="间隔"><Select options={intervalOptions} style={{ width: 100 }} /></Form.Item>
           <Form.Item name="aggregation" label="聚合"><Select options={aggOptions} style={{ width: 100 }} /></Form.Item>
@@ -126,7 +155,7 @@ const AggregationTab: React.FC = () => {
 
 // ==================== Stats Tab ====================
 
-const StatsTab: React.FC = () => {
+const StatsTab: React.FC<TabProps> = ({ deviceOptions }) => {
   const [stats, setStats] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const [form] = Form.useForm();
@@ -149,7 +178,15 @@ const StatsTab: React.FC = () => {
     <div>
       <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Form form={form} layout="inline" onFinish={handleQuery}>
-          <Form.Item name="deviceId" label="设备ID" rules={[{ required: true }]}><InputNumber style={{ width: 120 }} /></Form.Item>
+          <Form.Item name="deviceId" label="目标设备" rules={[{ required: true, message: '请选择设备' }]}>
+            <Select
+              placeholder="请选择设备"
+              showSearch
+              optionFilterProp="label"
+              style={{ width: 200 }}
+              options={deviceOptions.map(d => ({ value: d.id, label: d.deviceName }))}
+            />
+          </Form.Item>
           <Form.Item name="property" label="属性" rules={[{ required: true }]}><Input style={{ width: 130 }} /></Form.Item>
           <Form.Item name="timeRange" label="时间范围"><RangePicker showTime /></Form.Item>
           <Form.Item><Button type="primary" htmlType="submit" icon={<SearchOutlined />} loading={loading}>统计</Button></Form.Item>
@@ -170,7 +207,7 @@ const StatsTab: React.FC = () => {
 
 // ==================== Export Tab ====================
 
-const ExportTab: React.FC = () => {
+const ExportTab: React.FC<TabProps> = ({ deviceOptions }) => {
   const [loading, setLoading] = useState(false);
   const [form] = Form.useForm();
 
@@ -178,8 +215,9 @@ const ExportTab: React.FC = () => {
     setLoading(true);
     try {
       const timeRange = values.timeRange as [unknown, unknown] | undefined;
+      const deviceIds = values.deviceIds as number[] | undefined;
       const res = await dataAnalysisApi.exportData({
-        deviceIds: values.deviceIds ? String(values.deviceIds).split(',').map((s: string) => Number(s.trim())).filter(Boolean) : [],
+        deviceIds: deviceIds || [],
         properties: values.properties ? (values.properties as string).split(',').map((s: string) => s.trim()).filter(Boolean) : undefined,
         startTime: timeRange?.[0] ? (timeRange[0] as { toISOString: () => string }).toISOString() : undefined,
         endTime: timeRange?.[1] ? (timeRange[1] as { toISOString: () => string }).toISOString() : undefined,
@@ -198,7 +236,16 @@ const ExportTab: React.FC = () => {
   return (
     <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
       <Form form={form} layout="vertical" onFinish={handleExport} style={{ maxWidth: 500 }}>
-        <Form.Item name="deviceIds" label="设备ID（逗号分隔）" rules={[{ required: true }]}><Input placeholder="1,2,3" /></Form.Item>
+        <Form.Item name="deviceIds" label="选择设备" rules={[{ required: true, message: '请选择设备' }]}>
+          <Select
+            placeholder="选择设备（可多选）"
+            mode="multiple"
+            showSearch
+            optionFilterProp="label"
+            style={{ width: '100%' }}
+            options={deviceOptions.map(d => ({ value: d.id, label: d.deviceName }))}
+          />
+        </Form.Item>
         <Form.Item name="properties" label="属性（逗号分隔，留空导出全部）"><Input placeholder="temperature,humidity" /></Form.Item>
         <Form.Item name="timeRange" label="时间范围"><RangePicker showTime style={{ width: '100%' }} /></Form.Item>
         <Form.Item><Button type="primary" htmlType="submit" icon={<DownloadOutlined />} loading={loading}>导出 CSV</Button></Form.Item>
@@ -210,15 +257,29 @@ const ExportTab: React.FC = () => {
 // ==================== Main Page ====================
 
 const DataAnalysisPage: React.FC = () => {
+  // 设备列表
+  const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
+
+  // 加载设备列表
+  const fetchDevices = useCallback(async () => {
+    try {
+      const res = await deviceApi.list({ pageSize: 500 });
+      const records = res.data.data?.records || [];
+      setDeviceOptions(records.map((d: DeviceOption) => ({ id: d.id, deviceName: d.deviceName })));
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchDevices(); }, [fetchDevices]);
+
   return (
     <div>
       <PageHeader title="数据分析" description="时序查询、聚合统计与数据导出" />
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Tabs defaultActiveKey="timeseries" items={[
-          { key: 'timeseries', label: <span><LineChartOutlined style={{ marginRight: 6 }} />时序查询</span>, children: <TimeSeriesTab /> },
-          { key: 'aggregation', label: <span><BarChartOutlined style={{ marginRight: 6 }} />聚合统计</span>, children: <AggregationTab /> },
-          { key: 'stats', label: <span><PieChartOutlined style={{ marginRight: 6 }} />设备统计</span>, children: <StatsTab /> },
-          { key: 'export', label: <span><ExportOutlined style={{ marginRight: 6 }} />数据导出</span>, children: <ExportTab /> },
+          { key: 'timeseries', label: <span><LineChartOutlined style={{ marginRight: 6 }} />时序查询</span>, children: <TimeSeriesTab deviceOptions={deviceOptions} /> },
+          { key: 'aggregation', label: <span><BarChartOutlined style={{ marginRight: 6 }} />聚合统计</span>, children: <AggregationTab deviceOptions={deviceOptions} /> },
+          { key: 'stats', label: <span><PieChartOutlined style={{ marginRight: 6 }} />设备统计</span>, children: <StatsTab deviceOptions={deviceOptions} /> },
+          { key: 'export', label: <span><ExportOutlined style={{ marginRight: 6 }} />数据导出</span>, children: <ExportTab deviceOptions={deviceOptions} /> },
         ]} />
       </Card>
     </div>

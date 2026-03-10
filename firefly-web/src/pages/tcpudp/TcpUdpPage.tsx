@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Card,
   Button,
@@ -17,6 +17,7 @@ import {
   InputNumber,
   Form,
   Modal,
+  Select,
 } from 'antd';
 import {
   ReloadOutlined,
@@ -30,9 +31,22 @@ import {
   LinkOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { tcpUdpApi } from '../../services/api';
+import { tcpUdpApi, productApi, deviceApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 import { formatDateTime } from '../../utils/datetime';
+
+// 产品和设备选项类型
+interface ProductOption {
+  id: number;
+  productKey: string;
+  name: string;
+}
+
+interface DeviceOption {
+  id: number;
+  deviceName: string;
+  productId: number;
+}
 
 interface TcpUdpBinding {
   tenantId?: number | null;
@@ -126,6 +140,50 @@ const TcpUdpPage: React.FC = () => {
   const [bindingSubmitting, setBindingSubmitting] = useState(false);
   const [bindingForm] = Form.useForm<BindingFormValues>();
 
+  // ==================== 产品/设备选项 ====================
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+  const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
+  const [filteredDevices, setFilteredDevices] = useState<DeviceOption[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+
+  // 构建设备ID到设备对象的映射
+  const deviceMap = useMemo(() => {
+    const map: Record<number, DeviceOption> = {};
+    deviceOptions.forEach(d => { map[d.id] = d; });
+    return map;
+  }, [deviceOptions]);
+
+  // 加载产品列表
+  const fetchProducts = useCallback(async () => {
+    try {
+      const res = await productApi.list({ pageSize: 500 });
+      const records = res.data.data?.records || [];
+      setProductOptions(records.map((p: ProductOption) => ({ id: p.id, productKey: p.productKey, name: p.name })));
+    } catch { /* ignore */ }
+  }, []);
+
+  // 加载设备列表
+  const fetchDevices = useCallback(async () => {
+    try {
+      const res = await deviceApi.list({ pageSize: 500 });
+      const records = res.data.data?.records || [];
+      const devices = records.map((d: DeviceOption) => ({ id: d.id, deviceName: d.deviceName, productId: d.productId }));
+      setDeviceOptions(devices);
+      setFilteredDevices(devices);
+    } catch { /* ignore */ }
+  }, []);
+
+  // 产品选择变化时，联动筛选设备
+  const handleProductChange = (productId: number | null) => {
+    setSelectedProductId(productId);
+    bindingForm.setFieldValue('deviceId', undefined);
+    if (productId) {
+      setFilteredDevices(deviceOptions.filter(d => d.productId === productId));
+    } else {
+      setFilteredDevices(deviceOptions);
+    }
+  };
+
   const fetchTcp = async () => {
     setTcpLoading(true);
     try {
@@ -163,12 +221,14 @@ const TcpUdpPage: React.FC = () => {
   useEffect(() => {
     void fetchTcp();
     void fetchUdp();
+    void fetchProducts();
+    void fetchDevices();
     const interval = window.setInterval(() => {
       void fetchTcp();
       void fetchUdp();
     }, 10000);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [fetchProducts, fetchDevices]);
 
   useEffect(() => {
     if (!bindingTarget) {
@@ -185,6 +245,8 @@ const TcpUdpPage: React.FC = () => {
 
   const closeBindingModal = () => {
     setBindingTarget(null);
+    setSelectedProductId(null);
+    setFilteredDevices(deviceOptions);
     bindingForm.resetFields();
   };
 
@@ -213,11 +275,11 @@ const TcpUdpPage: React.FC = () => {
 
     if (typeof values.deviceId === 'number') {
       payload.deviceId = values.deviceId;
-    }
-
-    const deviceName = values.deviceName?.trim();
-    if (deviceName) {
-      payload.deviceName = deviceName;
+      // 从选中的设备获取设备名称
+      const selectedDevice = deviceMap[values.deviceId];
+      if (selectedDevice) {
+        payload.deviceName = selectedDevice.deviceName;
+      }
     }
 
     return payload;
@@ -861,16 +923,25 @@ const TcpUdpPage: React.FC = () => {
         <Form form={bindingForm} layout="vertical" onFinish={handleBind}>
           <Form.Item
             name="productId"
-            label="产品 ID"
-            rules={[{ required: true, message: '请输入产品 ID' }]}
+            label="所属产品"
+            rules={[{ required: true, message: '请选择产品' }]}
           >
-            <InputNumber min={1} precision={0} style={{ width: '100%' }} placeholder="请输入产品 ID" />
+            <Select
+              placeholder="请选择产品"
+              showSearch
+              optionFilterProp="label"
+              options={productOptions.map(p => ({ value: p.id, label: `${p.name} (${p.productKey})` }))}
+              onChange={handleProductChange}
+            />
           </Form.Item>
-          <Form.Item name="deviceId" label="设备 ID">
-            <InputNumber min={1} precision={0} style={{ width: '100%' }} placeholder="可选，指定设备 ID" />
-          </Form.Item>
-          <Form.Item name="deviceName" label="设备名称">
-            <Input placeholder="可选，指定设备名称" />
+          <Form.Item name="deviceId" label="关联设备">
+            <Select
+              placeholder={selectedProductId ? '可选，选择设备' : '请先选择产品'}
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={filteredDevices.map(d => ({ value: d.id, label: d.deviceName }))}
+            />
           </Form.Item>
         </Form>
       </Modal>

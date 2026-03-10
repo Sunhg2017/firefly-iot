@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Card, Button, Space, message, Form, Input, Select, InputNumber, Table, Tag, Tabs,
   Row, Col, Popconfirm, Modal, Descriptions, Empty, Spin,
@@ -7,9 +7,22 @@ import {
   ApiOutlined, SearchOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined,
   CheckCircleOutlined, CloseCircleOutlined, PlayCircleOutlined,
 } from '@ant-design/icons';
-import { snmpApi } from '../../services/api';
+import { snmpApi, productApi, deviceApi } from '../../services/api';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
+
+// 产品和设备选项类型
+interface ProductOption {
+  id: number;
+  productKey: string;
+  name: string;
+}
+
+interface DeviceOption {
+  id: number;
+  deviceName: string;
+  productId: number;
+}
 
 interface SnmpTarget {
   host: string;
@@ -56,6 +69,52 @@ const SnmpPage: React.FC = () => {
   const [collectorsLoading, setCollectorsLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [collectorForm] = Form.useForm();
+
+  // ==================== 产品/设备选项 ====================
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+  const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
+  const [filteredDevices, setFilteredDevices] = useState<DeviceOption[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+
+  // 构建设备ID到名称的映射
+  const deviceMap = useMemo(() => {
+    const map: Record<number, DeviceOption> = {};
+    deviceOptions.forEach(d => { map[d.id] = d; });
+    return map;
+  }, [deviceOptions]);
+
+  // 加载产品列表
+  const fetchProducts = useCallback(async () => {
+    try {
+      const res = await productApi.list({ pageSize: 500 });
+      const records = res.data.data?.records || [];
+      setProductOptions(records.map((p: ProductOption) => ({ id: p.id, productKey: p.productKey, name: p.name })));
+    } catch { /* ignore */ }
+  }, []);
+
+  // 加载设备列表
+  const fetchDevices = useCallback(async () => {
+    try {
+      const res = await deviceApi.list({ pageSize: 500 });
+      const records = res.data.data?.records || [];
+      const devices = records.map((d: DeviceOption) => ({ id: d.id, deviceName: d.deviceName, productId: d.productId }));
+      setDeviceOptions(devices);
+      setFilteredDevices(devices);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchProducts(); fetchDevices(); }, [fetchProducts, fetchDevices]);
+
+  // 产品选择变化时，联动筛选设备
+  const handleProductChange = (productId: number | null) => {
+    setSelectedProductId(productId);
+    collectorForm.setFieldValue('deviceId', undefined);
+    if (productId) {
+      setFilteredDevices(deviceOptions.filter(d => d.productId === productId));
+    } else {
+      setFilteredDevices(deviceOptions);
+    }
+  };
 
   const getTarget = (): SnmpTarget => {
     const vals = targetForm.getFieldsValue();
@@ -142,6 +201,8 @@ const SnmpPage: React.FC = () => {
       if (vals.oidAliases) {
         try { oidAliases = JSON.parse(vals.oidAliases); } catch { /* ignore */ }
       }
+      // 从选中的设备获取设备名称
+      const selectedDevice = vals.deviceId ? deviceMap[vals.deviceId] : null;
       await snmpApi.registerCollector({
         taskId: vals.taskId,
         target: { host: vals.host, port: vals.port || 161, version: vals.version || 2, community: vals.community || 'public' },
@@ -151,11 +212,13 @@ const SnmpPage: React.FC = () => {
         tenantId: vals.tenantId || null,
         productId: vals.productId || null,
         deviceId: vals.deviceId || null,
-        deviceName: vals.deviceName || null,
+        deviceName: selectedDevice?.deviceName || null,
       });
       message.success('采集任务已注册');
       setModalOpen(false);
       collectorForm.resetFields();
+      setSelectedProductId(null);
+      setFilteredDevices(deviceOptions);
       fetchCollectors();
     } catch { message.error('注册失败'); }
   };
@@ -342,19 +405,27 @@ const SnmpPage: React.FC = () => {
                     <Input.TextArea rows={2} placeholder='{"1.3.6.1.2.1.1.3.0": "uptime"}' style={{ fontFamily: 'monospace', fontSize: 12 }} />
                   </Form.Item>
                   <Row gutter={16}>
-                    <Col span={8}>
-                      <Form.Item label="设备ID" name="deviceId">
-                        <InputNumber style={{ width: '100%' }} placeholder="关联设备" />
+                    <Col span={12}>
+                      <Form.Item label="关联产品" name="productId">
+                        <Select
+                          placeholder="可选，选择后筛选设备"
+                          allowClear
+                          showSearch
+                          optionFilterProp="label"
+                          options={productOptions.map(p => ({ value: p.id, label: `${p.name} (${p.productKey})` }))}
+                          onChange={handleProductChange}
+                        />
                       </Form.Item>
                     </Col>
-                    <Col span={8}>
-                      <Form.Item label="产品ID" name="productId">
-                        <InputNumber style={{ width: '100%' }} />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item label="设备名称" name="deviceName">
-                        <Input placeholder="可选" />
+                    <Col span={12}>
+                      <Form.Item label="关联设备" name="deviceId">
+                        <Select
+                          placeholder="可选，选择设备"
+                          allowClear
+                          showSearch
+                          optionFilterProp="label"
+                          options={filteredDevices.map(d => ({ value: d.id, label: d.deviceName }))}
+                        />
                       </Form.Item>
                     </Col>
                   </Row>

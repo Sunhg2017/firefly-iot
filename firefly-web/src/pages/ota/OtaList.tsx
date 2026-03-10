@@ -1,9 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Table, Button, Tag, Space, Card, message, Modal, Form, Input, Select, Tabs, Progress, Row, Col } from 'antd';
 import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, RocketOutlined, StopOutlined, CloudUploadOutlined, FileProtectOutlined, SendOutlined, ThunderboltOutlined } from '@ant-design/icons';
-import { firmwareApi, otaTaskApi } from '../../services/api';
+import { firmwareApi, otaTaskApi, productApi } from '../../services/api';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
+
+// 产品选项类型
+interface ProductOption {
+  id: number;
+  productKey: string;
+  name: string;
+}
 
 
 // ==================== Types ====================
@@ -51,6 +58,19 @@ const FirmwareTab: React.FC = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm] = Form.useForm();
   const [keyword, setKeyword] = useState('');
+  // 产品选项列表
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+
+  // 加载产品列表
+  const fetchProducts = useCallback(async () => {
+    try {
+      const res = await productApi.list({ pageSize: 500 });
+      const records = res.data.data?.records || [];
+      setProductOptions(records.map((p: ProductOption) => ({ id: p.id, productKey: p.productKey, name: p.name })));
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -173,8 +193,13 @@ const FirmwareTab: React.FC = () => {
 
       <Modal title="上传固件" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={() => createForm.submit()} destroyOnClose width={560}>
         <Form form={createForm} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="productId" label="产品ID" rules={[{ required: true, message: '请输入产品ID' }]}>
-            <Input type="number" placeholder="产品ID" />
+          <Form.Item name="productId" label="所属产品" rules={[{ required: true, message: '请选择产品' }]}>
+            <Select
+              placeholder="请选择产品"
+              showSearch
+              optionFilterProp="label"
+              options={productOptions.map(p => ({ value: p.id, label: `${p.name} (${p.productKey})` }))}
+            />
           </Form.Item>
           <Form.Item name="version" label="版本号" rules={[{ required: true, message: '请输入版本号' }]}>
             <Input placeholder="如：1.2.0" />
@@ -202,6 +227,37 @@ const OtaTasksTab: React.FC = () => {
   const [createForm] = Form.useForm();
   const [keyword, setKeyword] = useState('');
   const [filterStatus, setFilterStatus] = useState<string | undefined>();
+  // 产品和固件选项
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+  const [firmwareOptions, setFirmwareOptions] = useState<FirmwareRecord[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+
+  // 加载产品列表
+  const fetchProducts = useCallback(async () => {
+    try {
+      const res = await productApi.list({ pageSize: 500 });
+      const records = res.data.data?.records || [];
+      setProductOptions(records.map((p: ProductOption) => ({ id: p.id, productKey: p.productKey, name: p.name })));
+    } catch { /* ignore */ }
+  }, []);
+
+  // 加载固件列表（按产品筛选，仅显示已发布的固件）
+  const fetchFirmwares = useCallback(async (productId?: number) => {
+    try {
+      const res = await firmwareApi.list({ pageSize: 500, productId, status: 'RELEASED' });
+      const records = res.data.data?.records || [];
+      setFirmwareOptions(records);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchProducts(); }, [fetchProducts]);
+
+  // 产品选择变化时，联动加载该产品下的固件
+  const handleProductChange = (productId: number) => {
+    setSelectedProductId(productId);
+    createForm.setFieldValue('firmwareId', undefined);
+    fetchFirmwares(productId);
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -319,14 +375,30 @@ const OtaTasksTab: React.FC = () => {
             onChange: (page: number, size: number) => setParams({ pageNum: page, pageSize: size }) }} />
       </Card>
 
-      <Modal title="新建升级任务" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={() => createForm.submit()} destroyOnClose width={560}>
+      <Modal title="新建升级任务" open={createOpen} onCancel={() => { setCreateOpen(false); setSelectedProductId(null); setFirmwareOptions([]); }} onOk={() => createForm.submit()} destroyOnClose width={560}>
         <Form form={createForm} layout="vertical" onFinish={handleCreate}>
           <Form.Item name="name" label="任务名称" rules={[{ required: true, message: '请输入任务名称' }]}>
             <Input placeholder="如：v1.2.0 全量升级" />
           </Form.Item>
           <Form.Item name="description" label="描述"><Input.TextArea rows={2} /></Form.Item>
-          <Form.Item name="productId" label="产品ID" rules={[{ required: true }]}><Input type="number" /></Form.Item>
-          <Form.Item name="firmwareId" label="固件ID" rules={[{ required: true }]}><Input type="number" /></Form.Item>
+          <Form.Item name="productId" label="所属产品" rules={[{ required: true, message: '请选择产品' }]}>
+            <Select
+              placeholder="请选择产品"
+              showSearch
+              optionFilterProp="label"
+              options={productOptions.map(p => ({ value: p.id, label: `${p.name} (${p.productKey})` }))}
+              onChange={handleProductChange}
+            />
+          </Form.Item>
+          <Form.Item name="firmwareId" label="目标固件" rules={[{ required: true, message: '请选择固件' }]}>
+            <Select
+              placeholder={selectedProductId ? '请选择固件' : '请先选择产品'}
+              disabled={!selectedProductId}
+              showSearch
+              optionFilterProp="label"
+              options={firmwareOptions.map(f => ({ value: f.id, label: `${f.version}${f.displayName ? ` - ${f.displayName}` : ''}` }))}
+            />
+          </Form.Item>
           <Form.Item name="taskType" label="任务类型" rules={[{ required: true }]}>
             <Select options={[{ value: 'FULL', label: '全量升级' }, { value: 'GRAY', label: '灰度升级' }]} />
           </Form.Item>

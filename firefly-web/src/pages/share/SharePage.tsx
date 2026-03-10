@@ -1,11 +1,18 @@
-import React, { useEffect, useState } from 'react';
-import { Tabs, Table, Button, Space, message, Modal, Form, Input, InputNumber, Tag, Descriptions, Popconfirm } from 'antd';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { Tabs, Table, Button, Space, message, Modal, Form, Input, Select, Tag, Descriptions, Popconfirm } from 'antd';
 import { PlusOutlined, CheckOutlined, CloseOutlined, StopOutlined, EyeOutlined, DeleteOutlined } from '@ant-design/icons';
-import { sharePolicyApi } from '../../services/api';
+import { sharePolicyApi, tenantApi } from '../../services/api';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
 
 const { TextArea } = Input;
+
+// 租户选项类型
+interface TenantOption {
+  id: number;
+  code: string;
+  name: string;
+}
 
 interface PolicyItem {
   id: number;
@@ -53,7 +60,32 @@ const OwnedTab: React.FC = () => {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailRecord, setDetailRecord] = useState<PolicyItem | null>(null);
   const [form] = Form.useForm();
+  // 租户列表
+  const [tenantOptions, setTenantOptions] = useState<TenantOption[]>([]);
 
+  // 构建租户ID到名称的映射
+  const tenantMap = useMemo(() => {
+    const map: Record<number, TenantOption> = {};
+    tenantOptions.forEach(t => { map[t.id] = t; });
+    return map;
+  }, [tenantOptions]);
+
+  // 根据租户ID获取显示名称
+  const getTenantDisplay = (id: number) => {
+    const tenant = tenantMap[id];
+    return tenant ? `${tenant.name} (${tenant.code})` : `#${id}`;
+  };
+
+  // 加载租户列表
+  const fetchTenants = useCallback(async () => {
+    try {
+      const res = await tenantApi.list({ pageSize: 500 });
+      const records = res.data.data?.records || [];
+      setTenantOptions(records.map((t: TenantOption) => ({ id: t.id, code: t.code, name: t.name })));
+    } catch { /* ignore - 可能权限不足 */ }
+  }, []);
+
+  useEffect(() => { fetchTenants(); }, [fetchTenants]);
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -87,7 +119,7 @@ const OwnedTab: React.FC = () => {
 
   const columns: ColumnsType<PolicyItem> = [
     { title: '策略名称', dataIndex: 'name', width: 180 },
-    { title: '消费方租户', dataIndex: 'consumerTenantId', width: 120 },
+    { title: '消费方租户', width: 160, render: (_: unknown, record: PolicyItem) => getTenantDisplay(record.consumerTenantId) },
     { title: '状态', dataIndex: 'status', width: 90, render: (v: string) => <Tag color={statusColors[v]}>{statusLabels[v] || v}</Tag> },
     { title: '审计', dataIndex: 'auditEnabled', width: 60, render: (v: boolean) => v ? <Tag color="blue">开</Tag> : <Tag>关</Tag> },
     { title: '创建时间', dataIndex: 'createdAt', width: 170 },
@@ -115,8 +147,15 @@ const OwnedTab: React.FC = () => {
       <Modal title={editRecord ? '编辑共享策略' : '新建共享策略'} open={editOpen} onCancel={() => setEditOpen(false)} onOk={() => form.submit()} destroyOnClose width={600}>
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Form.Item name="name" label="策略名称" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="consumerTenantId" label="消费方租户ID" rules={[{ required: true }]}><InputNumber style={{ width: '100%' }} /></Form.Item>
-          <Form.Item name="scope" label="共享范围 (JSON)"><TextArea rows={3} placeholder='{"productIds": [1,2], "deviceIds": [10,20]}' /></Form.Item>
+          <Form.Item name="consumerTenantId" label="消费方租户" rules={[{ required: true, message: '请选择消费方租户' }]}>
+            <Select
+              placeholder="请选择消费方租户"
+              showSearch
+              optionFilterProp="label"
+              options={tenantOptions.map(t => ({ value: t.id, label: `${t.name} (${t.code})` }))}
+            />
+          </Form.Item>
+          <Form.Item name="scope" label="共享范围 (JSON)" extra="使用 productKey 和 deviceName 指定共享范围"><TextArea rows={3} placeholder='{"productKeys": ["key1","key2"], "deviceNames": ["device-001"]}' /></Form.Item>
           <Form.Item name="dataPermissions" label="数据权限 (JSON)"><TextArea rows={2} placeholder='{"properties": true, "telemetry": true, "events": false}' /></Form.Item>
           <Form.Item name="maskingRules" label="脱敏规则 (JSON)"><TextArea rows={2} placeholder='{"latitude": "ROUND_2", "imei": "MASK_MIDDLE"}' /></Form.Item>
           <Form.Item name="rateLimit" label="频率限制 (JSON)"><Input placeholder='{"qps": 10, "dailyLimit": 10000}' /></Form.Item>
@@ -127,11 +166,11 @@ const OwnedTab: React.FC = () => {
       <Modal title="策略详情" open={detailOpen} onCancel={() => setDetailOpen(false)} footer={null} width={650}>
         {detailRecord && (
           <Descriptions bordered column={2} size="small">
-            <Descriptions.Item label="ID">{detailRecord.id}</Descriptions.Item>
-            <Descriptions.Item label="状态"><Tag color={statusColors[detailRecord.status]}>{statusLabels[detailRecord.status]}</Tag></Descriptions.Item>
             <Descriptions.Item label="策略名称" span={2}>{detailRecord.name}</Descriptions.Item>
-            <Descriptions.Item label="所有方租户">{detailRecord.ownerTenantId}</Descriptions.Item>
-            <Descriptions.Item label="消费方租户">{detailRecord.consumerTenantId}</Descriptions.Item>
+            <Descriptions.Item label="状态"><Tag color={statusColors[detailRecord.status]}>{statusLabels[detailRecord.status]}</Tag></Descriptions.Item>
+            <Descriptions.Item label="审计">{detailRecord.auditEnabled ? <Tag color="blue">开启</Tag> : <Tag>关闭</Tag>}</Descriptions.Item>
+            <Descriptions.Item label="所有方租户">{getTenantDisplay(detailRecord.ownerTenantId)}</Descriptions.Item>
+            <Descriptions.Item label="消费方租户">{getTenantDisplay(detailRecord.consumerTenantId)}</Descriptions.Item>
             <Descriptions.Item label="共享范围" span={2}><pre style={{ margin: 0, fontSize: 12, maxHeight: 100, overflow: 'auto' }}>{detailRecord.scope || '-'}</pre></Descriptions.Item>
             <Descriptions.Item label="数据权限" span={2}><pre style={{ margin: 0, fontSize: 12 }}>{detailRecord.dataPermissions || '-'}</pre></Descriptions.Item>
             <Descriptions.Item label="脱敏规则" span={2}><pre style={{ margin: 0, fontSize: 12 }}>{detailRecord.maskingRules || '-'}</pre></Descriptions.Item>
@@ -151,6 +190,32 @@ const OwnedTab: React.FC = () => {
 const ConsumedTab: React.FC = () => {
   const [data, setData] = useState<PolicyItem[]>([]);
   const [loading, setLoading] = useState(false);
+  // 租户列表
+  const [tenantOptions, setTenantOptions] = useState<TenantOption[]>([]);
+
+  // 构建租户ID到名称的映射
+  const tenantMap = useMemo(() => {
+    const map: Record<number, TenantOption> = {};
+    tenantOptions.forEach(t => { map[t.id] = t; });
+    return map;
+  }, [tenantOptions]);
+
+  // 根据租户ID获取显示名称
+  const getTenantDisplay = (id: number) => {
+    const tenant = tenantMap[id];
+    return tenant ? `${tenant.name} (${tenant.code})` : `#${id}`;
+  };
+
+  // 加载租户列表
+  const fetchTenants = useCallback(async () => {
+    try {
+      const res = await tenantApi.list({ pageSize: 500 });
+      const records = res.data.data?.records || [];
+      setTenantOptions(records.map((t: TenantOption) => ({ id: t.id, code: t.code, name: t.name })));
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchTenants(); }, [fetchTenants]);
 
   useEffect(() => {
     (async () => {
@@ -162,7 +227,7 @@ const ConsumedTab: React.FC = () => {
 
   const columns: ColumnsType<PolicyItem> = [
     { title: '策略名称', dataIndex: 'name', width: 200 },
-    { title: '所有方租户', dataIndex: 'ownerTenantId', width: 120 },
+    { title: '所有方租户', width: 160, render: (_: unknown, record: PolicyItem) => getTenantDisplay(record.ownerTenantId) },
     { title: '状态', dataIndex: 'status', width: 90, render: (v: string) => <Tag color={statusColors[v]}>{statusLabels[v] || v}</Tag> },
     { title: '共享范围', dataIndex: 'scope', ellipsis: true, render: (v: string) => v || '-' },
     { title: '创建时间', dataIndex: 'createdAt', width: 170 },
@@ -178,6 +243,32 @@ const AuditLogTab: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
+  // 租户列表
+  const [tenantOptions, setTenantOptions] = useState<TenantOption[]>([]);
+
+  // 构建租户ID到名称的映射
+  const tenantMap = useMemo(() => {
+    const map: Record<number, TenantOption> = {};
+    tenantOptions.forEach(t => { map[t.id] = t; });
+    return map;
+  }, [tenantOptions]);
+
+  // 根据租户ID获取显示名称
+  const getTenantDisplay = (id: number) => {
+    const tenant = tenantMap[id];
+    return tenant ? `${tenant.name} (${tenant.code})` : `#${id}`;
+  };
+
+  // 加载租户列表
+  const fetchTenants = useCallback(async () => {
+    try {
+      const res = await tenantApi.list({ pageSize: 500 });
+      const records = res.data.data?.records || [];
+      setTenantOptions(records.map((t: TenantOption) => ({ id: t.id, code: t.code, name: t.name })));
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchTenants(); }, [fetchTenants]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -192,8 +283,7 @@ const AuditLogTab: React.FC = () => {
 
   const columns: ColumnsType<AuditLogItem> = [
     { title: '时间', dataIndex: 'createdAt', width: 170 },
-    { title: '策略ID', dataIndex: 'policyId', width: 80 },
-    { title: '消费方租户', dataIndex: 'consumerTenantId', width: 110 },
+    { title: '消费方租户', width: 160, render: (_: unknown, record: AuditLogItem) => getTenantDisplay(record.consumerTenantId) },
     { title: '操作', dataIndex: 'action', width: 160 },
     { title: '结果数', dataIndex: 'resultCount', width: 80 },
     { title: 'IP', dataIndex: 'ipAddress', width: 130 },

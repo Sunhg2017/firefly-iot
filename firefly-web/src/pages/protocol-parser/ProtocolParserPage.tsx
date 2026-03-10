@@ -32,7 +32,7 @@ import {
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
-import { productApi, protocolParserApi, tenantSelfApi } from '../../services/api';
+import { productApi, protocolParserApi, tenantSelfApi, deviceApi } from '../../services/api';
 import useAuthStore from '../../store/useAuthStore';
 import { PROTOCOL_PARSER_TEMPLATES, ProtocolParserTemplate } from './parserTemplates';
 import ProtocolParserRuntimePanel, {
@@ -62,6 +62,11 @@ interface TenantOption {
   code: string;
   name: string;
   displayName?: string;
+}
+
+interface DeviceOption {
+  id: number;
+  deviceName: string;
 }
 
 type BusinessIdentifierPatch = {
@@ -746,6 +751,7 @@ const ProtocolParserPage: React.FC = () => {
 
   const [records, setRecords] = useState<ProtocolParserRecord[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
+  const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
   const [currentTenant, setCurrentTenant] = useState<TenantOption | null>(null);
   const [loading, setLoading] = useState(false);
   const [productLoading, setProductLoading] = useState(false);
@@ -972,6 +978,16 @@ const ProtocolParserPage: React.FC = () => {
     }
   };
 
+  const fetchDevices = async () => {
+    try {
+      const response = await deviceApi.list({ pageSize: 500 });
+      const page = response.data.data as { records?: DeviceOption[] };
+      setDeviceOptions((page.records || []).map((d: DeviceOption) => ({ id: d.id, deviceName: d.deviceName })));
+    } catch {
+      // ignore
+    }
+  };
+
   const fetchCurrentTenant = async () => {
     try {
       const response = await tenantSelfApi.get();
@@ -1026,6 +1042,7 @@ const ProtocolParserPage: React.FC = () => {
   useEffect(() => {
     void fetchCurrentTenant();
     void fetchProducts();
+    void fetchDevices();
   }, []);
 
   useEffect(() => {
@@ -2449,13 +2466,23 @@ const ProtocolParserPage: React.FC = () => {
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="deviceId" label="设备 ID">
-                <InputNumber min={1} style={{ width: '100%' }} />
+              <Form.Item name="deviceId" label="设备">
+                <Select
+                  placeholder="请选择设备"
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={deviceOptions.map(d => ({ value: d.id, label: d.deviceName }))}
+                  onChange={(deviceId: number | undefined) => {
+                    const device = deviceOptions.find(d => d.id === deviceId);
+                    uplinkDebugForm.setFieldsValue({ deviceName: device?.deviceName || '' });
+                  }}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
               <Form.Item name="deviceName" label="设备名称">
-                <Input />
+                <Input disabled placeholder="选择设备后自动填充" />
               </Form.Item>
             </Col>
           </Row>
@@ -2615,13 +2642,23 @@ const ProtocolParserPage: React.FC = () => {
           </Row>
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item name="deviceId" label="设备 ID">
-                <InputNumber min={1} style={{ width: '100%' }} />
+              <Form.Item name="deviceId" label="设备">
+                <Select
+                  placeholder="请选择设备"
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={deviceOptions.map(d => ({ value: d.id, label: d.deviceName }))}
+                  onChange={(deviceId: number | undefined) => {
+                    const device = deviceOptions.find(d => d.id === deviceId);
+                    downlinkDebugForm.setFieldsValue({ deviceName: device?.deviceName || '' });
+                  }}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
               <Form.Item name="deviceName" label="设备名称">
-                <Input />
+                <Input disabled placeholder="选择设备后自动填充" />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>

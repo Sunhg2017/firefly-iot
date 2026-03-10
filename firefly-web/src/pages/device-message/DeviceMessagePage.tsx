@@ -1,10 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button, Space, message, Input, Card, Form, Select, Tabs, Tag } from 'antd';
 import { SendOutlined, ThunderboltOutlined, SettingOutlined } from '@ant-design/icons';
-import { deviceMessageApi } from '../../services/api';
+import { deviceMessageApi, deviceApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 
-const PropertySetTab: React.FC = () => {
+// 设备选项类型
+interface DeviceOption {
+  id: number;
+  deviceName: string;
+}
+
+// 属性设置Tab
+interface PropertySetTabProps {
+  deviceOptions: DeviceOption[];
+}
+
+const PropertySetTab: React.FC<PropertySetTabProps> = ({ deviceOptions }) => {
   const [form] = Form.useForm();
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -26,8 +37,14 @@ const PropertySetTab: React.FC = () => {
   return (
     <Card>
       <Form form={form} layout="vertical" onFinish={handleSend}>
-        <Form.Item name="deviceId" label="设备 ID" rules={[{ required: true, message: '请输入设备 ID' }]}>
-          <Input type="number" placeholder="目标设备 ID" style={{ width: 200 }} />
+        <Form.Item name="deviceId" label="目标设备" rules={[{ required: true, message: '请选择设备' }]}>
+          <Select
+            placeholder="请选择设备"
+            showSearch
+            optionFilterProp="label"
+            style={{ width: 280 }}
+            options={deviceOptions.map(d => ({ value: d.id, label: d.deviceName }))}
+          />
         </Form.Item>
         <Form.Item name="properties" label="属性 JSON" rules={[{ required: true, message: '请输入属性 JSON' }]}
           extra="设置设备属性，如：{&quot;brightness&quot;: 80, &quot;switch&quot;: true}">
@@ -40,7 +57,7 @@ const PropertySetTab: React.FC = () => {
   );
 };
 
-const ServiceInvokeTab: React.FC = () => {
+const ServiceInvokeTab: React.FC<PropertySetTabProps> = ({ deviceOptions }) => {
   const [form] = Form.useForm();
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -66,8 +83,14 @@ const ServiceInvokeTab: React.FC = () => {
   return (
     <Card>
       <Form form={form} layout="vertical" onFinish={handleSend}>
-        <Form.Item name="deviceId" label="设备 ID" rules={[{ required: true, message: '请输入设备 ID' }]}>
-          <Input type="number" placeholder="目标设备 ID" style={{ width: 200 }} />
+        <Form.Item name="deviceId" label="目标设备" rules={[{ required: true, message: '请选择设备' }]}>
+          <Select
+            placeholder="请选择设备"
+            showSearch
+            optionFilterProp="label"
+            style={{ width: 280 }}
+            options={deviceOptions.map(d => ({ value: d.id, label: d.deviceName }))}
+          />
         </Form.Item>
         <Form.Item name="serviceName" label="服务名称" rules={[{ required: true, message: '请输入服务名称' }]}>
           <Input placeholder="如：reboot, setConfig" style={{ width: 300 }} />
@@ -83,7 +106,7 @@ const ServiceInvokeTab: React.FC = () => {
   );
 };
 
-const RawMessageTab: React.FC = () => {
+const RawMessageTab: React.FC<PropertySetTabProps> = ({ deviceOptions }) => {
   const [form] = Form.useForm();
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -110,8 +133,14 @@ const RawMessageTab: React.FC = () => {
     <Card>
       <Form form={form} layout="vertical" onFinish={handleSend}>
         <Space>
-          <Form.Item name="deviceId" label="设备 ID" rules={[{ required: true }]}>
-            <Input type="number" placeholder="目标设备 ID" style={{ width: 200 }} />
+          <Form.Item name="deviceId" label="目标设备" rules={[{ required: true, message: '请选择设备' }]}>
+            <Select
+              placeholder="请选择设备"
+              showSearch
+              optionFilterProp="label"
+              style={{ width: 280 }}
+              options={deviceOptions.map(d => ({ value: d.id, label: d.deviceName }))}
+            />
           </Form.Item>
           <Form.Item name="type" label="消息类型" rules={[{ required: true }]}>
             <Select placeholder="选择类型" style={{ width: 200 }}>
@@ -134,14 +163,28 @@ const RawMessageTab: React.FC = () => {
 };
 
 const DeviceMessagePage: React.FC = () => {
+  // 设备列表
+  const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
+
+  // 加载设备列表
+  const fetchDevices = useCallback(async () => {
+    try {
+      const res = await deviceApi.list({ pageSize: 500 });
+      const records = res.data.data?.records || [];
+      setDeviceOptions(records.map((d: DeviceOption) => ({ id: d.id, deviceName: d.deviceName })));
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchDevices(); }, [fetchDevices]);
+
   return (
     <div>
       <PageHeader title="设备消息" description="向设备下发命令、设置属性或调用服务，消息通过 Kafka 推送到 MQTT Broker 后下发至设备" />
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Tabs defaultActiveKey="property-set" items={[
-          { key: 'property-set', label: <span><SettingOutlined style={{ marginRight: 6 }} />设置属性</span>, children: <PropertySetTab /> },
-          { key: 'service-invoke', label: <span><ThunderboltOutlined style={{ marginRight: 6 }} />调用服务</span>, children: <ServiceInvokeTab /> },
-          { key: 'raw-message', label: <span><SendOutlined style={{ marginRight: 6 }} />原始消息</span>, children: <RawMessageTab /> },
+          { key: 'property-set', label: <span><SettingOutlined style={{ marginRight: 6 }} />设置属性</span>, children: <PropertySetTab deviceOptions={deviceOptions} /> },
+          { key: 'service-invoke', label: <span><ThunderboltOutlined style={{ marginRight: 6 }} />调用服务</span>, children: <ServiceInvokeTab deviceOptions={deviceOptions} /> },
+          { key: 'raw-message', label: <span><SendOutlined style={{ marginRight: 6 }} />原始消息</span>, children: <RawMessageTab deviceOptions={deviceOptions} /> },
         ]} />
       </Card>
     </div>

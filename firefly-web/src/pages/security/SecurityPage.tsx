@@ -21,6 +21,7 @@ interface LoginLogItem {
 
 interface SessionItem {
   id: number;
+  sessionId?: string; // 会话业务唯一标识
   platform: string;
   ip: string;
   userAgent: string;
@@ -106,7 +107,7 @@ const MySessionTab: React.FC = () => {
   };
 
   const columns: ColumnsType<SessionItem> = [
-    { title: 'ID', dataIndex: 'id', width: 80 },
+    { title: '会话标识', dataIndex: 'sessionId', width: 180, ellipsis: true, render: (v: string) => v || '-' },
     { title: '平台', dataIndex: 'platform', width: 80, render: (v: string) => <Tag color="blue">{v || '-'}</Tag> },
     { title: 'IP', dataIndex: 'ip', width: 140 },
     { title: 'User-Agent', dataIndex: 'userAgent', width: 260, ellipsis: true },
@@ -152,7 +153,7 @@ const AdminSessionTab: React.FC = () => {
   };
 
   const columns: ColumnsType<SessionItem> = [
-    { title: 'ID', dataIndex: 'id', width: 80 },
+    { title: '会话标识', dataIndex: 'sessionId', width: 180, ellipsis: true, render: (v: string) => v || '-' },
     { title: '平台', dataIndex: 'platform', width: 80, render: (v: string) => <Tag color="blue">{v || '-'}</Tag> },
     { title: 'IP', dataIndex: 'ip', width: 140 },
     { title: 'User-Agent', dataIndex: 'userAgent', width: 260, ellipsis: true },
@@ -163,7 +164,7 @@ const AdminSessionTab: React.FC = () => {
   return (
     <div>
       <Space style={{ marginBottom: 16 }}>
-        <Input placeholder="用户 ID" type="number" style={{ width: 140 }}
+        <Input placeholder="用户名" style={{ width: 140 }}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUserId(e.target.value ? Number(e.target.value) : null)} />
         <Button type="primary" onClick={fetchData} disabled={!userId}>查询会话</Button>
         <Popconfirm title="强制下线该用户所有会话？" onConfirm={handleKickUser} disabled={!userId}>

@@ -1,17 +1,23 @@
-import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, message, Modal, Form, Input, InputNumber, Tag, Drawer, Progress } from 'antd';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { Table, Button, Space, message, Modal, Form, Input, Select, Tag, Drawer, Progress } from 'antd';
 import { LinkOutlined, UsbOutlined } from '@ant-design/icons';
-import { firmwareApi, deviceFirmwareApi } from '../../services/api';
+import { firmwareApi, deviceFirmwareApi, deviceApi } from '../../services/api';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
 
+// 设备选项类型
+interface DeviceOption {
+  id: number;
+  deviceName: string;
+  productId: number;
+}
 
 interface FirmwareItem {
   id: number; productId: number; version: string; displayName: string; description: string;
   fileUrl: string; fileSize: number; md5Checksum: string; status: string; createdAt: string;
 }
 interface DeviceFwItem {
-  id: number; deviceId: number; firmwareId: number; currentVersion: string; targetVersion: string;
+  id: number; deviceId: number; deviceName?: string; firmwareId: number; currentVersion: string; targetVersion: string;
   upgradeStatus: string; upgradeProgress: number; lastUpgradeAt: string; updatedAt: string;
 }
 
@@ -33,6 +39,34 @@ const FirmwarePage: React.FC = () => {
 
   const [bindOpen, setBindOpen] = useState(false);
   const [bindForm] = Form.useForm();
+
+  // 设备列表用于选择和显示
+  const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
+
+  // 构建设备ID到名称的映射
+  const deviceMap = useMemo(() => {
+    const map: Record<number, DeviceOption> = {};
+    deviceOptions.forEach(d => { map[d.id] = d; });
+    return map;
+  }, [deviceOptions]);
+
+  // 根据设备ID获取显示名称
+  const getDeviceDisplay = (id: number, deviceName?: string) => {
+    if (deviceName) return deviceName;
+    const device = deviceMap[id];
+    return device ? device.deviceName : `#${id}`;
+  };
+
+  // 加载设备列表
+  const fetchDevices = useCallback(async () => {
+    try {
+      const res = await deviceApi.list({ pageSize: 500 });
+      const records = res.data.data?.records || [];
+      setDeviceOptions(records.map((d: DeviceOption) => ({ id: d.id, deviceName: d.deviceName, productId: d.productId })));
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchDevices(); }, [fetchDevices]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -93,7 +127,7 @@ const FirmwarePage: React.FC = () => {
   ];
 
   const deviceFwColumns: ColumnsType<DeviceFwItem> = [
-    { title: '设备ID', dataIndex: 'deviceId', width: 80 },
+    { title: '设备名称', width: 140, render: (_: unknown, record: DeviceFwItem) => getDeviceDisplay(record.deviceId, record.deviceName) },
     { title: '当前版本', dataIndex: 'currentVersion', width: 120 },
     { title: '目标版本', dataIndex: 'targetVersion', width: 120, render: (v: string) => v || '-' },
     { title: '升级状态', dataIndex: 'upgradeStatus', width: 100, render: (v: string) => <Tag color={upgradeColors[v]}>{v}</Tag> },
@@ -118,7 +152,14 @@ const FirmwarePage: React.FC = () => {
 
       <Modal title="绑定设备固件" open={bindOpen} onCancel={() => setBindOpen(false)} onOk={() => bindForm.submit()} destroyOnClose width={400}>
         <Form form={bindForm} layout="vertical" onFinish={handleBind}>
-          <Form.Item name="deviceId" label="设备ID" rules={[{ required: true }]}><InputNumber style={{ width: '100%' }} /></Form.Item>
+          <Form.Item name="deviceId" label="选择设备" rules={[{ required: true, message: '请选择设备' }]}>
+            <Select
+              placeholder="请选择设备"
+              showSearch
+              optionFilterProp="label"
+              options={deviceOptions.map(d => ({ value: d.id, label: d.deviceName }))}
+            />
+          </Form.Item>
           <Form.Item name="version" label="当前版本" rules={[{ required: true }]}><Input placeholder="如: 1.0.0" /></Form.Item>
         </Form>
       </Modal>

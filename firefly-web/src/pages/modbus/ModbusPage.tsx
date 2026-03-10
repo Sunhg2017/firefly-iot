@@ -7,7 +7,7 @@ import {
   ApiOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined,
   CheckCircleOutlined, CloseCircleOutlined, PlayCircleOutlined, EditOutlined, ReadOutlined,
 } from '@ant-design/icons';
-import { modbusApi } from '../../services/api';
+import { modbusApi, productApi, deviceApi } from '../../services/api';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
 
@@ -39,8 +39,26 @@ interface CollectorTask {
 
 const defaultTarget: ModbusTarget = { host: '', port: 502, slaveId: 1, mode: 'TCP' };
 
+// 产品和设备选项类型
+interface ProductOption {
+  id: number;
+  productName: string;
+}
+
+interface DeviceOption {
+  id: number;
+  deviceName: string;
+  productId?: number;
+}
+
 const ModbusPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState('tools');
+
+  // 产品和设备列表
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+  const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
+  const [filteredDevices, setFilteredDevices] = useState<DeviceOption[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
 
   // ==================== Tools State ====================
   const [targetForm] = Form.useForm();
@@ -152,9 +170,49 @@ const ModbusPage: React.FC = () => {
     finally { setCollectorsLoading(false); }
   };
 
+  // 加载产品和设备列表
+  useEffect(() => {
+    const loadOptions = async () => {
+      try {
+        const [prodRes, devRes] = await Promise.all([
+          productApi.list({ pageSize: 500 }),
+          deviceApi.list({ pageSize: 500 }),
+        ]);
+        const products = (prodRes.data.data?.records || []).map((p: ProductOption) => ({ id: p.id, productName: p.productName }));
+        const devices = (devRes.data.data?.records || []).map((d: DeviceOption & { productId?: number }) => ({ 
+          id: d.id, deviceName: d.deviceName, productId: d.productId 
+        }));
+        setProductOptions(products);
+        setDeviceOptions(devices);
+        setFilteredDevices(devices);
+      } catch { /* ignore */ }
+    };
+    loadOptions();
+  }, []);
+
   useEffect(() => {
     if (activeTab === 'collectors') fetchCollectors();
   }, [activeTab]);
+
+  // 产品选择变化时，联动筛选设备
+  const handleProductChange = (productId: number | null) => {
+    setSelectedProductId(productId);
+    collectorForm.setFieldValue('deviceId', undefined);
+    collectorForm.setFieldValue('deviceName', undefined);
+    if (productId) {
+      setFilteredDevices(deviceOptions.filter(d => d.productId === productId));
+    } else {
+      setFilteredDevices(deviceOptions);
+    }
+  };
+
+  // 设备选择变化时，自动填充设备名称
+  const handleDeviceChange = (deviceId: number | null) => {
+    const device = deviceOptions.find(d => d.id === deviceId);
+    if (device) {
+      collectorForm.setFieldValue('deviceName', device.deviceName);
+    }
+  };
 
   const handleAddCollector = async () => {
     const vals = await collectorForm.validateFields();
@@ -411,18 +469,32 @@ const ModbusPage: React.FC = () => {
                   </Form.Item>
                   <Row gutter={16}>
                     <Col span={8}>
-                      <Form.Item label="设备ID" name="deviceId">
-                        <InputNumber style={{ width: '100%' }} placeholder="关联设备" />
+                      <Form.Item label="关联产品" name="productId">
+                        <Select
+                          placeholder="请选择产品"
+                          allowClear
+                          showSearch
+                          optionFilterProp="label"
+                          options={productOptions.map(p => ({ value: p.id, label: p.productName }))}
+                          onChange={handleProductChange}
+                        />
                       </Form.Item>
                     </Col>
                     <Col span={8}>
-                      <Form.Item label="产品ID" name="productId">
-                        <InputNumber style={{ width: '100%' }} />
+                      <Form.Item label="关联设备" name="deviceId">
+                        <Select
+                          placeholder="请选择设备"
+                          allowClear
+                          showSearch
+                          optionFilterProp="label"
+                          options={filteredDevices.map(d => ({ value: d.id, label: d.deviceName }))}
+                          onChange={handleDeviceChange}
+                        />
                       </Form.Item>
                     </Col>
                     <Col span={8}>
                       <Form.Item label="设备名称" name="deviceName">
-                        <Input placeholder="可选" />
+                        <Input placeholder="选择设备后自动填充" disabled />
                       </Form.Item>
                     </Col>
                   </Row>
