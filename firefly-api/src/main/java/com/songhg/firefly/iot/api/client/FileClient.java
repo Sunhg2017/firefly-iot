@@ -2,6 +2,7 @@ package com.songhg.firefly.iot.api.client;
 
 import com.songhg.firefly.iot.common.result.R;
 import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -18,4 +19,10 @@ public interface FileClient {
     R<Map<String, String>> uploadBytes(@RequestParam("objectName") String objectName,
                                         @RequestParam("contentType") String contentType,
                                         @RequestBody byte[] data);
+
+    /**
+     * 获取文件预签名 URL
+     */
+    @GetMapping("/presigned")
+    R<Map<String, String>> getPresignedUrl(@RequestParam("objectName") String objectName);
 }

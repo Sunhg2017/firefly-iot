@@ -7,7 +7,9 @@ import com.songhg.firefly.iot.device.dto.product.ProductCreateDTO;
 import com.songhg.firefly.iot.device.dto.product.ProductQueryDTO;
 import com.songhg.firefly.iot.device.dto.product.ProductUpdateDTO;
 import com.songhg.firefly.iot.device.dto.product.ProductVO;
+import com.songhg.firefly.iot.device.dto.product.ThingModelImportDTO;
 import com.songhg.firefly.iot.device.service.ProductService;
+import com.songhg.firefly.iot.device.service.ThingModelImportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -33,6 +35,7 @@ import java.util.Map;
 public class ProductController {
 
     private final ProductService productService;
+    private final ThingModelImportService thingModelImportService;
 
     @PostMapping
     @RequiresPermission("product:create")
@@ -115,5 +118,15 @@ public class ProductController {
     public R<String> getProductSecret(
             @Parameter(description = "产品编号", required = true) @PathVariable Long id) {
         return R.ok(productService.getProductSecret(id));
+    }
+
+    @PostMapping("/{id}/thing-model/import")
+    @RequiresPermission("product:update")
+    @Operation(summary = "异步导入物模型", description = "前端上传文件到MinIO后，使用fileKey注册异步导入任务")
+    public R<Long> importThingModel(
+            @Parameter(description = "产品编号", required = true) @PathVariable Long id,
+            @Valid @RequestBody ThingModelImportDTO dto) {
+        Long taskId = thingModelImportService.registerImportTask(id, dto);
+        return R.ok(taskId);
     }
 }

@@ -8,6 +8,7 @@ import {
   Form,
   Input,
   Modal,
+  Progress,
   Row,
   Select,
   Space,
@@ -30,10 +31,9 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { TableRowSelection } from 'antd/es/table/interface';
-import * as XLSX from 'xlsx';
 import DeviceShadowDrawer from './DeviceShadowDrawer';
 import DeviceLocatorModal from './DeviceLocatorModal';
-import { deviceApi, productApi } from '../../services/api';
+import { asyncTaskApi, deviceApi, fileApi, productApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 
 const { TextArea, Search } = Input;
@@ -89,16 +89,16 @@ interface DeviceUpdateFormValues {
   tags?: string;
 }
 
-interface ImportedBatchDevice {
-  deviceName: string;
-  nickname?: string;
-}
-
-type SpreadsheetTemplateRow = Record<string, string>;
-
 interface CredentialModalOptions {
   title?: string;
   description?: string;
+}
+
+interface AsyncTaskRecord {
+  id: number;
+  status: string;
+  progress?: number;
+  errorMessage?: string;
 }
 
 const DEVICE_AUTH_LABELS: Record<string, string> = {
@@ -109,18 +109,6 @@ const DEVICE_AUTH_LABELS: Record<string, string> = {
 const DEVICE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_.-]{1,63}$/;
 const DEVICE_NAME_RULE_MESSAGE =
   '支持 2-64 位字母、数字、冒号、下划线、中划线、小数点，且需以字母或数字开头';
-const MAX_BATCH_CREATE_COUNT = 200;
-
-const BATCH_IMPORT_TEMPLATE_ROWS: SpreadsheetTemplateRow[] = [
-  {
-    deviceName: 'AA:BB:CC:DD:EE:FF',
-    nickname: '仓库一号传感器',
-  },
-  {
-    deviceName: 'SN20240301001',
-    nickname: '二区温湿度传感器',
-  },
-];
 
 const statusLabels: Record<string, string> = {
   INACTIVE: '未激活',
@@ -190,98 +178,41 @@ const downloadDeviceTriples = (records: DeviceCredentialRecord[], filenamePrefix
   window.URL.revokeObjectURL(url);
 };
 
-const normalizeColumnKey = (value: string) =>
-  value
-    .trim()
-    .replace(/[\s_-]/g, '')
-    .replace(/[()（）]/g, '')
-    .toLowerCase();
-
-const toRowLookup = (row: Record<string, unknown>) => {
-  const lookup = new Map<string, unknown>();
-  Object.entries(row).forEach(([key, value]) => {
-    lookup.set(normalizeColumnKey(key), value);
-  });
-  return lookup;
-};
-
-const readSpreadsheetCell = (lookup: Map<string, unknown>, aliases: string[]) => {
-  for (const alias of aliases) {
-    const value = lookup.get(normalizeColumnKey(alias));
-    if (value !== undefined && value !== null && `${value}`.trim() !== '') {
-      return value;
+const pollTaskStatus = async (
+  taskId: number,
+  onProgress: (progress: number) => void,
+  onComplete: () => void,
+  onFail: (error: string) => void,
+  maxAttempts = 120,
+) => {
+  let attempts = 0;
+  const poll = async () => {
+    try {
+      const res = await asyncTaskApi.get(taskId);
+      const task = res.data.data as AsyncTaskRecord;
+      if (task.status === 'COMPLETED' || task.status === 'SUCCESS') {
+        onProgress(100);
+        onComplete();
+        return;
+      }
+      if (task.status === 'FAILED') {
+        onFail(task.errorMessage || '导入失败');
+        return;
+      }
+      if (task.progress !== undefined) {
+        onProgress(task.progress);
+      }
+      attempts += 1;
+      if (attempts < maxAttempts) {
+        setTimeout(poll, 2000);
+      } else {
+        onFail('任务超时，请在任务中心查看');
+      }
+    } catch {
+      onFail('查询任务状态失败');
     }
-  }
-  return undefined;
-};
-
-const asTrimmedText = (value: unknown) => {
-  if (value === undefined || value === null) {
-    return '';
-  }
-  return `${value}`.trim();
-};
-
-const readSpreadsheetRows = async (file: File) => {
-  const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-  const firstSheetName = workbook.SheetNames[0];
-  if (!firstSheetName) {
-    throw new Error('导入文件中没有可读取的工作表');
-  }
-
-  const worksheet = workbook.Sheets[firstSheetName];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
-    defval: '',
-    raw: true,
-  });
-
-  return rows.filter((row) =>
-    Object.values(row).some((value) => value !== undefined && value !== null && `${value}`.trim() !== ''),
-  );
-};
-
-const mapRowToBatchDevice = (row: Record<string, unknown>, rowIndex: number): ImportedBatchDevice => {
-  const lookup = toRowLookup(row);
-  const deviceName = asTrimmedText(
-    readSpreadsheetCell(lookup, ['deviceName', 'device', 'name', '设备名称', '设备编码', '设备名', 'mac', 'sn']),
-  );
-  const nickname =
-    asTrimmedText(readSpreadsheetCell(lookup, ['nickname', 'alias', 'displayName', '设备别名', '别名', '显示名称'])) ||
-    undefined;
-
-  if (!deviceName) {
-    throw new Error(`第 ${rowIndex} 行缺少设备名称(deviceName)`);
-  }
-  if (!DEVICE_NAME_PATTERN.test(deviceName)) {
-    throw new Error(`第 ${rowIndex} 行设备名称格式不正确，${DEVICE_NAME_RULE_MESSAGE}`);
-  }
-
-  return { deviceName, nickname };
-};
-
-const collectDuplicateDeviceNames = (items: ImportedBatchDevice[]) => {
-  const seen = new Set<string>();
-  const duplicates = new Set<string>();
-  items.forEach((item) => {
-    const deviceName = item.deviceName.trim();
-    if (!deviceName) {
-      return;
-    }
-    if (seen.has(deviceName)) {
-      duplicates.add(deviceName);
-    } else {
-      seen.add(deviceName);
-    }
-  });
-  return Array.from(duplicates);
-};
-
-const downloadBatchImportTemplate = () => {
-  const worksheet = XLSX.utils.json_to_sheet(BATCH_IMPORT_TEMPLATE_ROWS, { header: ['deviceName', 'nickname'] });
-  worksheet['!cols'] = [{ wch: 24 }, { wch: 24 }];
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'devices');
-  XLSX.writeFile(workbook, 'device-batch-import-template.xlsx');
+  };
+  poll();
 };
 
 const DeviceList: React.FC = () => {
@@ -309,8 +240,8 @@ const DeviceList: React.FC = () => {
   const [shadowDeviceId, setShadowDeviceId] = useState<number | null>(null);
   const [shadowOpen, setShadowOpen] = useState(false);
   const [locatorDevice, setLocatorDevice] = useState<DeviceRecord | null>(null);
-  const [importedBatchDevices, setImportedBatchDevices] = useState<ImportedBatchDevice[]>([]);
-  const [batchImportFileName, setBatchImportFileName] = useState('');
+  const [batchImportFile, setBatchImportFile] = useState<File | null>(null);
+  const [importProgress, setImportProgress] = useState<number | null>(null);
   const batchImportInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedDeviceIds = useMemo(
@@ -322,20 +253,6 @@ const DeviceList: React.FC = () => {
     () => products.filter((item) => item.deviceAuthType !== 'PRODUCT_SECRET'),
     [products],
   );
-
-  const batchPreviewColumns: ColumnsType<ImportedBatchDevice> = [
-    {
-      title: '设备名称',
-      dataIndex: 'deviceName',
-      width: 240,
-      render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
-    },
-    {
-      title: '设备别名',
-      dataIndex: 'nickname',
-      render: (value?: string) => value || '-',
-    },
-  ];
 
   const fetchProducts = async () => {
     try {
@@ -389,8 +306,8 @@ const DeviceList: React.FC = () => {
   const closeBatchCreateModal = () => {
     setBatchCreateOpen(false);
     batchCreateForm.resetFields();
-    setImportedBatchDevices([]);
-    setBatchImportFileName('');
+    setBatchImportFile(null);
+    setImportProgress(null);
   };
 
   const closeEditModal = () => {
@@ -518,60 +435,58 @@ const DeviceList: React.FC = () => {
       return;
     }
 
-    try {
-      const rows = await readSpreadsheetRows(file);
-      if (rows.length === 0) {
-        message.warning('导入文件中没有可识别的数据');
-        return;
-      }
-      if (rows.length > MAX_BATCH_CREATE_COUNT) {
-        message.error(`单次最多批量注册 ${MAX_BATCH_CREATE_COUNT} 台设备`);
-        return;
-      }
-
-      const devices = rows.map((row, index) => mapRowToBatchDevice(row, index + 2));
-      const duplicates = collectDuplicateDeviceNames(devices);
-      if (duplicates.length > 0) {
-        message.error(`导入文件中存在重复设备名称：${duplicates.join('、')}`);
-        return;
-      }
-
-      setImportedBatchDevices(devices);
-      setBatchImportFileName(file.name);
-      message.success(`已导入 ${devices.length} 台待注册设备`);
-    } catch (error) {
-      message.error(getErrorMessage(error, '解析导入文件失败'));
-    }
+    setBatchImportFile(file);
+    message.success(`已选择文件: ${file.name}`);
   };
 
   const handleBatchCreate = async (values: DeviceBatchCreateFormValues) => {
-    if (importedBatchDevices.length === 0) {
-      message.warning('请先导入设备 Excel 文件');
+    if (!batchImportFile) {
+      message.warning('请先选择设备 Excel 文件');
       return;
     }
 
     try {
       setBatchCreating(true);
-      const res = await deviceApi.batchCreate({
+      setImportProgress(0);
+
+      // Step 1: Upload file to MinIO
+      const uploadRes = await fileApi.upload(batchImportFile, 'device-import');
+      const fileKey = uploadRes.data.data?.fileKey || uploadRes.data.data?.objectName;
+      if (!fileKey) {
+        throw new Error('上传文件失败');
+      }
+      setImportProgress(10);
+
+      // Step 2: Register async import task
+      const fileFormat = batchImportFile.name.toLowerCase().endsWith('.csv') ? 'CSV' : 'XLSX';
+      const importRes = await deviceApi.importDevices({
         productId: values.productId,
+        fileKey,
+        fileFormat,
         description: values.description,
         tags: values.tags,
-        devices: importedBatchDevices,
       });
-      const credentials = (res.data.data || []) as DeviceCredentialRecord[];
-      message.success(`批量注册成功，共 ${credentials.length} 台设备`);
-      closeBatchCreateModal();
-      void fetchData();
-      if (credentials.length > 0) {
-        downloadDeviceTriples(credentials, 'device-triples-batch-create');
-        Modal.success({
-          title: '批量注册完成',
-          content: `已成功创建设备 ${credentials.length} 台，并自动下载三元组文件。`,
-        });
-      }
+      const taskId = importRes.data.data as number;
+      setImportProgress(20);
+
+      // Step 3: Poll task status
+      pollTaskStatus(
+        taskId,
+        (progress) => setImportProgress(Math.max(20, progress)),
+        () => {
+          message.success('批量导入任务已完成！请在任务中心查看结果');
+          closeBatchCreateModal();
+          void fetchData();
+        },
+        (error) => {
+          message.error(error);
+          setImportProgress(null);
+          setBatchCreating(false);
+        },
+      );
     } catch (error) {
-      message.error(getErrorMessage(error, '批量注册失败'));
-    } finally {
+      message.error(getErrorMessage(error, '导入失败'));
+      setImportProgress(null);
       setBatchCreating(false);
     }
   };
@@ -998,17 +913,16 @@ const DeviceList: React.FC = () => {
             showIcon
             style={{ marginBottom: 16 }}
             message="先下载模板，填写 deviceName / nickname 后再导入 Excel 或 CSV。"
-            description="deviceName 支持 MAC 地址、SN 编码和自定义设备编码。导入后会先预览，再执行批量注册。"
+            description="deviceName 支持 MAC 地址、SN 编码和自定义设备编码。文件会上传到服务器异步解析处理。"
           />
 
           <Space wrap style={{ marginBottom: 16 }}>
-            <Button icon={<DownloadOutlined />} onClick={downloadBatchImportTemplate}>
-              下载导入模板
+            <Button icon={<UploadOutlined />} onClick={handleTriggerBatchImport} disabled={batchCreating}>
+              选择 Excel/CSV 文件
             </Button>
-            <Button icon={<UploadOutlined />} onClick={handleTriggerBatchImport}>
-              导入 Excel/CSV
-            </Button>
-            {batchImportFileName ? <Typography.Text type="secondary">当前文件：{batchImportFileName}</Typography.Text> : null}
+            {batchImportFile ? (
+              <Typography.Text type="secondary">已选择: {batchImportFile.name}</Typography.Text>
+            ) : null}
           </Space>
 
           <input
@@ -1019,25 +933,19 @@ const DeviceList: React.FC = () => {
             onChange={handleBatchImportChange}
           />
 
-          <Card
-            size="small"
-            title={`待注册设备预览${importedBatchDevices.length > 0 ? `（${importedBatchDevices.length} 台）` : ''}`}
-            styles={{ body: { padding: 12 } }}
-            style={{ marginBottom: 16 }}
-          >
-            {importedBatchDevices.length > 0 ? (
-              <Table
-                rowKey={(record) => record.deviceName}
-                size="small"
-                pagination={false}
-                scroll={{ y: 260 }}
-                columns={batchPreviewColumns}
-                dataSource={importedBatchDevices}
-              />
-            ) : (
-              <Typography.Text type="secondary">暂未导入设备清单。</Typography.Text>
-            )}
-          </Card>
+          {importProgress !== null && (
+            <Card
+              size="small"
+              title="导入进度"
+              styles={{ body: { padding: 16 } }}
+              style={{ marginBottom: 16 }}
+            >
+              <Progress percent={importProgress} status={importProgress === 100 ? 'success' : 'active'} />
+              <Typography.Text type="secondary" style={{ marginTop: 8, display: 'block' }}>
+                正在异步处理中，请稍候...
+              </Typography.Text>
+            </Card>
+          )}
 
           <Form.Item name="description" label="统一描述">
             <TextArea rows={2} placeholder="可选，批量注册的设备会统一带上这段描述" />

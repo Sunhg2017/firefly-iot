@@ -98,6 +98,33 @@ public class AsyncTaskController {
         return R.ok();
     }
 
+    @Operation(summary = "更新任务进度")
+    @PutMapping("/{id}/progress")
+    public R<Void> updateProgress(@Parameter(description = "任务编号", required = true) @PathVariable Long id,
+                                   @Parameter(description = "进度(0-100)", required = true) @RequestParam Integer progress) {
+        asyncTaskService.updateProgress(id, progress);
+        return R.ok();
+    }
+
+    @Operation(summary = "完成任务")
+    @PutMapping("/{id}/complete")
+    public R<Void> completeTask(@Parameter(description = "任务编号", required = true) @PathVariable Long id,
+                                 @RequestParam(value = "success", defaultValue = "true") Boolean success,
+                                 @RequestParam(value = "resultUrl", required = false) String resultUrl,
+                                 @RequestParam(value = "totalRows", required = false) Integer totalRows,
+                                 @RequestParam(value = "errorMessage", required = false) String errorMessage) {
+        asyncTaskService.completeTask(id, success, resultUrl, resultUrl != null ? new java.io.File(resultUrl).length() : null, totalRows, errorMessage);
+        return R.ok();
+    }
+
+    @Operation(summary = "标记任务失败")
+    @PutMapping("/{id}/fail")
+    public R<Void> failTask(@Parameter(description = "任务编号", required = true) @PathVariable Long id,
+                             @Parameter(description = "错误信息", required = true) @RequestParam String errorMessage) {
+        asyncTaskService.completeTask(id, false, null, null, null, errorMessage);
+        return R.ok();
+    }
+
     @Operation(summary = "删除任务")
     @DeleteMapping("/{id}")
     @RequiresPermission("export:delete")

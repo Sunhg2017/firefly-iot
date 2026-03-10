@@ -823,6 +823,8 @@ export const deviceApi = {
   get: (id: number) => deviceRequest.get(`/devices/${id}`),
   create: (data: Record<string, unknown>) => deviceRequest.post('/devices', data),
   batchCreate: (data: Record<string, unknown>) => deviceRequest.post('/devices/batch', data),
+  importDevices: (data: { productId: number; fileKey: string; fileFormat: string; projectId?: number; description?: string; tags?: string }) =>
+    deviceRequest.post('/devices/import', data),
   update: (id: number, data: Record<string, unknown>) => deviceRequest.put(`/devices/${id}`, data),
   enable: (id: number) => deviceRequest.put(`/devices/${id}/enable`),
   disable: (id: number) => deviceRequest.put(`/devices/${id}/disable`),
@@ -866,6 +868,8 @@ export const productApi = {
     deviceRequest.put(`/products/${id}/thing-model`, data, {
       headers: { 'Content-Type': 'text/plain' },
     }),
+  importThingModel: (id: number, data: { fileKey: string; fileFormat: string; importType?: string }) =>
+    deviceRequest.post(`/products/${id}/thing-model/import`, data),
 };
 
 // ==================== Protocol Parser API ====================

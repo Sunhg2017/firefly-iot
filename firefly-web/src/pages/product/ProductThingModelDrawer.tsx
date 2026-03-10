@@ -13,6 +13,7 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Progress,
   Row,
   Select,
   Space,
@@ -35,7 +36,7 @@ import {
   UploadOutlined,
 } from '@ant-design/icons';
 import * as XLSX from 'xlsx';
-import { productApi } from '../../services/api';
+import { asyncTaskApi, fileApi, productApi } from '../../services/api';
 
 type SectionKey = 'properties' | 'events' | 'services';
 type EditorMode = 'visual' | 'json';
@@ -1297,6 +1298,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const sheetImportInputRef = useRef<HTMLInputElement | null>(null);
   const [sheetImportTarget, setSheetImportTarget] = useState<SheetImportTarget | null>(null);
+  const [importingProgress, setImportingProgress] = useState<number | null>(null);
   const isPublished = product?.status === 'PUBLISHED';
 
   const extraRootKeys = useMemo(
@@ -1498,7 +1500,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
     const currentTarget = sheetImportTarget;
     setSheetImportTarget(null);
 
-    if (!file || !currentTarget) {
+    if (!file || !currentTarget || !product?.id) {
       return;
     }
 
@@ -1508,27 +1510,78 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
       return;
     }
 
+    // For properties import, use async backend processing (Rule 9)
+    if (currentTarget.kind === 'properties') {
+      try {
+        setImportingProgress(0);
+        
+        // Step 1: Upload file to MinIO
+        const uploadRes = await fileApi.upload(file, 'thing-model-import');
+        const fileKey = uploadRes.data.data?.fileKey || uploadRes.data.data?.objectName;
+        if (!fileKey) {
+          throw new Error('上传文件失败');
+        }
+        setImportingProgress(20);
+
+        // Step 2: Register async import task
+        const fileFormat = lowerName.endsWith('.csv') ? 'CSV' : 'XLSX';
+        const importRes = await productApi.importThingModel(product.id, {
+          fileKey,
+          fileFormat,
+          importType: 'PROPERTIES',
+        });
+        const taskId = importRes.data.data as number;
+        setImportingProgress(30);
+
+        // Step 3: Poll task status
+        const pollTask = async () => {
+          let attempts = 0;
+          const maxAttempts = 120;
+          while (attempts < maxAttempts) {
+            const res = await asyncTaskApi.get(taskId);
+            const task = res.data.data as { status: string; progress?: number; errorMessage?: string };
+            if (task.status === 'COMPLETED' || task.status === 'SUCCESS') {
+              setImportingProgress(100);
+              // Refresh thing model from backend
+              setTimeout(async () => {
+                try {
+                  const tmRes = await productApi.getThingModel(product.id);
+                  const parsed = parseThingModelText(tmRes.data.data || '{}');
+                  if (parsed.root) {
+                    syncDraftModel(parsed.root);
+                  }
+                } catch {
+                  // ignore
+                }
+                setImportingProgress(null);
+              }, 500);
+              message.success('属性导入完成！');
+              return;
+            }
+            if (task.status === 'FAILED') {
+              throw new Error(task.errorMessage || '导入失败');
+            }
+            if (task.progress !== undefined) {
+              setImportingProgress(Math.max(30, Math.min(95, task.progress)));
+            }
+            attempts += 1;
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+          throw new Error('任务超时，请在任务中心查看');
+        };
+        await pollTask();
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '导入失败');
+        setImportingProgress(null);
+      }
+      return;
+    }
+
+    // For parameters import (smaller data), keep local parsing
     try {
       const rows = await readSpreadsheetRows(file);
       if (rows.length === 0) {
         message.warning('导入文件没有可识别的数据行');
-        return;
-      }
-
-      if (currentTarget.kind === 'properties') {
-        const importedItems = rows.map((row, index) => mapRowToPropertyItem(row, index + 2));
-        const duplicates = collectDuplicateIdentifiers([...draftModel.properties, ...importedItems]);
-        if (duplicates.length > 0) {
-          message.error(`属性标识符重复：${duplicates.join('、')}`);
-          return;
-        }
-
-        syncDraftModel({
-          ...draftModel,
-          properties: [...draftModel.properties, ...importedItems],
-        });
-        setActiveSection('properties');
-        message.success(`已导入 ${importedItems.length} 条属性清单`);
         return;
       }
 
@@ -2046,7 +2099,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
                 <Button icon={<DownloadOutlined />} onClick={handleDownloadPropertyTemplate}>
                   下载属性模板
                 </Button>
-                <Button icon={<UploadOutlined />} onClick={() => handleTriggerSheetImport({ kind: 'properties' })}>
+                <Button icon={<UploadOutlined />} onClick={() => handleTriggerSheetImport({ kind: 'properties' })} disabled={importingProgress !== null}>
                 导入属性清单
                 </Button>
               </>
@@ -2062,6 +2115,13 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
             可导入 Excel/CSV 属性清单，表头支持：标识符(identifier)、名称(name)、描述(description)、数据类型(type)、读写模式(accessMode)、是否必填(required)、单位(unit)、最小值(min)、最大值(max)、精度(precision)、长度(length)、枚举值(enumValues)。
           </Typography.Text>
         ) : null}
+
+        {importingProgress !== null && (
+          <Card size="small" style={{ marginTop: 12, marginBottom: 12 }}>
+            <Progress percent={importingProgress} status={importingProgress === 100 ? 'success' : 'active'} />
+            <Typography.Text type="secondary">正在异步导入属性清单，请稍候...</Typography.Text>
+          </Card>
+        )}
 
         {items.length > 0 ? (
           <Space direction="vertical" size={12} style={{ width: '100%' }}>

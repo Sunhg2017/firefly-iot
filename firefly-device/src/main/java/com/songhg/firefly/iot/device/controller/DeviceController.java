@@ -6,10 +6,12 @@ import com.songhg.firefly.iot.common.security.RequiresPermission;
 import com.songhg.firefly.iot.device.dto.device.DeviceBatchCreateDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceCreateDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceCredentialVO;
+import com.songhg.firefly.iot.device.dto.device.DeviceImportDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceQueryDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceTripleExportDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceUpdateDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceVO;
+import com.songhg.firefly.iot.device.service.DeviceImportService;
 import com.songhg.firefly.iot.device.service.DeviceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -34,6 +36,7 @@ import java.util.List;
 public class DeviceController {
 
     private final DeviceService deviceService;
+    private final DeviceImportService deviceImportService;
 
     @PostMapping
     @RequiresPermission("device:create")
@@ -47,6 +50,19 @@ public class DeviceController {
     @Operation(summary = "批量注册设备")
     public R<List<DeviceCredentialVO>> batchCreateDevices(@Valid @RequestBody DeviceBatchCreateDTO dto) {
         return R.ok(deviceService.batchCreateDevices(dto));
+    }
+
+    /**
+     * 异步导入设备
+     * <p>
+     * 前端先将Excel/CSV文件上传到MinIO，然后传入fileKey注册异步导入任务。
+     * 后端异步读取文件并解析、批量创建设备，任务进度可通过异步任务中心查询。
+     */
+    @PostMapping("/import")
+    @RequiresPermission("device:create")
+    @Operation(summary = "异步导入设备", description = "上传文件到MinIO后，传入fileKey注册异步导入任务")
+    public R<Long> importDevices(@Valid @RequestBody DeviceImportDTO dto) {
+        return R.ok(deviceImportService.registerImportTask(dto));
     }
 
     @PostMapping("/list")
