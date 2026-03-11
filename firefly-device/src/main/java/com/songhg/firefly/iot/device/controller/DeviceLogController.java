@@ -1,7 +1,7 @@
 package com.songhg.firefly.iot.device.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresPermission;
 import com.songhg.firefly.iot.device.convert.DeviceLogConvert;
@@ -32,7 +32,7 @@ public class DeviceLogController {
     @Operation(summary = "记录设备日志")
     public R<DeviceLogVO> record(@Valid @RequestBody DeviceLogCreateDTO dto) {
         DeviceLog deviceLog = new DeviceLog();
-        deviceLog.setTenantId(TenantContextHolder.getTenantId());
+        deviceLog.setTenantId(AppContextHolder.getTenantId());
         deviceLog.setDeviceId(dto.getDeviceId());
         deviceLog.setProductId(dto.getProductId());
         deviceLog.setLevel(dto.getLevel());

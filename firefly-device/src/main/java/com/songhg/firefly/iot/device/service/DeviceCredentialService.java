@@ -4,8 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.songhg.firefly.iot.api.dto.DeviceAuthDTO;
 import com.songhg.firefly.iot.api.dto.DeviceRegisterDTO;
 import com.songhg.firefly.iot.api.dto.DeviceRegisterRequestDTO;
-import com.songhg.firefly.iot.common.context.TenantContext;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContext;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DeviceAuthType;
 import com.songhg.firefly.iot.common.enums.DeviceStatus;
 import com.songhg.firefly.iot.common.enums.OnlineStatus;
@@ -225,17 +225,17 @@ public class DeviceCredentialService {
     }
 
     private <T> T executeWithTenant(Long tenantId, Supplier<T> action) {
-        TenantContext previous = TenantContextHolder.get();
-        TenantContext current = new TenantContext();
-        current.setTenantId(tenantId);
-        TenantContextHolder.set(current);
+        AppContext previous = AppContextHolder.get();
+        AppContext temp = new AppContext();
+        temp.setTenantId(tenantId);
+        AppContextHolder.set(temp);
         try {
             return action.get();
         } finally {
             if (previous != null) {
-                TenantContextHolder.set(previous);
+                AppContextHolder.set(previous);
             } else {
-                TenantContextHolder.clear();
+                AppContextHolder.clear();
             }
         }
     }

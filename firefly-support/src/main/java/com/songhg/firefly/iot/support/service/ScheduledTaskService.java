@@ -3,7 +3,7 @@ package com.songhg.firefly.iot.support.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.support.dto.scheduledtask.ScheduledTaskCreateDTO;
@@ -89,7 +89,7 @@ public class ScheduledTaskService {
         task.setStatus(dto.getStatus() != null ? dto.getStatus() : 1);
         task.setDescription(dto.getDescription());
         task.setMisfirePolicy(dto.getMisfirePolicy() != null ? dto.getMisfirePolicy() : 0);
-        task.setCreatedBy(UserContextHolder.getUserId());
+        task.setCreatedBy(AppContextHolder.getUserId());
         taskMapper.insert(task);
 
         if (task.getStatus() == 1) {

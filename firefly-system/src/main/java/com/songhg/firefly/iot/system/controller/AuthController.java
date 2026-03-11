@@ -6,7 +6,7 @@ import com.songhg.firefly.iot.system.dto.RefreshTokenRequest;
 import com.songhg.firefly.iot.system.dto.SmsSendRequest;
 import com.songhg.firefly.iot.system.service.AuthService;
 import com.songhg.firefly.iot.system.service.JwtService;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.Platform;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresLogin;
@@ -59,8 +59,8 @@ public class AuthController {
     @RequiresLogin
     @PostMapping("/logout")
     public R<Void> logout(@RequestHeader(value = "Authorization", required = false) String authHeader) {
-        Long userId = UserContextHolder.getUserId();
-        Platform platform = Platform.valueOf(UserContextHolder.get().getPlatform());
+        Long userId = AppContextHolder.getUserId();
+        Platform platform = Platform.valueOf(AppContextHolder.getPlatform());
         String accessToken = null;
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             accessToken = authHeader.substring(7);
@@ -73,7 +73,7 @@ public class AuthController {
     @RequiresLogin
     @PostMapping("/logout-all")
     public R<Void> logoutAll() {
-        Long userId = UserContextHolder.getUserId();
+        Long userId = AppContextHolder.getUserId();
         authService.logoutAll(userId);
         return R.ok();
     }

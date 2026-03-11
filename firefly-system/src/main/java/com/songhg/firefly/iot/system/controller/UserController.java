@@ -1,7 +1,7 @@
 package com.songhg.firefly.iot.system.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.UserStatus;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresPermission;
@@ -34,7 +34,7 @@ public class UserController {
     @GetMapping("/me")
     @Operation(summary = "获取当前用户信息")
     public R<UserVO> getCurrentUser() {
-        Long userId = UserContextHolder.getUserId();
+        Long userId = AppContextHolder.getUserId();
         return R.ok(userService.getUserById(userId));
     }
 
@@ -42,7 +42,7 @@ public class UserController {
     @PutMapping("/me")
     @Operation(summary = "更新当前用户信息")
     public R<UserVO> updateCurrentUser(@Valid @RequestBody UserUpdateDTO dto) {
-        Long userId = UserContextHolder.getUserId();
+        Long userId = AppContextHolder.getUserId();
         return R.ok(userService.updateUser(userId, dto));
     }
 
@@ -50,7 +50,7 @@ public class UserController {
     @PutMapping("/me/password")
     @Operation(summary = "修改密码")
     public R<Void> changePassword(@Valid @RequestBody ChangePasswordDTO dto) {
-        Long userId = UserContextHolder.getUserId();
+        Long userId = AppContextHolder.getUserId();
         userService.changePassword(userId, dto.getOldPassword(), dto.getNewPassword());
         return R.ok();
     }
@@ -59,7 +59,7 @@ public class UserController {
     @GetMapping("/me/permissions")
     @Operation(summary = "获取我的权限列表")
     public R<Set<String>> getMyPermissions() {
-        Long userId = UserContextHolder.getUserId();
+        Long userId = AppContextHolder.getUserId();
         return R.ok(permissionService.getUserPermissions(userId));
     }
 

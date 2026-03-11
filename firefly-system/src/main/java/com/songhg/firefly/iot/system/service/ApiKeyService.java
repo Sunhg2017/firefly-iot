@@ -6,8 +6,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.ApiKeyStatus;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
@@ -45,8 +45,8 @@ public class ApiKeyService {
 
     @Transactional
     public ApiKeyCreatedVO createApiKey(ApiKeyCreateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
-        Long userId = UserContextHolder.getUserId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
 
         // 检查配额
         Long count = apiKeyMapper.selectCount(new LambdaQueryWrapper<ApiKey>()
@@ -99,7 +99,7 @@ public class ApiKeyService {
     }
 
     public IPage<ApiKeyVO> listApiKeys(ApiKeyQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<ApiKey> page = new Page<>(query.getPageNum(), query.getPageSize());
 
         LambdaQueryWrapper<ApiKey> wrapper = new LambdaQueryWrapper<>();

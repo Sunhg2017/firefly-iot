@@ -2,8 +2,8 @@ package com.songhg.firefly.iot.system.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.system.convert.TenantMenuConfigConvert;
@@ -38,14 +38,14 @@ public class TenantMenuConfigService {
      * 查询当前租户的菜单配置（树形结构）
      */
     public List<MenuConfigVO> getMenuTree() {
-        return getMenuTree(TenantContextHolder.getTenantId());
+        return getMenuTree(AppContextHolder.getTenantId());
     }
 
     /**
      * 查询当前租户的菜单配置（扁平列表）
      */
     public List<MenuConfigVO> getMenuList() {
-        return getMenuList(TenantContextHolder.getTenantId());
+        return getMenuList(AppContextHolder.getTenantId());
     }
 
     public List<MenuConfigVO> getMenuTree(Long tenantId) {
@@ -68,7 +68,7 @@ public class TenantMenuConfigService {
             return List.of();
         }
 
-        Long userId = UserContextHolder.getUserId();
+        Long userId = AppContextHolder.getUserId();
         Map<String, Long> menuKeyIdMap = new LinkedHashMap<>();
         LinkedHashSet<String> seenKeys = new LinkedHashSet<>();
         for (TenantSpaceMenuAssignDTO item : items) {
@@ -111,7 +111,7 @@ public class TenantMenuConfigService {
      */
     public MenuConfigVO create(MenuConfigCreateDTO dto) {
         userDomainService.assertCurrentUserCanManageWorkspaceMenus();
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
 
         // 检查 menuKey 是否已存在
         LambdaQueryWrapper<TenantMenuConfig> check = new LambdaQueryWrapper<>();
@@ -130,7 +130,7 @@ public class TenantMenuConfigService {
         entity.setRoutePath(dto.getRoutePath());
         entity.setSortOrder(dto.getSortOrder() != null ? dto.getSortOrder() : 0);
         entity.setVisible(dto.getVisible() != null ? dto.getVisible() : true);
-        entity.setCreatedBy(UserContextHolder.getUserId());
+        entity.setCreatedBy(AppContextHolder.getUserId());
         menuConfigMapper.insert(entity);
         return TenantMenuConfigConvert.INSTANCE.toVO(entity);
     }
@@ -188,7 +188,7 @@ public class TenantMenuConfigService {
     @Transactional
     public void batchSort(List<MenuConfigSortDTO> sortList) {
         userDomainService.assertCurrentUserCanManageWorkspaceMenus();
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         for (MenuConfigSortDTO item : sortList) {
             LambdaUpdateWrapper<TenantMenuConfig> wrapper = new LambdaUpdateWrapper<>();
             wrapper.eq(TenantMenuConfig::getId, item.getId())
@@ -207,7 +207,7 @@ public class TenantMenuConfigService {
     @Transactional
     public void initDefaultMenus(List<MenuConfigCreateDTO> defaults) {
         userDomainService.assertCurrentUserCanManageWorkspaceMenus();
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
 
         // 清除已有配置
         LambdaQueryWrapper<TenantMenuConfig> wrapper = new LambdaQueryWrapper<>();
@@ -215,7 +215,7 @@ public class TenantMenuConfigService {
         menuConfigMapper.delete(wrapper);
 
         // 批量插入
-        Long userId = UserContextHolder.getUserId();
+        Long userId = AppContextHolder.getUserId();
         for (MenuConfigCreateDTO dto : defaults) {
             TenantMenuConfig entity = new TenantMenuConfig();
             entity.setTenantId(tenantId);
@@ -236,7 +236,7 @@ public class TenantMenuConfigService {
         if (entity == null) {
             throw new BizException(ResultCode.NOT_FOUND, "菜单配置不存在");
         }
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         if (!entity.getTenantId().equals(tenantId)) {
             throw new BizException(ResultCode.FORBIDDEN, "无权操作");
         }

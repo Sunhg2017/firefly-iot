@@ -3,8 +3,8 @@ package com.songhg.firefly.iot.device.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DeviceAuthType;
 import com.songhg.firefly.iot.common.enums.DeviceStatus;
 import com.songhg.firefly.iot.common.enums.OnlineStatus;
@@ -56,8 +56,8 @@ public class DeviceService {
 
     @Transactional
     public DeviceCredentialVO createDevice(DeviceCreateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
-        Long userId = UserContextHolder.getUserId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
         Product product = getProductOrThrow(dto.getProductId());
         validateManualRegistrationAllowed(product);
         validateUniqueDeviceNames(dto.getProductId(), List.of(dto.getDeviceName()));
@@ -81,8 +81,8 @@ public class DeviceService {
 
     @Transactional
     public List<DeviceCredentialVO> batchCreateDevices(DeviceBatchCreateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
-        Long userId = UserContextHolder.getUserId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
         Product product = getProductOrThrow(dto.getProductId());
         validateManualRegistrationAllowed(product);
 
@@ -289,7 +289,7 @@ public class DeviceService {
     }
 
     private LambdaQueryWrapper<Device> buildListWrapper(DeviceQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         LambdaQueryWrapper<Device> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Device::getTenantId, tenantId);
         wrapper.isNull(Device::getDeletedAt);
@@ -314,7 +314,7 @@ public class DeviceService {
     }
 
     private LambdaQueryWrapper<Device> buildExportWrapper(DeviceTripleExportDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         LambdaQueryWrapper<Device> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Device::getTenantId, tenantId);
         wrapper.isNull(Device::getDeletedAt);

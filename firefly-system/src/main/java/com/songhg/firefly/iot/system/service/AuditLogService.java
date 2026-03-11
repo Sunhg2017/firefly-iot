@@ -3,7 +3,7 @@ package com.songhg.firefly.iot.system.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.AuditAction;
 import com.songhg.firefly.iot.common.enums.AuditModule;
 import com.songhg.firefly.iot.system.convert.AuditLogConvert;
@@ -75,7 +75,7 @@ public class AuditLogService {
      * 分页查询审计日志
      */
     public IPage<AuditLogVO> listAuditLogs(AuditLogQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<AuditLog> page = new Page<>(query.getPageNum(), query.getPageSize());
 
         LambdaQueryWrapper<AuditLog> wrapper = new LambdaQueryWrapper<>();

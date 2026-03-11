@@ -3,7 +3,7 @@ package com.songhg.firefly.iot.support.notification.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.support.notification.convert.NotificationConvert;
 import com.songhg.firefly.iot.support.notification.dto.notification.NotificationRecordQueryDTO;
 import com.songhg.firefly.iot.support.notification.dto.notification.NotificationRecordVO;
@@ -19,7 +19,7 @@ public class NotificationRecordService {
     private final NotificationRecordMapper recordMapper;
 
     public IPage<NotificationRecordVO> listRecords(NotificationRecordQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<NotificationRecord> page = new Page<>(query.getPageNum(), query.getPageSize());
 
         LambdaQueryWrapper<NotificationRecord> wrapper = new LambdaQueryWrapper<>();

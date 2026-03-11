@@ -3,8 +3,8 @@ package com.songhg.firefly.iot.system.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.system.dto.dict.DictTypeQueryDTO;
@@ -32,14 +32,14 @@ public class DictService {
 
     @Transactional
     public DictType createType(DictType dictType) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Long exists = dictTypeMapper.selectCount(new LambdaQueryWrapper<DictType>()
                 .eq(DictType::getTenantId, tenantId)
                 .eq(DictType::getCode, dictType.getCode()));
         if (exists > 0) throw new BizException(ResultCode.PARAM_ERROR, "字典编码已存在");
 
         dictType.setTenantId(tenantId);
-        dictType.setCreatedBy(UserContextHolder.getUserId());
+        dictType.setCreatedBy(AppContextHolder.getUserId());
         if (dictType.getEnabled() == null) dictType.setEnabled(true);
         if (dictType.getSystemFlag() == null) dictType.setSystemFlag(false);
         dictTypeMapper.insert(dictType);
@@ -54,14 +54,14 @@ public class DictService {
     }
 
     public DictType getTypeByCode(String code) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         return dictTypeMapper.selectOne(new LambdaQueryWrapper<DictType>()
                 .eq(DictType::getTenantId, tenantId)
                 .eq(DictType::getCode, code));
     }
 
     public IPage<DictType> listTypes(DictTypeQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<DictType> page = new Page<>(query.getPageNum(), query.getPageSize());
         LambdaQueryWrapper<DictType> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(DictType::getTenantId, tenantId);

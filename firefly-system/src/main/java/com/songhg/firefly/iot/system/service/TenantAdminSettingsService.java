@@ -3,7 +3,7 @@ package com.songhg.firefly.iot.system.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.system.convert.PermissionResourceConvert;
@@ -84,7 +84,7 @@ public class TenantAdminSettingsService {
             }
         }
 
-        Long operatorId = UserContextHolder.getUserId();
+        Long operatorId = AppContextHolder.getUserId();
         SystemConfig existing = systemConfigMapper.selectOne(new LambdaQueryWrapper<SystemConfig>()
                 .eq(SystemConfig::getTenantId, GLOBAL_CONFIG_TENANT_ID)
                 .eq(SystemConfig::getConfigKey, CONFIG_KEY)

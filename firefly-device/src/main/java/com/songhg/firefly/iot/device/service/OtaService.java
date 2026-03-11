@@ -3,8 +3,8 @@ package com.songhg.firefly.iot.device.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.FirmwareStatus;
 import com.songhg.firefly.iot.common.enums.OtaDeviceStatus;
 import com.songhg.firefly.iot.common.enums.OtaTaskStatus;
@@ -48,7 +48,7 @@ public class OtaService {
 
     @Transactional
     public FirmwareVO createFirmware(FirmwareCreateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
 
         LambdaQueryWrapper<Firmware> check = new LambdaQueryWrapper<>();
         check.eq(Firmware::getProductId, dto.getProductId()).eq(Firmware::getVersion, dto.getVersion());
@@ -59,7 +59,7 @@ public class OtaService {
         Firmware firmware = OtaConvert.INSTANCE.toFirmwareEntity(dto);
         firmware.setTenantId(tenantId);
         firmware.setStatus(FirmwareStatus.DRAFT);
-        firmware.setCreatedBy(UserContextHolder.getUserId());
+        firmware.setCreatedBy(AppContextHolder.getUserId());
         firmwareMapper.insert(firmware);
 
         log.info("Firmware created: id={}, product={}, version={}", firmware.getId(), dto.getProductId(), dto.getVersion());
@@ -76,7 +76,7 @@ public class OtaService {
 
     @DataScope
     public IPage<FirmwareVO> listFirmwares(FirmwareQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<Firmware> page = new Page<>(query.getPageNum(), query.getPageSize());
 
         LambdaQueryWrapper<Firmware> wrapper = new LambdaQueryWrapper<>();
@@ -156,7 +156,7 @@ public class OtaService {
 
     @Transactional
     public OtaTaskVO createOtaTask(OtaTaskCreateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
 
         Firmware firmware = firmwareMapper.selectById(dto.getFirmwareId());
         if (firmware == null) {
@@ -172,7 +172,7 @@ public class OtaService {
         task.setTotalCount(0);
         task.setSuccessCount(0);
         task.setFailureCount(0);
-        task.setCreatedBy(UserContextHolder.getUserId());
+        task.setCreatedBy(AppContextHolder.getUserId());
         otaTaskMapper.insert(task);
 
         log.info("OTA task created: id={}, name={}, firmware={}", task.getId(), task.getName(), dto.getFirmwareId());
@@ -197,7 +197,7 @@ public class OtaService {
 
     @DataScope
     public IPage<OtaTaskVO> listOtaTasks(OtaTaskQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<OtaTask> page = new Page<>(query.getPageNum(), query.getPageSize());
 
         LambdaQueryWrapper<OtaTask> wrapper = new LambdaQueryWrapper<>();

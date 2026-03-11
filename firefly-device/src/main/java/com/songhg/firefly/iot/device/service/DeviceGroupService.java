@@ -3,8 +3,8 @@ package com.songhg.firefly.iot.device.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.device.convert.DeviceGroupConvert;
@@ -35,8 +35,8 @@ public class DeviceGroupService {
 
     @Transactional
     public DeviceGroup createGroup(String name, String description, String type, String dynamicRule, Long parentId) {
-        Long tenantId = TenantContextHolder.getTenantId();
-        Long userId = UserContextHolder.getUserId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
 
         DeviceGroup group = new DeviceGroup();
         group.setTenantId(tenantId);
@@ -62,7 +62,7 @@ public class DeviceGroupService {
     }
 
     public IPage<DeviceGroup> listGroups(DeviceGroupQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<DeviceGroup> page = new Page<>(query.getPageNum(), query.getPageSize());
         LambdaQueryWrapper<DeviceGroup> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(DeviceGroup::getTenantId, tenantId);
@@ -74,7 +74,7 @@ public class DeviceGroupService {
     }
 
     public List<DeviceGroup> listAll() {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         return groupMapper.selectList(new LambdaQueryWrapper<DeviceGroup>()
                 .eq(DeviceGroup::getTenantId, tenantId)
                 .orderByAsc(DeviceGroup::getName));

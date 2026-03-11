@@ -7,7 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
@@ -50,7 +50,7 @@ public class MybatisPlusConfig {
                 new TenantLineHandler() {
                     @Override
                     public Expression getTenantId() {
-                        Long tenantId = TenantContextHolder.getTenantId();
+                        Long tenantId = AppContextHolder.getTenantId();
                         if (tenantId == null) {
                             throw new IllegalStateException("Tenant context not set");
                         }

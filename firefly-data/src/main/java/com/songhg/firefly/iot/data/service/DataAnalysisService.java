@@ -1,6 +1,6 @@
 package com.songhg.firefly.iot.data.service;
 
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.data.dto.analysis.AggregationQueryDTO;
 import com.songhg.firefly.iot.data.dto.analysis.DataExportDTO;
 import com.songhg.firefly.iot.data.dto.analysis.TimeSeriesQueryDTO;
@@ -28,7 +28,7 @@ public class DataAnalysisService {
      * 查询时序数据
      */
     public Map<String, Object> queryTimeSeries(TimeSeriesQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         StringBuilder sql = new StringBuilder("SELECT time, device_id, property_name, value_double, value_string FROM device_telemetry WHERE tenant_id = ?");
         List<Object> params = new ArrayList<>();
         params.add(tenantId);
@@ -79,7 +79,7 @@ public class DataAnalysisService {
      * 聚合统计查询（使用 TimescaleDB time_bucket）
      */
     public List<Map<String, Object>> queryAggregation(AggregationQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
 
         String agg = query.getAggregation() != null ? query.getAggregation().toUpperCase() : "AVG";
         if (!VALID_AGGREGATIONS.contains(agg)) agg = "AVG";
@@ -132,7 +132,7 @@ public class DataAnalysisService {
      * 获取设备统计概览
      */
     public Map<String, Object> getDeviceStats(Long deviceId, String property, String startTime, String endTime) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
 
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT COUNT(*) AS count, AVG(value_double) AS avg, MIN(value_double) AS min, ");
@@ -161,7 +161,7 @@ public class DataAnalysisService {
      * 导出数据为 CSV
      */
     public byte[] exportData(DataExportDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
 
         StringBuilder sql = new StringBuilder("SELECT time, device_id, property_name, value_double, value_string FROM device_telemetry WHERE tenant_id = ?");
         List<Object> params = new ArrayList<>();

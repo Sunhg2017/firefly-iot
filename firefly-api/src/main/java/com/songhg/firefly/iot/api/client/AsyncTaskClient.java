@@ -1,10 +1,10 @@
 package com.songhg.firefly.iot.api.client;
 
+import com.songhg.firefly.iot.api.dto.AsyncTaskCreateDTO;
+import com.songhg.firefly.iot.api.dto.AsyncTaskVO;
 import com.songhg.firefly.iot.common.result.R;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
 
 /**
  * 异步任务服务 Feign Client（供其他微服务调用 support 服务的异步任务功能）
@@ -16,7 +16,13 @@ public interface AsyncTaskClient {
      * 创建异步任务
      */
     @PostMapping
-    R<Map<String, Object>> createTask(@RequestBody Map<String, Object> taskData);
+    R<AsyncTaskVO> createTask(@RequestBody AsyncTaskCreateDTO dto);
+
+    /**
+     * 查询任务详情
+     */
+    @GetMapping("/{taskId}")
+    R<AsyncTaskVO> getTask(@PathVariable("taskId") Long taskId);
 
     /**
      * 更新任务进度

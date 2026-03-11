@@ -1,8 +1,8 @@
 package com.songhg.firefly.iot.support.notification.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.support.notification.convert.NotificationConvert;
 import com.songhg.firefly.iot.support.notification.dto.notification.NotificationChannelCreateDTO;
 import com.songhg.firefly.iot.support.notification.dto.notification.NotificationChannelVO;
@@ -25,7 +25,7 @@ public class NotificationChannelService {
     private final NotificationChannelMapper channelMapper;
 
     public List<NotificationChannelVO> listAll() {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         LambdaQueryWrapper<NotificationChannel> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(NotificationChannel::getTenantId, tenantId)
                 .orderByAsc(NotificationChannel::getType)
@@ -35,7 +35,7 @@ public class NotificationChannelService {
     }
 
     public List<NotificationChannelVO> listByType(String type) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         LambdaQueryWrapper<NotificationChannel> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(NotificationChannel::getTenantId, tenantId)
                 .eq(NotificationChannel::getType, type)
@@ -51,14 +51,14 @@ public class NotificationChannelService {
 
     @Transactional
     public NotificationChannelVO create(NotificationChannelCreateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         NotificationChannel channel = new NotificationChannel();
         channel.setTenantId(tenantId);
         channel.setName(dto.getName());
         channel.setType(dto.getType());
         channel.setConfig(dto.getConfig());
         channel.setEnabled(dto.getEnabled() != null ? dto.getEnabled() : true);
-        channel.setCreatedBy(UserContextHolder.getUserId());
+        channel.setCreatedBy(AppContextHolder.getUserId());
         channel.setCreatedAt(LocalDateTime.now());
         channel.setUpdatedAt(LocalDateTime.now());
         channelMapper.insert(channel);

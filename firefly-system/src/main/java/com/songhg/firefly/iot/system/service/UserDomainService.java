@@ -1,8 +1,8 @@
 package com.songhg.firefly.iot.system.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.UserType;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
@@ -23,7 +23,7 @@ public class UserDomainService {
     private final TenantMapper tenantMapper;
 
     public User requireCurrentUser() {
-        Long userId = UserContextHolder.getUserId();
+        Long userId = AppContextHolder.getUserId();
         if (userId == null) {
             throw new BizException(ResultCode.UNAUTHORIZED);
         }
@@ -87,7 +87,7 @@ public class UserDomainService {
         if (current.getUserType() != UserType.TENANT_USER) {
             return false;
         }
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         if (tenantId == null) {
             tenantId = current.getTenantId();
         }
@@ -105,7 +105,7 @@ public class UserDomainService {
         if (current.getUserType() == UserType.SYSTEM_OPS) {
             return isPlatformSuperAdmin(current.getId());
         }
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         if (tenantId == null) {
             tenantId = current.getTenantId();
         }

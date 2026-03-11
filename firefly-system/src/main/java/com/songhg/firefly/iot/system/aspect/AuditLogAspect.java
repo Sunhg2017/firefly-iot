@@ -2,8 +2,8 @@ package com.songhg.firefly.iot.system.aspect;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.audit.Auditable;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.system.entity.AuditLog;
 import com.songhg.firefly.iot.system.service.AuditLogService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -48,10 +48,10 @@ public class AuditLogAspect {
         auditLog.setCreatedAt(LocalDateTime.now());
 
         try {
-            auditLog.setTenantId(TenantContextHolder.getTenantId());
+            auditLog.setTenantId(AppContextHolder.getTenantId());
         } catch (Exception ignored) {}
         try {
-            auditLog.setUserId(UserContextHolder.getUserId());
+            auditLog.setUserId(AppContextHolder.getUserId());
         } catch (Exception ignored) {}
 
         // Extract request info

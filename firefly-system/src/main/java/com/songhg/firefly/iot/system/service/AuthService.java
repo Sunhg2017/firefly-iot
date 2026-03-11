@@ -4,8 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.songhg.firefly.iot.common.constant.AuthConstants;
-import com.songhg.firefly.iot.common.context.TenantContext;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContext;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.LoginMethod;
 import com.songhg.firefly.iot.common.enums.Platform;
 import com.songhg.firefly.iot.common.enums.SessionStatus;
@@ -655,17 +655,17 @@ public class AuthService {
     }
 
     private <T> T withTenantContext(Long tenantId, Supplier<T> supplier) {
-        TenantContext previous = TenantContextHolder.get();
-        TenantContext current = new TenantContext();
-        current.setTenantId(tenantId);
-        TenantContextHolder.set(current);
+        AppContext previous = AppContextHolder.get();
+        AppContext temp = new AppContext();
+        temp.setTenantId(tenantId);
+        AppContextHolder.set(temp);
         try {
             return supplier.get();
         } finally {
             if (previous != null) {
-                TenantContextHolder.set(previous);
+                AppContextHolder.set(previous);
             } else {
-                TenantContextHolder.clear();
+                AppContextHolder.clear();
             }
         }
     }

@@ -1,8 +1,8 @@
 package com.songhg.firefly.iot.support.notification.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.support.notification.dto.notification.NotificationTemplateUpdateDTO;
 import com.songhg.firefly.iot.support.notification.dto.notification.NotificationTemplateVO;
 import com.songhg.firefly.iot.support.notification.entity.NotificationTemplate;
@@ -31,7 +31,7 @@ public class NotificationTemplateService {
     // ==================== CRUD ====================
 
     public List<NotificationTemplateVO> listAll() {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         LambdaQueryWrapper<NotificationTemplate> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(NotificationTemplate::getTenantId, tenantId)
                 .orderByAsc(NotificationTemplate::getChannel)
@@ -41,7 +41,7 @@ public class NotificationTemplateService {
     }
 
     public List<NotificationTemplateVO> listByChannel(String channel) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         LambdaQueryWrapper<NotificationTemplate> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(NotificationTemplate::getTenantId, tenantId)
                 .eq(NotificationTemplate::getChannel, channel)
@@ -57,7 +57,7 @@ public class NotificationTemplateService {
 
     @Transactional
     public NotificationTemplateVO create(NotificationTemplateUpdateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         NotificationTemplate template = new NotificationTemplate();
         template.setTenantId(tenantId);
         template.setCode(dto.getName().toUpperCase().replace(" ", "_"));
@@ -67,7 +67,7 @@ public class NotificationTemplateService {
         template.setContent(dto.getContent());
         template.setVariables(dto.getVariables());
         template.setEnabled(dto.getEnabled() != null ? dto.getEnabled() : true);
-        template.setUpdatedBy(UserContextHolder.getUserId());
+        template.setUpdatedBy(AppContextHolder.getUserId());
         template.setCreatedAt(LocalDateTime.now());
         template.setUpdatedAt(LocalDateTime.now());
         templateMapper.insert(template);
@@ -85,7 +85,7 @@ public class NotificationTemplateService {
         if (dto.getContent() != null) template.setContent(dto.getContent());
         if (dto.getVariables() != null) template.setVariables(dto.getVariables());
         if (dto.getEnabled() != null) template.setEnabled(dto.getEnabled());
-        template.setUpdatedBy(UserContextHolder.getUserId());
+        template.setUpdatedBy(AppContextHolder.getUserId());
         template.setUpdatedAt(LocalDateTime.now());
         templateMapper.updateById(template);
         return toVO(template);
@@ -99,7 +99,7 @@ public class NotificationTemplateService {
     // ==================== Internal (for NotificationSender) ====================
 
     public NotificationTemplate getEntityByCode(String code) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         LambdaQueryWrapper<NotificationTemplate> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(NotificationTemplate::getTenantId, tenantId)
                 .eq(NotificationTemplate::getCode, code);

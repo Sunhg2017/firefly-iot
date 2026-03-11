@@ -1,8 +1,8 @@
 package com.songhg.firefly.iot.system.aspect;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.system.annotation.OperLog;
 import com.songhg.firefly.iot.system.entity.OperationLog;
 import com.songhg.firefly.iot.system.service.OperationLogService;
@@ -43,10 +43,10 @@ public class OperLogAspect {
         operLog.setMethod(signature.getDeclaringTypeName() + "." + method.getName());
 
         try {
-            operLog.setTenantId(TenantContextHolder.getTenantId());
+            operLog.setTenantId(AppContextHolder.getTenantId());
         } catch (Exception ignored) {}
         try {
-            operLog.setUserId(UserContextHolder.getUserId());
+            operLog.setUserId(AppContextHolder.getUserId());
         } catch (Exception ignored) {}
 
         ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();

@@ -2,7 +2,7 @@ package com.songhg.firefly.iot.support.notification.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.support.notification.entity.NotificationChannel;
 import com.songhg.firefly.iot.support.notification.entity.NotificationRecord;
 import com.songhg.firefly.iot.support.notification.mapper.NotificationChannelMapper;
@@ -47,7 +47,7 @@ public class NotificationSender {
         String content = template != null ? templateService.render(template.getContent(), variables) : "";
 
         NotificationRecord record = new NotificationRecord();
-        record.setTenantId(TenantContextHolder.getTenantId());
+        record.setTenantId(AppContextHolder.getTenantId());
         record.setChannelId(channelId);
         record.setChannelType(channel.getType());
         record.setTemplateCode(templateCode);

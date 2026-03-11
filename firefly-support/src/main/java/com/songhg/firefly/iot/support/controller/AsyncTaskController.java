@@ -41,7 +41,7 @@ public class AsyncTaskController {
     public R<AsyncTaskVO> createTask(@Valid @RequestBody AsyncTaskCreateDTO dto) {
         AsyncTask task = asyncTaskService.createTask(
                 dto.getTaskName(), dto.getTaskType(), dto.getBizType(),
-                dto.getFileFormat(), dto.getQueryParams());
+                dto.getFileFormat(), dto.getExtraData());
         return R.ok(AsyncTaskConvert.INSTANCE.toVO(task));
     }
 
@@ -72,7 +72,11 @@ public class AsyncTaskController {
     @RequiresPermission("export:read")
     public ResponseEntity<Resource> download(@Parameter(description = "任务编号", required = true) @PathVariable Long id) {
         AsyncTask task = asyncTaskService.getTask(id);
-        if (task == null || task.getResultUrl() == null || !"COMPLETED".equals(task.getStatus())) {
+        if (task == null || task.getResultUrl() == null) {
+            return ResponseEntity.notFound().build();
+        }
+        // 允许下载已完成或已失败（含错误文件）的任务
+        if (!"COMPLETED".equals(task.getStatus()) && !"FAILED".equals(task.getStatus())) {
             return ResponseEntity.notFound().build();
         }
 

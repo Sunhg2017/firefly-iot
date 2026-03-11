@@ -3,9 +3,8 @@ package com.songhg.firefly.iot.system.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContext;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContext;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.constant.AuthConstants;
 import com.songhg.firefly.iot.common.event.EventPublisher;
 import com.songhg.firefly.iot.common.event.EventTopics;
@@ -100,7 +99,7 @@ public class TenantService {
         tenant.setIsolationConfig("{}");
         tenantMapper.insert(tenant);
 
-        Long operatorId = UserContextHolder.getUserId();
+        Long operatorId = AppContextHolder.getUserId();
         Long adminUserId = withTenantContext(tenant.getId(), () -> {
             TenantQuota quota = createQuotaForPlan(tenant.getId(), tenant.getPlan());
             tenantQuotaMapper.insert(quota);
@@ -196,14 +195,14 @@ public class TenantService {
         log.info("Tenant status changed: id={}, status={}", id, status);
 
         // Publish event
-        Long operatorId = UserContextHolder.getUserId();
+        Long operatorId = AppContextHolder.getUserId();
         eventPublisher.publish(EventTopics.TENANT_EVENTS,
                 TenantEvent.statusChanged(id, tenant.getCode(),
                         oldStatus != null ? oldStatus.getValue() : null,
                         status.getValue(), operatorId));
     }
 
-    public TenantContext loadTenantContext(Long tenantId) {
+    public AppContext loadTenantContext(Long tenantId) {
         // Try Redis cache first
         String cacheKey = AuthConstants.REDIS_TENANT_CTX + tenantId;
         // For simplicity, load from DB (in production, check Redis L2 first)
@@ -215,7 +214,7 @@ public class TenantService {
             throw new BizException(ResultCode.TENANT_DISABLED, "租户状态异常: " + tenant.getStatus());
         }
 
-        TenantContext ctx = new TenantContext();
+        AppContext ctx = new AppContext();
         ctx.setTenantId(tenant.getId());
         ctx.setTenantCode(tenant.getCode());
         ctx.setPlan(tenant.getPlan());
@@ -307,7 +306,7 @@ public class TenantService {
         evictTenantCache(tenantId);
         log.info("Tenant plan updated: id={}, {} -> {}", tenantId, oldPlan, newPlan);
 
-        Long operatorId = UserContextHolder.getUserId();
+        Long operatorId = AppContextHolder.getUserId();
         eventPublisher.publish(EventTopics.TENANT_EVENTS,
                 TenantEvent.statusChanged(tenantId, tenant.getCode(),
                         oldPlan != null ? oldPlan.name() : null, newPlan.name(), operatorId));
@@ -466,7 +465,7 @@ public class TenantService {
         evictTenantCache(tenantId);
         log.info("Tenant deactivated: id={}, code={}", tenantId, tenant.getCode());
 
-        Long operatorId = UserContextHolder.getUserId();
+        Long operatorId = AppContextHolder.getUserId();
         eventPublisher.publish(EventTopics.TENANT_EVENTS,
                 TenantEvent.statusChanged(tenantId, tenant.getCode(),
                         tenant.getStatus().getValue(), TenantStatus.DEACTIVATING.getValue(), operatorId));
@@ -593,7 +592,7 @@ public class TenantService {
         created.setDataScope(DataScopeType.ALL);
         created.setSystemFlag(true);
         created.setStatus(RoleStatus.ACTIVE);
-        created.setCreatedBy(UserContextHolder.getUserId());
+        created.setCreatedBy(AppContextHolder.getUserId());
         roleMapper.insert(created);
         return created;
     }
@@ -622,17 +621,17 @@ public class TenantService {
     }
 
     private <T> T withTenantContext(Long tenantId, Supplier<T> supplier) {
-        TenantContext previous = TenantContextHolder.get();
-        TenantContext current = new TenantContext();
-        current.setTenantId(tenantId);
-        TenantContextHolder.set(current);
+        AppContext previous = AppContextHolder.get();
+        AppContext temp = new AppContext();
+        temp.setTenantId(tenantId);
+        AppContextHolder.set(temp);
         try {
             return supplier.get();
         } finally {
             if (previous != null) {
-                TenantContextHolder.set(previous);
+                AppContextHolder.set(previous);
             } else {
-                TenantContextHolder.clear();
+                AppContextHolder.clear();
             }
         }
     }

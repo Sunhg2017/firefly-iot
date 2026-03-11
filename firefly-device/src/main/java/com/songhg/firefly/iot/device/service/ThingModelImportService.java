@@ -6,8 +6,11 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.songhg.firefly.iot.api.client.AsyncTaskClient;
 import com.songhg.firefly.iot.api.client.FileClient;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.api.dto.AsyncTaskCreateDTO;
+import com.songhg.firefly.iot.api.dto.AsyncTaskVO;
+import com.songhg.firefly.iot.common.context.AsyncContextHelper;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.result.ResultCode;
@@ -46,6 +49,8 @@ public class ThingModelImportService {
     private final AsyncTaskClient asyncTaskClient;
     private final ObjectMapper objectMapper;
 
+    private static final int MAX_ERROR_MESSAGE_LENGTH = 500;
+
     /**
      * 注册物模型异步导入任务
      */
@@ -56,27 +61,27 @@ public class ThingModelImportService {
             throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
         }
 
-        // 创建异步任务
-        Map<String, Object> taskData = new HashMap<>();
-        taskData.put("taskName", "物模型导入: " + product.getName());
-        taskData.put("taskType", "IMPORT");
-        taskData.put("bizType", "THING_MODEL_IMPORT");
-        taskData.put("fileFormat", dto.getFileFormat());
-        taskData.put("queryParams", productId + ":" + dto.getFileKey() + ":" + dto.getImportType());
+        // 使用强类型 DTO 创建异步任务
+        AsyncTaskCreateDTO createDTO = new AsyncTaskCreateDTO();
+        createDTO.setTaskName("物模型导入: " + product.getName());
+        createDTO.setTaskType("IMPORT");
+        createDTO.setBizType("THING_MODEL_IMPORT");
+        createDTO.setFileFormat(dto.getFileFormat());
+        createDTO.setExtraData(productId + ":" + dto.getFileKey() + ":" + dto.getImportType());
 
-        R<Map<String, Object>> taskResult = asyncTaskClient.createTask(taskData);
+        R<AsyncTaskVO> taskResult = asyncTaskClient.createTask(createDTO);
         if (taskResult == null || taskResult.getData() == null) {
             throw new BizException(ResultCode.INTERNAL_ERROR, "创建导入任务失败");
         }
 
-        Long taskId = Long.valueOf(taskResult.getData().get("id").toString());
-        Long tenantId = TenantContextHolder.getTenantId();
-        Long userId = UserContextHolder.getUserId();
+        Long taskId = taskResult.getData().getId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
 
         // 异步执行导入
         executeImportAsync(taskId, productId, dto, tenantId, userId);
 
-        log.info("Thing model import task registered: taskId={}, productId={}, fileKey={}", taskId, productId, dto.getFileKey());
+        log.info("物模型导入任务已注册: taskId={}, productId={}, fileKey={}", taskId, productId, dto.getFileKey());
         return taskId;
     }
 
@@ -87,8 +92,7 @@ public class ThingModelImportService {
     @Transactional
     public void executeImportAsync(Long taskId, Long productId, ThingModelImportDTO dto, Long tenantId, Long userId) {
         try {
-            TenantContextHolder.setTenantId(tenantId);
-            UserContextHolder.setUserId(userId);
+            AsyncContextHelper.setContext(tenantId, userId);
 
             asyncTaskClient.updateProgress(taskId, 10);
 
@@ -126,15 +130,24 @@ public class ThingModelImportService {
 
             // 完成任务
             asyncTaskClient.completeTask(taskId, true, null, 1, null);
-            log.info("Thing model import completed: taskId={}, productId={}", taskId, productId);
+            log.info("物模型导入完成: taskId={}, productId={}", taskId, productId);
 
         } catch (Exception e) {
-            log.error("Thing model import error: taskId={}, error={}", taskId, e.getMessage(), e);
-            asyncTaskClient.failTask(taskId, "导入失败: " + e.getMessage());
+            log.error("物模型导入异常: taskId={}, error={}", taskId, e.getMessage(), e);
+            asyncTaskClient.failTask(taskId, truncateMessage("导入失败: " + e.getMessage()));
         } finally {
-            TenantContextHolder.clear();
-            UserContextHolder.clear();
+            AsyncContextHelper.clearContext();
         }
+    }
+
+    /**
+     * 截断过长的错误信息
+     */
+    private String truncateMessage(String message) {
+        if (message == null) return null;
+        return message.length() > MAX_ERROR_MESSAGE_LENGTH
+                ? message.substring(0, MAX_ERROR_MESSAGE_LENGTH)
+                : message;
     }
 
     /**

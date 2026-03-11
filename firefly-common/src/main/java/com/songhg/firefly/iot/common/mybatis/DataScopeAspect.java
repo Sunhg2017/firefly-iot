@@ -1,7 +1,7 @@
 package com.songhg.firefly.iot.common.mybatis;
 
-import com.songhg.firefly.iot.common.context.UserContext;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContext;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.Aspect;
@@ -34,8 +34,8 @@ public class DataScopeAspect {
 
     @Before("@annotation(com.songhg.firefly.iot.common.mybatis.DataScope)")
     public void setDataScope(JoinPoint joinPoint) {
-        UserContext userCtx = UserContextHolder.get();
-        if (userCtx == null || userCtx.getUserId() == null) {
+        AppContext appCtx = AppContextHolder.get();
+        if (appCtx == null || appCtx.getUserId() == null) {
             return;
         }
 
@@ -50,7 +50,7 @@ public class DataScopeAspect {
         if (resolver == null) {
             return;
         }
-        DataScopeContext ctx = resolver.resolve(userCtx.getUserId(), userCtx.getTenantId());
+        DataScopeContext ctx = resolver.resolve(appCtx.getUserId(), appCtx.getTenantId());
         if (ctx != null) {
             ctx.setTableAlias(annotation.tableAlias());
             ctx.setProjectColumn(annotation.projectColumn());
@@ -58,7 +58,7 @@ public class DataScopeAspect {
             ctx.setCreatedByColumn(annotation.createdByColumn());
             DataScopeContextHolder.set(ctx);
             log.debug("DataScope set: userId={}, scope={}, projectIds={}",
-                    userCtx.getUserId(), ctx.getScopeType(), ctx.getProjectIds());
+                    appCtx.getUserId(), ctx.getScopeType(), ctx.getProjectIds());
         }
     }
 }

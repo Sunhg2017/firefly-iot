@@ -3,8 +3,8 @@ package com.songhg.firefly.iot.rule.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.RuleEngineStatus;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.mybatis.DataScope;
@@ -37,8 +37,8 @@ public class RuleEngineService {
 
     @Transactional
     public RuleEngineVO createRule(RuleEngineCreateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
-        Long userId = UserContextHolder.getUserId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
 
         RuleEngine rule = RuleEngineConvert.INSTANCE.toEntity(dto);
         rule.setTenantId(tenantId);
@@ -67,7 +67,7 @@ public class RuleEngineService {
 
     @DataScope
     public IPage<RuleEngineVO> listRules(RuleEngineQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<RuleEngine> page = new Page<>(query.getPageNum(), query.getPageSize());
 
         LambdaQueryWrapper<RuleEngine> wrapper = new LambdaQueryWrapper<>();

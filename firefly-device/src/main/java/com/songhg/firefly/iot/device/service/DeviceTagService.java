@@ -3,7 +3,7 @@ package com.songhg.firefly.iot.device.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.device.dto.devicetag.DeviceTagQueryDTO;
@@ -30,7 +30,7 @@ public class DeviceTagService {
 
     @Transactional
     public DeviceTag createTag(String tagKey, String tagValue, String color, String description) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
 
         Long exists = tagMapper.selectCount(new LambdaQueryWrapper<DeviceTag>()
                 .eq(DeviceTag::getTenantId, tenantId)
@@ -52,7 +52,7 @@ public class DeviceTagService {
     }
 
     public IPage<DeviceTag> listTags(DeviceTagQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<DeviceTag> page = new Page<>(query.getPageNum(), query.getPageSize());
         LambdaQueryWrapper<DeviceTag> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(DeviceTag::getTenantId, tenantId);
@@ -64,7 +64,7 @@ public class DeviceTagService {
     }
 
     public List<DeviceTag> listAll() {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         return tagMapper.selectList(new LambdaQueryWrapper<DeviceTag>()
                 .eq(DeviceTag::getTenantId, tenantId)
                 .orderByAsc(DeviceTag::getTagKey));

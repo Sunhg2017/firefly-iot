@@ -4,8 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.support.convert.InAppMessageConvert;
@@ -27,8 +27,8 @@ public class InAppMessageService {
     private final InAppMessageMapper inAppMessageMapper;
 
     public IPage<InAppMessageVO> listMyMessages(InAppMessageQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
-        Long userId = UserContextHolder.getUserId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
 
         LambdaQueryWrapper<InAppMessage> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(InAppMessage::getTenantId, tenantId)
@@ -46,7 +46,7 @@ public class InAppMessageService {
     }
 
     public int countUnread() {
-        return inAppMessageMapper.countUnread(TenantContextHolder.getTenantId(), UserContextHolder.getUserId());
+        return inAppMessageMapper.countUnread(AppContextHolder.getTenantId(), AppContextHolder.getUserId());
     }
 
     public void markAsRead(Long id) {
@@ -54,7 +54,7 @@ public class InAppMessageService {
         if (msg == null) {
             throw new BizException(ResultCode.NOT_FOUND, "站内信不存在");
         }
-        if (!msg.getUserId().equals(UserContextHolder.getUserId())) {
+        if (!msg.getUserId().equals(AppContextHolder.getUserId())) {
             throw new BizException(ResultCode.FORBIDDEN, "无权操作");
         }
         if (Boolean.TRUE.equals(msg.getIsRead())) {
@@ -68,8 +68,8 @@ public class InAppMessageService {
     }
 
     public void markAllAsRead() {
-        Long tenantId = TenantContextHolder.getTenantId();
-        Long userId = UserContextHolder.getUserId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
         LambdaUpdateWrapper<InAppMessage> wrapper = new LambdaUpdateWrapper<>();
         wrapper.eq(InAppMessage::getTenantId, tenantId)
                 .eq(InAppMessage::getUserId, userId)
@@ -84,7 +84,7 @@ public class InAppMessageService {
         if (msg == null) {
             throw new BizException(ResultCode.NOT_FOUND, "站内信不存在");
         }
-        if (!msg.getUserId().equals(UserContextHolder.getUserId())) {
+        if (!msg.getUserId().equals(AppContextHolder.getUserId())) {
             throw new BizException(ResultCode.FORBIDDEN, "无权操作");
         }
         inAppMessageMapper.deleteById(id);
@@ -92,7 +92,7 @@ public class InAppMessageService {
 
     public InAppMessageVO sendMessage(InAppMessageCreateDTO dto) {
         InAppMessage msg = new InAppMessage();
-        msg.setTenantId(TenantContextHolder.getTenantId());
+        msg.setTenantId(AppContextHolder.getTenantId());
         msg.setUserId(dto.getUserId());
         msg.setTitle(dto.getTitle());
         msg.setContent(dto.getContent());
@@ -101,14 +101,14 @@ public class InAppMessageService {
         msg.setSource(dto.getSource());
         msg.setSourceId(dto.getSourceId());
         msg.setIsRead(false);
-        msg.setCreatedBy(UserContextHolder.getUserId());
+        msg.setCreatedBy(AppContextHolder.getUserId());
         inAppMessageMapper.insert(msg);
         return InAppMessageConvert.INSTANCE.toVO(msg);
     }
 
     public void sendBatch(List<Long> userIds, String title, String content, String type, String level, String source, String sourceId) {
-        Long tenantId = TenantContextHolder.getTenantId();
-        Long createdBy = UserContextHolder.getUserId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long createdBy = AppContextHolder.getUserId();
         for (Long userId : userIds) {
             InAppMessage msg = new InAppMessage();
             msg.setTenantId(tenantId);

@@ -6,57 +6,57 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * Async task view object.
+ * 异步任务视图对象
  */
 @Data
-@Schema(description = "Async task view object")
+@Schema(description = "异步任务视图对象")
 public class AsyncTaskVO {
 
-    @Schema(description = "Task ID")
+    @Schema(description = "任务ID")
     private Long id;
 
-    @Schema(description = "Task name")
+    @Schema(description = "任务名称")
     private String taskName;
 
-    @Schema(description = "Task type")
+    @Schema(description = "任务类型")
     private String taskType;
 
-    @Schema(description = "Business type")
+    @Schema(description = "业务类型")
     private String bizType;
 
-    @Schema(description = "File format")
+    @Schema(description = "文件格式")
     private String fileFormat;
 
-    @Schema(description = "Status")
+    @Schema(description = "状态")
     private String status;
 
-    @Schema(description = "Progress (0-100)")
+    @Schema(description = "进度 (0-100)")
     private Integer progress;
 
-    @Schema(description = "Query parameters (JSON)")
-    private String queryParams;
+    @Schema(description = "附加业务数据（JSON 字符串）")
+    private String extraData;
 
-    @Schema(description = "Result file URL")
+    @Schema(description = "结果文件路径")
     private String resultUrl;
 
-    @Schema(description = "Result file size in bytes")
+    @Schema(description = "结果文件大小（字节）")
     private Long resultSize;
 
-    @Schema(description = "Total rows")
+    @Schema(description = "总行数")
     private Integer totalRows;
 
-    @Schema(description = "Error message")
+    @Schema(description = "错误信息")
     private String errorMessage;
 
-    @Schema(description = "Creator user ID")
+    @Schema(description = "创建者用户ID")
     private Long createdBy;
 
-    @Schema(description = "Completion time")
+    @Schema(description = "完成时间")
     private LocalDateTime completedAt;
 
-    @Schema(description = "Creation time")
+    @Schema(description = "创建时间")
     private LocalDateTime createdAt;
 
-    @Schema(description = "Last update time")
+    @Schema(description = "更新时间")
     private LocalDateTime updatedAt;
 }

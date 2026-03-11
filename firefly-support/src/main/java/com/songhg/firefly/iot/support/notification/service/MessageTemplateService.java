@@ -3,8 +3,8 @@ package com.songhg.firefly.iot.support.notification.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.support.notification.dto.messagetemplate.MessageTemplateQueryDTO;
@@ -31,8 +31,8 @@ public class MessageTemplateService {
 
     @Transactional
     public MessageTemplate create(MessageTemplate template) {
-        Long tenantId = TenantContextHolder.getTenantId();
-        Long userId = UserContextHolder.getUserId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
 
         Long exists = templateMapper.selectCount(new LambdaQueryWrapper<MessageTemplate>()
                 .eq(MessageTemplate::getTenantId, tenantId)
@@ -56,14 +56,14 @@ public class MessageTemplateService {
     }
 
     public MessageTemplate getByCode(String code) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         return templateMapper.selectOne(new LambdaQueryWrapper<MessageTemplate>()
                 .eq(MessageTemplate::getTenantId, tenantId)
                 .eq(MessageTemplate::getCode, code));
     }
 
     public IPage<MessageTemplate> list(MessageTemplateQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<MessageTemplate> page = new Page<>(query.getPageNum(), query.getPageSize());
         LambdaQueryWrapper<MessageTemplate> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(MessageTemplate::getTenantId, tenantId);
@@ -84,7 +84,7 @@ public class MessageTemplateService {
     }
 
     public List<MessageTemplate> listByChannel(String channel) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         return templateMapper.selectList(new LambdaQueryWrapper<MessageTemplate>()
                 .eq(MessageTemplate::getTenantId, tenantId)
                 .eq(MessageTemplate::getChannel, channel)

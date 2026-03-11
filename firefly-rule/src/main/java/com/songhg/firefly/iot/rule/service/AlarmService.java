@@ -3,8 +3,8 @@ package com.songhg.firefly.iot.rule.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.AlarmStatus;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.mybatis.DataScope;
@@ -40,8 +40,8 @@ public class AlarmService {
 
     @Transactional
     public AlarmRuleVO createAlarmRule(AlarmRuleCreateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
-        Long userId = UserContextHolder.getUserId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
 
         AlarmRule rule = AlarmConvert.INSTANCE.toRuleEntity(dto);
         rule.setTenantId(tenantId);
@@ -63,7 +63,7 @@ public class AlarmService {
 
     @DataScope
     public IPage<AlarmRuleVO> listAlarmRules(AlarmRuleQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<AlarmRule> page = new Page<>(query.getPageNum(), query.getPageSize());
 
         LambdaQueryWrapper<AlarmRule> wrapper = new LambdaQueryWrapper<>();
@@ -114,7 +114,7 @@ public class AlarmService {
 
     @DataScope
     public IPage<AlarmRecordVO> listAlarmRecords(AlarmRecordQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<AlarmRecord> page = new Page<>(query.getPageNum(), query.getPageSize());
 
         LambdaQueryWrapper<AlarmRecord> wrapper = new LambdaQueryWrapper<>();
@@ -161,7 +161,7 @@ public class AlarmService {
             throw new BizException(ResultCode.ALARM_STATUS_ERROR);
         }
         record.setStatus(AlarmStatus.CONFIRMED);
-        record.setConfirmedBy(UserContextHolder.getUserId());
+        record.setConfirmedBy(AppContextHolder.getUserId());
         record.setConfirmedAt(LocalDateTime.now());
         alarmRecordMapper.updateById(record);
         log.info("Alarm record confirmed: id={}", id);
@@ -177,7 +177,7 @@ public class AlarmService {
             throw new BizException(ResultCode.ALARM_STATUS_ERROR);
         }
         record.setStatus(AlarmStatus.PROCESSED);
-        record.setProcessedBy(UserContextHolder.getUserId());
+        record.setProcessedBy(AppContextHolder.getUserId());
         record.setProcessedAt(LocalDateTime.now());
         if (dto != null && dto.getProcessRemark() != null) {
             record.setProcessRemark(dto.getProcessRemark());

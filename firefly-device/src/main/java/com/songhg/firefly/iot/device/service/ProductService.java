@@ -9,8 +9,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.songhg.firefly.iot.api.client.FileClient;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DataFormat;
 import com.songhg.firefly.iot.common.enums.DeviceAuthType;
 import com.songhg.firefly.iot.common.enums.NodeType;
@@ -53,8 +53,8 @@ public class ProductService {
 
     @Transactional
     public ProductVO createProduct(ProductCreateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
-        Long userId = UserContextHolder.getUserId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
 
         Product product = ProductConvert.INSTANCE.toEntity(dto);
         product.setTenantId(tenantId);
@@ -87,7 +87,7 @@ public class ProductService {
 
     @DataScope
     public IPage<ProductVO> listProducts(ProductQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<Product> page = new Page<>(query.getPageNum(), query.getPageSize());
 
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
@@ -210,7 +210,7 @@ public class ProductService {
             throw new BizException(ResultCode.PARAM_ERROR, "仅支持上传图片文件");
         }
 
-        String objectName = TenantContextHolder.getTenantId()
+        String objectName = AppContextHolder.getTenantId()
                 + "/product/"
                 + UUID.randomUUID().toString().replace("-", "")
                 + resolveImageExtension(file.getOriginalFilename(), contentType);

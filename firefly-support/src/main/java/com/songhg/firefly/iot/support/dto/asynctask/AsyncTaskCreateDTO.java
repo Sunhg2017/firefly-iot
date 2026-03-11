@@ -27,6 +27,6 @@ public class AsyncTaskCreateDTO {
     @Schema(description = "文件格式")
     private String fileFormat;
 
-    @Schema(description = "查询参数")
-    private String queryParams;
+    @Schema(description = "附加业务数据（JSON 字符串）")
+    private String extraData;
 }

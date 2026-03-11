@@ -3,8 +3,8 @@ package com.songhg.firefly.iot.system.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.event.EventPublisher;
 import com.songhg.firefly.iot.common.event.EventTopics;
 import com.songhg.firefly.iot.common.event.RolePermissionEvent;
@@ -56,7 +56,7 @@ public class RoleService {
 
     @Transactional
     public RoleVO createRole(RoleCreateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         if (tenantId == null) {
             throw new BizException(ResultCode.PARAM_ERROR, "tenant context required");
         }
@@ -75,7 +75,7 @@ public class RoleService {
         role.setType(RoleType.CUSTOM);
         role.setSystemFlag(false);
         role.setStatus(RoleStatus.ACTIVE);
-        role.setCreatedBy(UserContextHolder.getUserId());
+        role.setCreatedBy(AppContextHolder.getUserId());
         if (role.getDataScope() == null) {
             role.setDataScope(DataScopeType.PROJECT);
         }
@@ -146,7 +146,7 @@ public class RoleService {
             eventPublisher.publish(EventTopics.PERMISSION_EVENTS,
                     RolePermissionEvent.permissionsChanged(
                             role.getTenantId(), id, role.getCode(),
-                            dto.getPermissions(), UserContextHolder.getUserId()));
+                            dto.getPermissions(), AppContextHolder.getUserId()));
         }
 
         RoleVO updated = RoleConvert.INSTANCE.toVO(role);
@@ -219,7 +219,7 @@ public class RoleService {
         eventPublisher.publish(EventTopics.ROLE_EVENTS,
                 RolePermissionEvent.roleDeleted(
                         role.getTenantId(), id, role.getCode(),
-                        affectedUserIds, UserContextHolder.getUserId()));
+                        affectedUserIds, AppContextHolder.getUserId()));
     }
 
 }

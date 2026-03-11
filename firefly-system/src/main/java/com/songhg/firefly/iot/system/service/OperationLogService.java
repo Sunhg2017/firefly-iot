@@ -3,7 +3,7 @@ package com.songhg.firefly.iot.system.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.system.dto.operationlog.OperationLogQueryDTO;
 import com.songhg.firefly.iot.system.entity.OperationLog;
 import com.songhg.firefly.iot.system.mapper.OperationLogMapper;
@@ -36,7 +36,7 @@ public class OperationLogService {
     }
 
     public IPage<OperationLog> list(OperationLogQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<OperationLog> page = new Page<>(query.getPageNum(), query.getPageSize());
         LambdaQueryWrapper<OperationLog> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(OperationLog::getTenantId, tenantId);

@@ -1,6 +1,6 @@
 package com.songhg.firefly.iot.system.controller;
 
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresLogin;
 import com.songhg.firefly.iot.common.security.RequiresPermission;
@@ -29,7 +29,7 @@ public class TenantSelfController {
     @GetMapping
     @Operation(summary = "获取当前租户信息")
     public R<TenantVO> getCurrentTenant() {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         return R.ok(tenantService.getTenantById(tenantId));
     }
 
@@ -37,7 +37,7 @@ public class TenantSelfController {
     @RequiresPermission("tenant:manage")
     @Operation(summary = "更新当前租户信息")
     public R<TenantVO> updateCurrentTenant(@Valid @RequestBody TenantUpdateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         return R.ok(tenantService.updateTenant(tenantId, dto));
     }
 
@@ -45,7 +45,7 @@ public class TenantSelfController {
     @GetMapping("/quota")
     @Operation(summary = "获取配额与用量")
     public R<TenantQuotaUsageVO> getQuotaAndUsage() {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         return R.ok(tenantService.getQuotaAndUsage(tenantId));
     }
 
@@ -53,7 +53,7 @@ public class TenantSelfController {
     @GetMapping("/usage")
     @Operation(summary = "获取当前用量")
     public R<TenantUsageVO> getUsage() {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         return R.ok(tenantService.getUsage(tenantId));
     }
 
@@ -63,7 +63,7 @@ public class TenantSelfController {
     public R<List<TenantUsageDailyVO>> getUsageDaily(
             @Parameter(description = "开始日期") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @Parameter(description = "结束日期") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         return R.ok(tenantService.getUsageDaily(tenantId, startDate, endDate));
     }
 }

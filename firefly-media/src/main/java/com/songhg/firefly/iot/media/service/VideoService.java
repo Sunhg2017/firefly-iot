@@ -3,8 +3,8 @@ package com.songhg.firefly.iot.media.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.StreamMode;
 import com.songhg.firefly.iot.common.enums.StreamStatus;
 import com.songhg.firefly.iot.common.enums.VideoDeviceStatus;
@@ -58,11 +58,11 @@ public class VideoService {
 
     @Transactional
     public VideoDeviceVO createDevice(VideoDeviceCreateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         VideoDevice device = VideoConvert.INSTANCE.toDeviceEntity(dto);
         device.setTenantId(tenantId);
         device.setStatus(VideoDeviceStatus.OFFLINE);
-        device.setCreatedBy(UserContextHolder.getUserId());
+        device.setCreatedBy(AppContextHolder.getUserId());
         videoDeviceMapper.insert(device);
         log.info("Video device created: id={}, name={}, mode={}", device.getId(), dto.getName(), dto.getStreamMode());
         return VideoConvert.INSTANCE.toDeviceVO(device);
@@ -78,7 +78,7 @@ public class VideoService {
 
     @DataScope
     public IPage<VideoDeviceVO> listDevices(VideoDeviceQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<VideoDevice> page = new Page<>(query.getPageNum(), query.getPageSize());
 
         LambdaQueryWrapper<VideoDevice> wrapper = new LambdaQueryWrapper<>();
@@ -163,7 +163,7 @@ public class VideoService {
 
     @Transactional
     public StreamSessionVO startStream(Long videoDeviceId, StreamStartDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         VideoDevice device = videoDeviceMapper.selectById(videoDeviceId);
         if (device == null) {
             throw new BizException(ResultCode.VIDEO_DEVICE_NOT_FOUND);
@@ -280,7 +280,7 @@ public class VideoService {
             String rtspUrl = zlmApiClient.buildRtspUrl("live", session.getStreamId());
             byte[] snapData = zlmApiClient.getSnap(rtspUrl, 10, 3);
             if (snapData != null && snapData.length > 0) {
-                String objectName = TenantContextHolder.getTenantId() + "/video/" + videoDeviceId
+                String objectName = AppContextHolder.getTenantId() + "/video/" + videoDeviceId
                         + "/snapshot_" + System.currentTimeMillis() + ".jpg";
                 imageUrl = fileClient.uploadBytes(objectName, "image/jpeg", snapData).getData().get("url");
                 log.info("Snapshot taken via ZLM and uploaded to MinIO: deviceId={}, size={} bytes, url={}",

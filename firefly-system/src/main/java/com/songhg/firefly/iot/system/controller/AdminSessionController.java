@@ -2,7 +2,7 @@ package com.songhg.firefly.iot.system.controller;
 
 import com.songhg.firefly.iot.system.dto.UserSessionVO;
 import com.songhg.firefly.iot.system.service.AuthService;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresPermission;
 import io.swagger.v3.oas.annotations.Operation;
@@ -32,7 +32,7 @@ public class AdminSessionController {
     @PostMapping("/{userId}/kick")
     @RequiresPermission("user:update")
     public R<Void> kickUser(@Parameter(description = "用户编号", required = true) @PathVariable Long userId) {
-        Long operatorId = UserContextHolder.getUserId();
+        Long operatorId = AppContextHolder.getUserId();
         authService.adminKickUser(userId, operatorId);
         return R.ok();
     }

@@ -3,7 +3,7 @@ package com.songhg.firefly.iot.system.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.UserStatus;
 import com.songhg.firefly.iot.common.enums.UserType;
 import com.songhg.firefly.iot.common.exception.BizException;
@@ -43,7 +43,7 @@ public class UserService {
 
     @Transactional
     public UserVO createUser(UserCreateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         if (tenantId == null) {
             throw new BizException(ResultCode.PARAM_ERROR, "tenant context required");
         }

@@ -2,8 +2,11 @@ package com.songhg.firefly.iot.device.service;
 
 import com.songhg.firefly.iot.api.client.AsyncTaskClient;
 import com.songhg.firefly.iot.api.client.FileClient;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.api.dto.AsyncTaskCreateDTO;
+import com.songhg.firefly.iot.api.dto.AsyncTaskVO;
+import com.songhg.firefly.iot.common.context.AsyncContextHelper;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.result.ResultCode;
@@ -45,6 +48,7 @@ public class DeviceImportService {
 
     private static final int BATCH_SIZE = 100;
     private static final String DEVICE_NAME_PATTERN = "^[a-zA-Z0-9_\\-\\.]{4,64}$";
+    private static final int MAX_ERROR_MESSAGE_LENGTH = 500;
 
     /**
      * 注册设备异步导入任务
@@ -55,27 +59,27 @@ public class DeviceImportService {
      * @return 异步任务ID
      */
     public Long registerImportTask(DeviceImportDTO dto) {
-        // 创建异步任务
-        Map<String, Object> taskData = new HashMap<>();
-        taskData.put("taskName", "设备批量导入");
-        taskData.put("taskType", "IMPORT");
-        taskData.put("bizType", "DEVICE_IMPORT");
-        taskData.put("fileFormat", dto.getFileFormat());
-        taskData.put("queryParams", dto.getFileKey());
+        // 使用强类型 DTO 创建异步任务
+        AsyncTaskCreateDTO createDTO = new AsyncTaskCreateDTO();
+        createDTO.setTaskName("设备批量导入");
+        createDTO.setTaskType("IMPORT");
+        createDTO.setBizType("DEVICE_IMPORT");
+        createDTO.setFileFormat(dto.getFileFormat());
+        createDTO.setExtraData(dto.getFileKey());
 
-        R<Map<String, Object>> taskResult = asyncTaskClient.createTask(taskData);
+        R<AsyncTaskVO> taskResult = asyncTaskClient.createTask(createDTO);
         if (taskResult == null || taskResult.getData() == null) {
             throw new BizException(ResultCode.INTERNAL_ERROR, "创建导入任务失败");
         }
 
-        Long taskId = Long.valueOf(taskResult.getData().get("id").toString());
-        Long tenantId = TenantContextHolder.getTenantId();
-        Long userId = UserContextHolder.getUserId();
+        Long taskId = taskResult.getData().getId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
 
         // 异步执行导入
         executeImportAsync(taskId, dto, tenantId, userId);
 
-        log.info("Device import task registered: taskId={}, fileKey={}", taskId, dto.getFileKey());
+        log.info("设备导入任务已注册: taskId={}, fileKey={}", taskId, dto.getFileKey());
         return taskId;
     }
 
@@ -86,8 +90,7 @@ public class DeviceImportService {
     public void executeImportAsync(Long taskId, DeviceImportDTO dto, Long tenantId, Long userId) {
         try {
             // 设置上下文（异步线程中需要重新设置）
-            TenantContextHolder.setTenantId(tenantId);
-            UserContextHolder.setUserId(userId);
+            AsyncContextHelper.setContext(tenantId, userId);
 
             asyncTaskClient.updateProgress(taskId, 10);
 
@@ -131,7 +134,7 @@ public class DeviceImportService {
                 } catch (Exception e) {
                     failCount += batch.size();
                     errors.add("第 " + (i + 1) + "-" + end + " 行: " + e.getMessage());
-                    log.warn("Batch import failed: rows {}-{}, error={}", i + 1, end, e.getMessage());
+                    log.warn("批量导入失败: rows {}-{}, error={}", i + 1, end, e.getMessage());
                 }
 
                 // 更新进度
@@ -142,24 +145,33 @@ public class DeviceImportService {
             // 完成任务
             if (failCount == 0) {
                 asyncTaskClient.completeTask(taskId, true, null, successCount, null);
-                log.info("Device import completed: taskId={}, successCount={}", taskId, successCount);
+                log.info("设备导入完成: taskId={}, successCount={}", taskId, successCount);
             } else if (successCount > 0) {
                 String errorMsg = "部分导入成功: " + successCount + " 成功, " + failCount + " 失败";
                 asyncTaskClient.completeTask(taskId, true, null, successCount, errorMsg);
-                log.warn("Device import partially completed: taskId={}, success={}, fail={}", taskId, successCount, failCount);
+                log.warn("设备导入部分完成: taskId={}, success={}, fail={}", taskId, successCount, failCount);
             } else {
                 String errorMsg = "导入失败: " + String.join("; ", errors);
-                asyncTaskClient.failTask(taskId, errorMsg.length() > 500 ? errorMsg.substring(0, 500) : errorMsg);
-                log.error("Device import failed: taskId={}, errors={}", taskId, errors);
+                asyncTaskClient.failTask(taskId, truncateMessage(errorMsg));
+                log.error("设备导入失败: taskId={}, errors={}", taskId, errors);
             }
 
         } catch (Exception e) {
-            log.error("Device import error: taskId={}, error={}", taskId, e.getMessage(), e);
-            asyncTaskClient.failTask(taskId, "导入失败: " + e.getMessage());
+            log.error("设备导入异常: taskId={}, error={}", taskId, e.getMessage(), e);
+            asyncTaskClient.failTask(taskId, truncateMessage("导入失败: " + e.getMessage()));
         } finally {
-            TenantContextHolder.clear();
-            UserContextHolder.clear();
+            AsyncContextHelper.clearContext();
         }
+    }
+
+    /**
+     * 截断过长的错误信息
+     */
+    private String truncateMessage(String message) {
+        if (message == null) return null;
+        return message.length() > MAX_ERROR_MESSAGE_LENGTH
+                ? message.substring(0, MAX_ERROR_MESSAGE_LENGTH)
+                : message;
     }
 
     /**
@@ -226,7 +238,7 @@ public class DeviceImportService {
 
                 // 验证设备名称格式
                 if (!deviceName.matches(DEVICE_NAME_PATTERN)) {
-                    log.warn("Invalid device name at row {}: {}", i + 1, deviceName);
+                    log.warn("无效的设备名称: row={}, deviceName={}", i + 1, deviceName);
                     continue;
                 }
 
@@ -283,7 +295,7 @@ public class DeviceImportService {
                 if (deviceName.isEmpty()) continue;
 
                 if (!deviceName.matches(DEVICE_NAME_PATTERN)) {
-                    log.warn("Invalid device name at row {}: {}", rowNum, deviceName);
+                    log.warn("无效的设备名称: row={}, deviceName={}", rowNum, deviceName);
                     continue;
                 }
 

@@ -1,6 +1,6 @@
 package com.songhg.firefly.iot.data.service;
 
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -19,7 +19,7 @@ public class DashboardService {
     private final JdbcTemplate jdbcTemplate;
 
     public Map<String, Object> getOverviewStats() {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Map<String, Object> stats = new LinkedHashMap<>();
 
         long deviceTotal = countOrZero("SELECT COUNT(*) FROM devices WHERE tenant_id = ?", tenantId);
@@ -47,7 +47,7 @@ public class DashboardService {
     }
 
     public List<Map<String, Object>> getDeviceOnlineTrend(String interval) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         String bucketInterval = "1d".equals(interval) ? "1 day" : "1 hour";
         String timeRange = "1d".equals(interval) ? "30 days" : "7 days";
 
@@ -69,7 +69,7 @@ public class DashboardService {
     }
 
     public List<Map<String, Object>> getAlarmLevelDistribution() {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         String sql = "SELECT level, COUNT(*) AS count FROM alarm_records WHERE tenant_id = ? AND created_at >= now() - INTERVAL '30 days' GROUP BY level ORDER BY count DESC";
         try {
             return jdbcTemplate.queryForList(sql, tenantId);
@@ -80,7 +80,7 @@ public class DashboardService {
     }
 
     public List<Map<String, Object>> getRecentAlarms(int limit) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         String sql = "SELECT id, device_id, rule_name, level, status, message, created_at FROM alarm_records WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?";
         try {
             return jdbcTemplate.queryForList(sql, tenantId, limit);
@@ -91,7 +91,7 @@ public class DashboardService {
     }
 
     public List<Map<String, Object>> getDeviceByProduct() {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         String sql = """
                 SELECT p.name AS product_name, COUNT(d.id) AS device_count
                 FROM devices d

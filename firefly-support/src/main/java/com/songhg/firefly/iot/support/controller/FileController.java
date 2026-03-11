@@ -1,6 +1,6 @@
 package com.songhg.firefly.iot.support.controller;
 
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresPermission;
 import com.songhg.firefly.iot.support.service.MinioService;
@@ -31,7 +31,7 @@ public class FileController {
     @RequiresPermission("file:upload")
     public R<Map<String, String>> upload(@Parameter(description = "待上传文件") @RequestParam("file") MultipartFile file,
                                           @Parameter(description = "目录") @RequestParam(value = "dir", required = false, defaultValue = "general") String dir) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         String originalName = file.getOriginalFilename();
         String ext = "";
         if (originalName != null && originalName.contains(".")) {
@@ -49,7 +49,7 @@ public class FileController {
     @PostMapping("/upload/firmware")
     @RequiresPermission("ota:upload")
     public R<Map<String, String>> uploadFirmware(@Parameter(description = "固件文件") @RequestParam("file") MultipartFile file) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         String originalName = file.getOriginalFilename();
         String ext = "";
         if (originalName != null && originalName.contains(".")) {

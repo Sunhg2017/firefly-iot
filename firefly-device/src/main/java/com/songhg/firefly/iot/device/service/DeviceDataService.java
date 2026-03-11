@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.EventLevel;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
@@ -49,7 +49,7 @@ public class DeviceDataService {
 
     @Transactional
     public void writeTelemetry(Long deviceId, TelemetryWriteDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Device device = deviceMapper.selectById(deviceId);
         if (device == null) {
             throw new BizException(ResultCode.DEVICE_NOT_FOUND);
@@ -91,19 +91,19 @@ public class DeviceDataService {
     }
 
     public List<TelemetryDataVO> queryTelemetry(TelemetryQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         return telemetryMapper.queryTelemetry(tenantId, query.getDeviceId(),
                 query.getProperty(), query.getStartTime(), query.getEndTime(), query.getLimit());
     }
 
     public List<TelemetryAggregateVO> aggregateTelemetry(TelemetryAggregateDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         return telemetryMapper.aggregateTelemetry(tenantId, query.getDeviceId(),
                 query.getProperty(), query.getStartTime(), query.getEndTime(), query.getInterval());
     }
 
     public List<TelemetryLatestVO> queryLatest(Long deviceId) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         return telemetryMapper.queryLatest(tenantId, deviceId);
     }
 
@@ -111,7 +111,7 @@ public class DeviceDataService {
 
     @Transactional
     public void writeEvent(Long deviceId, DeviceEventWriteDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Device device = deviceMapper.selectById(deviceId);
         if (device == null) {
             throw new BizException(ResultCode.DEVICE_NOT_FOUND);
@@ -138,7 +138,7 @@ public class DeviceDataService {
     }
 
     public IPage<DeviceEventVO> listEvents(DeviceEventQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<DeviceEvent> page = new Page<>(query.getPageNum(), query.getPageSize());
 
         LambdaQueryWrapper<DeviceEvent> wrapper = new LambdaQueryWrapper<>();

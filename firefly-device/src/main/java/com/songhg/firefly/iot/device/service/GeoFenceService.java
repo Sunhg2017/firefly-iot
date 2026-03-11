@@ -3,8 +3,8 @@ package com.songhg.firefly.iot.device.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.device.dto.geo.GeoFenceQueryDTO;
@@ -26,8 +26,8 @@ public class GeoFenceService {
 
     @Transactional
     public GeoFence createFence(GeoFence fence) {
-        fence.setTenantId(TenantContextHolder.getTenantId());
-        fence.setCreatedBy(UserContextHolder.getUserId());
+        fence.setTenantId(AppContextHolder.getTenantId());
+        fence.setCreatedBy(AppContextHolder.getUserId());
         if (fence.getEnabled() == null) fence.setEnabled(true);
         fenceMapper.insert(fence);
         log.info("GeoFence created: id={}, name={}, type={}", fence.getId(), fence.getName(), fence.getFenceType());
@@ -41,7 +41,7 @@ public class GeoFenceService {
     }
 
     public IPage<GeoFence> listFences(GeoFenceQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<GeoFence> page = new Page<>(query.getPageNum(), query.getPageSize());
         LambdaQueryWrapper<GeoFence> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(GeoFence::getTenantId, tenantId);
@@ -59,7 +59,7 @@ public class GeoFenceService {
     }
 
     public List<GeoFence> listEnabled() {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         return fenceMapper.selectList(new LambdaQueryWrapper<GeoFence>()
                 .eq(GeoFence::getTenantId, tenantId)
                 .eq(GeoFence::getEnabled, true));

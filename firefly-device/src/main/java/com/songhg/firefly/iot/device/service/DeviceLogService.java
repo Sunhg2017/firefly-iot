@@ -3,7 +3,7 @@ package com.songhg.firefly.iot.device.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.device.dto.devicelog.DeviceLogQueryParam;
 import com.songhg.firefly.iot.device.entity.DeviceLog;
 import com.songhg.firefly.iot.device.mapper.DeviceLogMapper;
@@ -53,7 +53,7 @@ public class DeviceLogService {
      * 分页查询设备日志
      */
     public IPage<DeviceLog> listLogs(DeviceLogQueryParam param) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<DeviceLog> page = new Page<>(param.getPageNum(), param.getPageSize());
         LambdaQueryWrapper<DeviceLog> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(DeviceLog::getTenantId, tenantId);

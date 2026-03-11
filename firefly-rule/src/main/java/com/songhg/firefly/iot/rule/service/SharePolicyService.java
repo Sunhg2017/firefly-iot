@@ -3,8 +3,8 @@ package com.songhg.firefly.iot.rule.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.ShareStatus;
 import com.songhg.firefly.iot.rule.convert.ShareConvert;
 import com.songhg.firefly.iot.rule.dto.share.ShareAuditLogQueryDTO;
@@ -33,7 +33,7 @@ public class SharePolicyService {
     private final ShareAuditLogMapper auditLogMapper;
 
     public List<SharePolicyVO> listOwned() {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         LambdaQueryWrapper<SharePolicy> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(SharePolicy::getOwnerTenantId, tenantId)
                 .orderByDesc(SharePolicy::getCreatedAt);
@@ -42,7 +42,7 @@ public class SharePolicyService {
     }
 
     public List<SharePolicyVO> listConsumed() {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         LambdaQueryWrapper<SharePolicy> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(SharePolicy::getConsumerTenantId, tenantId)
                 .eq(SharePolicy::getStatus, ShareStatus.APPROVED)
@@ -58,7 +58,7 @@ public class SharePolicyService {
 
     @Transactional
     public SharePolicyVO create(SharePolicyCreateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         SharePolicy policy = new SharePolicy();
         policy.setOwnerTenantId(tenantId);
         policy.setConsumerTenantId(dto.getConsumerTenantId());
@@ -70,7 +70,7 @@ public class SharePolicyService {
         policy.setValidity(dto.getValidity());
         policy.setStatus(ShareStatus.PENDING);
         policy.setAuditEnabled(dto.getAuditEnabled() != null ? dto.getAuditEnabled() : true);
-        policy.setCreatedBy(UserContextHolder.getUserId());
+        policy.setCreatedBy(AppContextHolder.getUserId());
         policy.setCreatedAt(LocalDateTime.now());
         policy.setUpdatedAt(LocalDateTime.now());
         policyMapper.insert(policy);
@@ -103,7 +103,7 @@ public class SharePolicyService {
         SharePolicy policy = policyMapper.selectById(id);
         if (policy == null || policy.getStatus() != ShareStatus.PENDING) return null;
         policy.setStatus(ShareStatus.APPROVED);
-        policy.setApprovedBy(UserContextHolder.getUserId());
+        policy.setApprovedBy(AppContextHolder.getUserId());
         policy.setUpdatedAt(LocalDateTime.now());
         policyMapper.updateById(policy);
         return ShareConvert.INSTANCE.toPolicyVO(policy);
@@ -114,7 +114,7 @@ public class SharePolicyService {
         SharePolicy policy = policyMapper.selectById(id);
         if (policy == null || policy.getStatus() != ShareStatus.PENDING) return null;
         policy.setStatus(ShareStatus.REJECTED);
-        policy.setApprovedBy(UserContextHolder.getUserId());
+        policy.setApprovedBy(AppContextHolder.getUserId());
         policy.setUpdatedAt(LocalDateTime.now());
         policyMapper.updateById(policy);
         return ShareConvert.INSTANCE.toPolicyVO(policy);

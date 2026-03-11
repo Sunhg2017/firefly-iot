@@ -3,8 +3,8 @@ package com.songhg.firefly.iot.system.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.ProjectStatus;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.mybatis.DataScope;
@@ -39,8 +39,8 @@ public class ProjectService {
 
     @Transactional
     public ProjectVO createProject(ProjectCreateDTO dto) {
-        Long tenantId = TenantContextHolder.getTenantId();
-        Long userId = UserContextHolder.getUserId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
 
         // 检查代码唯一性
         Long count = projectMapper.selectCount(new LambdaQueryWrapper<Project>()
@@ -70,7 +70,7 @@ public class ProjectService {
 
     @DataScope
     public IPage<ProjectVO> listProjects(ProjectQueryDTO query) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         Page<Project> page = new Page<>(query.getPageNum(), query.getPageSize());
 
         LambdaQueryWrapper<Project> wrapper = new LambdaQueryWrapper<>();

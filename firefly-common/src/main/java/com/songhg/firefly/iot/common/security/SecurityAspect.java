@@ -1,6 +1,6 @@
 package com.songhg.firefly.iot.common.security;
 
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import lombok.extern.slf4j.Slf4j;
@@ -29,7 +29,7 @@ public class SecurityAspect {
      */
     @Before("@annotation(com.songhg.firefly.iot.common.security.RequiresLogin) || @within(com.songhg.firefly.iot.common.security.RequiresLogin)")
     public void checkLogin(JoinPoint joinPoint) {
-        Long userId = UserContextHolder.getUserId();
+        Long userId = AppContextHolder.getUserId();
         if (userId == null) {
             throw new BizException(ResultCode.UNAUTHORIZED);
         }
@@ -41,7 +41,7 @@ public class SecurityAspect {
     @Before("@annotation(requiresPermission)")
     public void checkPermission(JoinPoint joinPoint, RequiresPermission requiresPermission) {
         // 先检查登录
-        Long userId = UserContextHolder.getUserId();
+        Long userId = AppContextHolder.getUserId();
         if (userId == null) {
             throw new BizException(ResultCode.UNAUTHORIZED);
         }

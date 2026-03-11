@@ -1,8 +1,8 @@
 package com.songhg.firefly.iot.system.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.system.convert.SystemSettingsConvert;
 import com.songhg.firefly.iot.system.dto.system.SystemConfigUpdateDTO;
 import com.songhg.firefly.iot.system.dto.system.SystemConfigVO;
@@ -31,7 +31,7 @@ public class SystemConfigService {
      * 获取指定分组的所有配置
      */
     public List<SystemConfigVO> listByGroup(String group) {
-        Long tenantId = TenantContextHolder.getTenantId();
+        Long tenantId = AppContextHolder.getTenantId();
         LambdaQueryWrapper<SystemConfig> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(SystemConfig::getTenantId, tenantId);
         if (group != null && !group.isBlank()) {
@@ -76,8 +76,8 @@ public class SystemConfigService {
     @Transactional
     @CacheEvict(value = "system_config", allEntries = true)
     public void batchUpdate(List<SystemConfigUpdateDTO> configs) {
-        Long tenantId = TenantContextHolder.getTenantId();
-        Long userId = UserContextHolder.getUserId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
 
         for (SystemConfigUpdateDTO dto : configs) {
             LambdaQueryWrapper<SystemConfig> wrapper = new LambdaQueryWrapper<>();

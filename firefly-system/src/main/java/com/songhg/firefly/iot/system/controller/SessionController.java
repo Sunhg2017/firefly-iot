@@ -4,7 +4,7 @@ import com.songhg.firefly.iot.system.dto.OauthBindingVO;
 import com.songhg.firefly.iot.system.dto.PushTokenUpdateDTO;
 import com.songhg.firefly.iot.system.dto.UserSessionVO;
 import com.songhg.firefly.iot.system.service.AuthService;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.Platform;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresLogin;
@@ -31,14 +31,14 @@ public class SessionController {
     @Operation(summary = "查询我的会话列表")
     @GetMapping("/sessions")
     public R<List<UserSessionVO>> mySessions() {
-        Long userId = UserContextHolder.getUserId();
+        Long userId = AppContextHolder.getUserId();
         return R.ok(authService.getUserSessionVOs(userId));
     }
 
     @Operation(summary = "踢出指定会话")
     @DeleteMapping("/sessions/{sessionId}")
     public R<Void> kickSession(@Parameter(description = "会话编号", required = true) @PathVariable Long sessionId) {
-        Long userId = UserContextHolder.getUserId();
+        Long userId = AppContextHolder.getUserId();
         authService.kickSession(sessionId, userId);
         return R.ok();
     }
@@ -48,8 +48,8 @@ public class SessionController {
     @Operation(summary = "更新推送令牌")
     @PutMapping("/push-token")
     public R<Void> updatePushToken(@Valid @RequestBody PushTokenUpdateDTO dto) {
-        Long userId = UserContextHolder.getUserId();
-        Platform platform = Platform.valueOf(UserContextHolder.get().getPlatform());
+        Long userId = AppContextHolder.getUserId();
+        Platform platform = Platform.valueOf(AppContextHolder.getPlatform());
         authService.updatePushToken(userId, platform, dto.getPushToken(), dto.getPushChannel());
         return R.ok();
     }
@@ -59,14 +59,14 @@ public class SessionController {
     @Operation(summary = "查询 OAuth 绑定列表")
     @GetMapping("/oauth-bindings")
     public R<List<OauthBindingVO>> listOauthBindings() {
-        Long userId = UserContextHolder.getUserId();
+        Long userId = AppContextHolder.getUserId();
         return R.ok(authService.getUserOauthBindings(userId));
     }
 
     @Operation(summary = "解绑 OAuth 账号")
     @DeleteMapping("/oauth-bindings/{id}")
     public R<Void> deleteOauthBinding(@Parameter(description = "第三方绑定编号", required = true) @PathVariable Long id) {
-        Long userId = UserContextHolder.getUserId();
+        Long userId = AppContextHolder.getUserId();
         authService.deleteOauthBinding(id, userId);
         return R.ok();
     }
