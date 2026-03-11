@@ -497,3 +497,32 @@ function encode(ctx) {
 - 优先记住 `tenantCode`、`productKey`、`deviceName`，不要依赖数据库主键。
 - 规则保存后先调试、再发布、再启用。
 - 复杂协议脚本请保留必要注释，便于后续接手维护。
+
+## 2026-03-12 Usage Update
+
+### Important Behavior Adjustments
+
+- Available parser modes are now:
+  - `SCRIPT`
+  - `PLUGIN`
+- `BUILTIN` is not supported and cannot be saved/published.
+
+### Error Policy Behavior
+
+- `ERROR`: parser error is treated as failure; system may try other matching rules. If no rule succeeds, message is handled-empty.
+- `DROP`: message is dropped immediately (handled-empty).
+- `RAW_DATA`: parser failure allows fallback to raw pipeline (`notHandled`).
+
+### TCP/UDP Frame Buffer Protection
+
+- You can configure `frameConfig.maxBufferedBytes` to cap half-packet accumulation.
+- If a session remainder exceeds the cap, runtime clears remainder and drops the oversized partial packet.
+
+### Release Scope Matching
+
+- Release strategy (`ALL` / `DEVICE_LIST` / `HASH_PERCENT`) is now applied consistently during frame decode and parse matching when device context is known.
+
+### Debug Impact
+
+- Debug frame splitting no longer writes into production TCP/UDP session buffers.
+- Running debug half-packet cases will not affect online device sessions.

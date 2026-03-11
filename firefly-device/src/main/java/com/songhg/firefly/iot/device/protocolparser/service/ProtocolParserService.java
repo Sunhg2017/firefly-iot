@@ -7,8 +7,15 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.api.dto.ProtocolParserPublishedDTO;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.enums.IEnum;
+import com.songhg.firefly.iot.common.enums.ParserDirection;
+import com.songhg.firefly.iot.common.enums.ParserErrorPolicy;
+import com.songhg.firefly.iot.common.enums.ParserFrameMode;
+import com.songhg.firefly.iot.common.enums.ParserMode;
+import com.songhg.firefly.iot.common.enums.ParserReleaseMode;
+import com.songhg.firefly.iot.common.enums.ParserScopeType;
+import com.songhg.firefly.iot.common.enums.ParserStatus;
 import com.songhg.firefly.iot.common.event.EventPublisher;
 import com.songhg.firefly.iot.common.event.EventTopics;
 import com.songhg.firefly.iot.common.event.ProtocolParserChangedEvent;
@@ -40,19 +47,18 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class ProtocolParserService {
 
-    private static final String STATUS_DRAFT = "DRAFT";
-    private static final String STATUS_ENABLED = "ENABLED";
-    private static final String STATUS_DISABLED = "DISABLED";
+    private static final ParserStatus STATUS_DRAFT = ParserStatus.DRAFT;
+    private static final ParserStatus STATUS_ENABLED = ParserStatus.ENABLED;
+    private static final ParserStatus STATUS_DISABLED = ParserStatus.DISABLED;
     private static final String VERSION_STATUS_PUBLISHED = "PUBLISHED";
-    private static final String SCOPE_PRODUCT = "PRODUCT";
-    private static final String SCOPE_TENANT = "TENANT";
-    private static final String DEFAULT_SCOPE_TYPE = SCOPE_PRODUCT;
-    private static final String DEFAULT_DIRECTION = "UPLINK";
-    private static final String DEFAULT_PARSER_MODE = "SCRIPT";
-    private static final String DEFAULT_FRAME_MODE = "NONE";
+    private static final ParserScopeType SCOPE_PRODUCT = ParserScopeType.PRODUCT;
+    private static final ParserScopeType SCOPE_TENANT = ParserScopeType.TENANT;
+    private static final ParserDirection DEFAULT_DIRECTION = ParserDirection.UPLINK;
+    private static final ParserMode DEFAULT_PARSER_MODE = ParserMode.SCRIPT;
+    private static final ParserFrameMode DEFAULT_FRAME_MODE = ParserFrameMode.NONE;
     private static final String DEFAULT_SCRIPT_LANGUAGE = "JS";
-    private static final String DEFAULT_ERROR_POLICY = "ERROR";
-    private static final String DEFAULT_RELEASE_MODE = "ALL";
+    private static final ParserErrorPolicy DEFAULT_ERROR_POLICY = ParserErrorPolicy.ERROR;
+    private static final ParserReleaseMode DEFAULT_RELEASE_MODE = ParserReleaseMode.ALL;
     private static final int DEFAULT_TIMEOUT_MS = 50;
     private static final int MAX_TIMEOUT_MS = 60_000;
 
@@ -65,8 +71,8 @@ public class ProtocolParserService {
     @Transactional
     public ProtocolParserVO create(ProtocolParserCreateDTO dto) {
         ProtocolParserDefinition definition = new ProtocolParserDefinition();
-        definition.setTenantId(TenantContextHolder.getTenantId());
-        definition.setCreatedBy(UserContextHolder.getUserId());
+        definition.setTenantId(AppContextHolder.getTenantId());
+        definition.setCreatedBy(AppContextHolder.getUserId());
         definition.setCurrentVersion(1);
         definition.setStatus(STATUS_DRAFT);
         applyCreatePayload(definition, dto);
@@ -80,12 +86,12 @@ public class ProtocolParserService {
     public IPage<ProtocolParserVO> list(ProtocolParserQueryDTO query) {
         Page<ProtocolParserDefinition> page = new Page<>(query.getPageNum(), query.getPageSize());
         LambdaQueryWrapper<ProtocolParserDefinition> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(ProtocolParserDefinition::getTenantId, TenantContextHolder.getTenantId());
+        wrapper.eq(ProtocolParserDefinition::getTenantId, AppContextHolder.getTenantId());
         wrapper.isNull(ProtocolParserDefinition::getDeletedAt);
         if (query.getProductId() != null) {
             wrapper.and(item -> item.eq(ProtocolParserDefinition::getProductId, query.getProductId())
                     .or(group -> group.eq(ProtocolParserDefinition::getScopeType, SCOPE_TENANT)
-                            .eq(ProtocolParserDefinition::getScopeId, TenantContextHolder.getTenantId())));
+                            .eq(ProtocolParserDefinition::getScopeId, AppContextHolder.getTenantId())));
         }
         if (notBlank(query.getProtocol())) {
             wrapper.eq(ProtocolParserDefinition::getProtocol, normalizeUpper(query.getProtocol()));
@@ -94,7 +100,8 @@ public class ProtocolParserService {
             wrapper.eq(ProtocolParserDefinition::getTransport, normalizeUpper(query.getTransport()));
         }
         if (notBlank(query.getStatus())) {
-            wrapper.eq(ProtocolParserDefinition::getStatus, normalizeUpper(query.getStatus()));
+            wrapper.eq(ProtocolParserDefinition::getStatus,
+                    parseOptionalEnum(query.getStatus(), ParserStatus.class, "status"));
         }
         wrapper.orderByDesc(ProtocolParserDefinition::getUpdatedAt);
         wrapper.orderByDesc(ProtocolParserDefinition::getId);
@@ -139,8 +146,8 @@ public class ProtocolParserService {
 
         int versionNo = definition.getCurrentVersion() == null ? 1 : definition.getCurrentVersion();
         ProtocolParserPublishedDTO snapshotDto = toPublishedDTO(definition, versionNo);
-        snapshotDto.setStatus(STATUS_ENABLED);
-        String snapshotJson = writeJson(snapshotDto, "协议解析发布快照序列化失败");
+        snapshotDto.setStatus(enumValue(STATUS_ENABLED));
+        String snapshotJson = writeJson(snapshotDto, "protocol parser snapshot serialize failed");
 
         ProtocolParserVersion version = versionMapper.selectByDefinitionIdAndVersionNo(definition.getId(), versionNo);
         if (version == null) {
@@ -150,7 +157,7 @@ public class ProtocolParserService {
             version.setSnapshotJson(snapshotJson);
             version.setPublishStatus(VERSION_STATUS_PUBLISHED);
             version.setChangeLog(trimToNull(changeLog));
-            version.setCreatedBy(UserContextHolder.getUserId());
+            version.setCreatedBy(AppContextHolder.getUserId());
             versionMapper.insert(version);
         } else {
             version.setSnapshotJson(snapshotJson);
@@ -173,13 +180,13 @@ public class ProtocolParserService {
         ProtocolParserDefinition definition = getDefinitionOrThrow(id);
         ProtocolParserVersion version = versionMapper.selectByDefinitionIdAndVersionNo(definition.getId(), versionNo);
         if (version == null) {
-            throw new BizException(ResultCode.NOT_FOUND, "协议解析版本不存在");
+            throw new BizException(ResultCode.NOT_FOUND, "protocol parser version not found");
         }
 
         ProtocolParserPublishedDTO snapshot = readJson(
                 version.getSnapshotJson(),
                 ProtocolParserPublishedDTO.class,
-                "协议解析版本快照读取失败"
+                "protocol parser snapshot read failed"
         );
         applyPublishedSnapshot(definition, snapshot);
         normalizeAndValidate(definition);
@@ -201,7 +208,7 @@ public class ProtocolParserService {
     public void enable(Long id) {
         ProtocolParserDefinition definition = getDefinitionOrThrow(id);
         if (definition.getPublishedVersion() == null) {
-            throw new BizException(ResultCode.CONFLICT, "未发布的解析定义不能启用");
+            throw new BizException(ResultCode.CONFLICT, "cannot enable parser definition before publish");
         }
         definition.setStatus(STATUS_ENABLED);
         definitionMapper.updateById(definition);
@@ -241,7 +248,7 @@ public class ProtocolParserService {
     private ProtocolParserDefinition getDefinitionOrThrow(Long id) {
         ProtocolParserDefinition definition = definitionMapper.selectById(id);
         if (definition == null || definition.getDeletedAt() != null) {
-            throw new BizException(ResultCode.NOT_FOUND, "协议解析定义不存在");
+            throw new BizException(ResultCode.NOT_FOUND, "protocol parser definition not found");
         }
         return definition;
     }
@@ -259,13 +266,13 @@ public class ProtocolParserService {
 
     private void applyCreatePayload(ProtocolParserDefinition definition, ProtocolParserCreateDTO dto) {
         definition.setProductId(dto.getProductId());
-        definition.setScopeType(dto.getScopeType());
+        definition.setScopeType(parseOptionalEnum(dto.getScopeType(), ParserScopeType.class, "scopeType"));
         definition.setScopeId(dto.getScopeId());
         definition.setProtocol(dto.getProtocol());
         definition.setTransport(dto.getTransport());
-        definition.setDirection(dto.getDirection());
-        definition.setParserMode(dto.getParserMode());
-        definition.setFrameMode(dto.getFrameMode());
+        definition.setDirection(parseOptionalEnum(dto.getDirection(), ParserDirection.class, "direction"));
+        definition.setParserMode(parseOptionalEnum(dto.getParserMode(), ParserMode.class, "parserMode"));
+        definition.setFrameMode(parseOptionalEnum(dto.getFrameMode(), ParserFrameMode.class, "frameMode"));
         definition.setMatchRuleJson(dto.getMatchRuleJson());
         definition.setFrameConfigJson(dto.getFrameConfigJson());
         definition.setParserConfigJson(dto.getParserConfigJson());
@@ -275,20 +282,23 @@ public class ProtocolParserService {
         definition.setPluginId(dto.getPluginId());
         definition.setPluginVersion(dto.getPluginVersion());
         definition.setTimeoutMs(dto.getTimeoutMs());
-        definition.setErrorPolicy(dto.getErrorPolicy());
-        definition.setReleaseMode(dto.getReleaseMode());
+        definition.setErrorPolicy(parseOptionalEnum(dto.getErrorPolicy(), ParserErrorPolicy.class, "errorPolicy"));
+        definition.setReleaseMode(parseOptionalEnum(dto.getReleaseMode(), ParserReleaseMode.class, "releaseMode"));
         definition.setReleaseConfigJson(dto.getReleaseConfigJson());
         normalizeAndValidate(definition);
     }
 
     private void applyUpdatePayload(ProtocolParserDefinition definition, ProtocolParserUpdateDTO dto) {
+        ParserScopeType scopeType = dto.getScopeType() == null
+                ? null
+                : parseOptionalEnum(dto.getScopeType(), ParserScopeType.class, "scopeType");
         if (dto.getScopeType() != null) {
-            definition.setScopeType(dto.getScopeType());
+            definition.setScopeType(scopeType);
         }
         if (dto.getScopeId() != null) {
             definition.setScopeId(dto.getScopeId());
         }
-        if (dto.getProductId() != null || SCOPE_TENANT.equals(normalizeUpper(dto.getScopeType()))) {
+        if (dto.getProductId() != null || scopeType == SCOPE_TENANT) {
             definition.setProductId(dto.getProductId());
         }
         if (dto.getProtocol() != null) {
@@ -298,13 +308,13 @@ public class ProtocolParserService {
             definition.setTransport(dto.getTransport());
         }
         if (dto.getDirection() != null) {
-            definition.setDirection(dto.getDirection());
+            definition.setDirection(parseOptionalEnum(dto.getDirection(), ParserDirection.class, "direction"));
         }
         if (dto.getParserMode() != null) {
-            definition.setParserMode(dto.getParserMode());
+            definition.setParserMode(parseOptionalEnum(dto.getParserMode(), ParserMode.class, "parserMode"));
         }
         if (dto.getFrameMode() != null) {
-            definition.setFrameMode(dto.getFrameMode());
+            definition.setFrameMode(parseOptionalEnum(dto.getFrameMode(), ParserFrameMode.class, "frameMode"));
         }
         if (dto.getMatchRuleJson() != null) {
             definition.setMatchRuleJson(dto.getMatchRuleJson());
@@ -334,81 +344,38 @@ public class ProtocolParserService {
             definition.setTimeoutMs(dto.getTimeoutMs());
         }
         if (dto.getErrorPolicy() != null) {
-            definition.setErrorPolicy(dto.getErrorPolicy());
+            definition.setErrorPolicy(parseOptionalEnum(dto.getErrorPolicy(), ParserErrorPolicy.class, "errorPolicy"));
         }
         if (dto.getReleaseMode() != null) {
-            definition.setReleaseMode(dto.getReleaseMode());
+            definition.setReleaseMode(parseOptionalEnum(dto.getReleaseMode(), ParserReleaseMode.class, "releaseMode"));
         }
         if (dto.getReleaseConfigJson() != null) {
             definition.setReleaseConfigJson(dto.getReleaseConfigJson());
         }
     }
 
-    private void normalizeAndValidate(ProtocolParserDefinition definition, Long defaultScopeId) {
-        definition.setScopeType(defaultIfBlank(normalizeUpper(definition.getScopeType()), DEFAULT_SCOPE_TYPE));
-        definition.setScopeId(definition.getScopeId() == null ? defaultScopeId : definition.getScopeId());
-        definition.setProtocol(requireUpper(definition.getProtocol(), "协议不能为空"));
-        definition.setTransport(requireUpper(definition.getTransport(), "传输层不能为空"));
-        definition.setDirection(defaultIfBlank(normalizeUpper(definition.getDirection()), DEFAULT_DIRECTION));
-        definition.setParserMode(defaultIfBlank(normalizeUpper(definition.getParserMode()), DEFAULT_PARSER_MODE));
-        definition.setFrameMode(defaultIfBlank(normalizeUpper(definition.getFrameMode()), DEFAULT_FRAME_MODE));
-        definition.setMatchRuleJson(normalizeJsonObject(definition.getMatchRuleJson(), "matchRuleJson"));
-        definition.setFrameConfigJson(normalizeJsonObject(definition.getFrameConfigJson(), "frameConfigJson"));
-        definition.setParserConfigJson(normalizeJsonObject(definition.getParserConfigJson(), "parserConfigJson"));
-        definition.setScriptLanguage(defaultIfBlank(normalizeUpper(definition.getScriptLanguage()), DEFAULT_SCRIPT_LANGUAGE));
-        definition.setScriptContent(blankToNull(definition.getScriptContent()));
-        definition.setPluginId(trimToNull(definition.getPluginId()));
-        definition.setPluginVersion(trimToNull(definition.getPluginVersion()));
-        definition.setTimeoutMs(normalizeTimeout(definition.getTimeoutMs()));
-        definition.setErrorPolicy(defaultIfBlank(normalizeUpper(definition.getErrorPolicy()), DEFAULT_ERROR_POLICY));
-
-        switch (definition.getParserMode()) {
-            case "SCRIPT" -> {
-                if (!notBlank(definition.getScriptContent())) {
-                    throw new BizException(ResultCode.PARAM_ERROR, "脚本解析模式必须提供脚本内容");
-                }
-                definition.setPluginId(null);
-                definition.setPluginVersion(null);
-            }
-            case "PLUGIN" -> {
-                if (!notBlank(definition.getPluginId())) {
-                    throw new BizException(ResultCode.PARAM_ERROR, "插件解析模式必须提供插件编号");
-                }
-                definition.setScriptLanguage(null);
-                definition.setScriptContent(null);
-            }
-            case "BUILTIN" -> {
-                definition.setScriptLanguage(null);
-                definition.setScriptContent(null);
-                definition.setPluginId(null);
-                definition.setPluginVersion(null);
-            }
-            default -> throw new BizException(ResultCode.PARAM_ERROR, "不支持的解析模式: " + definition.getParserMode());
-        }
-    }
-
     private void normalizeAndValidate(ProtocolParserDefinition definition) {
-        Long tenantId = TenantContextHolder.getTenantId();
-        definition.setScopeType(defaultIfBlank(normalizeUpper(definition.getScopeType()), SCOPE_PRODUCT));
-        if (SCOPE_PRODUCT.equals(definition.getScopeType())) {
+        Long tenantId = AppContextHolder.getTenantId();
+        definition.setScopeType(defaultIfNull(definition.getScopeType(), SCOPE_PRODUCT));
+        if (definition.getScopeType() == SCOPE_PRODUCT) {
             if (definition.getProductId() == null) {
                 throw new BizException(ResultCode.PARAM_ERROR, "productId is required when scopeType=PRODUCT");
             }
             Product product = getProductOrThrow(definition.getProductId());
             definition.setTenantId(product.getTenantId());
             definition.setScopeId(definition.getScopeId() == null ? product.getId() : definition.getScopeId());
-        } else if (SCOPE_TENANT.equals(definition.getScopeType())) {
+        } else if (definition.getScopeType() == SCOPE_TENANT) {
             definition.setTenantId(tenantId);
             definition.setProductId(null);
             definition.setScopeId(definition.getScopeId() == null ? tenantId : definition.getScopeId());
         } else {
-            throw new BizException(ResultCode.PARAM_ERROR, "Unsupported scopeType: " + definition.getScopeType());
+            throw new BizException(ResultCode.PARAM_ERROR, "unsupported scopeType: " + definition.getScopeType());
         }
         definition.setProtocol(requireUpper(definition.getProtocol(), "protocol must not be blank"));
         definition.setTransport(requireUpper(definition.getTransport(), "transport must not be blank"));
-        definition.setDirection(defaultIfBlank(normalizeUpper(definition.getDirection()), DEFAULT_DIRECTION));
-        definition.setParserMode(defaultIfBlank(normalizeUpper(definition.getParserMode()), DEFAULT_PARSER_MODE));
-        definition.setFrameMode(defaultIfBlank(normalizeUpper(definition.getFrameMode()), DEFAULT_FRAME_MODE));
+        definition.setDirection(defaultIfNull(definition.getDirection(), DEFAULT_DIRECTION));
+        definition.setParserMode(defaultIfNull(definition.getParserMode(), DEFAULT_PARSER_MODE));
+        definition.setFrameMode(defaultIfNull(definition.getFrameMode(), DEFAULT_FRAME_MODE));
         definition.setMatchRuleJson(normalizeJsonObject(definition.getMatchRuleJson(), "matchRuleJson"));
         definition.setFrameConfigJson(normalizeJsonObject(definition.getFrameConfigJson(), "frameConfigJson"));
         definition.setParserConfigJson(normalizeJsonObject(definition.getParserConfigJson(), "parserConfigJson"));
@@ -418,56 +385,57 @@ public class ProtocolParserService {
         definition.setPluginId(trimToNull(definition.getPluginId()));
         definition.setPluginVersion(trimToNull(definition.getPluginVersion()));
         definition.setTimeoutMs(normalizeTimeout(definition.getTimeoutMs()));
-        definition.setErrorPolicy(defaultIfBlank(normalizeUpper(definition.getErrorPolicy()), DEFAULT_ERROR_POLICY));
-        definition.setReleaseMode(defaultIfBlank(normalizeUpper(definition.getReleaseMode()), DEFAULT_RELEASE_MODE));
+        definition.setErrorPolicy(defaultIfNull(definition.getErrorPolicy(), DEFAULT_ERROR_POLICY));
+        definition.setReleaseMode(defaultIfNull(definition.getReleaseMode(), DEFAULT_RELEASE_MODE));
         definition.setReleaseConfigJson(normalizeJsonObject(definition.getReleaseConfigJson(), "releaseConfigJson"));
         validateReleaseConfig(definition.getReleaseMode(), definition.getReleaseConfigJson());
 
         switch (definition.getParserMode()) {
-            case "SCRIPT" -> {
+            case SCRIPT -> {
                 if (!notBlank(definition.getScriptContent())) {
                     throw new BizException(ResultCode.PARAM_ERROR, "script content is required when parserMode=SCRIPT");
                 }
                 definition.setPluginId(null);
                 definition.setPluginVersion(null);
             }
-            case "PLUGIN" -> {
+            case PLUGIN -> {
                 if (!notBlank(definition.getPluginId())) {
                     throw new BizException(ResultCode.PARAM_ERROR, "pluginId is required when parserMode=PLUGIN");
                 }
                 definition.setScriptLanguage(null);
                 definition.setScriptContent(null);
             }
-            case "BUILTIN" -> {
-                definition.setScriptLanguage(null);
-                definition.setScriptContent(null);
-                definition.setPluginId(null);
-                definition.setPluginVersion(null);
-            }
-            default -> throw new BizException(ResultCode.PARAM_ERROR, "Unsupported parserMode: " + definition.getParserMode());
+            case BUILTIN -> throw new BizException(
+                    ResultCode.PARAM_ERROR,
+                    "BUILTIN mode is not implemented yet, use SCRIPT or PLUGIN"
+            );
+            default -> throw new BizException(
+                    ResultCode.PARAM_ERROR,
+                    "unsupported parserMode: " + enumValue(definition.getParserMode())
+            );
         }
     }
 
-    private void validateReleaseConfig(String releaseMode, String releaseConfigJson) {
+    private void validateReleaseConfig(ParserReleaseMode releaseMode, String releaseConfigJson) {
         JsonNode root = readJsonNode(releaseConfigJson);
         switch (releaseMode) {
-            case "ALL" -> {
+            case ALL -> {
                 return;
             }
-            case "DEVICE_LIST" -> {
+            case DEVICE_LIST -> {
                 boolean hasDeviceIds = root.path("deviceIds").isArray() && root.path("deviceIds").size() > 0;
                 boolean hasDeviceNames = root.path("deviceNames").isArray() && root.path("deviceNames").size() > 0;
                 if (!hasDeviceIds && !hasDeviceNames) {
                     throw new BizException(ResultCode.PARAM_ERROR, "DEVICE_LIST release mode requires deviceIds or deviceNames");
                 }
             }
-            case "HASH_PERCENT" -> {
+            case HASH_PERCENT -> {
                 int percent = root.path("percent").asInt(-1);
                 if (percent < 1 || percent > 100) {
                     throw new BizException(ResultCode.PARAM_ERROR, "HASH_PERCENT release mode requires percent between 1 and 100");
                 }
             }
-            default -> throw new BizException(ResultCode.PARAM_ERROR, "Unsupported releaseMode: " + releaseMode);
+            default -> throw new BizException(ResultCode.PARAM_ERROR, "unsupported releaseMode: " + releaseMode);
         }
     }
 
@@ -477,8 +445,8 @@ public class ProtocolParserService {
             ProtocolParserVersion version = versionMapper.selectByDefinitionIdAndVersionNo(definition.getId(), versionNo);
             if (version != null && notBlank(version.getSnapshotJson())) {
                 ProtocolParserPublishedDTO snapshot =
-                        readJson(version.getSnapshotJson(), ProtocolParserPublishedDTO.class, "协议解析发布快照读取失败");
-                snapshot.setStatus(definition.getStatus());
+                        readJson(version.getSnapshotJson(), ProtocolParserPublishedDTO.class, "protocol parser snapshot read failed");
+                snapshot.setStatus(enumValue(definition.getStatus()));
                 snapshot.setVersionNo(versionNo);
                 return snapshot;
             }
@@ -491,13 +459,13 @@ public class ProtocolParserService {
         dto.setDefinitionId(definition.getId());
         dto.setTenantId(definition.getTenantId());
         dto.setProductId(definition.getProductId());
-        dto.setScopeType(definition.getScopeType());
+        dto.setScopeType(enumValue(definition.getScopeType()));
         dto.setScopeId(definition.getScopeId());
         dto.setProtocol(definition.getProtocol());
         dto.setTransport(definition.getTransport());
-        dto.setDirection(definition.getDirection());
-        dto.setParserMode(definition.getParserMode());
-        dto.setFrameMode(definition.getFrameMode());
+        dto.setDirection(enumValue(definition.getDirection()));
+        dto.setParserMode(enumValue(definition.getParserMode()));
+        dto.setFrameMode(enumValue(definition.getFrameMode()));
         dto.setMatchRuleJson(definition.getMatchRuleJson());
         dto.setFrameConfigJson(definition.getFrameConfigJson());
         dto.setParserConfigJson(definition.getParserConfigJson());
@@ -507,23 +475,23 @@ public class ProtocolParserService {
         dto.setPluginId(definition.getPluginId());
         dto.setPluginVersion(definition.getPluginVersion());
         dto.setTimeoutMs(definition.getTimeoutMs());
-        dto.setErrorPolicy(definition.getErrorPolicy());
-        dto.setReleaseMode(definition.getReleaseMode());
+        dto.setErrorPolicy(enumValue(definition.getErrorPolicy()));
+        dto.setReleaseMode(enumValue(definition.getReleaseMode()));
         dto.setReleaseConfigJson(definition.getReleaseConfigJson());
-        dto.setStatus(definition.getStatus());
+        dto.setStatus(enumValue(definition.getStatus()));
         dto.setVersionNo(versionNo);
         return dto;
     }
 
     private void applyPublishedSnapshot(ProtocolParserDefinition definition, ProtocolParserPublishedDTO snapshot) {
         definition.setProductId(snapshot.getProductId());
-        definition.setScopeType(snapshot.getScopeType());
+        definition.setScopeType(parseOptionalEnum(snapshot.getScopeType(), ParserScopeType.class, "scopeType"));
         definition.setScopeId(snapshot.getScopeId());
         definition.setProtocol(snapshot.getProtocol());
         definition.setTransport(snapshot.getTransport());
-        definition.setDirection(snapshot.getDirection());
-        definition.setParserMode(snapshot.getParserMode());
-        definition.setFrameMode(snapshot.getFrameMode());
+        definition.setDirection(parseOptionalEnum(snapshot.getDirection(), ParserDirection.class, "direction"));
+        definition.setParserMode(parseOptionalEnum(snapshot.getParserMode(), ParserMode.class, "parserMode"));
+        definition.setFrameMode(parseOptionalEnum(snapshot.getFrameMode(), ParserFrameMode.class, "frameMode"));
         definition.setMatchRuleJson(snapshot.getMatchRuleJson());
         definition.setFrameConfigJson(snapshot.getFrameConfigJson());
         definition.setParserConfigJson(snapshot.getParserConfigJson());
@@ -533,8 +501,8 @@ public class ProtocolParserService {
         definition.setPluginId(snapshot.getPluginId());
         definition.setPluginVersion(snapshot.getPluginVersion());
         definition.setTimeoutMs(snapshot.getTimeoutMs());
-        definition.setErrorPolicy(snapshot.getErrorPolicy());
-        definition.setReleaseMode(snapshot.getReleaseMode());
+        definition.setErrorPolicy(parseOptionalEnum(snapshot.getErrorPolicy(), ParserErrorPolicy.class, "errorPolicy"));
+        definition.setReleaseMode(parseOptionalEnum(snapshot.getReleaseMode(), ParserReleaseMode.class, "releaseMode"));
         definition.setReleaseConfigJson(snapshot.getReleaseConfigJson());
     }
 
@@ -543,13 +511,13 @@ public class ProtocolParserService {
         vo.setId(definition.getId());
         vo.setTenantId(definition.getTenantId());
         vo.setProductId(definition.getProductId());
-        vo.setScopeType(definition.getScopeType());
+        vo.setScopeType(enumValue(definition.getScopeType()));
         vo.setScopeId(definition.getScopeId());
         vo.setProtocol(definition.getProtocol());
         vo.setTransport(definition.getTransport());
-        vo.setDirection(definition.getDirection());
-        vo.setParserMode(definition.getParserMode());
-        vo.setFrameMode(definition.getFrameMode());
+        vo.setDirection(enumValue(definition.getDirection()));
+        vo.setParserMode(enumValue(definition.getParserMode()));
+        vo.setFrameMode(enumValue(definition.getFrameMode()));
         vo.setMatchRuleJson(definition.getMatchRuleJson());
         vo.setFrameConfigJson(definition.getFrameConfigJson());
         vo.setParserConfigJson(definition.getParserConfigJson());
@@ -559,10 +527,10 @@ public class ProtocolParserService {
         vo.setPluginId(definition.getPluginId());
         vo.setPluginVersion(definition.getPluginVersion());
         vo.setTimeoutMs(definition.getTimeoutMs());
-        vo.setErrorPolicy(definition.getErrorPolicy());
-        vo.setReleaseMode(definition.getReleaseMode());
+        vo.setErrorPolicy(enumValue(definition.getErrorPolicy()));
+        vo.setReleaseMode(enumValue(definition.getReleaseMode()));
         vo.setReleaseConfigJson(definition.getReleaseConfigJson());
-        vo.setStatus(definition.getStatus());
+        vo.setStatus(enumValue(definition.getStatus()));
         vo.setCurrentVersion(definition.getCurrentVersion());
         vo.setPublishedVersion(definition.getPublishedVersion());
         vo.setCreatedBy(definition.getCreatedBy());
@@ -588,11 +556,11 @@ public class ProtocolParserService {
         try {
             JsonNode node = objectMapper.readTree(source);
             if (!node.isObject()) {
-                throw new BizException(ResultCode.PARAM_ERROR, fieldName + " 必须是 JSON 对象");
+                throw new BizException(ResultCode.PARAM_ERROR, fieldName + " must be a JSON object");
             }
             return objectMapper.writeValueAsString(node);
         } catch (JsonProcessingException ex) {
-            throw new BizException(ResultCode.PARAM_ERROR, fieldName + " 不是合法的 JSON");
+            throw new BizException(ResultCode.PARAM_ERROR, fieldName + " is not valid JSON");
         }
     }
 
@@ -612,17 +580,17 @@ public class ProtocolParserService {
     }
 
     private int scopePriority(String scopeType) {
-        return SCOPE_PRODUCT.equals(normalizeUpper(scopeType)) ? 0 : 1;
+        return enumValue(SCOPE_PRODUCT).equals(normalizeUpper(scopeType)) ? 0 : 1;
     }
 
     private int releasePriority(String releaseMode) {
-        return "ALL".equals(normalizeUpper(releaseMode)) ? 1 : 0;
+        return enumValue(DEFAULT_RELEASE_MODE).equals(normalizeUpper(releaseMode)) ? 1 : 0;
     }
 
     private int normalizeTimeout(Integer timeoutMs) {
         int value = timeoutMs == null ? DEFAULT_TIMEOUT_MS : timeoutMs;
         if (value <= 0 || value > MAX_TIMEOUT_MS) {
-            throw new BizException(ResultCode.PARAM_ERROR, "timeoutMs 必须在 1 到 " + MAX_TIMEOUT_MS + " 之间");
+            throw new BizException(ResultCode.PARAM_ERROR, "timeoutMs must be between 1 and " + MAX_TIMEOUT_MS);
         }
         return value;
     }
@@ -663,6 +631,29 @@ public class ProtocolParserService {
         return notBlank(value) ? value : defaultValue;
     }
 
+    private <T> T defaultIfNull(T value, T defaultValue) {
+        return value == null ? defaultValue : value;
+    }
+
+    private <E extends Enum<E> & IEnum<String>> E parseOptionalEnum(String rawValue,
+                                                                     Class<E> enumType,
+                                                                     String fieldName) {
+        String normalized = normalizeUpper(rawValue);
+        if (!notBlank(normalized)) {
+            return null;
+        }
+        for (E item : enumType.getEnumConstants()) {
+            if (item.getValue().equalsIgnoreCase(normalized) || item.name().equalsIgnoreCase(normalized)) {
+                return item;
+            }
+        }
+        throw new BizException(ResultCode.PARAM_ERROR, fieldName + " has unsupported value: " + rawValue);
+    }
+
+    private <E extends IEnum<String>> String enumValue(E value) {
+        return value == null ? null : value.getValue();
+    }
+
     private String writeJson(Object value, String errorMessage) {
         try {
             return objectMapper.writeValueAsString(value);
@@ -683,7 +674,7 @@ public class ProtocolParserService {
         Long productId = definition.getProductId() == null ? 0L : definition.getProductId();
         ProtocolParserChangedEvent event = ProtocolParserChangedEvent.of(
                 definition.getTenantId(),
-                UserContextHolder.getUserId(),
+                AppContextHolder.getUserId(),
                 productId,
                 definition.getId(),
                 definition.getPublishedVersion(),

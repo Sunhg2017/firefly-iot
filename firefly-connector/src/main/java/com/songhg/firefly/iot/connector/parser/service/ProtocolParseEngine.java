@@ -32,6 +32,9 @@ import java.util.Map;
 public class ProtocolParseEngine {
 
     private static final String DEFAULT_DIRECTION = "UPLINK";
+    private static final String ERROR_POLICY_ERROR = "ERROR";
+    private static final String ERROR_POLICY_DROP = "DROP";
+    private static final String ERROR_POLICY_RAW_DATA = "RAW_DATA";
 
     private final ObjectMapper objectMapper;
     private final PublishedProtocolParserService publishedProtocolParserService;
@@ -58,6 +61,9 @@ public class ProtocolParseEngine {
             return ProtocolParseOutcome.notHandled();
         }
 
+        boolean hasError = false;
+        boolean allowRawFallback = false;
+        String lastFailedParserMode = null;
         for (ProtocolParserPublishedDTO definition : candidates) {
             if (!protocolParserMatcher.matches(definition, parseContext, DEFAULT_DIRECTION)) {
                 continue;
@@ -81,8 +87,18 @@ public class ProtocolParseEngine {
                 if (resolvedDeviceContext == null) {
                     log.warn("Custom parser matched but device identity unresolved: productId={}, definitionId={}",
                             productId, definition.getDefinitionId());
-                    metricsService.recordParse(parseContext.getTransport(), definition.getParserMode(), true, true, System.currentTimeMillis() - start);
-                    return ProtocolParseOutcome.handled(List.of());
+                    FailureDecision failureDecision = resolveFailureDecision(definition);
+                    if (failureDecision == FailureDecision.DROP) {
+                        metricsService.recordParse(parseContext.getTransport(), definition.getParserMode(), true, true, System.currentTimeMillis() - start);
+                        return ProtocolParseOutcome.handled(List.of());
+                    }
+                    if (failureDecision == FailureDecision.RAW_DATA) {
+                        allowRawFallback = true;
+                        continue;
+                    }
+                    hasError = true;
+                    lastFailedParserMode = definition.getParserMode();
+                    continue;
                 }
                 if (!releaseMatcher.matches(definition, resolvedDeviceContext)) {
                     continue;
@@ -98,11 +114,28 @@ public class ProtocolParseEngine {
             } catch (Exception ex) {
                 log.warn("Custom parser execution failed: productId={}, definitionId={}, error={}",
                         productId, definition.getDefinitionId(), ex.getMessage());
-                metricsService.recordParse(parseContext.getTransport(), definition.getParserMode(), true, false, System.currentTimeMillis() - start);
-                return ProtocolParseOutcome.handled(List.of());
+                FailureDecision failureDecision = resolveFailureDecision(definition);
+                if (failureDecision == FailureDecision.DROP) {
+                    metricsService.recordParse(parseContext.getTransport(), definition.getParserMode(), true, false, System.currentTimeMillis() - start);
+                    return ProtocolParseOutcome.handled(List.of());
+                }
+                if (failureDecision == FailureDecision.RAW_DATA) {
+                    allowRawFallback = true;
+                    continue;
+                }
+                hasError = true;
+                lastFailedParserMode = definition.getParserMode();
             }
         }
 
+        if (allowRawFallback) {
+            metricsService.recordParse(parseContext.getTransport(), null, false, true, System.currentTimeMillis() - start);
+            return ProtocolParseOutcome.notHandled();
+        }
+        if (hasError) {
+            metricsService.recordParse(parseContext.getTransport(), lastFailedParserMode, true, false, System.currentTimeMillis() - start);
+            return ProtocolParseOutcome.handled(List.of());
+        }
         metricsService.recordParse(parseContext.getTransport(), null, false, true, System.currentTimeMillis() - start);
         return ProtocolParseOutcome.notHandled();
     }
@@ -280,8 +313,19 @@ public class ProtocolParseEngine {
         return value == null ? null : value.trim().toUpperCase(Locale.ROOT);
     }
 
-    private boolean safeEquals(String left, String right) {
-        return left == null ? right == null : left.equals(right);
+    private FailureDecision resolveFailureDecision(ProtocolParserPublishedDTO definition) {
+        String errorPolicy = upper(definition.getErrorPolicy());
+        if (ERROR_POLICY_DROP.equals(errorPolicy)) {
+            return FailureDecision.DROP;
+        }
+        if (ERROR_POLICY_RAW_DATA.equals(errorPolicy)) {
+            return FailureDecision.RAW_DATA;
+        }
+        if (errorPolicy == null || errorPolicy.isBlank() || ERROR_POLICY_ERROR.equals(errorPolicy)) {
+            return FailureDecision.ERROR;
+        }
+        // Keep unknown policy safe by treating it as strict error.
+        return FailureDecision.ERROR;
     }
 
     private String asString(Object value) {
@@ -298,5 +342,11 @@ public class ProtocolParseEngine {
             }
         }
         return null;
+    }
+
+    private enum FailureDecision {
+        ERROR,
+        DROP,
+        RAW_DATA
     }
 }

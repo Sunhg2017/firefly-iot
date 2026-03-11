@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.api.dto.ProtocolParserPublishedDTO;
 import com.songhg.firefly.iot.connector.config.TcpUdpProperties;
 import com.songhg.firefly.iot.connector.parser.model.FrameDecodeResult;
+import com.songhg.firefly.iot.connector.parser.model.KnownDeviceContext;
 import com.songhg.firefly.iot.connector.parser.model.ParseContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,7 @@ class FrameDecodeEngineTest {
                 new TcpUdpProperties(),
                 publishedProtocolParserService,
                 new ProtocolParserMatcher(new ObjectMapper()),
+                new ProtocolParserReleaseMatcher(new ObjectMapper()),
                 new FrameSessionBufferStore()
         );
     }
@@ -126,6 +128,78 @@ class FrameDecodeEngineTest {
         assertThat(result.getFrames()).hasSize(2);
         assertThat(new String(result.getFrames().get(0), StandardCharsets.UTF_8)).isEqualTo("AA");
         assertThat(new String(result.getFrames().get(1), StandardCharsets.UTF_8)).isEqualTo("BB");
+    }
+
+    @Test
+    void decodeShouldSkipDefinitionsOutsideReleaseScope() {
+        ProtocolParserPublishedDTO outOfRelease = tcpDefinition(
+                "DELIMITER",
+                "{\"delimiter\":\"\\n\"}"
+        );
+        outOfRelease.setReleaseMode("DEVICE_LIST");
+        outOfRelease.setReleaseConfigJson("{\"deviceNames\":[\"dev-b\"]}");
+
+        ProtocolParserPublishedDTO inRelease = tcpDefinition(
+                "FIXED_LENGTH",
+                "{\"fixedLength\":2}"
+        );
+        inRelease.setDefinitionId(2L);
+        inRelease.setReleaseMode("ALL");
+
+        when(publishedProtocolParserService.getPublishedDefinitions(2001L)).thenReturn(List.of(outOfRelease, inRelease));
+
+        ParseContext parseContext = ProtocolParseEngine.buildContext(
+                "TCP_UDP",
+                "TCP",
+                "/tcp/data",
+                "ABCD".getBytes(StandardCharsets.UTF_8),
+                Map.of(),
+                "tcp-release",
+                "127.0.0.1:10001",
+                2001L,
+                "pk-demo"
+        );
+
+        FrameDecodeResult result = frameDecodeEngine.decode(
+                parseContext,
+                KnownDeviceContext.builder()
+                        .tenantId(1L)
+                        .productId(2001L)
+                        .deviceId(1001L)
+                        .deviceName("dev-a")
+                        .productKey("pk-demo")
+                        .build()
+        );
+
+        assertThat(result.getFrames()).hasSize(2);
+        assertThat(new String(result.getFrames().get(0), StandardCharsets.UTF_8)).isEqualTo("AB");
+        assertThat(new String(result.getFrames().get(1), StandardCharsets.UTF_8)).isEqualTo("CD");
+    }
+
+    @Test
+    void decodeShouldDiscardOversizedRemainder() {
+        ProtocolParserPublishedDTO definition = tcpDefinition(
+                "DELIMITER",
+                "{\"delimiter\":\"\\n\",\"maxBufferedBytes\":4}"
+        );
+        when(publishedProtocolParserService.getPublishedDefinitions(2001L)).thenReturn(List.of(definition));
+
+        ParseContext parseContext = ProtocolParseEngine.buildContext(
+                "TCP_UDP",
+                "TCP",
+                "/tcp/data",
+                "ABCDE".getBytes(StandardCharsets.UTF_8),
+                Map.of(),
+                "tcp-oversize",
+                "127.0.0.1:10001",
+                2001L,
+                "pk-demo"
+        );
+
+        FrameDecodeResult result = frameDecodeEngine.decode(parseContext, null);
+
+        assertThat(result.getFrames()).isEmpty();
+        assertThat(result.isNeedMoreData()).isFalse();
     }
 
     private ProtocolParserPublishedDTO tcpDefinition(String frameMode, String frameConfigJson) {

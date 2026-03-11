@@ -281,7 +281,22 @@ public class ProtocolParserDebugService {
     }
 
     private List<ParseContext> splitFrames(ProtocolParserPublishedDTO definition, ParseContext rawContext) {
-        FrameDecodeResult frameDecodeResult = frameDecodeEngine.decode(definition, rawContext);
+        ParseContext frameDecodeContext = ParseContext.builder()
+                .protocol(rawContext.getProtocol())
+                .transport(rawContext.getTransport())
+                .topic(rawContext.getTopic())
+                .payload(rawContext.getPayload())
+                .payloadText(rawContext.getPayloadText())
+                .payloadHex(rawContext.getPayloadHex())
+                .headers(rawContext.getHeaders())
+                // Avoid writing debug half-packets into runtime session buffer.
+                .sessionId(null)
+                .remoteAddress(null)
+                .productId(rawContext.getProductId())
+                .productKey(rawContext.getProductKey())
+                .config(rawContext.getConfig())
+                .build();
+        FrameDecodeResult frameDecodeResult = frameDecodeEngine.decode(definition, frameDecodeContext);
         if (frameDecodeResult.getFrames().isEmpty()) {
             if (frameDecodeResult.isNeedMoreData()) {
                 throw new IllegalArgumentException("Payload does not contain a complete frame under current frame config");

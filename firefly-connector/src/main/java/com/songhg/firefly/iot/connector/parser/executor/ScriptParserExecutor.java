@@ -22,14 +22,24 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @Component
 public class ScriptParserExecutor {
+
+    private static final int DEFAULT_TIMEOUT_MS = 50;
+    private static final int MIN_TIMEOUT_MS = 1;
+    private static final int SCRIPT_WORKERS = Math.max(2, Runtime.getRuntime().availableProcessors());
+    private static final int MAX_PENDING_SCRIPT_TASKS = 2_000;
+    private static final AtomicInteger SCRIPT_THREAD_SEQ = new AtomicInteger(1);
 
     private static final String HELPER_SCRIPT = """
             const hex = Object.freeze({
@@ -158,11 +168,19 @@ public class ScriptParserExecutor {
             .maximumSize(1_000)
             .build();
 
-    private final ExecutorService executorService = Executors.newCachedThreadPool(runnable -> {
-        Thread thread = new Thread(runnable, "firefly-parser-script");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private final ExecutorService executorService = new ThreadPoolExecutor(
+            SCRIPT_WORKERS,
+            SCRIPT_WORKERS,
+            0L,
+            TimeUnit.MILLISECONDS,
+            new LinkedBlockingQueue<>(MAX_PENDING_SCRIPT_TASKS),
+            runnable -> {
+                Thread thread = new Thread(runnable, "firefly-parser-script-" + SCRIPT_THREAD_SEQ.getAndIncrement());
+                thread.setDaemon(true);
+                return thread;
+            },
+            new ThreadPoolExecutor.AbortPolicy()
+    );
 
     public ScriptParserExecutor(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -170,15 +188,22 @@ public class ScriptParserExecutor {
     }
 
     public ParseExecutionResult execute(ProtocolParserPublishedDTO definition, ParseContext context) {
-        Future<ParseExecutionResult> future = executorService.submit(() -> doExecute(definition, context));
+        ExecutionGuard guard = new ExecutionGuard();
+        Future<ParseExecutionResult> future;
         try {
-            int timeoutMs = definition.getTimeoutMs() == null ? 50 : definition.getTimeoutMs();
-            return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+            future = executorService.submit(() -> doExecute(definition, context, guard));
+        } catch (RejectedExecutionException ex) {
+            throw new IllegalStateException("Script parser executor is busy");
+        }
+        try {
+            return future.get(resolveTimeout(definition), TimeUnit.MILLISECONDS);
         } catch (TimeoutException ex) {
+            guard.cancel();
             future.cancel(true);
             throw new IllegalStateException("Script parser execution timeout");
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
+            guard.cancel();
             future.cancel(true);
             throw new IllegalStateException("Script parser execution interrupted");
         } catch (ExecutionException ex) {
@@ -187,15 +212,22 @@ public class ScriptParserExecutor {
     }
 
     public EncodeExecutionResult encode(ProtocolParserPublishedDTO definition, DownlinkEncodeContext context) {
-        Future<EncodeExecutionResult> future = executorService.submit(() -> doEncode(definition, context));
+        ExecutionGuard guard = new ExecutionGuard();
+        Future<EncodeExecutionResult> future;
         try {
-            int timeoutMs = definition.getTimeoutMs() == null ? 50 : definition.getTimeoutMs();
-            return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+            future = executorService.submit(() -> doEncode(definition, context, guard));
+        } catch (RejectedExecutionException ex) {
+            throw new IllegalStateException("Script encoder executor is busy");
+        }
+        try {
+            return future.get(resolveTimeout(definition), TimeUnit.MILLISECONDS);
         } catch (TimeoutException ex) {
+            guard.cancel();
             future.cancel(true);
             throw new IllegalStateException("Script encoder execution timeout");
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
+            guard.cancel();
             future.cancel(true);
             throw new IllegalStateException("Script encoder execution interrupted");
         } catch (ExecutionException ex) {
@@ -216,9 +248,12 @@ public class ScriptParserExecutor {
         engine.close(true);
     }
 
-    private ParseExecutionResult doExecute(ProtocolParserPublishedDTO definition, ParseContext context) {
+    private ParseExecutionResult doExecute(ProtocolParserPublishedDTO definition,
+                                           ParseContext context,
+                                           ExecutionGuard guard) {
         String contextJson = writeContextJson(context);
         try (Context jsContext = newContext()) {
+            guard.bind(jsContext);
             jsContext.getBindings("js").putMember("__ctxJson", contextJson);
             jsContext.eval(HELPER_SOURCE);
             jsContext.eval(CONTEXT_SOURCE);
@@ -230,12 +265,17 @@ public class ScriptParserExecutor {
             return objectMapper.readValue(resultJson, ParseExecutionResult.class);
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Failed to deserialize parser result", ex);
+        } finally {
+            guard.clear();
         }
     }
 
-    private EncodeExecutionResult doEncode(ProtocolParserPublishedDTO definition, DownlinkEncodeContext context) {
+    private EncodeExecutionResult doEncode(ProtocolParserPublishedDTO definition,
+                                           DownlinkEncodeContext context,
+                                           ExecutionGuard guard) {
         String contextJson = writeContextJson(context);
         try (Context jsContext = newContext()) {
+            guard.bind(jsContext);
             jsContext.getBindings("js").putMember("__ctxJson", contextJson);
             jsContext.eval(HELPER_SOURCE);
             jsContext.eval(CONTEXT_SOURCE);
@@ -247,6 +287,8 @@ public class ScriptParserExecutor {
             return objectMapper.readValue(resultJson, EncodeExecutionResult.class);
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Failed to deserialize encoder result", ex);
+        } finally {
+            guard.clear();
         }
     }
 
@@ -361,6 +403,38 @@ public class ScriptParserExecutor {
             return runtimeException;
         }
         return new IllegalStateException(cause == null ? ex.getMessage() : cause.getMessage(), cause);
+    }
+
+    private int resolveTimeout(ProtocolParserPublishedDTO definition) {
+        if (definition == null || definition.getTimeoutMs() == null) {
+            return DEFAULT_TIMEOUT_MS;
+        }
+        return Math.max(MIN_TIMEOUT_MS, definition.getTimeoutMs());
+    }
+
+    private static final class ExecutionGuard {
+
+        private final AtomicReference<Context> contextRef = new AtomicReference<>();
+
+        void bind(Context context) {
+            contextRef.set(context);
+        }
+
+        void clear() {
+            contextRef.set(null);
+        }
+
+        void cancel() {
+            Context context = contextRef.getAndSet(null);
+            if (context == null) {
+                return;
+            }
+            try {
+                context.close(true);
+            } catch (Exception ignored) {
+                // best-effort cancellation
+            }
+        }
     }
 
     private record ScriptSourceCacheKey(Long definitionId, Integer versionNo, String scriptContent) {

@@ -223,3 +223,29 @@ flowchart LR
 - 页面交互符合“少输入、少暴露主键、优先业务键”的规则。
 - 复杂联动点已在代码和文档中补充说明。
 - 既保留现有后端稳定契约，又把前端展示口径收敛到业务可理解信息。
+
+## 2026-03-12 Runtime Hardening Update
+
+### Scope
+
+This update aligns management, debug, and runtime behavior for custom protocol parsing and closes several unsafe edge cases.
+
+### Key Design Changes
+
+- `errorPolicy` is now enforced in runtime parse decisions:
+  - `ERROR`: mark parse failure and continue trying later candidates; if no candidate succeeds and no RAW fallback is allowed, return handled-empty.
+  - `DROP`: stop immediately and return handled-empty.
+  - `RAW_DATA`: continue candidate traversal and allow raw pipeline fallback (`notHandled`) when no parser succeeds.
+- Parser candidate traversal no longer short-circuits on first failure under `ERROR`; later matching candidates can still succeed.
+- TCP/UDP frame decode now filters parser definitions by release strategy (`ALL` / `DEVICE_LIST` / `HASH_PERCENT`) when device context is known.
+- Session frame reassembly introduces bounded remainder protection:
+  - supports `frameConfig.maxBufferedBytes`
+  - overflow clears session remainder and drops the oversized partial frame.
+- Debug frame splitting is isolated from production sessions; debug calls no longer write to runtime TCP/UDP session buffers.
+- `BUILTIN` parser mode is explicitly rejected in management validation. Current supported modes are `SCRIPT` and `PLUGIN`.
+- Script parser execution now runs in a bounded executor with queue limits and timeout-triggered cancellation to prevent unbounded resource growth.
+
+### Compatibility Notes
+
+- Existing `SCRIPT` and `PLUGIN` published rules remain compatible.
+- Rules configured with `parserMode=BUILTIN` must be migrated to `SCRIPT` or `PLUGIN`.

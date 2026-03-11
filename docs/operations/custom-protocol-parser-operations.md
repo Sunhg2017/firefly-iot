@@ -225,3 +225,41 @@ mvn -pl firefly-system -am -DskipTests compile
   - `tenantCode`
   - `productKey`
   - `deviceName`
+
+## 2026-03-12 Operations Update
+
+### Runtime Behavior Changes
+
+- Frame decoding now respects release strategies during parser definition selection when device context can be resolved.
+- Parser failure policy is now effective at runtime:
+  - `ERROR`: continue next parser, final fallback is handled-empty on accumulated parser errors.
+  - `DROP`: immediate handled-empty.
+  - `RAW_DATA`: allow raw pipeline fallback (`notHandled`).
+- Parser traversal is no longer first-failure short-circuit under `ERROR`.
+
+### New/Updated Guardrails
+
+- Session remainder buffering is bounded:
+  - optional `frameConfig.maxBufferedBytes`
+  - if omitted, runtime uses internal safe defaults.
+- On remainder overflow, runtime logs warning and clears session remainder to prevent memory growth.
+  - Typical log pattern: `Discard oversized frame remainder`.
+- Script execution uses bounded worker pool and bounded queue.
+  - When saturated, runtime returns busy failure instead of unbounded queuing.
+
+### Debug Isolation
+
+- Protocol debug frame split does not reuse production `sessionId` buffers anymore.
+- Debug half-packet testing no longer contaminates online TCP/UDP stream sessions.
+
+### Mode Availability
+
+- Management now rejects `parserMode=BUILTIN`.
+- Supported production modes: `SCRIPT`, `PLUGIN`.
+
+### Recommended Checks After Upgrade
+
+1. Verify no active draft/published definitions still use `BUILTIN`.
+2. For TCP/UDP long-frame protocols, explicitly set `frameConfig.maxBufferedBytes`.
+3. Confirm expected fallback behavior per rule (`ERROR`, `DROP`, `RAW_DATA`) in debug and production.
+4. Watch parser warnings and executor busy logs during traffic peaks.

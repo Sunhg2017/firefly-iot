@@ -2,10 +2,14 @@ package com.songhg.firefly.iot.device.protocolparser.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.api.dto.ProtocolParserPublishedDTO;
-import com.songhg.firefly.iot.common.context.TenantContext;
-import com.songhg.firefly.iot.common.context.TenantContextHolder;
-import com.songhg.firefly.iot.common.context.UserContext;
-import com.songhg.firefly.iot.common.context.UserContextHolder;
+import com.songhg.firefly.iot.common.context.AppContext;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.enums.ParserDirection;
+import com.songhg.firefly.iot.common.enums.ParserErrorPolicy;
+import com.songhg.firefly.iot.common.enums.ParserFrameMode;
+import com.songhg.firefly.iot.common.enums.ParserMode;
+import com.songhg.firefly.iot.common.enums.ParserScopeType;
+import com.songhg.firefly.iot.common.enums.ParserStatus;
 import com.songhg.firefly.iot.common.event.EventPublisher;
 import com.songhg.firefly.iot.common.event.EventTopics;
 import com.songhg.firefly.iot.common.event.ProtocolParserChangedEvent;
@@ -60,20 +64,15 @@ class ProtocolParserServiceTest {
                 eventPublisher
         );
 
-        TenantContext tenantContext = new TenantContext();
-        tenantContext.setTenantId(88L);
-        TenantContextHolder.set(tenantContext);
-
-        UserContext userContext = new UserContext();
-        userContext.setUserId(501L);
-        userContext.setTenantId(88L);
-        UserContextHolder.set(userContext);
+        AppContext appContext = new AppContext();
+        appContext.setTenantId(88L);
+        appContext.setUserId(501L);
+        AppContextHolder.set(appContext);
     }
 
     @AfterEach
     void tearDown() {
-        TenantContextHolder.clear();
-        UserContextHolder.clear();
+        AppContextHolder.clear();
     }
 
     @Test
@@ -81,7 +80,7 @@ class ProtocolParserServiceTest {
         ProtocolParserDefinition definition = baseDefinition();
         definition.setId(10L);
         definition.setCurrentVersion(3);
-        definition.setStatus("DRAFT");
+        definition.setStatus(ParserStatus.DRAFT);
 
         mockProduct(1001L, 88L);
         when(definitionMapper.selectById(10L)).thenReturn(definition);
@@ -105,7 +104,7 @@ class ProtocolParserServiceTest {
         verify(definitionMapper).updateById(definitionCaptor.capture());
         ProtocolParserDefinition updatedDefinition = definitionCaptor.getValue();
         assertThat(updatedDefinition.getPublishedVersion()).isEqualTo(3);
-        assertThat(updatedDefinition.getStatus()).isEqualTo("ENABLED");
+        assertThat(updatedDefinition.getStatus()).isEqualTo(ParserStatus.ENABLED);
 
         ArgumentCaptor<ProtocolParserChangedEvent> eventCaptor =
                 ArgumentCaptor.forClass(ProtocolParserChangedEvent.class);
@@ -125,7 +124,7 @@ class ProtocolParserServiceTest {
         definition.setId(10L);
         definition.setCurrentVersion(5);
         definition.setPublishedVersion(4);
-        definition.setStatus("ENABLED");
+        definition.setStatus(ParserStatus.ENABLED);
         definition.setProtocol("MQTT");
         definition.setTransport("MQTT");
 
@@ -169,7 +168,7 @@ class ProtocolParserServiceTest {
         assertThat(updatedDefinition.getTimeoutMs()).isEqualTo(80);
         assertThat(updatedDefinition.getPublishedVersion()).isEqualTo(2);
         assertThat(updatedDefinition.getCurrentVersion()).isEqualTo(6);
-        assertThat(updatedDefinition.getStatus()).isEqualTo("ENABLED");
+        assertThat(updatedDefinition.getStatus()).isEqualTo(ParserStatus.ENABLED);
 
         ArgumentCaptor<ProtocolParserChangedEvent> eventCaptor =
                 ArgumentCaptor.forClass(ProtocolParserChangedEvent.class);
@@ -219,20 +218,20 @@ class ProtocolParserServiceTest {
         ProtocolParserDefinition definition = new ProtocolParserDefinition();
         definition.setTenantId(88L);
         definition.setProductId(1001L);
-        definition.setScopeType("PRODUCT");
+        definition.setScopeType(ParserScopeType.PRODUCT);
         definition.setScopeId(1001L);
         definition.setProtocol("MQTT");
         definition.setTransport("MQTT");
-        definition.setDirection("UPLINK");
-        definition.setParserMode("SCRIPT");
-        definition.setFrameMode("NONE");
+        definition.setDirection(ParserDirection.UPLINK);
+        definition.setParserMode(ParserMode.SCRIPT);
+        definition.setFrameMode(ParserFrameMode.NONE);
         definition.setMatchRuleJson("{}");
         definition.setFrameConfigJson("{}");
         definition.setParserConfigJson("{}");
         definition.setScriptLanguage("JS");
         definition.setScriptContent("function parse(ctx) { return { messages: [] }; }");
         definition.setTimeoutMs(50);
-        definition.setErrorPolicy("ERROR");
+        definition.setErrorPolicy(ParserErrorPolicy.ERROR);
         definition.setCreatedBy(501L);
         return definition;
     }

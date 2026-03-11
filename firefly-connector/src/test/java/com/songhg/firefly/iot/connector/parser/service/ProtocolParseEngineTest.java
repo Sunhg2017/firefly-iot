@@ -159,4 +159,119 @@ class ProtocolParseEngineTest {
         assertThat(outcome.getMessages()).isEmpty();
         verifyNoInteractions(publishedProtocolParserService, deviceIdentityResolveService, scriptParserExecutor);
     }
+
+    @Test
+    void parseShouldFallbackRawDataWhenPolicyIsRawData() {
+        ProtocolParserPublishedDTO definition = baseDefinition(31L);
+        definition.setErrorPolicy("RAW_DATA");
+
+        ParseContext parseContext = baseParseContext();
+        when(publishedProtocolParserService.getPublishedDefinitions(1001L)).thenReturn(List.of(definition));
+        when(scriptParserExecutor.execute(eq(definition), any(ParseContext.class)))
+                .thenThrow(new IllegalStateException("broken parser"));
+
+        ProtocolParseOutcome outcome = protocolParseEngine.parse(parseContext, null);
+
+        assertThat(outcome.isHandled()).isFalse();
+        assertThat(outcome.getMessages()).isEmpty();
+    }
+
+    @Test
+    void parseShouldContinueAfterFirstFailureAndUseNextCandidate() {
+        ProtocolParserPublishedDTO failedDefinition = baseDefinition(41L);
+        failedDefinition.setErrorPolicy("ERROR");
+        ProtocolParserPublishedDTO successDefinition = baseDefinition(42L);
+
+        ParsedDeviceIdentity identity = new ParsedDeviceIdentity();
+        identity.setMode("BY_DEVICE_NAME");
+        identity.setDeviceName("device-a");
+        identity.setProductKey("pk-demo");
+
+        ParsedMessage parsedMessage = new ParsedMessage();
+        parsedMessage.setMessageId("ok-1");
+        parsedMessage.setType("property_report");
+        parsedMessage.setPayload(Map.of("code", "A1"));
+
+        ParseExecutionResult successResult = new ParseExecutionResult();
+        successResult.setIdentity(identity);
+        successResult.setMessages(List.of(parsedMessage));
+
+        ResolvedDeviceContext resolved = ResolvedDeviceContext.builder()
+                .tenantId(501L)
+                .productId(1001L)
+                .deviceId(2002L)
+                .deviceName("device-a")
+                .productKey("pk-demo")
+                .build();
+
+        ParseContext parseContext = baseParseContext();
+        when(publishedProtocolParserService.getPublishedDefinitions(1001L))
+                .thenReturn(List.of(failedDefinition, successDefinition));
+        when(scriptParserExecutor.execute(eq(failedDefinition), any(ParseContext.class)))
+                .thenThrow(new IllegalStateException("first parser failed"));
+        when(scriptParserExecutor.execute(eq(successDefinition), any(ParseContext.class)))
+                .thenReturn(successResult);
+        when(deviceIdentityResolveService.resolve(any(ParseContext.class), eq(null), eq(identity))).thenReturn(resolved);
+        when(protocolParserReleaseMatcher.matches(successDefinition, resolved)).thenReturn(true);
+
+        ProtocolParseOutcome outcome = protocolParseEngine.parse(parseContext, null);
+
+        assertThat(outcome.isHandled()).isTrue();
+        assertThat(outcome.getMessages()).hasSize(1);
+        assertThat(outcome.getMessages().get(0).getMessageId()).isEqualTo("ok-1");
+        assertThat(outcome.getMessages().get(0).getType()).isEqualTo(DeviceMessage.MessageType.PROPERTY_REPORT);
+    }
+
+    @Test
+    void parseShouldReturnHandledEmptyWhenPolicyIsDrop() {
+        ProtocolParserPublishedDTO definition = baseDefinition(51L);
+        definition.setErrorPolicy("DROP");
+
+        ParsedDeviceIdentity identity = new ParsedDeviceIdentity();
+        identity.setMode("BY_DEVICE_NAME");
+        identity.setDeviceName("missing-device");
+
+        ParseExecutionResult executionResult = new ParseExecutionResult();
+        executionResult.setIdentity(identity);
+        executionResult.setMessages(List.of());
+
+        ParseContext parseContext = baseParseContext();
+        when(publishedProtocolParserService.getPublishedDefinitions(1001L)).thenReturn(List.of(definition));
+        when(scriptParserExecutor.execute(eq(definition), any(ParseContext.class))).thenReturn(executionResult);
+        when(deviceIdentityResolveService.resolve(any(ParseContext.class), eq(null), eq(identity))).thenReturn(null);
+
+        ProtocolParseOutcome outcome = protocolParseEngine.parse(parseContext, null);
+
+        assertThat(outcome.isHandled()).isTrue();
+        assertThat(outcome.getMessages()).isEmpty();
+    }
+
+    private ProtocolParserPublishedDTO baseDefinition(Long definitionId) {
+        ProtocolParserPublishedDTO definition = new ProtocolParserPublishedDTO();
+        definition.setDefinitionId(definitionId);
+        definition.setProtocol("MQTT");
+        definition.setTransport("MQTT");
+        definition.setDirection("UPLINK");
+        definition.setParserMode("SCRIPT");
+        definition.setMatchRuleJson("{}");
+        definition.setParserConfigJson("{}");
+        definition.setErrorPolicy("ERROR");
+        return definition;
+    }
+
+    private ParseContext baseParseContext() {
+        return ParseContext.builder()
+                .protocol("mqtt")
+                .transport("mqtt")
+                .topic("/up/telemetry")
+                .payload(new byte[] {1, 2, 3})
+                .payloadText("payload")
+                .payloadHex("010203")
+                .headers(Map.of())
+                .sessionId("session-1")
+                .remoteAddress("127.0.0.1")
+                .productId(1001L)
+                .productKey("pk-demo")
+                .build();
+    }
 }
