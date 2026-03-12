@@ -225,7 +225,7 @@ public class FrameDecodeEngine {
         if (delimiter == null) {
             return new byte[0];
         }
-        return unescape(delimiter).getBytes(StandardCharsets.UTF_8);
+        return unescape(delimiter);
     }
 
     private byte[] mergeWithSession(ParseContext parseContext, byte[] incoming, int maxBufferedBytes) {
@@ -359,12 +359,13 @@ public class FrameDecodeEngine {
         return value;
     }
 
-    private String unescape(String value) {
+    private byte[] unescape(String value) {
         ByteArrayOutputStream output = new ByteArrayOutputStream(value.length());
         for (int i = 0; i < value.length(); i++) {
             char ch = value.charAt(i);
             if (ch != '\\' || i == value.length() - 1) {
-                output.write((byte) ch);
+                byte[] encoded = String.valueOf(ch).getBytes(StandardCharsets.UTF_8);
+                output.write(encoded, 0, encoded.length);
                 continue;
             }
             char next = value.charAt(++i);
@@ -382,10 +383,13 @@ public class FrameDecodeEngine {
                     output.write(Integer.parseInt(hex, 16));
                     i += 2;
                 }
-                default -> output.write((byte) next);
+                default -> {
+                    byte[] encoded = String.valueOf(next).getBytes(StandardCharsets.UTF_8);
+                    output.write(encoded, 0, encoded.length);
+                }
             }
         }
-        return output.toString(StandardCharsets.UTF_8);
+        return output.toByteArray();
     }
 
     private Map<String, Object> readJsonMap(String json) {

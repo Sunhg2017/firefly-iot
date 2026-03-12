@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn clean:*)",
+      "Bash(git -C e:/codeRepo/service/firefly-iot log --oneline --diff-filter=M -- '**/parser/**/*.java' '**/protocolparser/**/*.java')",
+      "Bash(grep -rl \"TaskCenter\\\\|taskCenter\\\\|AsyncJob\\\\|asyncJob\" e:/codeRepo/service/firefly-iot --include=*.java)",
+      "Bash(grep -ril \"importFile\\\\|fileImport\\\\|handleImport\" e:/codeRepo/service/firefly-iot --include=*.java)"
+    ]
+  }
+}

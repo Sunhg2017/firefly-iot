@@ -37,10 +37,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -189,7 +193,8 @@ public class ProtocolParserService {
                 "protocol parser snapshot read failed"
         );
         applyPublishedSnapshot(definition, snapshot);
-        normalizeAndValidate(definition);
+        // 快照在首次发布时已通过完整校验，回滚时不再重复校验。
+        // tenantId 由 applyPublishedSnapshot 从快照中恢复，无需重新查 DB（避免产品软删除后回滚失败）。
 
         Integer maxVersionNo = versionMapper.selectMaxVersionNo(definition.getId());
         int nextVersionNo = Math.max((maxVersionNo == null ? 0 : maxVersionNo) + 1, versionNo + 1);
@@ -218,6 +223,9 @@ public class ProtocolParserService {
     @Transactional
     public void disable(Long id) {
         ProtocolParserDefinition definition = getDefinitionOrThrow(id);
+        if (definition.getPublishedVersion() == null) {
+            throw new BizException(ResultCode.CONFLICT, "cannot disable parser definition before publish");
+        }
         definition.setStatus(STATUS_DISABLED);
         definitionMapper.updateById(definition);
         publishChangedEvent(definition, ProtocolParserChangedEvent.Action.DISABLED);
@@ -231,8 +239,29 @@ public class ProtocolParserService {
         if (product == null) {
             return Collections.emptyList();
         }
-        return definitionMapper.selectPublishedByProductAndTenantIgnoreTenant(productId, product.getTenantId()).stream()
-                .map(this::resolvePublishedSnapshot)
+        List<ProtocolParserDefinition> definitions =
+                definitionMapper.selectPublishedByProductAndTenantIgnoreTenant(productId, product.getTenantId());
+        if (definitions.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 批量拉取版本快照，避免 N+1 查询
+        List<Map<String, Object>> pairs = new ArrayList<>();
+        for (ProtocolParserDefinition d : definitions) {
+            if (d.getPublishedVersion() != null) {
+                HashMap<String, Object> pair = new HashMap<>();
+                pair.put("definitionId", d.getId());
+                pair.put("versionNo", d.getPublishedVersion());
+                pairs.add(pair);
+            }
+        }
+        Map<Long, ProtocolParserVersion> versionCache = pairs.isEmpty()
+                ? Collections.emptyMap()
+                : versionMapper.selectByDefinitionIdAndVersionNoPairs(pairs).stream()
+                        .collect(Collectors.toMap(ProtocolParserVersion::getDefinitionId, v -> v, (a, b) -> a));
+
+        return definitions.stream()
+                .map(d -> resolvePublishedSnapshotFromCache(d, versionCache))
                 .sorted(publishedDefinitionComparator())
                 .toList();
     }
@@ -439,10 +468,11 @@ public class ProtocolParserService {
         }
     }
 
-    private ProtocolParserPublishedDTO resolvePublishedSnapshot(ProtocolParserDefinition definition) {
+    private ProtocolParserPublishedDTO resolvePublishedSnapshotFromCache(ProtocolParserDefinition definition,
+                                                                         Map<Long, ProtocolParserVersion> cache) {
         Integer versionNo = definition.getPublishedVersion();
         if (versionNo != null) {
-            ProtocolParserVersion version = versionMapper.selectByDefinitionIdAndVersionNo(definition.getId(), versionNo);
+            ProtocolParserVersion version = cache.get(definition.getId());
             if (version != null && notBlank(version.getSnapshotJson())) {
                 ProtocolParserPublishedDTO snapshot =
                         readJson(version.getSnapshotJson(), ProtocolParserPublishedDTO.class, "protocol parser snapshot read failed");
@@ -504,6 +534,9 @@ public class ProtocolParserService {
         definition.setErrorPolicy(parseOptionalEnum(snapshot.getErrorPolicy(), ParserErrorPolicy.class, "errorPolicy"));
         definition.setReleaseMode(parseOptionalEnum(snapshot.getReleaseMode(), ParserReleaseMode.class, "releaseMode"));
         definition.setReleaseConfigJson(snapshot.getReleaseConfigJson());
+        if (snapshot.getTenantId() != null) {
+            definition.setTenantId(snapshot.getTenantId());
+        }
     }
 
     private ProtocolParserVO toVO(ProtocolParserDefinition definition) {

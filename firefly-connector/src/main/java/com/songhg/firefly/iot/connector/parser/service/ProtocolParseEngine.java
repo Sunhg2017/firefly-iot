@@ -61,6 +61,10 @@ public class ProtocolParseEngine {
             return ProtocolParseOutcome.notHandled();
         }
 
+        // 聚合多个 parser 的失败状态：
+        // - allowRawFallback: 至少一个 parser 的 errorPolicy=RAW_DATA 发生失败 → 整体降级为原始数据处理
+        // - hasError: 至少一个 parser 的 errorPolicy=ERROR 发生失败 → 阻止降级，返回 handled(空消息)
+        // 优先级：RAW_DATA > ERROR，即只要存在 RAW_DATA 失败就降级，不论是否有 ERROR 失败。
         boolean hasError = false;
         boolean allowRawFallback = false;
         String lastFailedParserMode = null;
@@ -128,6 +132,10 @@ public class ProtocolParseEngine {
             }
         }
 
+        // 优先级：allowRawFallback > hasError > 无匹配
+        // RAW_DATA 失败：至少有一个 parser 希望让消息走原始数据路径，返回 notHandled()。
+        // ERROR 失败：所有匹配的 parser 均以 ERROR 策略失败，阻止原始数据降级，返回 handled(空消息)。
+        // 无匹配/无失败：无任何 parser 接管，返回 notHandled()。
         if (allowRawFallback) {
             metricsService.recordParse(parseContext.getTransport(), null, false, true, System.currentTimeMillis() - start);
             return ProtocolParseOutcome.notHandled();
