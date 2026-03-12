@@ -1240,7 +1240,7 @@ const mapRowToParameterForm = (row: Record<string, unknown>, rowIndex: number): 
   };
 };
 
-const mapRowToPropertyItem = (row: Record<string, unknown>, rowIndex: number): ThingModelItem => {
+export const mapRowToPropertyItem = (row: Record<string, unknown>, rowIndex: number): ThingModelItem => {
   const lookup = toRowLookup(row);
   const parameter = mapRowToParameterForm(row, rowIndex);
   const accessModeValue =

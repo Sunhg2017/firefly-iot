@@ -144,11 +144,11 @@ public class DeviceImportService {
 
             // 完成任务
             if (failCount == 0) {
-                asyncTaskClient.completeTask(taskId, true, null, successCount, null);
+                asyncTaskClient.completeTask(taskId, true, null, null, successCount, null);
                 log.info("设备导入完成: taskId={}, successCount={}", taskId, successCount);
             } else if (successCount > 0) {
                 String errorMsg = "部分导入成功: " + successCount + " 成功, " + failCount + " 失败";
-                asyncTaskClient.completeTask(taskId, true, null, successCount, errorMsg);
+                asyncTaskClient.completeTask(taskId, true, null, null, successCount, errorMsg);
                 log.warn("设备导入部分完成: taskId={}, success={}, fail={}", taskId, successCount, failCount);
             } else {
                 String errorMsg = "导入失败: " + String.join("; ", errors);

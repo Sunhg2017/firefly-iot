@@ -721,8 +721,9 @@ export const dashboardApi = {
 export const dataAnalysisApi = {
   queryTimeSeries: (data: Record<string, unknown>) => dataRequest.post('/analysis/timeseries', data),
   queryAggregation: (data: Record<string, unknown>) => dataRequest.post('/analysis/aggregation', data),
+  listProperties: (data: Record<string, unknown>) => dataRequest.post('/analysis/properties/options', data),
   getDeviceStats: (params: Record<string, unknown>) => dataRequest.get('/analysis/stats', { params }),
-  exportData: (data: Record<string, unknown>) => dataRequest.post('/analysis/export', data, { responseType: 'blob' }),
+  exportData: (data: Record<string, unknown>) => dataRequest.post('/analysis/export', data),
 };
 
 // ==================== Share Policy API ====================

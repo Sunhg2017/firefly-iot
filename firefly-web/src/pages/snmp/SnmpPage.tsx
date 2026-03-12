@@ -74,7 +74,7 @@ const SnmpPage: React.FC = () => {
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
   const [filteredDevices, setFilteredDevices] = useState<DeviceOption[]>([]);
-  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const [, setSelectedProductId] = useState<number | null>(null);
 
   // 构建设备ID到名称的映射
   const deviceMap = useMemo(() => {

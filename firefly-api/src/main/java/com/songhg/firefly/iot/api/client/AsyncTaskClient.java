@@ -37,6 +37,7 @@ public interface AsyncTaskClient {
     R<Void> completeTask(@PathVariable("taskId") Long taskId,
                          @RequestParam(value = "success", defaultValue = "true") Boolean success,
                          @RequestParam(value = "resultUrl", required = false) String resultUrl,
+                         @RequestParam(value = "resultSize", required = false) Long resultSize,
                          @RequestParam(value = "totalRows", required = false) Integer totalRows,
                          @RequestParam(value = "errorMessage", required = false) String errorMessage);
 

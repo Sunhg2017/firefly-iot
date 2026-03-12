@@ -58,7 +58,7 @@ const ModbusPage: React.FC = () => {
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
   const [filteredDevices, setFilteredDevices] = useState<DeviceOption[]>([]);
-  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const [, setSelectedProductId] = useState<number | null>(null);
 
   // ==================== Tools State ====================
   const [targetForm] = Form.useForm();

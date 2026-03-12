@@ -3,15 +3,20 @@ package com.songhg.firefly.iot.data.service;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.data.dto.analysis.AggregationQueryDTO;
 import com.songhg.firefly.iot.data.dto.analysis.DataExportDTO;
+import com.songhg.firefly.iot.data.dto.analysis.DataExportResult;
+import com.songhg.firefly.iot.data.dto.analysis.PropertyOptionQueryDTO;
 import com.songhg.firefly.iot.data.dto.analysis.TimeSeriesQueryDTO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintWriter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -19,54 +24,55 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class DataAnalysisService {
 
-    private final JdbcTemplate jdbcTemplate;
-
     private static final Set<String> VALID_AGGREGATIONS = Set.of("AVG", "SUM", "MIN", "MAX", "COUNT", "LAST", "FIRST");
     private static final Set<String> VALID_INTERVALS = Set.of("1m", "5m", "15m", "30m", "1h", "6h", "12h", "1d", "7d", "30d");
+    private static final int MAX_EXPORT_ROWS = 50000;
+
+    private final JdbcTemplate jdbcTemplate;
 
     /**
-     * 查询时序数据
+     * 查询时序数据。
+     * 查询结果直接补齐 productKey / deviceName，避免前端把内部 device_id 当作主视角字段展示。
      */
     public Map<String, Object> queryTimeSeries(TimeSeriesQueryDTO query) {
         Long tenantId = AppContextHolder.getTenantId();
-        StringBuilder sql = new StringBuilder("SELECT time, device_id, property_name, value_double, value_string FROM device_telemetry WHERE tenant_id = ?");
+        StringBuilder sql = new StringBuilder("""
+                SELECT t.time,
+                       p.product_key,
+                       d.device_name,
+                       d.nickname AS device_nickname,
+                       t.property_name,
+                       t.value_double,
+                       t.value_string
+                FROM device_telemetry t
+                JOIN devices d ON d.id = t.device_id AND d.tenant_id = t.tenant_id AND d.deleted_at IS NULL
+                LEFT JOIN products p ON p.id = d.product_id AND p.tenant_id = t.tenant_id
+                WHERE t.tenant_id = ?
+                """);
         List<Object> params = new ArrayList<>();
         params.add(tenantId);
 
-        sql.append(" AND device_id = ?");
+        sql.append(" AND t.device_id = ?");
         params.add(query.getDeviceId());
 
-        if (query.getProperties() != null && !query.getProperties().isEmpty()) {
-            String placeholders = query.getProperties().stream().map(p -> "?").collect(Collectors.joining(","));
-            sql.append(" AND property_name IN (").append(placeholders).append(")");
-            params.addAll(query.getProperties());
-        }
-        if (query.getStartTime() != null && !query.getStartTime().isBlank()) {
-            sql.append(" AND time >= ?::timestamptz");
-            params.add(query.getStartTime());
-        }
-        if (query.getEndTime() != null && !query.getEndTime().isBlank()) {
-            sql.append(" AND time <= ?::timestamptz");
-            params.add(query.getEndTime());
-        }
+        appendPropertyFilter(sql, params, query.getProperties(), "t.property_name");
+        appendTimeRange(sql, params, query.getStartTime(), query.getEndTime(), "t.time");
 
-        // Count total
         String countSql = "SELECT COUNT(*) FROM (" + sql + ") t";
         Long total = jdbcTemplate.queryForObject(countSql, Long.class, params.toArray());
 
-        // Order and paginate
-        String orderBy = (query.getOrderBy() == null || query.getOrderBy().isBlank()) ? "time" : query.getOrderBy();
-        String orderDir = query.isAsc() ? "ASC" : "DESC";
-        if (!Set.of("time", "device_id", "property_name").contains(orderBy)) {
-            orderBy = "time";
-        }
-        sql.append(" ORDER BY ").append(orderBy).append(" ").append(orderDir);
+        String orderBy = switch (query.getOrderBy() == null ? "time" : query.getOrderBy()) {
+            case "device_name" -> "d.device_name";
+            case "property_name" -> "t.property_name";
+            case "product_key" -> "p.product_key";
+            default -> "t.time";
+        };
+        sql.append(" ORDER BY ").append(orderBy).append(query.isAsc() ? " ASC" : " DESC");
         sql.append(" LIMIT ? OFFSET ?");
         params.add(query.getPageSize());
         params.add((query.getPageNum() - 1) * query.getPageSize());
 
         List<Map<String, Object>> records = jdbcTemplate.queryForList(sql.toString(), params.toArray());
-
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("records", records);
         result.put("total", total != null ? total : 0);
@@ -75,62 +81,49 @@ public class DataAnalysisService {
         return result;
     }
 
-    /**
-     * 聚合统计查询（使用 TimescaleDB time_bucket）
-     */
     public List<Map<String, Object>> queryAggregation(AggregationQueryDTO query) {
         Long tenantId = AppContextHolder.getTenantId();
 
         String agg = query.getAggregation() != null ? query.getAggregation().toUpperCase() : "AVG";
-        if (!VALID_AGGREGATIONS.contains(agg)) agg = "AVG";
-
-        String interval = query.getInterval();
-        if (!VALID_INTERVALS.contains(interval)) interval = "1h";
-
-        String aggFunc;
-        switch (agg) {
-            case "SUM" -> aggFunc = "SUM(value_double)";
-            case "MIN" -> aggFunc = "MIN(value_double)";
-            case "MAX" -> aggFunc = "MAX(value_double)";
-            case "COUNT" -> aggFunc = "COUNT(*)";
-            case "LAST" -> aggFunc = "last(value_double, time)";
-            case "FIRST" -> aggFunc = "first(value_double, time)";
-            default -> aggFunc = "AVG(value_double)";
+        if (!VALID_AGGREGATIONS.contains(agg)) {
+            agg = "AVG";
         }
 
+        String interval = VALID_INTERVALS.contains(query.getInterval()) ? query.getInterval() : "1h";
+        String aggFunc = switch (agg) {
+            case "SUM" -> "SUM(t.value_double)";
+            case "MIN" -> "MIN(t.value_double)";
+            case "MAX" -> "MAX(t.value_double)";
+            case "COUNT" -> "COUNT(*)";
+            case "LAST" -> "last(t.value_double, t.time)";
+            case "FIRST" -> "first(t.value_double, t.time)";
+            default -> "AVG(t.value_double)";
+        };
+
         StringBuilder sql = new StringBuilder();
-        sql.append("SELECT time_bucket('").append(interval).append("', time) AS bucket, ");
-        sql.append("device_id, ");
+        sql.append("SELECT time_bucket('").append(interval).append("', t.time) AS bucket, ");
+        sql.append("p.product_key, d.device_name, ");
         sql.append(aggFunc).append(" AS value ");
-        sql.append("FROM device_telemetry ");
-        sql.append("WHERE tenant_id = ? AND property_name = ?");
+        sql.append("FROM device_telemetry t ");
+        sql.append("JOIN devices d ON d.id = t.device_id AND d.tenant_id = t.tenant_id AND d.deleted_at IS NULL ");
+        sql.append("LEFT JOIN products p ON p.id = d.product_id AND p.tenant_id = t.tenant_id ");
+        sql.append("WHERE t.tenant_id = ? AND t.property_name = ?");
 
         List<Object> params = new ArrayList<>();
         params.add(tenantId);
         params.add(query.getProperty());
 
         if (query.getDeviceIds() != null && !query.getDeviceIds().isEmpty()) {
-            String placeholders = query.getDeviceIds().stream().map(d -> "?").collect(Collectors.joining(","));
-            sql.append(" AND device_id IN (").append(placeholders).append(")");
+            String placeholders = query.getDeviceIds().stream().map(id -> "?").collect(Collectors.joining(","));
+            sql.append(" AND t.device_id IN (").append(placeholders).append(")");
             params.addAll(query.getDeviceIds());
         }
-        if (query.getStartTime() != null && !query.getStartTime().isBlank()) {
-            sql.append(" AND time >= ?::timestamptz");
-            params.add(query.getStartTime());
-        }
-        if (query.getEndTime() != null && !query.getEndTime().isBlank()) {
-            sql.append(" AND time <= ?::timestamptz");
-            params.add(query.getEndTime());
-        }
+        appendTimeRange(sql, params, query.getStartTime(), query.getEndTime(), "t.time");
 
-        sql.append(" GROUP BY bucket, device_id ORDER BY bucket ASC");
-
+        sql.append(" GROUP BY bucket, p.product_key, d.device_name ORDER BY bucket ASC");
         return jdbcTemplate.queryForList(sql.toString(), params.toArray());
     }
 
-    /**
-     * 获取设备统计概览
-     */
     public Map<String, Object> getDeviceStats(Long deviceId, String property, String startTime, String endTime) {
         Long tenantId = AppContextHolder.getTenantId();
 
@@ -143,72 +136,86 @@ public class DataAnalysisService {
         params.add(tenantId);
         params.add(deviceId);
         params.add(property);
-
-        if (startTime != null && !startTime.isBlank()) {
-            sql.append(" AND time >= ?::timestamptz");
-            params.add(startTime);
-        }
-        if (endTime != null && !endTime.isBlank()) {
-            sql.append(" AND time <= ?::timestamptz");
-            params.add(endTime);
-        }
+        appendTimeRange(sql, params, startTime, endTime, "time");
 
         List<Map<String, Object>> results = jdbcTemplate.queryForList(sql.toString(), params.toArray());
         return results.isEmpty() ? Collections.emptyMap() : results.get(0);
     }
 
-    /**
-     * 导出数据为 CSV
-     */
-    public byte[] exportData(DataExportDTO dto) {
-        Long tenantId = AppContextHolder.getTenantId();
+    public List<String> listAvailableProperties(PropertyOptionQueryDTO query) {
+        List<Long> deviceIds = query.getDeviceIds() == null ? Collections.emptyList() : query.getDeviceIds();
+        if (deviceIds.isEmpty()) {
+            return Collections.emptyList();
+        }
 
-        StringBuilder sql = new StringBuilder("SELECT time, device_id, property_name, value_double, value_string FROM device_telemetry WHERE tenant_id = ?");
+        Long tenantId = AppContextHolder.getTenantId();
+        StringBuilder sql = new StringBuilder("SELECT DISTINCT property_name FROM device_telemetry WHERE tenant_id = ?");
+        List<Object> params = new ArrayList<>();
+        params.add(tenantId);
+
+        String placeholders = deviceIds.stream().map(id -> "?").collect(Collectors.joining(","));
+        sql.append(" AND device_id IN (").append(placeholders).append(")");
+        params.addAll(deviceIds);
+        appendTimeRange(sql, params, query.getStartTime(), query.getEndTime(), "time");
+        sql.append(" ORDER BY property_name ASC LIMIT 200");
+
+        return jdbcTemplate.queryForList(sql.toString(), String.class, params.toArray());
+    }
+
+    public DataExportResult queryExportData(DataExportDTO dto) {
+        Long tenantId = AppContextHolder.getTenantId();
+        StringBuilder sql = new StringBuilder("""
+                SELECT t.time,
+                       p.product_key,
+                       p.name AS product_name,
+                       d.device_name,
+                       d.nickname AS device_nickname,
+                       t.property_name,
+                       t.value_double,
+                       t.value_string
+                FROM device_telemetry t
+                JOIN devices d ON d.id = t.device_id AND d.tenant_id = t.tenant_id AND d.deleted_at IS NULL
+                LEFT JOIN products p ON p.id = d.product_id AND p.tenant_id = t.tenant_id
+                WHERE t.tenant_id = ?
+                """);
         List<Object> params = new ArrayList<>();
         params.add(tenantId);
 
         if (dto.getDeviceIds() != null && !dto.getDeviceIds().isEmpty()) {
-            String placeholders = dto.getDeviceIds().stream().map(d -> "?").collect(Collectors.joining(","));
-            sql.append(" AND device_id IN (").append(placeholders).append(")");
+            String placeholders = dto.getDeviceIds().stream().map(id -> "?").collect(Collectors.joining(","));
+            sql.append(" AND t.device_id IN (").append(placeholders).append(")");
             params.addAll(dto.getDeviceIds());
         }
-        if (dto.getProperties() != null && !dto.getProperties().isEmpty()) {
-            String placeholders = dto.getProperties().stream().map(p -> "?").collect(Collectors.joining(","));
-            sql.append(" AND property_name IN (").append(placeholders).append(")");
-            params.addAll(dto.getProperties());
-        }
-        if (dto.getStartTime() != null && !dto.getStartTime().isBlank()) {
-            sql.append(" AND time >= ?::timestamptz");
-            params.add(dto.getStartTime());
-        }
-        if (dto.getEndTime() != null && !dto.getEndTime().isBlank()) {
-            sql.append(" AND time <= ?::timestamptz");
-            params.add(dto.getEndTime());
-        }
-        sql.append(" ORDER BY time DESC LIMIT 50000");
+        appendPropertyFilter(sql, params, dto.getProperties(), "t.property_name");
+        appendTimeRange(sql, params, dto.getStartTime(), dto.getEndTime(), "t.time");
+        sql.append(" ORDER BY t.time DESC LIMIT ?");
+        params.add(MAX_EXPORT_ROWS + 1);
 
         List<Map<String, Object>> records = jdbcTemplate.queryForList(sql.toString(), params.toArray());
-
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        PrintWriter writer = new PrintWriter(baos);
-        writer.println("time,device_id,property_name,value_double,value_string");
-        for (Map<String, Object> row : records) {
-            writer.printf("%s,%s,%s,%s,%s%n",
-                    row.getOrDefault("time", ""),
-                    row.getOrDefault("device_id", ""),
-                    row.getOrDefault("property_name", ""),
-                    row.getOrDefault("value_double", ""),
-                    escapeCsv(String.valueOf(row.getOrDefault("value_string", ""))));
+        boolean truncated = records.size() > MAX_EXPORT_ROWS;
+        if (truncated) {
+            records = new ArrayList<>(records.subList(0, MAX_EXPORT_ROWS));
         }
-        writer.flush();
-        return baos.toByteArray();
+        return new DataExportResult(records, truncated);
     }
 
-    private String escapeCsv(String value) {
-        if (value == null || "null".equals(value)) return "";
-        if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
-            return "\"" + value.replace("\"", "\"\"") + "\"";
+    private void appendPropertyFilter(StringBuilder sql, List<Object> params, List<String> properties, String columnName) {
+        if (properties == null || properties.isEmpty()) {
+            return;
         }
-        return value;
+        String placeholders = properties.stream().map(item -> "?").collect(Collectors.joining(","));
+        sql.append(" AND ").append(columnName).append(" IN (").append(placeholders).append(")");
+        params.addAll(properties);
+    }
+
+    private void appendTimeRange(StringBuilder sql, List<Object> params, String startTime, String endTime, String columnName) {
+        if (startTime != null && !startTime.isBlank()) {
+            sql.append(" AND ").append(columnName).append(" >= ?::timestamptz");
+            params.add(startTime);
+        }
+        if (endTime != null && !endTime.isBlank()) {
+            sql.append(" AND ").append(columnName).append(" <= ?::timestamptz");
+            params.add(endTime);
+        }
     }
 }

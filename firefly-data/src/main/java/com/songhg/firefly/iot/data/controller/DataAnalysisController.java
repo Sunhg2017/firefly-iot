@@ -4,16 +4,15 @@ import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresPermission;
 import com.songhg.firefly.iot.data.dto.analysis.AggregationQueryDTO;
 import com.songhg.firefly.iot.data.dto.analysis.DataExportDTO;
+import com.songhg.firefly.iot.data.dto.analysis.PropertyOptionQueryDTO;
 import com.songhg.firefly.iot.data.dto.analysis.TimeSeriesQueryDTO;
 import com.songhg.firefly.iot.data.service.DataAnalysisService;
+import com.songhg.firefly.iot.data.service.DataExportTaskService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -26,6 +25,7 @@ import java.util.Map;
 public class DataAnalysisController {
 
     private final DataAnalysisService dataAnalysisService;
+    private final DataExportTaskService dataExportTaskService;
 
     @Operation(summary = "查询时序数据")
     @PostMapping("/timeseries")
@@ -41,6 +41,13 @@ public class DataAnalysisController {
         return R.ok(dataAnalysisService.queryAggregation(query));
     }
 
+    @Operation(summary = "查询可选属性列表")
+    @PostMapping("/properties/options")
+    @RequiresPermission("analysis:read")
+    public R<List<String>> listPropertyOptions(@RequestBody PropertyOptionQueryDTO query) {
+        return R.ok(dataAnalysisService.listAvailableProperties(query));
+    }
+
     @Operation(summary = "获取设备统计")
     @GetMapping("/stats")
     @RequiresPermission("analysis:read")
@@ -54,13 +61,8 @@ public class DataAnalysisController {
 
     @PostMapping("/export")
     @RequiresPermission("analysis:export")
-    @Operation(summary = "导出分析数据")
-    public ResponseEntity<byte[]> exportData(@Valid @RequestBody DataExportDTO dto) {
-        byte[] data = dataAnalysisService.exportData(dto);
-        String filename = "device_data_export.csv";
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename)
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .body(data);
+    @Operation(summary = "创建自定义导出任务")
+    public R<Long> exportData(@Valid @RequestBody DataExportDTO dto) {
+        return R.ok(dataExportTaskService.registerExportTask(dto));
     }
 }

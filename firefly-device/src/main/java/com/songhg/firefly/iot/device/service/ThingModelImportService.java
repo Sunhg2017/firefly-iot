@@ -129,7 +129,7 @@ public class ThingModelImportService {
             asyncTaskClient.updateProgress(taskId, 90);
 
             // 完成任务
-            asyncTaskClient.completeTask(taskId, true, null, 1, null);
+            asyncTaskClient.completeTask(taskId, true, null, null, 1, null);
             log.info("物模型导入完成: taskId={}, productId={}", taskId, productId);
 
         } catch (Exception e) {

@@ -1,13 +1,15 @@
 package com.songhg.firefly.iot.support.service;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedWriter;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -16,30 +18,26 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 异步任务文件存储服务
+ * 异步任务结果文件服务。
  * <p>
- * 负责异步任务产生的 CSV 结果文件和错误文件的写入、删除等操作。
- * 存储目录通过配置 async.task.storage-dir 注入，默认为 async-tasks。
+ * 兼容两类结果存储：
+ * 1. support 服务本地生成的临时 CSV 文件；
+ * 2. 其他微服务异步生成后上传到 MinIO 的导出文件。
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class AsyncTaskFileService {
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
+    private final MinioService minioService;
+
     @Value("${async.task.storage-dir:async-tasks}")
     private String storageDir;
 
-    /**
-     * 写入 CSV 导出文件
-     *
-     * @param bizType 业务类型，用于文件名前缀
-     * @param data    数据行
-     * @param columns 字段名列表（取数据用）
-     * @param headers 表头显示名列表
-     * @return 文件绝对路径
-     */
-    public String writeCsv(String bizType, List<Map<String, Object>> data, List<String> columns, List<String> headers) throws IOException {
+    public String writeCsv(String bizType, List<Map<String, Object>> data, List<String> columns, List<String> headers)
+            throws IOException {
         ensureDirectory();
 
         String fileName = (bizType != null ? bizType : "export")
@@ -48,88 +46,115 @@ public class AsyncTaskFileService {
                 + ".csv";
         Path filePath = Path.of(storageDir, fileName);
 
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(filePath.toFile()))) {
-            // UTF-8 BOM
+        try (Writer writer = Files.newBufferedWriter(filePath, StandardCharsets.UTF_8)) {
             writer.write('\ufeff');
             writer.write(String.join(",", headers));
-            writer.newLine();
+            writer.write(System.lineSeparator());
 
             for (Map<String, Object> row : data) {
-                StringBuilder sb = new StringBuilder();
+                StringBuilder line = new StringBuilder();
                 for (int i = 0; i < columns.size(); i++) {
-                    if (i > 0) sb.append(",");
-                    Object val = row.get(columns.get(i));
-                    String str = val != null ? val.toString() : "";
-                    if (str.contains(",") || str.contains("\"") || str.contains("\n")) {
-                        str = "\"" + str.replace("\"", "\"\"") + "\"";
+                    if (i > 0) {
+                        line.append(',');
                     }
-                    sb.append(str);
+                    line.append(escapeCsv(row.get(columns.get(i))));
                 }
-                writer.write(sb.toString());
-                writer.newLine();
+                writer.write(line.toString());
+                writer.write(System.lineSeparator());
             }
         }
 
-        log.info("CSV 文件已写入: {}", filePath);
+        log.info("CSV result written: {}", filePath);
         return filePath.toString();
     }
 
-    /**
-     * 写入错误详情 CSV 文件（供导入失败时下载错误清单）
-     *
-     * @param taskId 任务ID
-     * @param errors 每行错误 [行号, 错误原因]
-     * @return 文件绝对路径
-     */
     public String writeErrorCsv(Long taskId, List<String[]> errors) throws IOException {
         ensureDirectory();
 
         String fileName = "error_" + taskId + "_" + LocalDateTime.now().format(FMT) + ".csv";
         Path filePath = Path.of(storageDir, fileName);
 
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(filePath.toFile()))) {
+        try (Writer writer = Files.newBufferedWriter(filePath, StandardCharsets.UTF_8)) {
             writer.write('\ufeff');
             writer.write("行号,错误原因");
-            writer.newLine();
+            writer.write(System.lineSeparator());
 
             for (String[] row : errors) {
                 String rowNum = row.length > 0 ? row[0] : "";
                 String reason = row.length > 1 ? row[1] : "";
-                if (reason.contains(",") || reason.contains("\"") || reason.contains("\n")) {
-                    reason = "\"" + reason.replace("\"", "\"\"") + "\"";
-                }
-                writer.write(rowNum + "," + reason);
-                writer.newLine();
+                writer.write(escapeCsv(rowNum));
+                writer.write(',');
+                writer.write(escapeCsv(reason));
+                writer.write(System.lineSeparator());
             }
         }
 
-        log.info("错误详情文件已写入: taskId={}, path={}", taskId, filePath);
+        log.info("Async task error file written: taskId={}, path={}", taskId, filePath);
         return filePath.toString();
     }
 
-    /**
-     * 删除文件
-     *
-     * @param filePath 文件路径
-     */
-    public void deleteFile(String filePath) {
-        if (filePath == null || filePath.isBlank()) return;
-        try {
-            Files.deleteIfExists(Path.of(filePath));
-        } catch (IOException e) {
-            log.warn("删除异步任务文件失败: {}", filePath, e);
+    public boolean isLocalFile(String storedPath) {
+        Path path = toLocalPath(storedPath);
+        return path != null && Files.exists(path);
+    }
+
+    public boolean exists(String storedPath) {
+        if (isLocalFile(storedPath)) {
+            return true;
+        }
+        return storedPath != null && !storedPath.isBlank() && minioService.exists(storedPath);
+    }
+
+    public String getDownloadUrl(String storedPath) {
+        if (storedPath == null || storedPath.isBlank() || isLocalFile(storedPath)) {
+            return null;
+        }
+        if (!minioService.exists(storedPath)) {
+            return null;
+        }
+        return minioService.getPresignedUrl(storedPath);
+    }
+
+    public void deleteStoredResult(String storedPath) {
+        if (storedPath == null || storedPath.isBlank()) {
+            return;
+        }
+
+        Path localPath = toLocalPath(storedPath);
+        if (localPath != null && Files.exists(localPath)) {
+            try {
+                Files.deleteIfExists(localPath);
+            } catch (IOException e) {
+                log.warn("Failed to delete local async task file: {}", storedPath, e);
+            }
+            return;
+        }
+
+        if (minioService.exists(storedPath)) {
+            minioService.delete(storedPath);
         }
     }
 
-    /**
-     * 获取文件大小
-     */
-    public long getFileSize(String filePath) {
-        if (filePath == null || filePath.isBlank()) return 0;
+    public long getFileSize(String storedPath) {
+        Path localPath = toLocalPath(storedPath);
+        if (localPath != null && Files.exists(localPath)) {
+            try {
+                return Files.size(localPath);
+            } catch (IOException e) {
+                log.warn("Failed to read async task file size: {}", storedPath, e);
+            }
+        }
+        return 0L;
+    }
+
+    private Path toLocalPath(String storedPath) {
+        if (storedPath == null || storedPath.isBlank()) {
+            return null;
+        }
         try {
-            return Files.size(Path.of(filePath));
-        } catch (IOException e) {
-            return 0;
+            return Path.of(storedPath);
+        } catch (InvalidPathException ex) {
+            return null;
         }
     }
 
@@ -138,5 +163,13 @@ public class AsyncTaskFileService {
         if (!Files.exists(dir)) {
             Files.createDirectories(dir);
         }
+    }
+
+    private String escapeCsv(Object value) {
+        String text = value == null ? "" : String.valueOf(value);
+        if (text.contains(",") || text.contains("\"") || text.contains("\n") || text.contains("\r")) {
+            return "\"" + text.replace("\"", "\"\"") + "\"";
+        }
+        return text;
     }
 }

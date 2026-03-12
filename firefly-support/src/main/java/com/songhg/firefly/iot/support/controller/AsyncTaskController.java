@@ -9,6 +9,7 @@ import com.songhg.firefly.iot.support.dto.asynctask.AsyncTaskCreateDTO;
 import com.songhg.firefly.iot.support.dto.asynctask.AsyncTaskQueryDTO;
 import com.songhg.firefly.iot.support.dto.asynctask.AsyncTaskVO;
 import com.songhg.firefly.iot.support.entity.AsyncTask;
+import com.songhg.firefly.iot.support.service.AsyncTaskFileService;
 import com.songhg.firefly.iot.support.service.AsyncTaskService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -18,13 +19,15 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.File;
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 
 @Tag(name = "异步任务中心", description = "异步任务管理（导出、导入、同步等）")
 @RestController
@@ -34,14 +37,14 @@ import java.nio.charset.StandardCharsets;
 public class AsyncTaskController {
 
     private final AsyncTaskService asyncTaskService;
+    private final AsyncTaskFileService asyncTaskFileService;
 
     @Operation(summary = "创建异步任务")
     @PostMapping
     @RequiresPermission("export:create")
     public R<AsyncTaskVO> createTask(@Valid @RequestBody AsyncTaskCreateDTO dto) {
         AsyncTask task = asyncTaskService.createTask(
-                dto.getTaskName(), dto.getTaskType(), dto.getBizType(),
-                dto.getFileFormat(), dto.getExtraData());
+                dto.getTaskName(), dto.getTaskType(), dto.getBizType(), dto.getFileFormat(), dto.getExtraData());
         return R.ok(AsyncTaskConvert.INSTANCE.toVO(task));
     }
 
@@ -49,15 +52,13 @@ public class AsyncTaskController {
     @PostMapping("/list")
     @RequiresPermission("export:read")
     public R<IPage<AsyncTaskVO>> listTasks(@RequestBody AsyncTaskQueryDTO query) {
-        return R.ok(asyncTaskService.listTasks(query)
-                .convert(AsyncTaskConvert.INSTANCE::toVO));
+        return R.ok(asyncTaskService.listTasks(query).convert(AsyncTaskConvert.INSTANCE::toVO));
     }
 
-    @Operation(summary = "查询我的异步任务（当前用户）")
+    @Operation(summary = "查询我的异步任务")
     @PostMapping("/mine/list")
     public R<IPage<AsyncTaskVO>> listMyTasks(@RequestBody AsyncTaskQueryDTO query) {
-        return R.ok(asyncTaskService.listMyTasks(query)
-                .convert(AsyncTaskConvert.INSTANCE::toVO));
+        return R.ok(asyncTaskService.listMyTasks(query).convert(AsyncTaskConvert.INSTANCE::toVO));
     }
 
     @Operation(summary = "获取任务详情")
@@ -72,26 +73,32 @@ public class AsyncTaskController {
     @RequiresPermission("export:read")
     public ResponseEntity<Resource> download(@Parameter(description = "任务编号", required = true) @PathVariable Long id) {
         AsyncTask task = asyncTaskService.getTask(id);
-        if (task == null || task.getResultUrl() == null) {
+        if (task.getResultUrl() == null) {
             return ResponseEntity.notFound().build();
         }
-        // 允许下载已完成或已失败（含错误文件）的任务
         if (!"COMPLETED".equals(task.getStatus()) && !"FAILED".equals(task.getStatus())) {
             return ResponseEntity.notFound().build();
         }
 
-        File file = new File(task.getResultUrl());
-        if (!file.exists()) {
-            return ResponseEntity.notFound().build();
+        if (asyncTaskFileService.isLocalFile(task.getResultUrl())) {
+            Path localPath = Path.of(task.getResultUrl());
+            String suffix = task.getFileFormat() != null ? "." + task.getFileFormat().toLowerCase() : "";
+            String encodedName = URLEncoder.encode(task.getTaskName() + suffix, StandardCharsets.UTF_8);
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedName)
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .contentLength(localPath.toFile().length())
+                    .body(new FileSystemResource(localPath));
         }
 
-        String suffix = task.getFileFormat() != null ? "." + task.getFileFormat().toLowerCase() : "";
-        String encodedName = URLEncoder.encode(task.getTaskName() + suffix, StandardCharsets.UTF_8);
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedName)
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .contentLength(file.length())
-                .body(new FileSystemResource(file));
+        // 跨服务导出结果存储在 MinIO 中，这里返回预签名地址，让前端继续沿用统一下载入口。
+        String downloadUrl = asyncTaskFileService.getDownloadUrl(task.getResultUrl());
+        if (downloadUrl == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create(downloadUrl))
+                .build();
     }
 
     @Operation(summary = "取消任务")
@@ -105,7 +112,7 @@ public class AsyncTaskController {
     @Operation(summary = "更新任务进度")
     @PutMapping("/{id}/progress")
     public R<Void> updateProgress(@Parameter(description = "任务编号", required = true) @PathVariable Long id,
-                                   @Parameter(description = "进度(0-100)", required = true) @RequestParam Integer progress) {
+                                  @Parameter(description = "进度(0-100)", required = true) @RequestParam Integer progress) {
         asyncTaskService.updateProgress(id, progress);
         return R.ok();
     }
@@ -113,18 +120,19 @@ public class AsyncTaskController {
     @Operation(summary = "完成任务")
     @PutMapping("/{id}/complete")
     public R<Void> completeTask(@Parameter(description = "任务编号", required = true) @PathVariable Long id,
-                                 @RequestParam(value = "success", defaultValue = "true") Boolean success,
-                                 @RequestParam(value = "resultUrl", required = false) String resultUrl,
-                                 @RequestParam(value = "totalRows", required = false) Integer totalRows,
-                                 @RequestParam(value = "errorMessage", required = false) String errorMessage) {
-        asyncTaskService.completeTask(id, success, resultUrl, resultUrl != null ? new java.io.File(resultUrl).length() : null, totalRows, errorMessage);
+                                @RequestParam(value = "success", defaultValue = "true") Boolean success,
+                                @RequestParam(value = "resultUrl", required = false) String resultUrl,
+                                @RequestParam(value = "resultSize", required = false) Long resultSize,
+                                @RequestParam(value = "totalRows", required = false) Integer totalRows,
+                                @RequestParam(value = "errorMessage", required = false) String errorMessage) {
+        asyncTaskService.completeTask(id, success, resultUrl, resultSize, totalRows, errorMessage);
         return R.ok();
     }
 
     @Operation(summary = "标记任务失败")
     @PutMapping("/{id}/fail")
     public R<Void> failTask(@Parameter(description = "任务编号", required = true) @PathVariable Long id,
-                             @Parameter(description = "错误信息", required = true) @RequestParam String errorMessage) {
+                            @Parameter(description = "错误信息", required = true) @RequestParam String errorMessage) {
         asyncTaskService.completeTask(id, false, null, null, null, errorMessage);
         return R.ok();
     }
@@ -137,7 +145,7 @@ public class AsyncTaskController {
         return R.ok();
     }
 
-    @Operation(summary = "清理过期任务（7天前）")
+    @Operation(summary = "清理过期任务")
     @PostMapping("/clean")
     @RequiresPermission("export:delete")
     public R<Integer> cleanExpired() {
