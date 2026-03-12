@@ -66,11 +66,14 @@ public class AsyncTaskService {
     }
 
     @Transactional
-    public void completeTask(Long taskId, boolean success, String resultUrl, Long resultSize, Integer totalRows, String errorMessage) {
+    public boolean completeTask(Long taskId, boolean success, String resultUrl, Long resultSize, Integer totalRows, String errorMessage) {
         AsyncTask task = getTaskOrThrow(taskId);
         if (isCancelled(task)) {
+            // Export executors may finish uploading after a user has cancelled the task.
+            // Cleaning the stored result here prevents orphan files from accumulating in MinIO.
+            asyncTaskFileService.deleteStoredResult(resultUrl);
             log.info("Skip completing cancelled task: id={}", taskId);
-            return;
+            return false;
         }
 
         task.setStatus(success ? "COMPLETED" : "FAILED");
@@ -83,6 +86,7 @@ public class AsyncTaskService {
         asyncTaskMapper.updateById(task);
 
         sendCompletionMessage(task, success, errorMessage);
+        return true;
     }
 
     @Transactional
@@ -116,10 +120,10 @@ public class AsyncTaskService {
     }
 
     @Transactional
-    public void updateProgress(Long taskId, int progress) {
+    public boolean updateProgress(Long taskId, int progress) {
         AsyncTask task = getTaskOrThrow(taskId);
         if (isFinished(task)) {
-            return;
+            return false;
         }
 
         task.setProgress(Math.min(Math.max(progress, 0), 100));
@@ -127,6 +131,7 @@ public class AsyncTaskService {
             task.setStatus("PROCESSING");
         }
         asyncTaskMapper.updateById(task);
+        return true;
     }
 
     @Transactional
@@ -190,6 +195,7 @@ public class AsyncTaskService {
         LocalDateTime threshold = LocalDateTime.now().minusDays(7);
         List<AsyncTask> expired = asyncTaskMapper.selectList(new LambdaQueryWrapper<AsyncTask>()
                 .eq(AsyncTask::getTenantId, tenantId)
+                .in(AsyncTask::getStatus, List.of("COMPLETED", "FAILED", "CANCELLED"))
                 .lt(AsyncTask::getCreatedAt, threshold));
 
         int count = 0;

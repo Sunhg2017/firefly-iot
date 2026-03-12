@@ -77,7 +77,8 @@ const ExportPage: React.FC = () => {
   };
 
   const handleDownload = (record: AsyncTaskItem) => {
-    if (record.status !== 'COMPLETED') { message.warning('任务未完成'); return; }
+    if (!record.resultUrl) { message.warning('当前任务没有可下载的结果'); return; }
+    if (record.status !== 'COMPLETED' && record.status !== 'FAILED') { message.warning('任务还未生成可下载结果'); return; }
     window.open(asyncTaskApi.download(record.id) as unknown as string, '_blank');
   };
 

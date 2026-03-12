@@ -46,13 +46,22 @@ public class DataExportTaskExecutor {
         try {
             AsyncContextHelper.setContext(tenantId, userId);
 
-            asyncTaskClient.updateProgress(taskId, 10);
+            if (!shouldContinue(taskId, 10)) {
+                log.info("Skip querying cancelled export task: taskId={}", taskId);
+                return;
+            }
             DataExportResult exportResult = dataAnalysisService.queryExportData(dto);
 
-            asyncTaskClient.updateProgress(taskId, 60);
+            if (!shouldContinue(taskId, 60)) {
+                log.info("Skip building CSV for cancelled export task: taskId={}", taskId);
+                return;
+            }
             byte[] csvBytes = buildCsv(exportResult.getRecords());
 
-            asyncTaskClient.updateProgress(taskId, 85);
+            if (!shouldContinue(taskId, 85)) {
+                log.info("Skip uploading CSV for cancelled export task: taskId={}", taskId);
+                return;
+            }
             String objectName = buildObjectName(tenantId);
             R<Map<String, String>> uploadResult = fileClient.uploadBytes(objectName, "text/csv;charset=UTF-8", csvBytes);
             if (uploadResult == null || uploadResult.getData() == null) {
@@ -63,8 +72,13 @@ public class DataExportTaskExecutor {
             String taskMessage = exportResult.isTruncated()
                     ? "导出结果已按上限 50000 条截断，请缩小筛选范围后重试"
                     : null;
-            asyncTaskClient.completeTask(taskId, true, storedObjectName, (long) csvBytes.length,
+            boolean completed = shouldComplete(taskId, storedObjectName, csvBytes.length,
                     exportResult.getRecords().size(), taskMessage);
+            if (!completed) {
+                log.info("Skip finishing cancelled export task after upload: taskId={}, objectName={}",
+                        taskId, storedObjectName);
+                return;
+            }
             log.info("Data export completed: taskId={}, tenantId={}, rows={}",
                     taskId, tenantId, exportResult.getRecords().size());
         } catch (Exception e) {
@@ -119,5 +133,22 @@ public class DataExportTaskExecutor {
             return "\"" + text.replace("\"", "\"\"") + "\"";
         }
         return text;
+    }
+
+    private boolean shouldContinue(Long taskId, int progress) {
+        R<Boolean> progressResult = asyncTaskClient.updateProgress(taskId, progress);
+        return progressResult == null
+                || progressResult.getData() == null
+                || Boolean.TRUE.equals(progressResult.getData());
+    }
+
+    private boolean shouldComplete(Long taskId, String storedObjectName, int resultSize, int totalRows, String taskMessage) {
+        // The support service now cleans up the stored object if the task was cancelled
+        // after upload but before the completion callback reached the task center.
+        R<Boolean> completeResult = asyncTaskClient.completeTask(taskId, true, storedObjectName, (long) resultSize,
+                totalRows, taskMessage);
+        return completeResult == null
+                || completeResult.getData() == null
+                || Boolean.TRUE.equals(completeResult.getData());
     }
 }

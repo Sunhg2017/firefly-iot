@@ -92,6 +92,10 @@
 - `Async task created`
 - `Async task completion message sent`
 - `Skip completing cancelled task`
+- `Skip querying cancelled export task`
+- `Skip building CSV for cancelled export task`
+- `Skip uploading CSV for cancelled export task`
+- `Skip finishing cancelled export task after upload`
 - `Failed to send async task completion message`
 
 定位建议：
@@ -118,6 +122,7 @@
 - 检查数据库查询是否超时。
 - 检查 MinIO 上传是否卡住。
 - 检查 Nacos / Feign 调用是否异常导致 `completeTask` 未回写。
+- 检查是否被用户取消。当前版本会在导出关键阶段主动停止，但如果取消发生在数据库查询过程中，任务会在本轮查询结束后退出。
 
 ### 7.3 下载后文件内容为空
 
@@ -140,6 +145,18 @@
 - 缩短时间窗口。
 - 分批导出。
 
+### 7.5 取消任务后仍看到对象存储文件增长
+
+说明：
+
+- 当前版本会在任务取消后尽快停止导出，并在“上传完成但任务已取消”的竞态场景下自动删除刚写入的 MinIO 对象。
+
+排查步骤：
+
+- 检查 `firefly-data` 是否出现 `Skip finishing cancelled export task after upload` 日志。
+- 检查 `firefly-support` 是否出现 `Skip completing cancelled task` 日志。
+- 如 MinIO 中仍存在孤儿对象，优先确认任务是否来自旧版本节点，或清理是否因对象存储权限异常失败。
+
 ## 8. 回滚方案
 
 ### 8.1 代码回滚
@@ -150,10 +167,10 @@
 ### 8.2 数据影响
 
 - 本次不涉及数据库结构变更，无需执行 DDL 回滚。
+- 本次调整了任务清理策略：7 天过期清理仅针对终态任务，不再删除 `PENDING` / `PROCESSING` 任务。
 - 已创建的 MinIO 导出文件不会自动删除，可通过任务中心删除或运维脚本清理。
 
 ### 8.3 风险提示
 
 - 如果只回滚 `firefly-web` 不回滚后端，旧前端会继续按同步下载调用 `/analysis/export`，接口契约将不匹配。
 - 因此回滚必须前后端同时进行。
-

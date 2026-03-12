@@ -111,22 +111,20 @@ public class AsyncTaskController {
 
     @Operation(summary = "更新任务进度")
     @PutMapping("/{id}/progress")
-    public R<Void> updateProgress(@Parameter(description = "任务编号", required = true) @PathVariable Long id,
-                                  @Parameter(description = "进度(0-100)", required = true) @RequestParam Integer progress) {
-        asyncTaskService.updateProgress(id, progress);
-        return R.ok();
+    public R<Boolean> updateProgress(@Parameter(description = "任务编号", required = true) @PathVariable Long id,
+                                     @Parameter(description = "进度(0-100)", required = true) @RequestParam Integer progress) {
+        return R.ok(asyncTaskService.updateProgress(id, progress));
     }
 
     @Operation(summary = "完成任务")
     @PutMapping("/{id}/complete")
-    public R<Void> completeTask(@Parameter(description = "任务编号", required = true) @PathVariable Long id,
-                                @RequestParam(value = "success", defaultValue = "true") Boolean success,
-                                @RequestParam(value = "resultUrl", required = false) String resultUrl,
-                                @RequestParam(value = "resultSize", required = false) Long resultSize,
-                                @RequestParam(value = "totalRows", required = false) Integer totalRows,
-                                @RequestParam(value = "errorMessage", required = false) String errorMessage) {
-        asyncTaskService.completeTask(id, success, resultUrl, resultSize, totalRows, errorMessage);
-        return R.ok();
+    public R<Boolean> completeTask(@Parameter(description = "任务编号", required = true) @PathVariable Long id,
+                                   @RequestParam(value = "success", defaultValue = "true") Boolean success,
+                                   @RequestParam(value = "resultUrl", required = false) String resultUrl,
+                                   @RequestParam(value = "resultSize", required = false) Long resultSize,
+                                   @RequestParam(value = "totalRows", required = false) Integer totalRows,
+                                   @RequestParam(value = "errorMessage", required = false) String errorMessage) {
+        return R.ok(asyncTaskService.completeTask(id, success, resultUrl, resultSize, totalRows, errorMessage));
     }
 
     @Operation(summary = "标记任务失败")
