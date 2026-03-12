@@ -38,6 +38,7 @@ spring-boot-devtools.properties
 .windsurf/
 .cursor/
 .cascade/
+.claude/
 
 # ============================================================
 # OS
