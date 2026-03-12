@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.device.protocolparser.mapper.DeviceLocatorMapper">
+
+    <select id="selectByProductIdAndLocatorIgnoreTenant" resultType="com.songhg.firefly.iot.device.protocolparser.entity.DeviceLocator">
+        SELECT *
+        FROM device_locators
+        WHERE product_id = #{productId}
+          AND locator_type = #{locatorType}
+          AND locator_value = #{locatorValue}
+          AND deleted_at IS NULL
+        LIMIT 1
+    </select>
+
+</mapper>

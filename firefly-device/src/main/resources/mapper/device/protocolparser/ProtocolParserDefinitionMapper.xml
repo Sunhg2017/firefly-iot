@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.device.protocolparser.mapper.ProtocolParserDefinitionMapper">
+
+    <select id="selectPublishedByProductAndTenantIgnoreTenant" resultType="com.songhg.firefly.iot.device.protocolparser.entity.ProtocolParserDefinition">
+        SELECT *
+        FROM protocol_parser_definitions
+        WHERE published_version IS NOT NULL
+          AND status = 'ENABLED'
+          AND deleted_at IS NULL
+          AND (
+                (scope_type = 'PRODUCT' AND product_id = #{productId})
+             OR (scope_type = 'TENANT' AND scope_id = #{tenantId})
+          )
+        ORDER BY
+          CASE WHEN scope_type = 'PRODUCT' THEN 0 ELSE 1 END,
+          CASE WHEN release_mode = 'ALL' THEN 1 ELSE 0 END,
+          updated_at DESC,
+          id DESC
+    </select>
+
+</mapper>

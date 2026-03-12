@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.device.mapper.ProductMapper">
+
+    <select id="selectByIdIgnoreTenant" resultType="com.songhg.firefly.iot.device.entity.Product">
+        SELECT *
+        FROM products
+        WHERE id = #{id}
+          AND deleted_at IS NULL
+        LIMIT 1
+    </select>
+
+    <select id="selectByProductKeyIgnoreTenant" resultType="com.songhg.firefly.iot.device.entity.Product">
+        SELECT *
+        FROM products
+        WHERE product_key = #{productKey}
+          AND deleted_at IS NULL
+        LIMIT 1
+    </select>
+
+</mapper>

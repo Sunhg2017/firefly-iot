@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.device.protocolparser.mapper.ProtocolParserVersionMapper">
+
+    <select id="selectByDefinitionIdAndVersionNo" resultType="com.songhg.firefly.iot.device.protocolparser.entity.ProtocolParserVersion">
+        SELECT *
+        FROM protocol_parser_versions
+        WHERE definition_id = #{definitionId}
+          AND version_no = #{versionNo}
+        LIMIT 1
+    </select>
+
+    <select id="selectMaxVersionNo" resultType="java.lang.Integer">
+        SELECT COALESCE(MAX(version_no), 0)
+        FROM protocol_parser_versions
+        WHERE definition_id = #{definitionId}
+    </select>
+
+    <select id="selectListByDefinitionId" resultType="com.songhg.firefly.iot.device.protocolparser.entity.ProtocolParserVersion">
+        SELECT *
+        FROM protocol_parser_versions
+        WHERE definition_id = #{definitionId}
+        ORDER BY version_no DESC, id DESC
+    </select>
+
+    <select id="selectByDefinitionIdAndVersionNoPairs" resultType="com.songhg.firefly.iot.device.protocolparser.entity.ProtocolParserVersion">
+        <if test="pairs == null or pairs.isEmpty()">
+            SELECT * FROM protocol_parser_versions WHERE 1 = 0
+        </if>
+        <if test="pairs != null and !pairs.isEmpty()">
+            SELECT *
+            FROM protocol_parser_versions
+            WHERE
+            <foreach collection="pairs" item="p" separator=" OR ">
+                (definition_id = #{p.definitionId} AND version_no = #{p.versionNo})
+            </foreach>
+        </if>
+    </select>
+
+</mapper>
