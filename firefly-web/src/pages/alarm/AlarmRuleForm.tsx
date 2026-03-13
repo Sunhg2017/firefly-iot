@@ -73,6 +73,8 @@ export interface AlarmRecipientUserOption {
   label: string;
 }
 
+export type AlarmRuleFormStep = 'basic' | 'scope' | 'groups' | 'notify' | 'preview';
+
 interface Props {
   form: FormInstance;
   projectOptions: AlarmScopeOption[];
@@ -83,6 +85,7 @@ interface Props {
   notificationMethodOptions: AlarmNotificationMethodOption[];
   recipientGroupOptions: AlarmRecipientGroupOption[];
   recipientUserOptions: AlarmRecipientUserOption[];
+  currentStep: AlarmRuleFormStep;
   showEnabled?: boolean;
 }
 
@@ -548,6 +551,7 @@ const AlarmRuleForm: React.FC<Props> = ({
   notificationMethodOptions,
   recipientGroupOptions,
   recipientUserOptions,
+  currentStep,
   showEnabled = false,
 }) => {
   const projectId = Form.useWatch('projectId', form) as number | undefined;
@@ -607,263 +611,275 @@ const AlarmRuleForm: React.FC<Props> = ({
     [notifyChannels, recipientGroupCodes, recipientUsernames, recipientGroupLabelMap, recipientUserLabelMap],
   );
 
-  return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Card style={{ borderRadius: 14, border: '1px solid #dbeafe', background: 'linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)' }}>
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <div>
-            <Typography.Title level={5} style={{ marginBottom: 6 }}>
-              {ALARM_TEXT.setupGuideTitle}
-            </Typography.Title>
-            <Typography.Text type="secondary">{ALARM_TEXT.setupGuideDescription}</Typography.Text>
-          </div>
+  const overviewCard = (
+    <Card
+      style={{ borderRadius: 14, border: '1px solid #dbeafe', background: 'linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)' }}
+    >
+      <Space direction="vertical" size={16} style={{ width: '100%' }}>
+        <div>
+          <Typography.Title level={5} style={{ marginBottom: 6 }}>
+            {ALARM_TEXT.setupGuideTitle}
+          </Typography.Title>
+          <Typography.Text type="secondary">{ALARM_TEXT.setupGuideDescription}</Typography.Text>
+        </div>
 
-          <Row gutter={[12, 12]}>
-            <Col xs={24} md={12} xl={6}>
-              <Card size="small" style={OVERVIEW_CARD_STYLE}>
-                <Typography.Text strong>{ALARM_TEXT.setupGuideBasic}</Typography.Text>
-                <Typography.Paragraph type="secondary" style={{ margin: '8px 0 0' }}>
-                  {ALARM_TEXT.setupGuideBasicDesc}
-                </Typography.Paragraph>
-              </Card>
-            </Col>
-            <Col xs={24} md={12} xl={6}>
-              <Card size="small" style={OVERVIEW_CARD_STYLE}>
-                <Typography.Text strong>{ALARM_TEXT.setupGuideScope}</Typography.Text>
-                <Typography.Paragraph type="secondary" style={{ margin: '8px 0 0' }}>
-                  {ALARM_TEXT.setupGuideScopeDesc}
-                </Typography.Paragraph>
-              </Card>
-            </Col>
-            <Col xs={24} md={12} xl={6}>
-              <Card size="small" style={OVERVIEW_CARD_STYLE}>
-                <Typography.Text strong>{ALARM_TEXT.setupGuideBlocks}</Typography.Text>
-                <Typography.Paragraph type="secondary" style={{ margin: '8px 0 0' }}>
-                  {ALARM_TEXT.setupGuideBlocksDesc}
-                </Typography.Paragraph>
-              </Card>
-            </Col>
-            <Col xs={24} md={12} xl={6}>
-              <Card size="small" style={OVERVIEW_CARD_STYLE}>
-                <Typography.Text strong>{ALARM_TEXT.setupGuideNotify}</Typography.Text>
-                <Typography.Paragraph type="secondary" style={{ margin: '8px 0 0' }}>
-                  {ALARM_TEXT.setupGuideNotifyDesc}
-                </Typography.Paragraph>
-              </Card>
-            </Col>
-          </Row>
-
-          <Row gutter={[12, 12]}>
-            <Col xs={24} md={6}>
-              <OverviewStat title={ALARM_TEXT.configuredGroupCount} value={String(ruleGroups.length)} color="#1677ff" />
-            </Col>
-            <Col xs={24} md={6}>
-              <OverviewStat title={ALARM_TEXT.configuredConditionCount} value={String(conditionTotal)} color="#13a8a8" />
-            </Col>
-            <Col xs={24} md={6}>
-              <OverviewStat
-                title={ALARM_TEXT.configuredNotifyMethodCount}
-                value={String(notifyChannels.length)}
-                color="#7c3aed"
-              />
-            </Col>
-            <Col xs={24} md={6}>
-              <OverviewStat title={ALARM_TEXT.primaryLevel} value={primaryLevel} color="#cf1322" />
-            </Col>
-          </Row>
-        </Space>
-      </Card>
-
-      <Card title={ALARM_TEXT.basicCardTitle} style={{ borderRadius: 14 }}>
-        <Row gutter={12}>
-          <Col xs={24} lg={12}>
-            <Form.Item
-              name="name"
-              label={ALARM_TEXT.ruleName}
-              rules={[{ required: true, message: ALARM_TEXT.ruleNameRequired }]}
-            >
-              <Input placeholder={ALARM_TEXT.ruleNamePlaceholder} maxLength={256} />
-            </Form.Item>
+        <Row gutter={[12, 12]}>
+          <Col xs={24} md={12} xl={6}>
+            <Card size="small" style={OVERVIEW_CARD_STYLE}>
+              <Typography.Text strong>{ALARM_TEXT.setupGuideBasic}</Typography.Text>
+              <Typography.Paragraph type="secondary" style={{ margin: '8px 0 0' }}>
+                {ALARM_TEXT.setupGuideBasicDesc}
+              </Typography.Paragraph>
+            </Card>
           </Col>
-          <Col xs={24} lg={12}>
-            <Form.Item name="description" label={ALARM_TEXT.description}>
-              <TextArea rows={3} placeholder={ALARM_TEXT.descriptionPlaceholder} />
-            </Form.Item>
+          <Col xs={24} md={12} xl={6}>
+            <Card size="small" style={OVERVIEW_CARD_STYLE}>
+              <Typography.Text strong>{ALARM_TEXT.setupGuideScope}</Typography.Text>
+              <Typography.Paragraph type="secondary" style={{ margin: '8px 0 0' }}>
+                {ALARM_TEXT.setupGuideScopeDesc}
+              </Typography.Paragraph>
+            </Card>
           </Col>
-        </Row>
-      </Card>
-
-      <Card title={ALARM_TEXT.scopeCardTitle} style={{ borderRadius: 14 }}>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-          {ALARM_TEXT.scopeHint}
-        </Typography.Paragraph>
-        <Row gutter={12}>
-          <Col xs={24} md={12}>
-            <Form.Item name="projectId" label={ALARM_TEXT.project}>
-              <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                options={projectOptions}
-                placeholder={ALARM_TEXT.projectPlaceholder}
-                onChange={() => {
-                  form.setFieldValue('productId', undefined);
-                  form.setFieldValue('deviceId', undefined);
-                  resetConditionMetrics(form, ruleGroups);
-                }}
-              />
-            </Form.Item>
+          <Col xs={24} md={12} xl={6}>
+            <Card size="small" style={OVERVIEW_CARD_STYLE}>
+              <Typography.Text strong>{ALARM_TEXT.setupGuideBlocks}</Typography.Text>
+              <Typography.Paragraph type="secondary" style={{ margin: '8px 0 0' }}>
+                {ALARM_TEXT.setupGuideBlocksDesc}
+              </Typography.Paragraph>
+            </Card>
           </Col>
-          <Col xs={24} md={12}>
-            <Form.Item name="productId" label={ALARM_TEXT.product}>
-              <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                options={filteredProductOptions}
-                placeholder={ALARM_TEXT.productPlaceholder}
-                onChange={() => {
-                  form.setFieldValue('deviceId', undefined);
-                  resetConditionMetrics(form, ruleGroups);
-                }}
-              />
-            </Form.Item>
+          <Col xs={24} md={12} xl={6}>
+            <Card size="small" style={OVERVIEW_CARD_STYLE}>
+              <Typography.Text strong>{ALARM_TEXT.setupGuideNotify}</Typography.Text>
+              <Typography.Paragraph type="secondary" style={{ margin: '8px 0 0' }}>
+                {ALARM_TEXT.setupGuideNotifyDesc}
+              </Typography.Paragraph>
+            </Card>
           </Col>
         </Row>
 
-        <Row gutter={12}>
-          <Col xs={24} md={12}>
-            <Form.Item name="deviceId" label={ALARM_TEXT.device}>
-              <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                options={filteredDeviceOptions}
-                placeholder={ALARM_TEXT.devicePlaceholder}
-              />
-            </Form.Item>
+        <Row gutter={[12, 12]}>
+          <Col xs={24} md={6}>
+            <OverviewStat title={ALARM_TEXT.configuredGroupCount} value={String(ruleGroups.length)} color="#1677ff" />
           </Col>
-          <Col xs={24} md={12}>
-            <Alert
-              type="warning"
-              showIcon
-              message={ALARM_TEXT.primaryLevel}
-              description={`${ALARM_TEXT.primaryLevelDescription}${primaryLevel}`}
-              style={{ marginBottom: 24 }}
+          <Col xs={24} md={6}>
+            <OverviewStat title={ALARM_TEXT.configuredConditionCount} value={String(conditionTotal)} color="#13a8a8" />
+          </Col>
+          <Col xs={24} md={6}>
+            <OverviewStat
+              title={ALARM_TEXT.configuredNotifyMethodCount}
+              value={String(notifyChannels.length)}
+              color="#7c3aed"
             />
           </Col>
+          <Col xs={24} md={6}>
+            <OverviewStat title={ALARM_TEXT.primaryLevel} value={primaryLevel} color="#cf1322" />
+          </Col>
         </Row>
-      </Card>
+      </Space>
+    </Card>
+  );
 
-      <Form.List name="ruleGroups">
-        {(fields, { add, remove }) => (
-          <Card
-            title={ALARM_TEXT.ruleGroupList}
-            extra={
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() =>
-                  add({
-                    ...DEFAULT_ALARM_RULE_GROUP,
-                    conditions: [{ ...DEFAULT_ALARM_CONDITION_ITEM }],
-                  })
-                }
-              >
-                {ALARM_TEXT.addRuleGroup}
-              </Button>
-            }
-            style={{ borderRadius: 14 }}
+  const basicSection = (
+    <Card title={ALARM_TEXT.basicCardTitle} style={{ borderRadius: 14 }}>
+      <Row gutter={12}>
+        <Col xs={24} lg={12}>
+          <Form.Item
+            name="name"
+            label={ALARM_TEXT.ruleName}
+            rules={[{ required: true, message: ALARM_TEXT.ruleNameRequired }]}
           >
-            <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-              {ALARM_TEXT.multipleConditionHint}
-            </Typography.Paragraph>
+            <Input placeholder={ALARM_TEXT.ruleNamePlaceholder} maxLength={256} />
+          </Form.Item>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Form.Item name="description" label={ALARM_TEXT.description}>
+            <TextArea rows={3} placeholder={ALARM_TEXT.descriptionPlaceholder} />
+          </Form.Item>
+        </Col>
+      </Row>
+    </Card>
+  );
 
-            {fields.map((field) => (
-              <RuleGroupEditor
-                key={field.key}
-                form={form}
-                groupIndex={field.name}
-                canRemove={fields.length > 1}
-                metricOptions={metricOptions}
-                metricLabelMap={metricLabelMap}
-                onRemove={() => remove(field.name)}
-              />
-            ))}
-          </Card>
-        )}
-      </Form.List>
-
-      <Card title={ALARM_TEXT.notifyCardTitle} style={{ borderRadius: 14 }}>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-          {ALARM_TEXT.notificationMethodHint}
-        </Typography.Paragraph>
-        <Row gutter={[12, 12]}>
-          <Col xs={24} lg={12}>
-            <Form.Item name="notifyChannels" label={ALARM_TEXT.notificationMethod}>
-              <Select
-                mode="multiple"
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                options={notificationMethodOptions.map((item) => ({
-                  value: item.value,
-                  label: item.channelCount ? `${item.label} (${item.channelCount})` : item.label,
-                }))}
-                placeholder={ALARM_TEXT.notificationMethodPlaceholder}
-              />
-            </Form.Item>
-            <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
-              {ALARM_TEXT.notificationMethodHint}
-            </Typography.Paragraph>
-          </Col>
-          <Col xs={24} lg={12}>
-            <Form.Item name="recipientGroupCodes" label={ALARM_TEXT.recipientGroup}>
-              <Select
-                mode="multiple"
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                options={recipientGroupOptions.map((item) => ({
-                  value: item.value,
-                  label: item.memberCount ? `${item.label} (${item.memberCount})` : item.label,
-                }))}
-                placeholder={ALARM_TEXT.recipientGroupPlaceholder}
-              />
-            </Form.Item>
-            <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
-              {ALARM_TEXT.recipientGroupHint}
-            </Typography.Paragraph>
-          </Col>
-        </Row>
-        <Row gutter={[12, 12]}>
-          <Col xs={24} lg={12}>
-            <Form.Item name="recipientUsernames" label={ALARM_TEXT.recipientUsers}>
-              <Select
-                mode="multiple"
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                options={recipientUserOptions}
-                placeholder={ALARM_TEXT.recipientUsersPlaceholder}
-                notFoundContent={ALARM_TEXT.noSelectableUsers}
-              />
-            </Form.Item>
-            <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
-              {ALARM_TEXT.recipientUsersHint}
-            </Typography.Paragraph>
-          </Col>
-          <Col xs={24} lg={12}>
-            <Alert
-              type={notifyChannels.length > 0 ? 'success' : 'info'}
-              showIcon
-              message={ALARM_TEXT.notificationPreview}
-              description={notifyChannels.length > 0 ? notifyPreview : ALARM_TEXT.noNotificationConfig}
+  const scopeSection = (
+    <Card title={ALARM_TEXT.scopeCardTitle} style={{ borderRadius: 14 }}>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+        {ALARM_TEXT.scopeHint}
+      </Typography.Paragraph>
+      <Row gutter={12}>
+        <Col xs={24} md={12}>
+          <Form.Item name="projectId" label={ALARM_TEXT.project}>
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={projectOptions}
+              placeholder={ALARM_TEXT.projectPlaceholder}
+              onChange={() => {
+                form.setFieldValue('productId', undefined);
+                form.setFieldValue('deviceId', undefined);
+                resetConditionMetrics(form, ruleGroups);
+              }}
             />
-          </Col>
-        </Row>
-      </Card>
+          </Form.Item>
+        </Col>
+        <Col xs={24} md={12}>
+          <Form.Item name="productId" label={ALARM_TEXT.product}>
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={filteredProductOptions}
+              placeholder={ALARM_TEXT.productPlaceholder}
+              onChange={() => {
+                form.setFieldValue('deviceId', undefined);
+                resetConditionMetrics(form, ruleGroups);
+              }}
+            />
+          </Form.Item>
+        </Col>
+      </Row>
 
+      <Row gutter={12}>
+        <Col xs={24} md={12}>
+          <Form.Item name="deviceId" label={ALARM_TEXT.device}>
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={filteredDeviceOptions}
+              placeholder={ALARM_TEXT.devicePlaceholder}
+            />
+          </Form.Item>
+        </Col>
+        <Col xs={24} md={12}>
+          <Alert
+            type="warning"
+            showIcon
+            message={ALARM_TEXT.primaryLevel}
+            description={`${ALARM_TEXT.primaryLevelDescription}${primaryLevel}`}
+            style={{ marginBottom: 24 }}
+          />
+        </Col>
+      </Row>
+    </Card>
+  );
+
+  const ruleGroupSection = (
+    <Form.List name="ruleGroups">
+      {(fields, { add, remove }) => (
+        <Card
+          title={ALARM_TEXT.ruleGroupList}
+          extra={
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() =>
+                add({
+                  ...DEFAULT_ALARM_RULE_GROUP,
+                  conditions: [{ ...DEFAULT_ALARM_CONDITION_ITEM }],
+                })
+              }
+            >
+              {ALARM_TEXT.addRuleGroup}
+            </Button>
+          }
+          style={{ borderRadius: 14 }}
+        >
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+            {ALARM_TEXT.multipleConditionHint}
+          </Typography.Paragraph>
+
+          {fields.map((field) => (
+            <RuleGroupEditor
+              key={field.key}
+              form={form}
+              groupIndex={field.name}
+              canRemove={fields.length > 1}
+              metricOptions={metricOptions}
+              metricLabelMap={metricLabelMap}
+              onRemove={() => remove(field.name)}
+            />
+          ))}
+        </Card>
+      )}
+    </Form.List>
+  );
+
+  const notifySection = (
+    <Card title={ALARM_TEXT.notifyCardTitle} style={{ borderRadius: 14 }}>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+        {ALARM_TEXT.notificationMethodHint}
+      </Typography.Paragraph>
+      <Row gutter={[12, 12]}>
+        <Col xs={24} lg={12}>
+          <Form.Item name="notifyChannels" label={ALARM_TEXT.notificationMethod}>
+            <Select
+              mode="multiple"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={notificationMethodOptions.map((item) => ({
+                value: item.value,
+                label: item.channelCount ? `${item.label} (${item.channelCount})` : item.label,
+              }))}
+              placeholder={ALARM_TEXT.notificationMethodPlaceholder}
+            />
+          </Form.Item>
+          <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
+            {ALARM_TEXT.notificationMethodHint}
+          </Typography.Paragraph>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Form.Item name="recipientGroupCodes" label={ALARM_TEXT.recipientGroup}>
+            <Select
+              mode="multiple"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={recipientGroupOptions.map((item) => ({
+                value: item.value,
+                label: item.memberCount ? `${item.label} (${item.memberCount})` : item.label,
+              }))}
+              placeholder={ALARM_TEXT.recipientGroupPlaceholder}
+            />
+          </Form.Item>
+          <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
+            {ALARM_TEXT.recipientGroupHint}
+          </Typography.Paragraph>
+        </Col>
+      </Row>
+      <Row gutter={[12, 12]}>
+        <Col xs={24} lg={12}>
+          <Form.Item name="recipientUsernames" label={ALARM_TEXT.recipientUsers}>
+            <Select
+              mode="multiple"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={recipientUserOptions}
+              placeholder={ALARM_TEXT.recipientUsersPlaceholder}
+              notFoundContent={ALARM_TEXT.noSelectableUsers}
+            />
+          </Form.Item>
+          <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
+            {ALARM_TEXT.recipientUsersHint}
+          </Typography.Paragraph>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Alert
+            type={notifyChannels.length > 0 ? 'success' : 'info'}
+            showIcon
+            message={ALARM_TEXT.notificationPreview}
+            description={notifyChannels.length > 0 ? notifyPreview : ALARM_TEXT.noNotificationConfig}
+          />
+        </Col>
+      </Row>
+    </Card>
+  );
+
+  const previewSection = (
+    <>
       <Card title={ALARM_TEXT.preview} style={{ borderRadius: 14 }}>
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
           <Alert type="success" showIcon message={ALARM_TEXT.preview} description={previewText} />
@@ -888,6 +904,17 @@ const AlarmRuleForm: React.FC<Props> = ({
           </Form.Item>
         </Card>
       )}
+    </>
+  );
+
+  return (
+    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      {overviewCard}
+      {currentStep === 'basic' && basicSection}
+      {currentStep === 'scope' && scopeSection}
+      {currentStep === 'groups' && ruleGroupSection}
+      {currentStep === 'notify' && notifySection}
+      {currentStep === 'preview' && previewSection}
     </Space>
   );
 };

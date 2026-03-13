@@ -11,10 +11,12 @@ import {
   Row,
   Select,
   Space,
+  Steps,
   Table,
   Tag,
   message,
 } from 'antd';
+import type { FormInstance } from 'antd/es/form';
 import type { ColumnsType } from 'antd/es/table';
 import {
   AlertOutlined,
@@ -44,9 +46,12 @@ import AlarmRuleForm, {
   type AlarmNotificationMethodOption,
   type AlarmRecipientGroupOption,
   type AlarmRecipientUserOption,
+  type AlarmRuleFormStep,
   type AlarmScopeOption,
 } from './AlarmRuleForm';
 import {
+  type AlarmConditionItemFormValues,
+  type AlarmRuleGroupFormValues,
   DEFAULT_ALARM_CONDITION_VALUES,
   buildAlarmConditionExpr,
   describeAlarmConditionExpr,
@@ -159,6 +164,150 @@ const DEFAULT_RULE_FORM_VALUES = {
   enabled: true,
 };
 
+interface AlarmRuleFormValues extends Record<string, unknown> {
+  name?: string;
+  projectId?: number;
+  productId?: number;
+  deviceId?: number;
+  notifyChannels?: string[];
+  recipientGroupCodes?: string[];
+  recipientUsernames?: string[];
+  enabled?: boolean;
+  ruleGroups?: AlarmRuleGroupFormValues[];
+}
+
+interface AlarmRuleDrawerStepConfig {
+  key: AlarmRuleFormStep;
+  title: string;
+}
+
+const ALARM_RULE_DRAWER_STEPS = (showEnabled: boolean): AlarmRuleDrawerStepConfig[] => [
+  { key: 'basic', title: ALARM_TEXT.basicCardTitle },
+  { key: 'scope', title: ALARM_TEXT.scopeCardTitle },
+  { key: 'groups', title: ALARM_TEXT.ruleGroupList },
+  { key: 'notify', title: ALARM_TEXT.notifyCardTitle },
+  { key: 'preview', title: showEnabled ? `${ALARM_TEXT.preview} / ${ALARM_TEXT.status}` : ALARM_TEXT.preview },
+];
+
+const getConditionValidationPaths = (
+  condition: AlarmConditionItemFormValues | undefined,
+  groupIndex: number,
+  conditionIndex: number,
+) => {
+  const basePath = ['ruleGroups', groupIndex, 'conditions', conditionIndex] as const;
+  const conditionType = condition?.conditionType || 'THRESHOLD';
+  const paths: Array<string | number | Array<string | number>> = [[...basePath, 'conditionType']];
+
+  if (conditionType === 'CUSTOM') {
+    paths.push([...basePath, 'customExpr']);
+    return paths;
+  }
+
+  paths.push([...basePath, 'metricKey']);
+
+  switch (conditionType) {
+    case 'THRESHOLD':
+      paths.push([...basePath, 'aggregateType'], [...basePath, 'operator'], [...basePath, 'threshold']);
+      break;
+    case 'COMPARE':
+      paths.push(
+        [...basePath, 'aggregateType'],
+        [...basePath, 'compareTarget'],
+        [...basePath, 'threshold'],
+        [...basePath, 'windowSize'],
+        [...basePath, 'windowUnit'],
+        [...basePath, 'changeMode'],
+        [...basePath, 'changeDirection'],
+      );
+      break;
+    case 'CONTINUOUS':
+      paths.push([...basePath, 'operator'], [...basePath, 'threshold'], [...basePath, 'consecutiveCount']);
+      break;
+    case 'ACCUMULATE':
+      paths.push(
+        [...basePath, 'aggregateType'],
+        [...basePath, 'operator'],
+        [...basePath, 'threshold'],
+        [...basePath, 'windowSize'],
+        [...basePath, 'windowUnit'],
+      );
+      break;
+    default:
+      break;
+  }
+
+  return paths;
+};
+
+// Validate only the current rule-group module when moving between drawer steps.
+const getRuleGroupValidationPaths = (values: AlarmRuleFormValues) => {
+  const ruleGroups = Array.isArray(values.ruleGroups) ? values.ruleGroups : [];
+  const paths: Array<string | number | Array<string | number>> = [];
+
+  ruleGroups.forEach((group, groupIndex) => {
+    paths.push(['ruleGroups', groupIndex, 'level'], ['ruleGroups', groupIndex, 'triggerMode']);
+
+    if ((group?.triggerMode || 'ALL') === 'AT_LEAST') {
+      paths.push(['ruleGroups', groupIndex, 'matchCount']);
+    }
+
+    const conditions = Array.isArray(group?.conditions) ? group.conditions : [];
+    conditions.forEach((condition, conditionIndex) => {
+      paths.push(...getConditionValidationPaths(condition, groupIndex, conditionIndex));
+    });
+  });
+
+  return paths;
+};
+
+// Keep notification optional as a whole, but require recipients once channels are selected.
+const validateNotifyRecipients = (form: FormInstance<AlarmRuleFormValues>) => {
+  const values = form.getFieldsValue(true) as AlarmRuleFormValues;
+  const notifyChannels = Array.isArray(values.notifyChannels) ? values.notifyChannels : [];
+  const recipientGroupCodes = Array.isArray(values.recipientGroupCodes) ? values.recipientGroupCodes : [];
+  const recipientUsernames = Array.isArray(values.recipientUsernames) ? values.recipientUsernames : [];
+  const hasRecipients = recipientGroupCodes.length > 0 || recipientUsernames.length > 0;
+
+  if (notifyChannels.length > 0 && !hasRecipients) {
+    const error = [ALARM_TEXT.recipientRequired];
+    form.setFields([
+      { name: ['recipientGroupCodes'], errors: error },
+      { name: ['recipientUsernames'], errors: error },
+    ]);
+    return false;
+  }
+
+  form.setFields([
+    { name: ['recipientGroupCodes'], errors: [] },
+    { name: ['recipientUsernames'], errors: [] },
+  ]);
+  return true;
+};
+
+const validateAlarmRuleStep = async (
+  form: FormInstance<AlarmRuleFormValues>,
+  stepKey: AlarmRuleFormStep,
+) => {
+  const values = form.getFieldsValue(true) as AlarmRuleFormValues;
+
+  if (stepKey === 'basic') {
+    await form.validateFields([['name']]);
+    return;
+  }
+
+  if (stepKey === 'groups') {
+    const paths = getRuleGroupValidationPaths(values);
+    if (paths.length > 0) {
+      await form.validateFields(paths);
+    }
+    return;
+  }
+
+  if (stepKey === 'notify' && !validateNotifyRecipients(form)) {
+    throw new Error(ALARM_TEXT.recipientRequired);
+  }
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -251,9 +400,13 @@ export const AlarmRulesPanel: React.FC = () => {
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [createStepIndex, setCreateStepIndex] = useState(0);
+  const [createMaxStepIndex, setCreateMaxStepIndex] = useState(0);
+  const [editStepIndex, setEditStepIndex] = useState(0);
+  const [editMaxStepIndex, setEditMaxStepIndex] = useState(0);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [createForm] = Form.useForm();
-  const [editForm] = Form.useForm();
+  const [createForm] = Form.useForm<AlarmRuleFormValues>();
+  const [editForm] = Form.useForm<AlarmRuleFormValues>();
   const [filterLevel, setFilterLevel] = useState<string | undefined>();
   const [keyword, setKeyword] = useState('');
   const [projectOptions, setProjectOptions] = useState<AlarmScopeOption[]>([]);
@@ -291,6 +444,58 @@ export const AlarmRulesPanel: React.FC = () => {
     () => Object.fromEntries(recipientUserOptions.map((item) => [item.value, item.label])),
     [recipientUserOptions],
   );
+  const createDrawerSteps = useMemo(() => ALARM_RULE_DRAWER_STEPS(false), []);
+  const editDrawerSteps = useMemo(() => ALARM_RULE_DRAWER_STEPS(true), []);
+
+  const resetCreateDrawerState = () => {
+    setCreateStepIndex(0);
+    setCreateMaxStepIndex(0);
+  };
+
+  const resetEditDrawerState = () => {
+    setEditStepIndex(0);
+    setEditMaxStepIndex(0);
+  };
+
+  const closeCreateDrawer = () => {
+    setCreateOpen(false);
+    resetCreateDrawerState();
+    createForm.resetFields();
+  };
+
+  const closeEditDrawer = () => {
+    setEditOpen(false);
+    setEditingId(null);
+    resetEditDrawerState();
+    editForm.resetFields();
+  };
+
+  const handleStepNext = async (
+    form: FormInstance<AlarmRuleFormValues>,
+    steps: AlarmRuleDrawerStepConfig[],
+    currentStepIndex: number,
+    setCurrentStepIndex: React.Dispatch<React.SetStateAction<number>>,
+    setMaxStepIndex: React.Dispatch<React.SetStateAction<number>>,
+  ) => {
+    const currentStep = steps[currentStepIndex];
+    await validateAlarmRuleStep(form, currentStep.key);
+    const nextStepIndex = Math.min(currentStepIndex + 1, steps.length - 1);
+    setCurrentStepIndex(nextStepIndex);
+    setMaxStepIndex((current) => Math.max(current, nextStepIndex));
+  };
+
+  const handleVisitedStepChange = (
+    targetStepIndex: number,
+    maxStepIndex: number,
+    setCurrentStepIndex: React.Dispatch<React.SetStateAction<number>>,
+  ) => {
+    if (targetStepIndex <= maxStepIndex) {
+      setCurrentStepIndex(targetStepIndex);
+      return;
+    }
+
+    message.warning('请先按步骤完成当前配置，再进入后续模块。');
+  };
 
   const loadScopeOptions = async () => {
     try {
@@ -443,8 +648,7 @@ export const AlarmRulesPanel: React.FC = () => {
       const { enabled: _enabled, ...payload } = buildRulePayload(values);
       await alarmRuleApi.create(payload);
       message.success(ALARM_TEXT.createRuleSuccess);
-      setCreateOpen(false);
-      createForm.resetFields();
+      closeCreateDrawer();
       await fetchData();
     } catch (error) {
       message.error(error instanceof Error ? error.message : ALARM_TEXT.createRuleError);
@@ -469,6 +673,7 @@ export const AlarmRulesPanel: React.FC = () => {
     if (record.productId) {
       void ensureMetricOptions(record.productId);
     }
+    resetEditDrawerState();
     setEditOpen(true);
   };
 
@@ -479,9 +684,7 @@ export const AlarmRulesPanel: React.FC = () => {
     try {
       await alarmRuleApi.update(editingId, buildRulePayload(values));
       message.success(ALARM_TEXT.updateRuleSuccess);
-      setEditOpen(false);
-      setEditingId(null);
-      editForm.resetFields();
+      closeEditDrawer();
       await fetchData();
     } catch (error) {
       message.error(error instanceof Error ? error.message : ALARM_TEXT.updateRuleError);
@@ -657,6 +860,48 @@ export const AlarmRulesPanel: React.FC = () => {
     },
   ];
 
+  const renderRuleDrawerFooter = (
+    form: FormInstance<AlarmRuleFormValues>,
+    steps: AlarmRuleDrawerStepConfig[],
+    currentStepIndex: number,
+    setCurrentStepIndex: React.Dispatch<React.SetStateAction<number>>,
+    setMaxStepIndex: React.Dispatch<React.SetStateAction<number>>,
+    onClose: () => void,
+    submitLabel: string,
+  ) => {
+    const isLastStep = currentStepIndex >= steps.length - 1;
+
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Button onClick={onClose}>{ALARM_TEXT.close}</Button>
+        <Space>
+          <Button disabled={currentStepIndex === 0} onClick={() => setCurrentStepIndex((current) => Math.max(current - 1, 0))}>
+            上一步
+          </Button>
+          {isLastStep ? (
+            <Button
+              type="primary"
+              onClick={() => {
+                if (validateNotifyRecipients(form)) {
+                  form.submit();
+                }
+              }}
+            >
+              {submitLabel}
+            </Button>
+          ) : (
+            <Button
+              type="primary"
+              onClick={() => void handleStepNext(form, steps, currentStepIndex, setCurrentStepIndex, setMaxStepIndex)}
+            >
+              下一步
+            </Button>
+          )}
+        </Space>
+      </div>
+    );
+  };
+
   return (
     <>
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
@@ -727,7 +972,9 @@ export const AlarmRulesPanel: React.FC = () => {
               type="primary"
               icon={<PlusOutlined />}
               onClick={() => {
+                createForm.resetFields();
                 createForm.setFieldsValue(DEFAULT_RULE_FORM_VALUES);
+                resetCreateDrawerState();
                 setCreateOpen(true);
               }}
             >
@@ -767,19 +1014,30 @@ export const AlarmRulesPanel: React.FC = () => {
       <Drawer
         title={ALARM_TEXT.createRuleTitle}
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={closeCreateDrawer}
         destroyOnClose
         width={1120}
         styles={{ body: { paddingBottom: 24 } }}
-        footer={
-          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button onClick={() => setCreateOpen(false)}>{ALARM_TEXT.close}</Button>
-            <Button type="primary" onClick={() => createForm.submit()}>
-              {ALARM_TEXT.createRule}
-            </Button>
-          </Space>
-        }
+        footer={renderRuleDrawerFooter(
+          createForm,
+          createDrawerSteps,
+          createStepIndex,
+          setCreateStepIndex,
+          setCreateMaxStepIndex,
+          closeCreateDrawer,
+          ALARM_TEXT.createRule,
+        )}
       >
+        <div style={{ marginBottom: 20 }}>
+          <Steps
+            current={createStepIndex}
+            responsive
+            items={createDrawerSteps}
+            onChange={(targetStepIndex) =>
+              handleVisitedStepChange(targetStepIndex, createMaxStepIndex, setCreateStepIndex)
+            }
+          />
+        </div>
         <Form
           form={createForm}
           layout="vertical"
@@ -796,6 +1054,7 @@ export const AlarmRulesPanel: React.FC = () => {
             notificationMethodOptions={notificationMethodOptions}
             recipientGroupOptions={recipientGroupOptions}
             recipientUserOptions={recipientUserOptions}
+            currentStep={createDrawerSteps[createStepIndex].key}
           />
         </Form>
       </Drawer>
@@ -803,29 +1062,28 @@ export const AlarmRulesPanel: React.FC = () => {
       <Drawer
         title={ALARM_TEXT.editRuleTitle}
         open={editOpen}
-        onClose={() => {
-          setEditOpen(false);
-          setEditingId(null);
-        }}
+        onClose={closeEditDrawer}
         destroyOnClose
         width={1120}
         styles={{ body: { paddingBottom: 24 } }}
-        footer={
-          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button
-              onClick={() => {
-                setEditOpen(false);
-                setEditingId(null);
-              }}
-            >
-              {ALARM_TEXT.close}
-            </Button>
-            <Button type="primary" onClick={() => editForm.submit()}>
-              {ALARM_TEXT.edit}
-            </Button>
-          </Space>
-        }
+        footer={renderRuleDrawerFooter(
+          editForm,
+          editDrawerSteps,
+          editStepIndex,
+          setEditStepIndex,
+          setEditMaxStepIndex,
+          closeEditDrawer,
+          ALARM_TEXT.edit,
+        )}
       >
+        <div style={{ marginBottom: 20 }}>
+          <Steps
+            current={editStepIndex}
+            responsive
+            items={editDrawerSteps}
+            onChange={(targetStepIndex) => handleVisitedStepChange(targetStepIndex, editMaxStepIndex, setEditStepIndex)}
+          />
+        </div>
         <Form form={editForm} layout="vertical" onFinish={handleUpdate}>
           <AlarmRuleForm
             form={editForm}
@@ -837,6 +1095,7 @@ export const AlarmRulesPanel: React.FC = () => {
             notificationMethodOptions={notificationMethodOptions}
             recipientGroupOptions={recipientGroupOptions}
             recipientUserOptions={recipientUserOptions}
+            currentStep={editDrawerSteps[editStepIndex].key}
             showEnabled
           />
         </Form>
