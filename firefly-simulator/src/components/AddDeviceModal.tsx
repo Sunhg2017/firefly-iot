@@ -130,15 +130,17 @@ export default function AddDeviceModal({ open, onClose }: Props) {
   const addLog = useSimStore((state) => state.addLog);
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
+  const [formSnapshot, setFormSnapshot] = useState<Record<string, unknown>>(initialValues);
 
-  const protocol = (Form.useWatch('protocol', form) || 'HTTP') as Protocol;
-  const mqttAuthMode = Form.useWatch('mqttAuthMode', form) as string | undefined;
-  const streamMode = Form.useWatch('streamMode', form) as string | undefined;
+  const protocol = ((formSnapshot.protocol as Protocol | undefined) || 'HTTP') as Protocol;
+  const mqttAuthMode = formSnapshot.mqttAuthMode as string | undefined;
+  const streamMode = formSnapshot.streamMode as string | undefined;
   const meta = useMemo(() => PROTOCOL_META[protocol], [protocol]);
 
   const closeDrawer = () => {
     form.resetFields();
     setCurrentStep(0);
+    setFormSnapshot(initialValues);
     onClose();
   };
 
@@ -393,7 +395,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
         <Descriptions
           size="small"
           column={1}
-          items={buildSummary(form.getFieldsValue(true)).map((item) => ({
+          items={buildSummary(formSnapshot).map((item) => ({
             key: item.key,
             label: item.label,
             children: <Text>{String(item.value)}</Text>,
@@ -425,7 +427,13 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       }
       styles={{ body: { paddingBottom: 24 } }}
     >
-      <Form form={form} layout="vertical" initialValues={initialValues}>
+      {/* 抽屉关闭时表单会被销毁，这里保留一份快照状态，避免继续监听未挂载的 form 实例。 */}
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={initialValues}
+        onValuesChange={(_changedValues, allValues) => setFormSnapshot(allValues)}
+      >
         <Steps
           current={currentStep}
           items={STEP_TITLES.map((title) => ({ title }))}

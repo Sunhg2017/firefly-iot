@@ -63,11 +63,27 @@ npm run build:vite
 
 ## 5. 常见问题排查
 
+### 5.0 开发态出现 Electron CSP 警告
+
+当前模拟器入口页已经补充显式 Content-Security-Policy。
+
+如果本地仍看到旧的 `Insecure Content-Security-Policy` 告警，优先排查：
+
+1. 开发进程是否仍在使用旧页面缓存
+2. Electron 窗口是否在本次修改前就已经打开，未完全重启
+3. 是否加载了非本仓库生成的旧 `index.html`
+
 ### 5.1 新建抽屉无法下一步
 
 先确认当前步骤的必填项是否已填写，再看控制台是否有校验错误信息。
 
-### 5.2 MQTT 一型一密创建后连接失败
+### 5.2 出现 `useForm is not connected to any Form element`
+
+该问题通常表示表单实例已经创建，但实际表单节点尚未挂载或已销毁。
+
+本次实现已经通过表单快照状态规避此问题；如果再次出现，优先检查是否在抽屉关闭后继续使用 `useWatch`、`getFieldsValue` 或其他直接依赖 `form` 挂载状态的调用。
+
+### 5.3 MQTT 一型一密创建后连接失败
 
 排查顺序：
 
@@ -76,7 +92,7 @@ npm run build:vite
 3. 确认注册接口 `/api/v1/protocol/device/register` 可用
 4. 确认 Broker 地址是否可达
 
-### 5.3 WebSocket 连接不上
+### 5.4 WebSocket 连接不上
 
 排查顺序：
 
@@ -84,7 +100,7 @@ npm run build:vite
 2. 确认是否需要 `deviceId / productId / tenantId`
 3. 确认 connector 已暴露 `/ws/device`
 
-### 5.4 GB28181 配置过长
+### 5.5 GB28181 配置过长
 
 这是本次拆步后的预期行为。先完成基础视频模式配置，再在高级步骤维护 SIP 和通道参数。
 
