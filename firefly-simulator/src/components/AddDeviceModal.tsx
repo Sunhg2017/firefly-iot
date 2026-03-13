@@ -33,6 +33,8 @@ interface Props {
 const initialValues = {
   protocol: 'HTTP',
   httpBaseUrl: 'http://localhost:9070',
+  httpAuthMode: 'DEVICE_SECRET',
+  httpRegisterBaseUrl: 'http://localhost:9070',
   coapBaseUrl: 'http://localhost:9070',
   mqttAuthMode: 'DEVICE_SECRET',
   mqttRegisterBaseUrl: 'http://localhost:9070',
@@ -72,7 +74,7 @@ const initialValues = {
 const STEP_TITLES = ['基本信息', '接入参数', '扩展配置'];
 
 const PROTOCOL_META: Record<Protocol, { label: string; description: string }> = {
-  HTTP: { label: 'HTTP 设备', description: '通过 HTTP 鉴权后上报属性和事件。' },
+  HTTP: { label: 'HTTP 设备', description: '支持一机一密鉴权，也支持先动态注册再通过 HTTP 鉴权上报。' },
   MQTT: { label: 'MQTT 设备', description: '支持一机一密和一型一密动态注册。' },
   CoAP: { label: 'CoAP 设备', description: '支持 CoAP Bridge 鉴权、上报和影子拉取。' },
   Video: { label: '视频设备', description: '支持 GB28181 和 RTSP 代理两种模式。' },
@@ -91,10 +93,12 @@ const drawerPanelCardStyle = {
   boxShadow: '0 14px 30px rgba(2,6,23,0.24)',
 } as const;
 
-function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, streamMode?: string): string[] {
+function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, streamMode?: string, httpAuthMode?: string): string[] {
   if (step === 0) return ['name', 'protocol'];
   if (step === 1) {
     switch (protocol) {
+      case 'HTTP':
+        return ['httpBaseUrl', 'productKey', 'deviceName', ...(httpAuthMode === 'PRODUCT_SECRET' ? ['httpRegisterBaseUrl', 'productSecret'] : ['deviceSecret'])];
       case 'MQTT':
         return ['productKey', 'deviceName', 'mqttBrokerUrl', ...(mqttAuthMode === 'PRODUCT_SECRET' ? ['mqttRegisterBaseUrl', 'productSecret'] : ['deviceSecret'])];
       case 'Video':
@@ -140,6 +144,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
   const [formSnapshot, setFormSnapshot] = useState<Record<string, unknown>>(initialValues);
 
   const protocol = ((formSnapshot.protocol as Protocol | undefined) || 'HTTP') as Protocol;
+  const httpAuthMode = formSnapshot.httpAuthMode as string | undefined;
   const mqttAuthMode = formSnapshot.mqttAuthMode as string | undefined;
   const streamMode = formSnapshot.streamMode as string | undefined;
   const meta = useMemo(() => PROTOCOL_META[protocol], [protocol]);
@@ -152,7 +157,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
   };
 
   const nextStep = async () => {
-    const fields = getStepFields(protocol, currentStep, mqttAuthMode, streamMode);
+    const fields = getStepFields(protocol, currentStep, mqttAuthMode, streamMode, httpAuthMode);
     if (fields.length > 0) {
       await form.validateFields(fields);
     }
@@ -210,8 +215,50 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     </>
   );
 
+  const renderHttpAccessStep = () => (
+    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      <Alert
+        type="info"
+        showIcon
+        message="HTTP 支持一机一密和一型一密动态注册"
+        description="一型一密会先通过产品密钥动态注册换取 DeviceSecret，再继续走现有 HTTP 鉴权接口。"
+      />
+      <Form.Item name="httpBaseUrl" label="HTTP 服务地址" rules={[{ required: true, message: '请输入 HTTP 服务地址' }]}>
+        <Input placeholder="http://localhost:9070" />
+      </Form.Item>
+      <Form.Item name="productKey" label="ProductKey" rules={[{ required: true, message: '请输入 ProductKey' }]}>
+        <Input placeholder="例如：sensor_gateway" />
+      </Form.Item>
+      <Form.Item name="deviceName" label="DeviceName" rules={[{ required: true, message: '请输入 DeviceName' }]}>
+        <Input placeholder="例如：device-01" />
+      </Form.Item>
+      <Form.Item name="httpAuthMode" label="认证方式">
+        <Radio.Group>
+          <Radio.Button value="DEVICE_SECRET">一机一密</Radio.Button>
+          <Radio.Button value="PRODUCT_SECRET">一型一密</Radio.Button>
+        </Radio.Group>
+      </Form.Item>
+      {httpAuthMode === 'PRODUCT_SECRET' ? (
+        <>
+          <Form.Item name="httpRegisterBaseUrl" label="动态注册服务地址" rules={[{ required: true, message: '请输入动态注册服务地址' }]}>
+            <Input placeholder="http://localhost:9070" />
+          </Form.Item>
+          <Form.Item name="productSecret" label="ProductSecret" rules={[{ required: true, message: '请输入 ProductSecret' }]}>
+            <Input.Password placeholder="输入产品密钥" />
+          </Form.Item>
+        </>
+      ) : (
+        <Form.Item name="deviceSecret" label="DeviceSecret" rules={[{ required: true, message: '请输入 DeviceSecret' }]}>
+          <Input.Password placeholder="输入设备密钥" />
+        </Form.Item>
+      )}
+    </Space>
+  );
+
   const renderAccessStep = () => {
     switch (protocol) {
+      case 'HTTP':
+        return renderHttpAccessStep();
       case 'MQTT':
         return (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>

@@ -8,6 +8,7 @@ import dayjs from 'dayjs';
 // ============================================================
 
 export type Protocol = 'HTTP' | 'MQTT' | 'CoAP' | 'Video' | 'SNMP' | 'Modbus' | 'WebSocket' | 'TCP' | 'UDP' | 'LoRaWAN';
+export type HttpAuthMode = 'DEVICE_SECRET' | 'PRODUCT_SECRET';
 export type MqttAuthMode = 'DEVICE_SECRET' | 'PRODUCT_SECRET';
 
 export interface SipChannel {
@@ -29,6 +30,8 @@ export interface SimDevice {
   status: DeviceStatus;
   // HTTP config
   httpBaseUrl: string;
+  httpAuthMode: HttpAuthMode;
+  httpRegisterBaseUrl: string;
   productKey: string;
   productSecret: string;
   deviceName: string;
@@ -345,6 +348,8 @@ export const useSimStore = create<SimulatorState>()(
       protocol: partial.protocol || 'HTTP',
       status: 'offline',
       httpBaseUrl: partial.httpBaseUrl || 'http://localhost:9070',
+      httpAuthMode: partial.httpAuthMode || 'DEVICE_SECRET',
+      httpRegisterBaseUrl: partial.httpRegisterBaseUrl || 'http://localhost:9070',
       productKey: partial.productKey || '',
       productSecret: partial.productSecret || '',
       deviceName: partial.deviceName || '',

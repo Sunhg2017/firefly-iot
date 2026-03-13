@@ -58,6 +58,7 @@ npm run electron:build
 - 模拟器连接前会先校验 `httpBaseUrl`、`productKey`、`deviceName`、`deviceSecret`，缺项时不会继续向服务端发起空认证请求。
 - HTTP 认证请求会同时携带 JSON Body 和同名 Query 参数，方便 connector 在不同取参口径下都能兼容。
 - 连接成功后，认证请求也会进入 HTTP 请求历史，便于排查“服务端未拿到认证参数”这类问题。
+- 如果 HTTP 设备选择“一型一密”，模拟器会先调用 `POST /api/v1/protocol/device/register` 动态注册，拿到 `deviceSecret` 后再调用 `/api/v1/protocol/http/auth`。
 
 ### MQTT 模式
 

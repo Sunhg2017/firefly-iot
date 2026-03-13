@@ -22,7 +22,7 @@ type DeviceIdentitySource = Partial<Pick<
 
 type DynamicRegisterSource = Pick<
   SimDevice,
-  'name' | 'productKey' | 'productSecret' | 'deviceName' | 'mqttRegisterBaseUrl'
+  'name' | 'productKey' | 'productSecret' | 'deviceName'
 >;
 
 function trim(value?: string | null): string {
@@ -90,8 +90,8 @@ export function validateMqttDevice(device: Pick<
   return null;
 }
 
-export async function dynamicRegisterDevice(device: DynamicRegisterSource): Promise<DynamicRegisterResult> {
-  const baseUrl = trim(device.mqttRegisterBaseUrl) || 'http://localhost:9070';
+export async function dynamicRegisterDevice(device: DynamicRegisterSource, registerBaseUrl?: string): Promise<DynamicRegisterResult> {
+  const baseUrl = trim(registerBaseUrl) || 'http://localhost:9070';
   const productKey = trim(device.productKey);
   const productSecret = trim(device.productSecret);
   const deviceName = trim(device.deviceName);

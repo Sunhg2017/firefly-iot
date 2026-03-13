@@ -305,11 +305,6 @@ export default function DeviceControlPanel() {
   const mqttIdentity = device.protocol === 'MQTT' ? resolveMqttIdentity(device) : null;
   const accessError = getDeviceAccessValidationError(device);
   const accessItems = getDeviceAccessOverviewItems(device);
-  const authPayloadPreview = JSON.stringify({
-    productKey: device.productKey || '',
-    deviceName: device.deviceName || '',
-    deviceSecret: maskSecret(device.deviceSecret),
-  }, null, 2);
 
   const connectMqtt = async () => {
     const validationError = validateMqttDevice(device);
@@ -317,7 +312,7 @@ export default function DeviceControlPanel() {
 
     let target = device;
     if (device.mqttAuthMode === 'PRODUCT_SECRET') {
-      const registerResult = await dynamicRegisterDevice(device);
+      const registerResult = await dynamicRegisterDevice(device, device.mqttRegisterBaseUrl);
       target = { ...device, deviceSecret: registerResult.deviceSecret };
       updateDevice(device.id, { deviceSecret: registerResult.deviceSecret });
       addLog(device.id, device.name, 'success', `Dynamic registration succeeded: ${registerResult.deviceName}`);
@@ -369,11 +364,22 @@ export default function DeviceControlPanel() {
     try {
       if (device.protocol === 'HTTP') {
         const authUrl = `${device.httpBaseUrl}/api/v1/protocol/http/auth`;
-        const result = await window.electronAPI.httpAuth(device.httpBaseUrl, device.productKey, device.deviceName, device.deviceSecret);
+        let target = device;
+        if ((device.httpAuthMode || 'DEVICE_SECRET') === 'PRODUCT_SECRET') {
+          const registerResult = await dynamicRegisterDevice(device, device.httpRegisterBaseUrl);
+          target = { ...device, deviceSecret: registerResult.deviceSecret };
+          updateDevice(device.id, { deviceSecret: registerResult.deviceSecret });
+          addLog(device.id, device.name, 'success', `HTTP 动态注册成功：${registerResult.deviceName}`);
+        }
+        const result = await window.electronAPI.httpAuth(target.httpBaseUrl, target.productKey, target.deviceName, target.deviceSecret);
         setHttpHistory((prev) => [...prev.slice(-99), {
           method: 'POST',
           url: authUrl,
-          reqBody: authPayloadPreview,
+          reqBody: JSON.stringify({
+            productKey: target.productKey || '',
+            deviceName: target.deviceName || '',
+            deviceSecret: maskSecret(target.deviceSecret),
+          }, null, 2),
           status: result._status || 0,
           resBody: JSON.stringify(result, null, 2),
           resHeaders: result._headers || {},

@@ -42,7 +42,12 @@ export function getDeviceAccessMissingFields(device: SimDevice): string[] {
       if (!trim(device.httpBaseUrl)) missing.push('服务地址');
       if (!trim(device.productKey)) missing.push('ProductKey');
       if (!trim(device.deviceName)) missing.push('DeviceName');
-      if (!trim(device.deviceSecret)) missing.push('DeviceSecret');
+      if ((device.httpAuthMode || 'DEVICE_SECRET') === 'PRODUCT_SECRET') {
+        if (!trim(device.httpRegisterBaseUrl)) missing.push('动态注册地址');
+        if (!trim(device.productSecret)) missing.push('ProductSecret');
+      } else if (!trim(device.deviceSecret)) {
+        missing.push('DeviceSecret');
+      }
       return missing;
     }
     case 'CoAP': {
@@ -123,9 +128,15 @@ export function getDeviceAccessOverviewItems(device: SimDevice): AccessOverviewI
     case 'HTTP':
       return [
         { label: '服务地址', value: trim(device.httpBaseUrl) || '未配置' },
+        { label: '认证方式', value: (device.httpAuthMode || 'DEVICE_SECRET') === 'PRODUCT_SECRET' ? '一型一密' : '一机一密', highlight: true },
         { label: 'ProductKey', value: trim(device.productKey) || '未配置' },
         { label: 'DeviceName', value: trim(device.deviceName) || '未配置' },
-        { label: 'DeviceSecret', value: maskSecret(device.deviceSecret) },
+        ...(device.httpAuthMode === 'PRODUCT_SECRET'
+          ? [
+              { label: '动态注册服务', value: trim(device.httpRegisterBaseUrl) || '未配置' },
+              { label: 'ProductSecret', value: maskSecret(device.productSecret) },
+            ]
+          : [{ label: 'DeviceSecret', value: maskSecret(device.deviceSecret) }]),
       ];
     case 'CoAP':
       return [

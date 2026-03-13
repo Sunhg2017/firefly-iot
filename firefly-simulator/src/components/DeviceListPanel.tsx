@@ -154,6 +154,8 @@ export default function DeviceListPanel() {
       protocol: device.protocol,
       productKey: device.productKey,
       productSecret: device.productSecret,
+      httpAuthMode: device.httpAuthMode,
+      httpRegisterBaseUrl: device.httpRegisterBaseUrl,
       deviceName: device.deviceName,
       deviceSecret: device.deviceSecret,
       httpBaseUrl: device.httpBaseUrl,
@@ -266,6 +268,8 @@ export default function DeviceListPanel() {
           name: row.name || row.deviceName || `导入设备 ${count + 1}`,
           protocol,
           httpBaseUrl: row.httpBaseUrl || row.baseUrl || 'http://localhost:9070',
+          httpAuthMode: (row.httpAuthMode as never) || 'DEVICE_SECRET',
+          httpRegisterBaseUrl: row.httpRegisterBaseUrl || row.httpBaseUrl || row.baseUrl || 'http://localhost:9070',
           productKey: row.productKey || '',
           productSecret: row.productSecret || '',
           deviceName: row.deviceName || '',
@@ -360,7 +364,14 @@ export default function DeviceListPanel() {
         }
 
         if (device.protocol === 'HTTP') {
-          const result = await window.electronAPI.httpAuth(device.httpBaseUrl, device.productKey, device.deviceName, device.deviceSecret);
+          let target = device;
+          if ((device.httpAuthMode || 'DEVICE_SECRET') === 'PRODUCT_SECRET') {
+            const registerResult = await dynamicRegisterDevice(device, device.httpRegisterBaseUrl);
+            target = { ...device, deviceSecret: registerResult.deviceSecret };
+            updateDevice(device.id, { deviceSecret: registerResult.deviceSecret });
+            addLog(device.id, device.name, 'success', `HTTP 动态注册成功：${registerResult.deviceName}`);
+          }
+          const result = await window.electronAPI.httpAuth(target.httpBaseUrl, target.productKey, target.deviceName, target.deviceSecret);
           if (result.success && result.data?.token) {
             updateDevice(device.id, { status: 'online', token: result.data.token });
             addLog(device.id, device.name, 'success', 'HTTP 批量连接成功');
@@ -396,7 +407,7 @@ export default function DeviceListPanel() {
 
         let target = device;
         if (device.mqttAuthMode === 'PRODUCT_SECRET') {
-          const registerResult = await dynamicRegisterDevice(device);
+          const registerResult = await dynamicRegisterDevice(device, device.mqttRegisterBaseUrl);
           target = { ...device, deviceSecret: registerResult.deviceSecret };
           updateDevice(device.id, { deviceSecret: registerResult.deviceSecret });
           addLog(device.id, device.name, 'success', `动态注册成功：${registerResult.deviceName}`);

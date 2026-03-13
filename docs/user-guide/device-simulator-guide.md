@@ -46,6 +46,17 @@
 
 适合快速验证平台鉴权和属性上报链路。
 
+如果 HTTP 产品是一机一密，直接填写 `deviceSecret`。
+
+如果 HTTP 产品是一型一密，选择 `一型一密` 后填写：
+
+- `ProductKey`
+- `DeviceName`
+- `动态注册服务地址`
+- `ProductSecret`
+
+连接时系统会先动态注册，自动换取 `deviceSecret`，再继续完成 HTTP 鉴权。
+
 ### 2.2 MQTT
 
 如果产品是一机一密，直接填写 `deviceSecret`。

@@ -69,6 +69,7 @@
 
 - HTTP / CoAP / MQTT 继续沿用现有平台的 `productKey + deviceName + secret` 口径。
 - HTTP 认证请求兼容 body + query 双通道取参，模拟器和 connector 同步补强，减少不同链路上的取参差异。
+- HTTP 增加独立认证方式切换：一机一密直接使用 `deviceSecret`，一型一密先走动态注册，再回填 `deviceSecret` 进入 HTTP 鉴权，不把注册和认证混进同一个接口。
 - 视频设备先区分 `GB28181` 和 `RTSP_PROXY`，再分别展示对应配置。
 - WebSocket 保留内部识别参数，但移入高级步骤，避免用户一进来就看到内部字段。
 

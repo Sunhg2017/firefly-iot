@@ -43,6 +43,7 @@ npm run build:vite
 - 已完成步骤支持回退修改
 - 最终点击“创建设备”后能成功加入设备列表
 - HTTP / CoAP / MQTT 设备如果缺少接入参数，连接按钮会直接提示缺项，而不是继续向服务端发送空认证请求
+- HTTP 设备切换为“一型一密”后，连接流程应先动态注册成功，再进入 HTTP 鉴权
 
 ### 4.2 协议分支
 
@@ -117,6 +118,15 @@ npm run build:vite
 3. 打开 HTTP 请求历史，确认认证请求中是否已经带上认证参数预览
 4. 确认 connector 已更新到兼容 body + query 双通道取参的版本
 5. 如仍失败，再排查 firefly-device 内部认证接口返回的具体错误码
+
+### 5.0.5 HTTP 一型一密无法连接
+
+排查顺序：
+
+1. 确认产品本身的设备认证方式为 `PRODUCT_SECRET`
+2. 确认 `httpRegisterBaseUrl`、`productKey`、`productSecret`、`deviceName` 已填写完整
+3. 确认 `/api/v1/protocol/device/register` 返回了新的 `deviceSecret`
+4. 再查看后续 `/api/v1/protocol/http/auth` 是否成功拿到 token
 
 ### 5.1 新建抽屉无法下一步
 
