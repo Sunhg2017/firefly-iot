@@ -134,7 +134,8 @@ function buildSummary(values: Record<string, unknown>) {
     { key: 'nickname', label: 'Nickname', value: values.nickname || values.name || '-' },
     { key: 'name', label: '模拟设备名称', value: values.name || '-' },
     { key: 'protocol', label: '接入协议', value: protocol },
-    { key: 'main1', label: '核心标识', value: values.productKey || values.gbDeviceId || values.loraDevEui || values.snmpHost || values.modbusHost || values.wsEndpoint || values.tcpHost || values.udpHost || '-' },
+    { key: 'main1', label: 'ProductKey / 核心标识', value: values.productKey || values.gbDeviceId || values.loraDevEui || values.snmpHost || values.modbusHost || values.wsEndpoint || values.tcpHost || values.udpHost || '-' },
+    { key: 'deviceName', label: 'DeviceName / 设备名称', value: values.deviceName || '-' },
     { key: 'main2', label: '连接地址', value: values.httpBaseUrl || values.coapBaseUrl || values.mqttBrokerUrl || values.mediaBaseUrl || values.loraWebhookUrl || '-' },
   ];
 }

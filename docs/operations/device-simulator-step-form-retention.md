@@ -45,3 +45,11 @@ npm run build:vite
 ## 5. 回滚说明
 
 如需回滚，只需回退 `firefly-simulator/src/components/AddDeviceModal.tsx` 与本说明对应文档，并重新执行一次前端构建。
+
+## 6. 2026-03-14 展示验证补充
+
+回归时补充检查：
+
+1. 新建 HTTP 设备进入第三步。
+2. 在“配置摘要”中确认 `DeviceName / 设备名称` 已显示当前填写值。
+3. 若未显示，优先检查 `buildSummary(...)` 是否仍遗漏 `deviceName`。
