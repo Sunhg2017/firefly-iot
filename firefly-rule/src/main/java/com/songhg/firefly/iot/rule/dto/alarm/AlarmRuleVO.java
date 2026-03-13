@@ -22,7 +22,7 @@ public class AlarmRuleVO {
     @Schema(description = "Rule name")
     private String name;
 
-    @Schema(description = "Description")
+    @Schema(description = "Rule description")
     private String description;
 
     @Schema(description = "Product ID")
@@ -31,16 +31,16 @@ public class AlarmRuleVO {
     @Schema(description = "Device ID")
     private Long deviceId;
 
-    @Schema(description = "Alarm level")
+    @Schema(description = "Derived primary alarm level")
     private AlarmLevel level;
 
-    @Schema(description = "Condition expression")
+    @Schema(description = "Structured condition expression JSON")
     private String conditionExpr;
 
     @Schema(description = "Enabled flag")
     private Boolean enabled;
 
-    @Schema(description = "Notification config (JSON)")
+    @Schema(description = "Notification config JSON")
     private String notifyConfig;
 
     @Schema(description = "Creator user ID")

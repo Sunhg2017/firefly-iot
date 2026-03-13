@@ -8,33 +8,33 @@ import lombok.Data;
  * Alarm rule update request.
  */
 @Data
-@Schema(description = "告警规则更新请求")
+@Schema(description = "Alarm rule update request")
 public class AlarmRuleUpdateDTO {
 
-    @Schema(description = "规则名称")
+    @Schema(description = "Rule name")
     private String name;
 
-    @Schema(description = "描述")
+    @Schema(description = "Rule description")
     private String description;
 
-    @Schema(description = "项目编号")
+    @Schema(description = "Project ID")
     private Long projectId;
 
-    @Schema(description = "产品编号")
+    @Schema(description = "Product ID")
     private Long productId;
 
-    @Schema(description = "设备编号")
+    @Schema(description = "Device ID")
     private Long deviceId;
 
-    @Schema(description = "告警级别")
+    @Schema(description = "Derived primary alarm level")
     private AlarmLevel level;
 
-    @Schema(description = "条件表达式")
+    @Schema(description = "Structured condition expression JSON")
     private String conditionExpr;
 
-    @Schema(description = "是否启用")
+    @Schema(description = "Enabled flag")
     private Boolean enabled;
 
-    @Schema(description = "通知配置")
+    @Schema(description = "Notification config JSON")
     private String notifyConfig;
 }

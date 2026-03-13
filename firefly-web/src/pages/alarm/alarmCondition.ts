@@ -1,3 +1,4 @@
+export type AlarmRuleLevel = 'CRITICAL' | 'WARNING' | 'INFO';
 export type AlarmConditionType = 'THRESHOLD' | 'COMPARE' | 'CONTINUOUS' | 'ACCUMULATE' | 'CUSTOM';
 export type AlarmAggregateType = 'LATEST' | 'AVG' | 'MAX' | 'MIN' | 'SUM' | 'COUNT';
 export type AlarmOperator = 'GT' | 'GTE' | 'LT' | 'LTE' | 'EQ' | 'NEQ';
@@ -6,7 +7,8 @@ export type AlarmCompareTarget = 'SAME_PERIOD' | 'PREVIOUS_PERIOD';
 export type AlarmChangeMode = 'PERCENT' | 'ABSOLUTE';
 export type AlarmChangeDirection = 'UP' | 'DOWN' | 'EITHER';
 
-export interface AlarmConditionFormValues {
+export interface AlarmConditionItemFormValues {
+  level?: AlarmRuleLevel;
   conditionType?: AlarmConditionType;
   metricKey?: string;
   aggregateType?: AlarmAggregateType;
@@ -21,9 +23,12 @@ export interface AlarmConditionFormValues {
   customExpr?: string;
 }
 
-interface StructuredAlarmCondition {
-  mode: 'STRUCTURED';
-  version: 1;
+export interface AlarmConditionFormValues {
+  ruleConditions?: AlarmConditionItemFormValues[];
+}
+
+interface StructuredAlarmConditionItem {
+  level: AlarmRuleLevel;
   type: AlarmConditionType;
   metricKey?: string;
   aggregateType?: AlarmAggregateType;
@@ -38,13 +43,15 @@ interface StructuredAlarmCondition {
   customExpr?: string;
 }
 
+interface StructuredAlarmConditionGroup {
+  mode: 'STRUCTURED';
+  version: 2;
+  conditions: StructuredAlarmConditionItem[];
+}
+
 export interface AlarmConditionOption {
   value: string;
   label: string;
-}
-
-interface ParsedStructuredAlarmCondition extends StructuredAlarmCondition {
-  mode: 'STRUCTURED';
 }
 
 const CONDITION_TYPE_LABELS: Record<AlarmConditionType, string> = {
@@ -103,6 +110,8 @@ const CONDITION_TYPE_COLORS: Record<AlarmConditionType, string> = {
   CUSTOM: 'default',
 };
 
+const LEVEL_ORDER: AlarmRuleLevel[] = ['CRITICAL', 'WARNING', 'INFO'];
+
 export const CONDITION_TYPE_OPTIONS: AlarmConditionOption[] = (
   Object.entries(CONDITION_TYPE_LABELS) as Array<[AlarmConditionType, string]>
 ).map(([value, label]) => ({ value, label }));
@@ -131,7 +140,14 @@ export const CHANGE_DIRECTION_OPTIONS: AlarmConditionOption[] = (
   Object.entries(CHANGE_DIRECTION_LABELS) as Array<[AlarmChangeDirection, string]>
 ).map(([value, label]) => ({ value, label }));
 
-export const DEFAULT_ALARM_CONDITION_VALUES: Required<AlarmConditionFormValues> = {
+export const LEVEL_OPTIONS: AlarmConditionOption[] = [
+  { value: 'CRITICAL', label: '紧急' },
+  { value: 'WARNING', label: '告警' },
+  { value: 'INFO', label: '通知' },
+];
+
+export const DEFAULT_ALARM_CONDITION_ITEM: Required<AlarmConditionItemFormValues> = {
+  level: 'WARNING',
   conditionType: 'THRESHOLD',
   metricKey: '',
   aggregateType: 'LATEST',
@@ -144,6 +160,10 @@ export const DEFAULT_ALARM_CONDITION_VALUES: Required<AlarmConditionFormValues> 
   changeDirection: 'UP',
   consecutiveCount: 3,
   customExpr: '',
+};
+
+export const DEFAULT_ALARM_CONDITION_VALUES: Required<AlarmConditionFormValues> = {
+  ruleConditions: [{ ...DEFAULT_ALARM_CONDITION_ITEM }],
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -159,11 +179,39 @@ const asNumber = (value: unknown): number | undefined => {
   return undefined;
 };
 
+const asLevel = (value: unknown): AlarmRuleLevel | undefined => {
+  const next = asString(value) as AlarmRuleLevel | undefined;
+  return next && LEVEL_ORDER.includes(next) ? next : undefined;
+};
+
 const getMetricLabel = (metricKey: string | undefined, metricLabelMap?: Record<string, string>): string => {
   if (!metricKey) {
     return '未选指标';
   }
   return metricLabelMap?.[metricKey] || metricKey;
+};
+
+const normalizeConditionItem = (item: AlarmConditionItemFormValues): Required<AlarmConditionItemFormValues> => ({
+  ...DEFAULT_ALARM_CONDITION_ITEM,
+  ...item,
+});
+
+const parseStructuredConditionGroup = (conditionExpr?: string | null): StructuredAlarmConditionGroup | null => {
+  const raw = typeof conditionExpr === 'string' ? conditionExpr.trim() : '';
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isRecord(parsed) || parsed.mode !== 'STRUCTURED' || !Array.isArray(parsed.conditions)) {
+      return null;
+    }
+
+    return parsed as unknown as StructuredAlarmConditionGroup;
+  } catch {
+    return null;
+  }
 };
 
 export const getAlarmConditionTypeLabel = (type?: AlarmConditionType): string =>
@@ -172,111 +220,100 @@ export const getAlarmConditionTypeLabel = (type?: AlarmConditionType): string =>
 export const getAlarmConditionTypeColor = (type?: AlarmConditionType): string =>
   (type && CONDITION_TYPE_COLORS[type]) || CONDITION_TYPE_COLORS.CUSTOM;
 
-const parseStructuredCondition = (conditionExpr?: string | null): ParsedStructuredAlarmCondition | null => {
-  const raw = typeof conditionExpr === 'string' ? conditionExpr.trim() : '';
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!isRecord(parsed) || parsed.mode !== 'STRUCTURED') {
-      return null;
-    }
-
-    const type = asString(parsed.type) as AlarmConditionType | undefined;
-    if (!type || !(type in CONDITION_TYPE_LABELS)) {
-      return null;
-    }
-
-    return parsed as unknown as ParsedStructuredAlarmCondition;
-  } catch {
-    return null;
-  }
-};
-
 export const parseAlarmConditionExpr = (conditionExpr?: string | null): AlarmConditionFormValues => {
-  const parsed = parseStructuredCondition(conditionExpr);
-  if (!parsed) {
+  const group = parseStructuredConditionGroup(conditionExpr);
+  if (!group || group.conditions.length === 0) {
     return { ...DEFAULT_ALARM_CONDITION_VALUES };
   }
 
   return {
-    ...DEFAULT_ALARM_CONDITION_VALUES,
-    conditionType: parsed.type,
-    metricKey: asString(parsed.metricKey) || '',
-    aggregateType:
-      (asString(parsed.aggregateType) as AlarmAggregateType | undefined) || DEFAULT_ALARM_CONDITION_VALUES.aggregateType,
-    operator: (asString(parsed.operator) as AlarmOperator | undefined) || DEFAULT_ALARM_CONDITION_VALUES.operator,
-    threshold: asNumber(parsed.threshold) ?? DEFAULT_ALARM_CONDITION_VALUES.threshold,
-    windowSize: asNumber(parsed.windowSize) ?? DEFAULT_ALARM_CONDITION_VALUES.windowSize,
-    windowUnit:
-      (asString(parsed.windowUnit) as AlarmWindowUnit | undefined) || DEFAULT_ALARM_CONDITION_VALUES.windowUnit,
-    compareTarget:
-      (asString(parsed.compareTarget) as AlarmCompareTarget | undefined) || DEFAULT_ALARM_CONDITION_VALUES.compareTarget,
-    changeMode:
-      (asString(parsed.changeMode) as AlarmChangeMode | undefined) || DEFAULT_ALARM_CONDITION_VALUES.changeMode,
-    changeDirection:
-      (asString(parsed.changeDirection) as AlarmChangeDirection | undefined) ||
-      DEFAULT_ALARM_CONDITION_VALUES.changeDirection,
-    consecutiveCount: asNumber(parsed.consecutiveCount) ?? DEFAULT_ALARM_CONDITION_VALUES.consecutiveCount,
-    customExpr: asString(parsed.customExpr) || '',
+    ruleConditions: group.conditions.map((condition) => ({
+      ...DEFAULT_ALARM_CONDITION_ITEM,
+      level: asLevel(condition.level) || DEFAULT_ALARM_CONDITION_ITEM.level,
+      conditionType: (asString(condition.type) as AlarmConditionType | undefined) || DEFAULT_ALARM_CONDITION_ITEM.conditionType,
+      metricKey: asString(condition.metricKey) || '',
+      aggregateType:
+        (asString(condition.aggregateType) as AlarmAggregateType | undefined) || DEFAULT_ALARM_CONDITION_ITEM.aggregateType,
+      operator: (asString(condition.operator) as AlarmOperator | undefined) || DEFAULT_ALARM_CONDITION_ITEM.operator,
+      threshold: asNumber(condition.threshold) ?? DEFAULT_ALARM_CONDITION_ITEM.threshold,
+      windowSize: asNumber(condition.windowSize) ?? DEFAULT_ALARM_CONDITION_ITEM.windowSize,
+      windowUnit:
+        (asString(condition.windowUnit) as AlarmWindowUnit | undefined) || DEFAULT_ALARM_CONDITION_ITEM.windowUnit,
+      compareTarget:
+        (asString(condition.compareTarget) as AlarmCompareTarget | undefined) || DEFAULT_ALARM_CONDITION_ITEM.compareTarget,
+      changeMode:
+        (asString(condition.changeMode) as AlarmChangeMode | undefined) || DEFAULT_ALARM_CONDITION_ITEM.changeMode,
+      changeDirection:
+        (asString(condition.changeDirection) as AlarmChangeDirection | undefined) || DEFAULT_ALARM_CONDITION_ITEM.changeDirection,
+      consecutiveCount: asNumber(condition.consecutiveCount) ?? DEFAULT_ALARM_CONDITION_ITEM.consecutiveCount,
+      customExpr: asString(condition.customExpr) || '',
+    })),
   };
 };
 
-export const buildAlarmConditionExpr = (values: AlarmConditionFormValues): string => {
-  const next = { ...DEFAULT_ALARM_CONDITION_VALUES, ...values };
+const buildStructuredConditionItem = (
+  item: AlarmConditionItemFormValues,
+  index: number,
+): StructuredAlarmConditionItem => {
+  const next = normalizeConditionItem(item);
   const type = next.conditionType;
-  if (!type) {
-    throw new Error('请选择触发条件类型');
+  const level = next.level;
+
+  if (!level) {
+    throw new Error(`请为第 ${index + 1} 条条件选择告警级别`);
   }
 
-  const payload: StructuredAlarmCondition = {
-    mode: 'STRUCTURED',
-    version: 1,
-    type,
-  };
+  if (!type) {
+    throw new Error(`请为第 ${index + 1} 条条件选择触发方式`);
+  }
 
   if (type === 'CUSTOM') {
     const customExpr = next.customExpr.trim();
     if (!customExpr) {
-      throw new Error('请输入自定义表达式');
+      throw new Error(`请填写第 ${index + 1} 条条件的自定义表达式`);
     }
-    payload.customExpr = customExpr;
-    return JSON.stringify(payload);
+    return {
+      level,
+      type,
+      customExpr,
+    };
   }
 
   const metricKey = next.metricKey.trim();
   if (!metricKey) {
-    throw new Error('请选择或输入指标标识');
+    throw new Error(`请为第 ${index + 1} 条条件选择指标标识`);
   }
 
   const threshold = next.threshold;
   if (threshold === undefined || threshold === null || !Number.isFinite(threshold)) {
-    throw new Error('请填写合法的触发阈值');
+    throw new Error(`请填写第 ${index + 1} 条条件的触发阈值`);
   }
 
-  payload.metricKey = metricKey;
+  const payload: StructuredAlarmConditionItem = {
+    level,
+    type,
+    metricKey,
+  };
 
   if (type === 'THRESHOLD') {
     payload.aggregateType = next.aggregateType;
     payload.operator = next.operator;
     payload.threshold = threshold;
-    return JSON.stringify(payload);
+    return payload;
   }
 
   if (type === 'CONTINUOUS') {
     if (!next.consecutiveCount || next.consecutiveCount <= 0) {
-      throw new Error('请填写连续次数');
+      throw new Error(`请填写第 ${index + 1} 条条件的连续次数`);
     }
     payload.operator = next.operator;
     payload.threshold = threshold;
     payload.consecutiveCount = next.consecutiveCount;
-    return JSON.stringify(payload);
+    return payload;
   }
 
   if (!next.windowSize || next.windowSize <= 0) {
-    throw new Error('请填写统计窗口');
+    throw new Error(`请填写第 ${index + 1} 条条件的统计窗口`);
   }
 
   payload.aggregateType = next.aggregateType;
@@ -286,20 +323,35 @@ export const buildAlarmConditionExpr = (values: AlarmConditionFormValues): strin
   payload.windowUnit = next.windowUnit;
 
   if (type === 'ACCUMULATE') {
-    return JSON.stringify(payload);
+    return payload;
   }
 
   payload.compareTarget = next.compareTarget;
   payload.changeMode = next.changeMode;
   payload.changeDirection = next.changeDirection;
+  return payload;
+};
+
+export const buildAlarmConditionExpr = (values: AlarmConditionFormValues): string => {
+  const ruleConditions = values.ruleConditions || [];
+  if (ruleConditions.length === 0) {
+    throw new Error('请至少维护一条告警条件');
+  }
+
+  const conditions = ruleConditions.map((item, index) => buildStructuredConditionItem(item, index));
+  const payload: StructuredAlarmConditionGroup = {
+    mode: 'STRUCTURED',
+    version: 2,
+    conditions,
+  };
   return JSON.stringify(payload);
 };
 
-export const describeAlarmConditionValues = (
-  values: AlarmConditionFormValues,
+export const describeAlarmConditionItem = (
+  item: AlarmConditionItemFormValues,
   metricLabelMap?: Record<string, string>,
 ): string => {
-  const next = { ...DEFAULT_ALARM_CONDITION_VALUES, ...values };
+  const next = normalizeConditionItem(item);
   const metric = getMetricLabel(next.metricKey, metricLabelMap);
 
   switch (next.conditionType) {
@@ -318,16 +370,59 @@ export const describeAlarmConditionValues = (
   }
 };
 
+export const describeAlarmConditionValues = (
+  values: AlarmConditionFormValues,
+  metricLabelMap?: Record<string, string>,
+): string => {
+  const conditions = values.ruleConditions || [];
+  if (conditions.length === 0) {
+    return '请至少维护一条告警条件';
+  }
+
+  return conditions
+    .map((item) => `${LEVEL_OPTIONS.find((option) => option.value === normalizeConditionItem(item).level)?.label || '告警'}: ${describeAlarmConditionItem(item, metricLabelMap)}`)
+    .join('；');
+};
+
 export const describeAlarmConditionExpr = (
   conditionExpr?: string | null,
   metricLabelMap?: Record<string, string>,
 ): string => {
-  const parsed = parseStructuredCondition(conditionExpr);
-  if (!parsed) {
+  const group = parseStructuredConditionGroup(conditionExpr);
+  if (!group || group.conditions.length === 0) {
     return '无效规则配置';
   }
+
   return describeAlarmConditionValues(parseAlarmConditionExpr(conditionExpr), metricLabelMap);
 };
 
 export const getAlarmConditionTypeFromExpr = (conditionExpr?: string | null): AlarmConditionType =>
-  parseStructuredCondition(conditionExpr)?.type || 'CUSTOM';
+  getAlarmConditionTypes(conditionExpr)[0] || 'CUSTOM';
+
+export const getAlarmConditionTypes = (conditionExpr?: string | null): AlarmConditionType[] => {
+  const group = parseStructuredConditionGroup(conditionExpr);
+  if (!group) {
+    return [];
+  }
+
+  return Array.from(new Set(group.conditions.map((item) => item.type).filter(Boolean))) as AlarmConditionType[];
+};
+
+export const getAlarmConditionLevels = (conditionExpr?: string | null): AlarmRuleLevel[] => {
+  const group = parseStructuredConditionGroup(conditionExpr);
+  if (!group) {
+    return [];
+  }
+
+  const uniqueLevels = Array.from(new Set(group.conditions.map((item) => asLevel(item.level)).filter(Boolean))) as AlarmRuleLevel[];
+  return LEVEL_ORDER.filter((level) => uniqueLevels.includes(level));
+};
+
+export const deriveAlarmRuleLevel = (values: AlarmConditionFormValues): AlarmRuleLevel => {
+  const ruleConditions = values.ruleConditions || [];
+  const levels = ruleConditions
+    .map((item) => normalizeConditionItem(item).level)
+    .filter((level): level is AlarmRuleLevel => Boolean(level));
+
+  return LEVEL_ORDER.find((level) => levels.includes(level)) || 'WARNING';
+};

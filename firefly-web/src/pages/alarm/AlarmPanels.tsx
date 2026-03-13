@@ -34,8 +34,11 @@ import {
   DEFAULT_ALARM_CONDITION_VALUES,
   buildAlarmConditionExpr,
   describeAlarmConditionExpr,
+  deriveAlarmRuleLevel,
   getAlarmConditionTypeColor,
   getAlarmConditionTypeLabel,
+  getAlarmConditionLevels,
+  getAlarmConditionTypes,
   parseAlarmConditionExpr,
 } from './alarmCondition';
 
@@ -335,8 +338,8 @@ export const AlarmRulesPanel: React.FC = () => {
     projectId: values.projectId,
     productId: values.productId,
     deviceId: values.deviceId,
-    level: values.level,
-    conditionExpr: buildAlarmConditionExpr(values),
+    level: deriveAlarmRuleLevel(values as Parameters<typeof deriveAlarmRuleLevel>[0]),
+    conditionExpr: buildAlarmConditionExpr(values as Parameters<typeof buildAlarmConditionExpr>[0]),
     enabled: values.enabled,
   });
 
@@ -363,7 +366,6 @@ export const AlarmRulesPanel: React.FC = () => {
       projectId: record.projectId,
       productId: record.productId,
       deviceId: record.deviceId,
-      level: record.level,
       ...parsedCondition,
       enabled: record.enabled,
     });
@@ -448,20 +450,37 @@ export const AlarmRulesPanel: React.FC = () => {
     {
       title: ALARM_TEXT.level,
       dataIndex: 'level',
-      width: 100,
-      render: (value: string) => (
-        <Tag color={levelColors[value]}>{ALARM_LEVEL_LABELS[value] || value}</Tag>
-      ),
+      width: 180,
+      render: (_value: string, record: AlarmRuleRecord) => {
+        const levels = getAlarmConditionLevels(record.conditionExpr);
+        const visibleLevels = levels.length > 0 ? levels : [record.level as keyof typeof levelColors];
+        return (
+          <Space size={[4, 4]} wrap>
+            {visibleLevels.map((item) => (
+              <Tag key={item} color={levelColors[item] || 'default'}>
+                {ALARM_LEVEL_LABELS[item] || item}
+              </Tag>
+            ))}
+          </Space>
+        );
+      },
     },
     {
       title: ALARM_TEXT.triggerType,
-      width: 120,
+      width: 220,
       render: (_: unknown, record: AlarmRuleRecord) => {
-        const conditionType = parseAlarmConditionExpr(record.conditionExpr).conditionType;
+        const conditionTypes = getAlarmConditionTypes(record.conditionExpr);
+        if (conditionTypes.length === 0) {
+          return '-';
+        }
         return (
-          <Tag color={getAlarmConditionTypeColor(conditionType)}>
-            {getAlarmConditionTypeLabel(conditionType)}
-          </Tag>
+          <Space size={[4, 4]} wrap>
+            {conditionTypes.map((conditionType) => (
+              <Tag key={conditionType} color={getAlarmConditionTypeColor(conditionType)}>
+                {getAlarmConditionTypeLabel(conditionType)}
+              </Tag>
+            ))}
+          </Space>
         );
       },
     },
