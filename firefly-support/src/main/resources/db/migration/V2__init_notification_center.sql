@@ -74,42 +74,16 @@ CREATE INDEX IF NOT EXISTS idx_message_templates_enabled ON message_templates (t
 
 COMMENT ON TABLE message_templates IS '消息模板表';
 COMMENT ON COLUMN message_templates.code IS '模板编码，如 alarm_notify / device_offline';
-COMMENT ON COLUMN message_templates.channel IS '渠道: SMS/EMAIL/WEBHOOK/PUSH/WECHAT';
+COMMENT ON COLUMN message_templates.channel IS '渠道: SMS/EMAIL/PHONE/WEBHOOK/DINGTALK/WECHAT/IN_APP';
 COMMENT ON COLUMN message_templates.template_type IS '模板类型: TEXT/HTML/MARKDOWN';
 COMMENT ON COLUMN message_templates.variables IS '变量定义JSON，如 [{"name":"deviceName","desc":"设备名称"}]';
 
--- ---------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS notification_templates (
-    id              BIGSERIAL PRIMARY KEY,
-    tenant_id       BIGINT NOT NULL,
-    code            VARCHAR(100) NOT NULL,
-    name            VARCHAR(200) NOT NULL,
-    channel         VARCHAR(20) NOT NULL,
-    subject         VARCHAR(500),
-    content         TEXT NOT NULL,
-    variables       VARCHAR(1000),
-    enabled         BOOLEAN NOT NULL DEFAULT true,
-    updated_by      BIGINT,
-    created_at      TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMP NOT NULL DEFAULT now(),
-    UNIQUE (tenant_id, code)
-);
-
-CREATE INDEX IF NOT EXISTS idx_notification_templates_tenant ON notification_templates (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_notification_templates_channel ON notification_templates (tenant_id, channel);
-
-COMMENT ON TABLE notification_templates IS '通知模板表';
-COMMENT ON COLUMN notification_templates.code IS '模板编码（唯一标识）';
-COMMENT ON COLUMN notification_templates.channel IS '通知渠道: EMAIL/SMS/WEBHOOK/DINGTALK/WECHAT';
-COMMENT ON COLUMN notification_templates.variables IS '变量列表（逗号分隔）';
-
--- 默认通知模板种子数据
-INSERT INTO notification_templates (tenant_id, code, name, channel, subject, content, variables)
+-- 默认消息模板种子数据
+INSERT INTO message_templates (tenant_id, code, name, channel, template_type, subject, content, variables, enabled, description)
 VALUES
-    (0, 'ALARM_EMAIL', '告警邮件通知', 'EMAIL', '【${platform_name}】告警通知 - ${alarm_level}', '设备 ${device_name} (${device_id}) 触发告警：\n\n告警级别：${alarm_level}\n告警规则：${rule_name}\n告警内容：${alarm_content}\n告警时间：${alarm_time}\n\n请及时处理。', 'platform_name,device_name,device_id,alarm_level,rule_name,alarm_content,alarm_time'),
-    (0, 'ALARM_SMS', '告警短信通知', 'SMS', NULL, '【${platform_name}】设备${device_name}触发${alarm_level}告警：${alarm_content}，请及时处理。', 'platform_name,device_name,alarm_level,alarm_content'),
-    (0, 'ALARM_WEBHOOK', '告警 Webhook 通知', 'WEBHOOK', NULL, '{"event":"alarm","deviceName":"${device_name}","deviceId":"${device_id}","level":"${alarm_level}","rule":"${rule_name}","content":"${alarm_content}","time":"${alarm_time}"}', 'device_name,device_id,alarm_level,rule_name,alarm_content,alarm_time'),
-    (0, 'OTA_COMPLETE', 'OTA 升级完成通知', 'EMAIL', '【${platform_name}】OTA 升级完成', '设备 ${device_name} (${device_id}) 已完成 OTA 升级。\n\n固件版本：${firmware_version}\n升级结果：${result}\n完成时间：${complete_time}', 'platform_name,device_name,device_id,firmware_version,result,complete_time'),
-    (0, 'DEVICE_OFFLINE', '设备离线通知', 'EMAIL', '【${platform_name}】设备离线告警', '设备 ${device_name} (${device_id}) 已离线。\n\n最后在线时间：${last_online_time}\n所属产品：${product_name}\n\n请检查设备网络和供电状态。', 'platform_name,device_name,device_id,last_online_time,product_name')
-ON CONFLICT DO NOTHING;
+    (0, 'ALARM_EMAIL', '告警邮件通知', 'EMAIL', 'TEXT', '【${platform_name}】告警通知 - ${alarm_level}', '设备 ${device_name} (${device_id}) 触发告警：\n\n告警级别：${alarm_level}\n告警规则：${rule_name}\n告警内容：${alarm_content}\n告警时间：${alarm_time}\n\n请及时处理。', '[{"name":"platform_name","desc":"平台名称"},{"name":"device_name","desc":"设备名称"},{"name":"device_id","desc":"设备编码"},{"name":"alarm_level","desc":"告警级别"},{"name":"rule_name","desc":"告警规则"},{"name":"alarm_content","desc":"告警内容"},{"name":"alarm_time","desc":"告警时间"}]', TRUE, '系统默认告警邮件模板'),
+    (0, 'ALARM_SMS', '告警短信通知', 'SMS', 'TEXT', NULL, '【${platform_name}】设备${device_name}触发${alarm_level}告警：${alarm_content}，请及时处理。', '[{"name":"platform_name","desc":"平台名称"},{"name":"device_name","desc":"设备名称"},{"name":"alarm_level","desc":"告警级别"},{"name":"alarm_content","desc":"告警内容"}]', TRUE, '系统默认告警短信模板'),
+    (0, 'ALARM_WEBHOOK', '告警 Webhook 通知', 'WEBHOOK', 'TEXT', NULL, '{"event":"alarm","deviceName":"${device_name}","deviceId":"${device_id}","level":"${alarm_level}","rule":"${rule_name}","content":"${alarm_content}","time":"${alarm_time}"}', '[{"name":"device_name","desc":"设备名称"},{"name":"device_id","desc":"设备编码"},{"name":"alarm_level","desc":"告警级别"},{"name":"rule_name","desc":"告警规则"},{"name":"alarm_content","desc":"告警内容"},{"name":"alarm_time","desc":"告警时间"}]', TRUE, '系统默认告警 Webhook 模板'),
+    (0, 'OTA_COMPLETE', 'OTA 升级完成通知', 'EMAIL', 'TEXT', '【${platform_name}】OTA 升级完成', '设备 ${device_name} (${device_id}) 已完成 OTA 升级。\n\n固件版本：${firmware_version}\n升级结果：${result}\n完成时间：${complete_time}', '[{"name":"platform_name","desc":"平台名称"},{"name":"device_name","desc":"设备名称"},{"name":"device_id","desc":"设备编码"},{"name":"firmware_version","desc":"固件版本"},{"name":"result","desc":"升级结果"},{"name":"complete_time","desc":"完成时间"}]', TRUE, '系统默认 OTA 完成模板'),
+    (0, 'DEVICE_OFFLINE', '设备离线通知', 'EMAIL', 'TEXT', '【${platform_name}】设备离线告警', '设备 ${device_name} (${device_id}) 已离线。\n\n最后在线时间：${last_online_time}\n所属产品：${product_name}\n\n请检查设备网络和供电状态。', '[{"name":"platform_name","desc":"平台名称"},{"name":"device_name","desc":"设备名称"},{"name":"device_id","desc":"设备编码"},{"name":"last_online_time","desc":"最后在线时间"},{"name":"product_name","desc":"产品名称"}]', TRUE, '系统默认设备离线模板')
+ON CONFLICT (tenant_id, code) DO NOTHING;

@@ -33,7 +33,7 @@
 - `V7__extend_notification_channels.sql`
 - `V8__merge_notification_templates_into_message_templates.sql`
 
-如果 `V8` 未执行，系统仍会残留旧的 `notification_templates` 表。
+如果 `V8` 未执行，系统仍会残留历史 `notification_templates` 表。
 
 ## 3. 配置检查
 
@@ -185,7 +185,7 @@
 
 注意：
 
-本次已将模板体系合并为 `message_templates`。如果代码回滚到旧版本，旧版本可能仍依赖 `notification_templates` 表，需谨慎评估。
+本次已将模板体系合并为 `message_templates`。如果代码回滚到更早版本，需先确认是否还依赖历史 `notification_templates` 表。
 
 ## 8. 验证命令
 

@@ -211,7 +211,13 @@ Platform Admin (超级管理员)  ── 平台级，管理所有租户
 | **审计日志** | `audit:read` | 查看审计日志 |
 | | `audit:export` | 导出审计报告 |
 | **系统设置** | `system:config` | 系统参数配置 |
-| | `system:notification` | 通知模板管理 |
+| **通知中心** | `notification:read` | 查看通知渠道与发送记录 |
+| | `notification:update` | 创建、编辑、启停与测试通知渠道 |
+| | `notification:delete` | 删除通知渠道 |
+| **消息模板** | `message-template:create` | 创建消息模板 |
+| | `message-template:read` | 查看消息模板 |
+| | `message-template:update` | 编辑或启停消息模板 |
+| | `message-template:delete` | 删除消息模板 |
 
 #### 3.3.3 预置角色权限矩阵
 
@@ -486,7 +492,9 @@ INSERT INTO permission_groups (code, name, permissions, sort_order) VALUES
 ('SHARE',    '跨租户共享', '["share:create","share:read","share:approve","share:revoke"]', 9),
 ('ANALYTICS','数据分析', '["analytics:read","analytics:export"]', 10),
 ('AUDIT',    '审计日志', '["audit:read","audit:export"]', 11),
-('SYSTEM',   '系统设置', '["system:config","system:notification"]', 12);
+('SYSTEM',   '系统设置', '["system:config"]', 12),
+('NOTIFICATION', '通知中心', '["notification:read","notification:update","notification:delete"]', 15),
+('MESSAGE_TEMPLATE', '消息模板', '["message-template:create","message-template:read","message-template:update","message-template:delete"]', 16);
 ```
 
 ---
