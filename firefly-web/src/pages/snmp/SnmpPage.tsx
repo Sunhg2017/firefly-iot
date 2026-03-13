@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Card, Button, Space, message, Form, Input, Select, InputNumber, Table, Tag, Tabs,
-  Row, Col, Popconfirm, Modal, Descriptions, Empty, Spin,
+  Row, Col, Popconfirm, Drawer, Descriptions, Empty, Spin,
 } from 'antd';
 import {
   ApiOutlined, SearchOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined,
@@ -360,26 +360,38 @@ const SnmpPage: React.FC = () => {
                   size="small" pagination={false} />
               </Card>
 
-              <Modal title="注册 SNMP 采集任务" open={modalOpen} onCancel={() => setModalOpen(false)}
-                onOk={handleAddCollector} width={600} destroyOnClose>
+              <Drawer
+                title="?? SNMP ????"
+                open={modalOpen}
+                onClose={() => setModalOpen(false)}
+                width={760}
+                destroyOnClose
+                styles={{ body: { paddingBottom: 24 } }}
+                footer={
+                  <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+                    <Button onClick={() => setModalOpen(false)}>??</Button>
+                    <Button type="primary" onClick={handleAddCollector}>????</Button>
+                  </Space>
+                }
+              >
                 <Form form={collectorForm} layout="vertical" style={{ marginTop: 16 }}
                   initialValues={{ port: 161, version: 2, community: 'public', intervalMs: 60000 }}>
-                  <Form.Item label="任务ID" name="taskId" rules={[{ required: true }]}>
-                    <Input placeholder="唯一标识，如: switch-01-cpu" />
+                  <Form.Item label="??ID" name="taskId" rules={[{ required: true }]}>
+                    <Input placeholder="???????switch-01-cpu" />
                   </Form.Item>
                   <Row gutter={16}>
                     <Col span={12}>
-                      <Form.Item label="主机地址" name="host" rules={[{ required: true }]}>
+                      <Form.Item label="????" name="host" rules={[{ required: true }]}>
                         <Input placeholder="192.168.1.1" />
                       </Form.Item>
                     </Col>
                     <Col span={6}>
-                      <Form.Item label="端口" name="port">
+                      <Form.Item label="??" name="port">
                         <InputNumber min={1} max={65535} style={{ width: '100%' }} />
                       </Form.Item>
                     </Col>
                     <Col span={6}>
-                      <Form.Item label="版本" name="version">
+                      <Form.Item label="??" name="version">
                         <Select options={[{ value: 1, label: 'v1' }, { value: 2, label: 'v2c' }, { value: 3, label: 'v3' }]} />
                       </Form.Item>
                     </Col>
@@ -391,24 +403,24 @@ const SnmpPage: React.FC = () => {
                       </Form.Item>
                     </Col>
                     <Col span={12}>
-                      <Form.Item label="采集间隔 (ms)" name="intervalMs">
+                      <Form.Item label="???? (ms)" name="intervalMs">
                         <InputNumber min={5000} step={5000} style={{ width: '100%' }} />
                       </Form.Item>
                     </Col>
                   </Row>
-                  <Form.Item label="OID 列表" name="oids" rules={[{ required: true }]}
-                    extra="多个 OID 用逗号或换行分隔">
+                  <Form.Item label="OID ??" name="oids" rules={[{ required: true }]}
+                    extra="?? OID ????????">
                     <Input.TextArea rows={3} placeholder="1.3.6.1.2.1.1.3.0, 1.3.6.1.2.1.2.2.1.10.1" style={{ fontFamily: 'monospace', fontSize: 12 }} />
                   </Form.Item>
-                  <Form.Item label="OID 别名映射 (JSON)" name="oidAliases"
-                    extra='如: {"1.3.6.1.2.1.1.3.0": "uptime"}'>
+                  <Form.Item label="OID ???? (JSON)" name="oidAliases"
+                    extra='?: {"1.3.6.1.2.1.1.3.0": "uptime"}'>
                     <Input.TextArea rows={2} placeholder='{"1.3.6.1.2.1.1.3.0": "uptime"}' style={{ fontFamily: 'monospace', fontSize: 12 }} />
                   </Form.Item>
                   <Row gutter={16}>
                     <Col span={12}>
-                      <Form.Item label="关联产品" name="productId">
+                      <Form.Item label="????" name="productId">
                         <Select
-                          placeholder="可选，选择后筛选设备"
+                          placeholder="??????????"
                           allowClear
                           showSearch
                           optionFilterProp="label"
@@ -418,9 +430,9 @@ const SnmpPage: React.FC = () => {
                       </Form.Item>
                     </Col>
                     <Col span={12}>
-                      <Form.Item label="关联设备" name="deviceId">
+                      <Form.Item label="????" name="deviceId">
                         <Select
-                          placeholder="可选，选择设备"
+                          placeholder="???????"
                           allowClear
                           showSearch
                           optionFilterProp="label"
@@ -430,7 +442,7 @@ const SnmpPage: React.FC = () => {
                     </Col>
                   </Row>
                 </Form>
-              </Modal>
+              </Drawer>
             </div>
           ),
         },

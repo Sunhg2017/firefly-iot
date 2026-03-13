@@ -7,6 +7,7 @@ import {
   Empty,
   Form,
   Input,
+  Drawer,
   Modal,
   Pagination,
   Row,
@@ -1169,21 +1170,25 @@ const ProductList: React.FC = () => {
         </Card>
       )}
 
-      <Modal
+      <Drawer
         title="新建产品"
         open={createOpen}
         width={760}
         forceRender
-        destroyOnHidden
+        destroyOnClose
         afterOpenChange={(visible) => {
           if (visible && editingProduct) {
             populateEditForm(editingProduct);
           }
         }}
-        onCancel={closeCreateModal}
-        onOk={() => createForm.submit()}
-        okText="创建产品"
-        cancelText="取消"
+        onClose={closeCreateModal}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={closeCreateModal}>取消</Button>
+            <Button type="primary" onClick={() => createForm.submit()}>创建产品</Button>
+          </Space>
+        }
       >
         <Form
           form={createForm}
@@ -1194,17 +1199,21 @@ const ProductList: React.FC = () => {
         >
           {renderProductFormFields(createForm, createImageUrl, createUploading, setCreateUploading)}
         </Form>
-      </Modal>
+      </Drawer>
 
-      <Modal
+      <Drawer
         title="编辑产品"
         open={editOpen}
         width={760}
-        destroyOnHidden
-        onCancel={closeEditModal}
-        onOk={() => editForm.submit()}
-        okText="保存修改"
-        cancelText="取消"
+        destroyOnClose
+        onClose={closeEditModal}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={closeEditModal}>取消</Button>
+            <Button type="primary" onClick={() => editForm.submit()}>保存修改</Button>
+          </Space>
+        }
       >
         <Form
           key={editingId ?? 'edit-empty'}
@@ -1216,7 +1225,7 @@ const ProductList: React.FC = () => {
         >
           {renderProductFormFields(editForm, editImageUrl, editUploading, setEditUploading)}
         </Form>
-      </Modal>
+      </Drawer>
 
       {thingModelProduct ? (
         <Suspense fallback={<Spin size="large" fullscreen />}>

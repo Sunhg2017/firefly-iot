@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Table, Button, Tag, Space, Card, message, Modal, Form, Input, Select, Typography, Row, Col } from 'antd';
+import { Table, Button, Tag, Space, Card, message, Modal, Drawer, Form, Input, Select, Typography, Row, Col } from 'antd';
 import { PlusOutlined, DeleteOutlined, PlayCircleOutlined, PauseCircleOutlined, ThunderboltOutlined, CheckCircleOutlined, StopOutlined, FunctionOutlined } from '@ant-design/icons';
 import { ruleApi } from '../../services/api';
 import type { ColumnsType } from 'antd/es/table';
@@ -230,8 +230,20 @@ const RuleEngineList: React.FC = () => {
       </Card>
 
       {/* 新建规则弹窗 */}
-      <Modal title="新建规则" open={createOpen} onCancel={() => setCreateOpen(false)}
-        onOk={() => createForm.submit()} destroyOnClose width={700}>
+      <Drawer
+        title="新建规则"
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        destroyOnClose
+        width={860}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={() => setCreateOpen(false)}>取消</Button>
+            <Button type="primary" onClick={() => createForm.submit()}>新建规则</Button>
+          </Space>
+        }
+      >
         <Form form={createForm} layout="vertical" onFinish={handleCreate}>
           <Form.Item name="name" label="规则名称" rules={[{ required: true, message: '请输入规则名称' }]}>
             <Input placeholder="如：高温告警" maxLength={256} />
@@ -261,11 +273,23 @@ const RuleEngineList: React.FC = () => {
             )}
           </Form.List>
         </Form>
-      </Modal>
+      </Drawer>
 
       {/* 编辑规则弹窗 */}
-      <Modal title="编辑规则" open={editOpen} onCancel={() => { setEditOpen(false); setEditingId(null); }}
-        onOk={() => editForm.submit()} destroyOnClose width={700}>
+      <Drawer
+        title="编辑规则"
+        open={editOpen}
+        onClose={() => { setEditOpen(false); setEditingId(null); }}
+        destroyOnClose
+        width={860}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={() => { setEditOpen(false); setEditingId(null); }}>取消</Button>
+            <Button type="primary" onClick={() => editForm.submit()}>保存修改</Button>
+          </Space>
+        }
+      >
         <Form form={editForm} layout="vertical" onFinish={handleUpdate}>
           <Form.Item name="name" label="规则名称" rules={[{ required: true }]}><Input maxLength={256} /></Form.Item>
           <Form.Item name="description" label="描述"><TextArea rows={2} /></Form.Item>
@@ -292,7 +316,7 @@ const RuleEngineList: React.FC = () => {
             )}
           </Form.List>
         </Form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

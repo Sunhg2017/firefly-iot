@@ -5,6 +5,7 @@ import {
   Card,
   Col,
   Descriptions,
+  Drawer,
   Empty,
   Form,
   Input,
@@ -1885,14 +1886,21 @@ const ProtocolParserPage: React.FC = () => {
         />
       </Card>
 
-      <Modal
+      <Drawer
         title={editorMode === 'create' ? '新建协议解析规则' : '编辑协议解析规则'}
         open={editorOpen}
         width={1080}
-        destroyOnHidden
-        confirmLoading={submitting}
-        onCancel={closeEditorModal}
-        onOk={() => editorForm.submit()}
+        destroyOnClose
+        onClose={closeEditorModal}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={closeEditorModal}>取消</Button>
+            <Button type="primary" loading={submitting} onClick={() => editorForm.submit()}>
+              {editorMode === 'create' ? '新建协议解析规则' : '保存协议解析规则'}
+            </Button>
+          </Space>
+        }
       >
         <Form form={editorForm} layout="vertical" preserve={false} onFinish={handleSubmitEditor}>
           <Card size="small" style={{ marginBottom: 16, borderRadius: 12 }}>
@@ -2408,16 +2416,23 @@ const ProtocolParserPage: React.FC = () => {
             </Row>
           </Card>
         </Form>
-      </Modal>
+      </Drawer>
 
-      <Modal
+      <Drawer
         title={debugRecord ? `上行调试 · ${describeRecordScope(debugRecord)}` : '上行调试'}
         open={uplinkDebugOpen}
         width={960}
-        destroyOnHidden
-        confirmLoading={debugSubmitting}
-        onCancel={() => setUplinkDebugOpen(false)}
-        onOk={() => uplinkDebugForm.submit()}
+        destroyOnClose
+        onClose={() => setUplinkDebugOpen(false)}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={() => setUplinkDebugOpen(false)}>取消</Button>
+            <Button type="primary" loading={debugSubmitting} onClick={() => uplinkDebugForm.submit()}>
+              执行上行调试
+            </Button>
+          </Space>
+        }
       >
         <Form form={uplinkDebugForm} layout="vertical" preserve={false} onFinish={handleUplinkDebug}>
           <Alert
@@ -2599,16 +2614,23 @@ const ProtocolParserPage: React.FC = () => {
             </Space>
           </Card>
         ) : null}
-      </Modal>
+      </Drawer>
 
-      <Modal
+      <Drawer
         title={debugRecord ? `下行编码测试 · ${describeRecordScope(debugRecord)}` : '下行编码测试'}
         open={downlinkDebugOpen}
         width={920}
-        destroyOnHidden
-        confirmLoading={debugSubmitting}
-        onCancel={() => setDownlinkDebugOpen(false)}
-        onOk={() => downlinkDebugForm.submit()}
+        destroyOnClose
+        onClose={() => setDownlinkDebugOpen(false)}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={() => setDownlinkDebugOpen(false)}>取消</Button>
+            <Button type="primary" loading={debugSubmitting} onClick={() => downlinkDebugForm.submit()}>
+              执行下行编码测试
+            </Button>
+          </Space>
+        }
       >
         <Form form={downlinkDebugForm} layout="vertical" preserve={false} onFinish={handleDownlinkDebug}>
           <Alert
@@ -2761,7 +2783,7 @@ const ProtocolParserPage: React.FC = () => {
             </Space>
           </Card>
         ) : null}
-      </Modal>
+      </Drawer>
 
       <Modal
         title={versionRecord ? `版本历史 · ${describeRecordScope(versionRecord)}` : '版本历史'}

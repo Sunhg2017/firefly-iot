@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Card, Button, Space, message, Form, Input, InputNumber, Select, Table, Tag, Tabs,
-  Row, Col, Popconfirm, Modal, Radio, Empty, Spin,
+  Row, Col, Popconfirm, Drawer, Radio, Empty, Spin,
 } from 'antd';
 import {
   ApiOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined,
@@ -427,21 +427,33 @@ const ModbusPage: React.FC = () => {
                   size="small" pagination={false} />
               </Card>
 
-              <Modal title="注册 Modbus 采集任务" open={modalOpen} onCancel={() => setModalOpen(false)}
-                onOk={handleAddCollector} width={640} destroyOnClose>
+              <Drawer
+                title="?? Modbus ????"
+                open={modalOpen}
+                onClose={() => setModalOpen(false)}
+                width={760}
+                destroyOnClose
+                styles={{ body: { paddingBottom: 24 } }}
+                footer={
+                  <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+                    <Button onClick={() => setModalOpen(false)}>??</Button>
+                    <Button type="primary" onClick={handleAddCollector}>????</Button>
+                  </Space>
+                }
+              >
                 <Form form={collectorForm} layout="vertical" style={{ marginTop: 16 }}
                   initialValues={{ port: 502, slaveId: 1, mode: 'TCP', intervalMs: 60000 }}>
-                  <Form.Item label="任务ID" name="taskId" rules={[{ required: true }]}>
-                    <Input placeholder="唯一标识，如: plc-01-temps" />
+                  <Form.Item label="??ID" name="taskId" rules={[{ required: true }]}>
+                    <Input placeholder="???????plc-01-temps" />
                   </Form.Item>
                   <Row gutter={16}>
                     <Col span={8}>
-                      <Form.Item label="主机地址" name="host" rules={[{ required: true }]}>
+                      <Form.Item label="????" name="host" rules={[{ required: true }]}>
                         <Input placeholder="192.168.1.1" />
                       </Form.Item>
                     </Col>
                     <Col span={4}>
-                      <Form.Item label="端口" name="port">
+                      <Form.Item label="??" name="port">
                         <InputNumber min={1} max={65535} style={{ width: '100%' }} />
                       </Form.Item>
                     </Col>
@@ -451,7 +463,7 @@ const ModbusPage: React.FC = () => {
                       </Form.Item>
                     </Col>
                     <Col span={8}>
-                      <Form.Item label="模式" name="mode">
+                      <Form.Item label="??" name="mode">
                         <Select options={[
                           { value: 'TCP', label: 'Modbus TCP' },
                           { value: 'RTU_OVER_TCP', label: 'RTU over TCP' },
@@ -459,19 +471,23 @@ const ModbusPage: React.FC = () => {
                       </Form.Item>
                     </Col>
                   </Row>
-                  <Form.Item label="采集间隔 (ms)" name="intervalMs">
+                  <Form.Item label="???? (ms)" name="intervalMs">
                     <InputNumber min={5000} step={5000} style={{ width: '100%' }} />
                   </Form.Item>
-                  <Form.Item label="寄存器定义 (JSON 数组)" name="registers" rules={[{ required: true }]}
-                    extra="每项: { alias, functionCode (3=保持/4=输入), address, quantity }">
+                  <Form.Item
+                    label="????? (JSON ??)"
+                    name="registers"
+                    rules={[{ required: true }]}
+                    extra="??: { alias, functionCode (3=??/4=??), address, quantity }"
+                  >
                     <Input.TextArea rows={5} placeholder={registerTemplate}
                       style={{ fontFamily: 'monospace', fontSize: 12 }} />
                   </Form.Item>
                   <Row gutter={16}>
                     <Col span={8}>
-                      <Form.Item label="关联产品" name="productId">
+                      <Form.Item label="????" name="productId">
                         <Select
-                          placeholder="请选择产品"
+                          placeholder="?????"
                           allowClear
                           showSearch
                           optionFilterProp="label"
@@ -481,9 +497,9 @@ const ModbusPage: React.FC = () => {
                       </Form.Item>
                     </Col>
                     <Col span={8}>
-                      <Form.Item label="关联设备" name="deviceId">
+                      <Form.Item label="????" name="deviceId">
                         <Select
-                          placeholder="请选择设备"
+                          placeholder="?????"
                           allowClear
                           showSearch
                           optionFilterProp="label"
@@ -493,13 +509,13 @@ const ModbusPage: React.FC = () => {
                       </Form.Item>
                     </Col>
                     <Col span={8}>
-                      <Form.Item label="设备名称" name="deviceName">
-                        <Input placeholder="选择设备后自动填充" disabled />
+                      <Form.Item label="????" name="deviceName">
+                        <Input placeholder="?????????" disabled />
                       </Form.Item>
                     </Col>
                   </Row>
                 </Form>
-              </Modal>
+              </Drawer>
             </div>
           ),
         },

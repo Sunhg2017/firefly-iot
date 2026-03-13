@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Table, Button, Space, message, Tag, Popconfirm, Card, Modal, Form, Input, Select,
+  Table, Button, Space, message, Tag, Popconfirm, Card, Form, Input, Select,
   Switch, Drawer, Tooltip, Row, Col,
 } from 'antd';
 import {
@@ -285,59 +285,76 @@ const ScheduledTaskPage: React.FC = () => {
             onChange: (page: number, size: number) => setParams({ pageNum: page, pageSize: size }) }} />
       </Card>
 
-      {/* CRUD Modal */}
-      <Modal title={editingId ? '编辑定时任务' : '新建定时任务'} open={modalOpen}
-        onCancel={() => setModalOpen(false)} onOk={handleSave} confirmLoading={saving} width={600}
-        destroyOnClose>
+      {/* CRUD Drawer */}
+      <Drawer
+        title={editingId ? '??????' : '??????'}
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        width={760}
+        destroyOnClose
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={() => setModalOpen(false)}>??</Button>
+            <Button type="primary" loading={saving} onClick={() => void handleSave()}>
+              {editingId ? '????' : '??????'}
+            </Button>
+          </Space>
+        }
+      >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label="任务名称" name="taskName" rules={[{ required: true, message: '请输入' }]}>
-                <Input placeholder="如: 清理过期数据" />
+              <Form.Item label="????" name="taskName" rules={[{ required: true, message: '???????' }]}>
+                <Input placeholder="????????" />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label="任务分组" name="taskGroup">
+              <Form.Item label="????" name="taskGroup">
                 <Input placeholder="DEFAULT" />
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item label="Cron 表达式" name="cronExpression" rules={[{ required: true, message: '请输入' }]}
-            extra={<span style={{ fontSize: 11, color: '#8c8c8c' }}>示例: 0 0 2 * * ? (每天凌晨2点) | 0 */5 * * * ? (每5分钟)</span>}>
+          <Form.Item
+            label="Cron ???"
+            name="cronExpression"
+            rules={[{ required: true, message: '??? Cron ???' }]}
+            extra={<span style={{ fontSize: 11, color: '#8c8c8c' }}>???0 0 2 * * ? / 0 */5 * * * ?</span>}
+          >
             <Input placeholder="0 0 2 * * ?" style={{ fontFamily: 'monospace' }} />
           </Form.Item>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label="Bean 名称" name="beanName" rules={[{ required: true, message: '请输入' }]}>
-                <Input placeholder="Spring Bean 名称" style={{ fontFamily: 'monospace' }} />
+              <Form.Item label="Bean ??" name="beanName" rules={[{ required: true, message: '??? Bean ??' }]}>
+                <Input placeholder="Spring Bean ??" style={{ fontFamily: 'monospace' }} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label="方法名" name="methodName" rules={[{ required: true, message: '请输入' }]}>
-                <Input placeholder="执行方法名" style={{ fontFamily: 'monospace' }} />
+              <Form.Item label="???" name="methodName" rules={[{ required: true, message: '??????' }]}>
+                <Input placeholder="?????" style={{ fontFamily: 'monospace' }} />
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item label="方法参数 (JSON)" name="methodParams">
-            <Input.TextArea rows={2} placeholder='可选，如: {"key":"value"}' style={{ fontFamily: 'monospace' }} />
+          <Form.Item label="???? (JSON)" name="methodParams">
+            <Input.TextArea rows={2} placeholder='?????{"key":"value"}' style={{ fontFamily: 'monospace' }} />
           </Form.Item>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label="状态" name="status">
-                <Select options={[{ value: 1, label: '启用' }, { value: 0, label: '暂停' }]} />
+              <Form.Item label="??" name="status">
+                <Select options={[{ value: 1, label: '??' }, { value: 0, label: '??' }]} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label="过期策略" name="misfirePolicy">
-                <Select options={[{ value: 0, label: '忽略' }, { value: 1, label: '立即执行一次' }]} />
+              <Form.Item label="????" name="misfirePolicy">
+                <Select options={[{ value: 0, label: '??' }, { value: 1, label: '??????' }]} />
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item label="描述" name="description">
-            <Input.TextArea rows={2} placeholder="任务描述..." />
+          <Form.Item label="??" name="description">
+            <Input.TextArea rows={2} placeholder="????..." />
           </Form.Item>
         </Form>
-      </Modal>
+      </Drawer>
 
       {/* Log Drawer */}
       <Drawer title={<Space><HistoryOutlined /> {logTaskName} - 执行日志</Space>}

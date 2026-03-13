@@ -15,6 +15,7 @@ import {
   Card,
   Col,
   DatePicker,
+  Drawer,
   Empty,
   Form,
   Input,
@@ -860,7 +861,22 @@ const TenantList: React.FC = () => {
         )}
       </Card>
 
-      <Modal destroyOnClose title={editingTenant ? '编辑租户' : '新建租户'} open={editOpen} confirmLoading={submitting} onOk={() => void handleSaveTenant()} onCancel={() => setEditOpen(false)} width={760}>
+      <Drawer
+        destroyOnClose
+        title={editingTenant ? '编辑租户' : '新建租户'}
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        width={920}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={() => setEditOpen(false)}>取消</Button>
+            <Button type="primary" loading={submitting} onClick={() => void handleSaveTenant()}>
+              {editingTenant ? '保存修改' : '创建租户'}
+            </Button>
+          </Space>
+        }
+      >
         <Form form={editForm} layout="vertical">
           <Row gutter={16}>
             {!editingTenant && (
@@ -899,16 +915,23 @@ const TenantList: React.FC = () => {
             </Card>
           )}
         </Form>
-      </Modal>
+      </Drawer>
 
-      <Modal
+      <Drawer
         destroyOnClose
         title={`空间授权${currentTenant ? ` - ${currentTenant.name}` : ''}`}
         open={spaceOpen}
-        confirmLoading={spaceSubmitting}
-        onOk={() => void handleSaveSpaceMenus()}
-        onCancel={() => setSpaceOpen(false)}
-        width={760}
+        onClose={() => setSpaceOpen(false)}
+        width={860}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={() => setSpaceOpen(false)}>取消</Button>
+            <Button type="primary" loading={spaceSubmitting} onClick={() => void handleSaveSpaceMenus()}>
+              保存授权
+            </Button>
+          </Space>
+        }
       >
         {spaceLoading ? (
           <div style={{ height: 360, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spin /></div>
@@ -948,7 +971,7 @@ const TenantList: React.FC = () => {
             </Card>
           </Space>
         )}
-      </Modal>
+      </Drawer>
 
       <Modal destroyOnClose title={`调整套餐${currentTenant ? ` - ${currentTenant.name}` : ''}`} open={planOpen} confirmLoading={planSubmitting} onOk={() => void handleSavePlan()} onCancel={() => setPlanOpen(false)}>
         <Form form={planForm} layout="vertical">
@@ -958,7 +981,22 @@ const TenantList: React.FC = () => {
         </Form>
       </Modal>
 
-      <Modal destroyOnClose title={`调整配额${currentTenant ? ` - ${currentTenant.name}` : ''}`} open={quotaOpen} confirmLoading={quotaSubmitting} onOk={() => void handleSaveQuota()} onCancel={() => setQuotaOpen(false)} width={760}>
+      <Drawer
+        destroyOnClose
+        title={`调整配额${currentTenant ? ` - ${currentTenant.name}` : ''}`}
+        open={quotaOpen}
+        onClose={() => setQuotaOpen(false)}
+        width={860}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={() => setQuotaOpen(false)}>取消</Button>
+            <Button type="primary" loading={quotaSubmitting} onClick={() => void handleSaveQuota()}>
+              保存配额
+            </Button>
+          </Space>
+        }
+      >
         <Form form={quotaForm} layout="vertical">
           <Row gutter={16}>
             {quotaFields.map((field) => (
@@ -981,7 +1019,7 @@ const TenantList: React.FC = () => {
             ))}
           </Row>
         </Form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

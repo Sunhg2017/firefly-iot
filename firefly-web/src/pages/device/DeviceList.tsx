@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Col,
+  Drawer,
   Form,
   Input,
   Modal,
@@ -881,14 +882,21 @@ const DeviceList: React.FC = () => {
         </Form>
       </Modal>
 
-      <Modal
+      <Drawer
         title="批量注册设备"
         open={batchCreateOpen}
         width={820}
-        destroyOnHidden
-        confirmLoading={batchCreating}
-        onCancel={closeBatchCreateModal}
-        onOk={() => batchCreateForm.submit()}
+        destroyOnClose
+        onClose={closeBatchCreateModal}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={closeBatchCreateModal}>取消</Button>
+            <Button type="primary" loading={batchCreating} onClick={() => batchCreateForm.submit()}>
+              批量注册设备
+            </Button>
+          </Space>
+        }
       >
         <Form form={batchCreateForm} layout="vertical" onFinish={handleBatchCreate}>
           <Alert
@@ -954,7 +962,7 @@ const DeviceList: React.FC = () => {
             <Input placeholder="可选，逗号分隔，例如 warehouse,floor-2" />
           </Form.Item>
         </Form>
-      </Modal>
+      </Drawer>
 
       <Modal
         title="编辑设备"

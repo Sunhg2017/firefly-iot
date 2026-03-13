@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, message, Modal, Form, Input, Select, Tag, Popconfirm, Switch, Card } from 'antd';
+import { Table, Button, Space, message, Modal, Drawer, Form, Input, Select, Tag, Popconfirm, Switch, Card } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
 import { messageTemplateApi } from '../../services/api';
 import type { ColumnsType } from 'antd/es/table';
@@ -127,30 +127,45 @@ const MessageTemplatePage: React.FC = () => {
             onChange: (page: number, size: number) => setParams({ pageNum: page, pageSize: size }) }} />
       </Card>
 
-      <Modal title={editRecord ? '编辑模板' : '新建模板'} open={editOpen} onCancel={() => setEditOpen(false)} onOk={() => form.submit()} destroyOnClose width={640}>
+      <Drawer
+        title={editRecord ? '????' : '????'}
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        destroyOnClose
+        width={760}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={() => setEditOpen(false)}>??</Button>
+            <Button type="primary" onClick={() => form.submit()}>
+              {editRecord ? '????' : '????'}
+            </Button>
+          </Space>
+        }
+      >
         <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="code" label="模板编码" rules={[{ required: true }]}>
-            <Input placeholder="如: alarm_notify" disabled={!!editRecord} />
+          <Form.Item name="code" label="????" rules={[{ required: true }]}>
+            <Input placeholder="??alarm_notify" disabled={!!editRecord} />
           </Form.Item>
-          <Form.Item name="name" label="模板名称" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="name" label="????" rules={[{ required: true }]}><Input /></Form.Item>
           <Space>
-            <Form.Item name="channel" label="渠道" rules={[{ required: true }]}>
-              <Select style={{ width: 150 }} options={[{ value: 'SMS', label: '短信' }, { value: 'EMAIL', label: '邮件' }, { value: 'WEBHOOK', label: 'Webhook' }, { value: 'PUSH', label: '推送' }, { value: 'WECHAT', label: '微信' }]} />
+            <Form.Item name="channel" label="??" rules={[{ required: true }]}>
+              <Select style={{ width: 150 }} options={[{ value: 'SMS', label: '??' }, { value: 'EMAIL', label: '??' }, { value: 'WEBHOOK', label: 'Webhook' }, { value: 'PUSH', label: '??' }, { value: 'WECHAT', label: '??' }]} />
             </Form.Item>
-            <Form.Item name="templateType" label="模板类型" rules={[{ required: true }]}>
-              <Select style={{ width: 150 }} options={[{ value: 'TEXT', label: '纯文本' }, { value: 'HTML', label: 'HTML' }, { value: 'MARKDOWN', label: 'Markdown' }]} />
+            <Form.Item name="templateType" label="????" rules={[{ required: true }]}>
+              <Select style={{ width: 150 }} options={[{ value: 'TEXT', label: '???' }, { value: 'HTML', label: 'HTML' }, { value: 'MARKDOWN', label: 'Markdown' }]} />
             </Form.Item>
           </Space>
-          <Form.Item name="subject" label="主题"><Input placeholder="邮件主题（邮件渠道必填）" /></Form.Item>
-          <Form.Item name="content" label="模板内容" rules={[{ required: true }]} tooltip="使用 ${variableName} 作为变量占位符">
-            <Input.TextArea rows={5} placeholder="设备 ${deviceName} 触发 ${alarmLevel} 告警，时间: ${alarmTime}" />
+          <Form.Item name="subject" label="??"><Input placeholder="????????????" /></Form.Item>
+          <Form.Item name="content" label="????" rules={[{ required: true }]} tooltip="?? ${variableName} ???????">
+            <Input.TextArea rows={5} placeholder="?? ${deviceName} ?? ${alarmLevel} ??????${alarmTime}" />
           </Form.Item>
-          <Form.Item name="variables" label="变量定义" tooltip='JSON格式，如 [{"name":"deviceName","desc":"设备名称"}]'>
-            <Input.TextArea rows={2} placeholder='[{"name":"deviceName","desc":"设备名称"},{"name":"alarmLevel","desc":"告警级别"}]' />
+          <Form.Item name="variables" label="????" tooltip='JSON ???? [{"name":"deviceName","desc":"????"}]'>
+            <Input.TextArea rows={2} placeholder='[{"name":"deviceName","desc":"????"},{"name":"alarmLevel","desc":"????"}]' />
           </Form.Item>
-          <Form.Item name="description" label="描述"><Input.TextArea rows={2} /></Form.Item>
+          <Form.Item name="description" label="??"><Input.TextArea rows={2} /></Form.Item>
         </Form>
-      </Modal>
+      </Drawer>
 
       <Modal title="模板预览" open={previewOpen} onCancel={() => setPreviewOpen(false)} footer={null} width={500}>
         <div style={{ padding: 16, background: '#f5f5f5', borderRadius: 8, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>

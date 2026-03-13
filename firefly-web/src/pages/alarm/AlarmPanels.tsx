@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Col,
+  Drawer,
   Form,
   Input,
   Modal,
@@ -642,13 +643,21 @@ export const AlarmRulesPanel: React.FC = () => {
         />
       </Card>
 
-      <Modal
+      <Drawer
         title={ALARM_TEXT.createRuleTitle}
         open={createOpen}
-        onCancel={() => setCreateOpen(false)}
-        onOk={() => createForm.submit()}
+        onClose={() => setCreateOpen(false)}
         destroyOnClose
         width={1120}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={() => setCreateOpen(false)}>{ALARM_TEXT.close}</Button>
+            <Button type="primary" onClick={() => createForm.submit()}>
+              {ALARM_TEXT.createRule}
+            </Button>
+          </Space>
+        }
       >
         <Form
           form={createForm}
@@ -665,18 +674,33 @@ export const AlarmRulesPanel: React.FC = () => {
             metricLabelMap={getMetricLabelMap(createProductId)}
           />
         </Form>
-      </Modal>
+      </Drawer>
 
-      <Modal
+      <Drawer
         title={ALARM_TEXT.editRuleTitle}
         open={editOpen}
-        onCancel={() => {
+        onClose={() => {
           setEditOpen(false);
           setEditingId(null);
         }}
-        onOk={() => editForm.submit()}
         destroyOnClose
         width={1120}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button
+              onClick={() => {
+                setEditOpen(false);
+                setEditingId(null);
+              }}
+            >
+              {ALARM_TEXT.close}
+            </Button>
+            <Button type="primary" onClick={() => editForm.submit()}>
+              {ALARM_TEXT.edit}
+            </Button>
+          </Space>
+        }
       >
         <Form form={editForm} layout="vertical" onFinish={handleUpdate}>
           <AlarmRuleForm
@@ -689,7 +713,7 @@ export const AlarmRulesPanel: React.FC = () => {
             showEnabled
           />
         </Form>
-      </Modal>
+      </Drawer>
     </>
   );
 };
