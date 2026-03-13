@@ -276,3 +276,47 @@ This update aligns debug interaction with the repository rule that user-facing p
 - The protocol parser page no longer advertises unsupported uplink debug behavior.
 - Downlink debug follows the same business-key-first design as rule editing and product selection.
 - Backward compatibility is preserved inside the service layer instead of exposing internal IDs to users.
+
+## 2026-03-13 协议解析抽屉分步化改造
+
+### 背景
+
+- 协议解析规则的新建和编辑抽屉承载了模板、作用域、协议匹配、拆帧、解析实现、可视化流、脚本或插件、发布策略等完整配置。
+- 原页面把全部字段堆叠在一个长抽屉里，用户需要频繁滚动，难以判断当前配置到了哪一部分，也不利于复杂表单的逐步校验。
+- 这与仓库内已经明确执行的“复杂表单使用抽屉，过长抽屉需要按模块拆分为步骤”的交互规则不一致。
+
+### 设计目标
+
+- 将协议解析规则抽屉拆分为可前进、可回退的分步流程。
+- 保持现有后端保存契约、模板能力、JSON 预设能力和脚本/插件模式不变。
+- 避免切换步骤时丢失已填写内容。
+- 在最终保存前提供集中预览，降低误配概率。
+
+### 方案
+
+抽屉内统一改为五步：
+
+1. 模板与作用域
+2. 协议与匹配
+3. 解析实现
+4. 发布策略
+5. 预览确认
+
+关键设计点：
+
+- 顶部使用 `Steps` 展示当前进度，并允许回到已完成步骤继续调整。
+- 每一步只展示与当前模块相关的字段，降低信息密度。
+- 下一步前只校验当前步骤所需字段，不提前触发后续复杂 JSON 或脚本校验。
+- 最终保存前展示关键摘要与 JSON / 脚本 / 插件 / 发布配置预览。
+
+### 实现约束
+
+- 主表单移除 `preserve={false}`，确保步骤切换时字段值不会被卸载清空。
+- 作用域、产品、模板、脚本/插件模式等现有联动逻辑继续复用，不调整后端接口入参结构。
+- 发布策略、解析配置、拆帧配置等预设按钮继续保留，但按步骤归位到对应模块中。
+
+### 结果
+
+- 新建协议解析规则时，用户可以先完成范围选择，再逐步进入协议匹配、解析实现和发布配置。
+- 编辑已有规则时复用同一套步骤式抽屉，页面行为保持一致。
+- 页面交互与仓库抽屉规则保持一致，复杂表单可读性与可维护性同步提升。

@@ -287,3 +287,40 @@ mvn -pl firefly-system -am -DskipTests compile
 ### Compatibility Note
 
 - Legacy release configs that still contain `deviceIds` remain compatible during downlink debug because the device service resolves `deviceName` to internal device context before invoking connector encode debug.
+
+## 2026-03-13 协议解析抽屉运维更新
+
+### 页面行为变化
+
+- 协议解析规则的新建和编辑改为分步抽屉，不再一次性展示整张长表单。
+- 页面步骤固定为：
+  1. 模板与作用域
+  2. 协议与匹配
+  3. 解析实现
+  4. 发布策略
+  5. 预览确认
+
+### 运维关注点
+
+- 步骤切换不应丢失已填写表单值；如果用户反馈“切到下一步后内容被清空”，优先检查前端是否误恢复了 `preserve={false}`。
+- 步骤化只调整前端交互，不改变 `/api/v1/protocol-parsers/*` 的保存、查询、发布、回滚接口契约。
+- 模板应用、产品联动、`tenantCode/productKey` 自动补齐、脚本/插件模式切换、发布配置预设都仍然保留。
+
+### 回归检查
+
+1. 新建规则时，从步骤 1 逐步前进，确认当前步骤校验生效，未配置后续内容时不会提前报错。
+2. 在步骤 2、3、4 填写内容后返回上一步，再回到当前步骤，确认 JSON、脚本、插件和发布配置仍然保留。
+3. 在最终“预览确认”页核对摘要与配置预览，保存后确认接口入参与旧版本一致。
+4. 分别验证 `SCRIPT` 与 `PLUGIN` 两种模式都可正常保存。
+5. 构建验证执行：
+
+```bash
+cd firefly-web
+npm run build
+```
+
+### 故障排查建议
+
+- 如果用户反映“下一步无法继续”，先检查当前步骤必填字段是否完整，再查看浏览器控制台是否有表单渲染错误。
+- 如果用户反映“步骤点击跳转异常”，重点检查 `editorStepIndex / editorMaxStepIndex` 状态流转是否被破坏。
+- 如果用户反映“确认页内容不对”，优先核对表单当前值、模板应用逻辑和业务标识补齐逻辑是否仍然生效。

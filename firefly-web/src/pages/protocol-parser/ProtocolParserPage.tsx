@@ -14,6 +14,7 @@ import {
   Row,
   Select,
   Space,
+  Steps,
   Table,
   Tag,
   Typography,
@@ -338,6 +339,37 @@ const DEFAULT_EDITOR_VALUES: EditorFormValues = {
   releaseMode: 'ALL',
   releaseConfigJson: '{}',
 };
+
+const EDITOR_STEPS = [
+  {
+    title: '模板与作用域',
+    description: '先选择模板、作用域和产品范围。',
+  },
+  {
+    title: '协议与匹配',
+    description: '配置协议、方向、匹配规则和拆帧方式。',
+  },
+  {
+    title: '解析实现',
+    description: '配置解析 JSON、可视化流和脚本或插件。',
+  },
+  {
+    title: '发布策略',
+    description: '配置生效范围与灰度发布方式。',
+  },
+  {
+    title: '预览确认',
+    description: '确认关键配置后再保存规则。',
+  },
+] as const;
+
+const EDITOR_STEP_FIELDS: Array<Array<keyof EditorFormValues>> = [
+  ['scopeType', 'productId'],
+  ['protocol', 'transport', 'direction', 'timeoutMs', 'parserMode', 'frameMode', 'errorPolicy', 'matchRuleJson', 'frameConfigJson'],
+  ['parserConfigJson', 'visualConfigJson', 'scriptLanguage', 'scriptContent', 'pluginId', 'pluginVersion'],
+  ['releaseMode', 'releaseConfigJson'],
+  [],
+];
 
 const DEFAULT_UPLINK_DEBUG_VALUES: UplinkDebugFormValues = {
   payloadEncoding: 'HEX',
@@ -767,6 +799,8 @@ const ProtocolParserPage: React.FC = () => {
   const [editorMode, setEditorMode] = useState<'create' | 'edit'>('create');
   const [currentRecord, setCurrentRecord] = useState<ProtocolParserRecord | null>(null);
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>();
+  const [editorStepIndex, setEditorStepIndex] = useState(0);
+  const [editorMaxStepIndex, setEditorMaxStepIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [uplinkDebugOpen, setUplinkDebugOpen] = useState(false);
   const [downlinkDebugOpen, setDownlinkDebugOpen] = useState(false);
@@ -792,11 +826,13 @@ const ProtocolParserPage: React.FC = () => {
   const [rollbackForm] = Form.useForm<RollbackFormValues>();
 
   const currentParserMode = Form.useWatch('parserMode', editorForm) || DEFAULT_EDITOR_VALUES.parserMode;
+  const currentProtocol = Form.useWatch('protocol', editorForm) || DEFAULT_EDITOR_VALUES.protocol;
   const currentDirection = Form.useWatch('direction', editorForm) || DEFAULT_EDITOR_VALUES.direction;
   const currentScopeType = Form.useWatch('scopeType', editorForm) || DEFAULT_EDITOR_VALUES.scopeType;
   const currentReleaseMode = Form.useWatch('releaseMode', editorForm) || DEFAULT_EDITOR_VALUES.releaseMode;
   const currentEditorTransport = Form.useWatch('transport', editorForm) || DEFAULT_EDITOR_VALUES.transport;
   const currentFrameMode = Form.useWatch('frameMode', editorForm) || DEFAULT_EDITOR_VALUES.frameMode;
+  const currentTimeoutMs = Form.useWatch('timeoutMs', editorForm) || DEFAULT_EDITOR_VALUES.timeoutMs;
   const currentPluginId = Form.useWatch('pluginId', editorForm);
   const currentEditorProductId = Form.useWatch('productId', editorForm);
   const currentUplinkTransport = Form.useWatch('transport', uplinkDebugForm) || DEFAULT_EDITOR_VALUES.transport;
@@ -828,6 +864,21 @@ const ProtocolParserPage: React.FC = () => {
     [selectedTemplateKey],
   );
   const quickTemplates = useMemo(() => PROTOCOL_PARSER_TEMPLATES, []);
+  const editorStepItems = useMemo(
+    () =>
+      EDITOR_STEPS.map((item, index) => {
+        const status: 'finish' | 'process' | 'wait' =
+          index < editorStepIndex ? 'finish' : index === editorStepIndex ? 'process' : 'wait';
+        return {
+          title: item.title,
+          description: item.description,
+          disabled: index > editorMaxStepIndex,
+          status,
+        };
+      }),
+    [editorMaxStepIndex, editorStepIndex],
+  );
+  const isLastEditorStep = editorStepIndex === EDITOR_STEPS.length - 1;
 
   // Keep dropdown choices aligned with products, existing rules, and built-in templates.
   const protocolOptions = useMemo(
@@ -960,6 +1011,62 @@ const ProtocolParserPage: React.FC = () => {
     }
     return `产品级规则会在保存时补齐 tenantCode，选择产品后会自动带出 ProductKey。`;
   }, [currentEditorProduct, currentScopeType, currentTenant?.code]);
+  const editorPreviewSummary = useMemo(
+    () => [
+      {
+        key: 'template',
+        label: '已选模板',
+        value: selectedTemplate?.label || '未使用模板',
+      },
+      {
+        key: 'scope',
+        label: '作用域',
+        value:
+          currentScopeType === 'TENANT'
+            ? `${findOptionLabel(SCOPE_TYPE_OPTIONS, currentScopeType)} (${currentTenant?.code || '待补齐 tenantCode'})`
+            : currentEditorProduct
+              ? `${currentEditorProduct.name} (${currentEditorProduct.productKey})`
+              : '产品级（待选择产品）',
+      },
+      {
+        key: 'protocol',
+        label: '协议 / 传输',
+        value: `${findOptionLabel(PROTOCOL_OPTIONS, currentProtocol)} / ${findOptionLabel(
+          TRANSPORT_OPTIONS,
+          currentEditorTransport,
+        )}`,
+      },
+      {
+        key: 'direction',
+        label: '方向 / 解析方式',
+        value: `${findOptionLabel(DIRECTION_OPTIONS, currentDirection)} / ${findOptionLabel(
+          PARSER_MODE_OPTIONS,
+          currentParserMode,
+        )}`,
+      },
+      {
+        key: 'frame',
+        label: '拆帧 / 超时 / 发布',
+        value: `${findOptionLabel(FRAME_MODE_OPTIONS, currentFrameMode)} / ${currentTimeoutMs} ms / ${findOptionLabel(
+          RELEASE_MODE_OPTIONS,
+          currentReleaseMode,
+        )}`,
+      },
+    ],
+    [
+      currentDirection,
+      currentEditorProduct,
+      currentEditorTransport,
+      currentFrameMode,
+      currentParserMode,
+      currentProtocol,
+      currentReleaseMode,
+      currentScopeType,
+      currentTenant?.code,
+      currentTimeoutMs,
+      selectedTemplate?.label,
+    ],
+  );
 
   const describeRecordScope = (record?: ProtocolParserRecord | null) => {
     if (!record) {
@@ -1108,6 +1215,8 @@ const ProtocolParserPage: React.FC = () => {
     setEditorOpen(false);
     setCurrentRecord(null);
     setSelectedTemplateKey(undefined);
+    setEditorStepIndex(0);
+    setEditorMaxStepIndex(0);
   };
 
   const applyTemplate = (template?: ProtocolParserTemplate) => {
@@ -1160,6 +1269,59 @@ const ProtocolParserPage: React.FC = () => {
 
   const handleEditorProductChange = () => {
     editorForm.setFieldsValue({ scopeId: undefined });
+  };
+
+  const validateEditorStep = async (stepIndex = editorStepIndex) => {
+    const fields = EDITOR_STEP_FIELDS[stepIndex].filter((field) => {
+      if (field === 'productId') {
+        return currentScopeType === 'PRODUCT';
+      }
+      if (field === 'scriptLanguage' || field === 'scriptContent') {
+        return currentParserMode === 'SCRIPT';
+      }
+      if (field === 'pluginId' || field === 'pluginVersion') {
+        return currentParserMode === 'PLUGIN';
+      }
+      return true;
+    });
+    if (fields.length === 0) {
+      return;
+    }
+    await editorForm.validateFields(fields);
+  };
+
+  const moveToEditorStep = (stepIndex: number) => {
+    const boundedStep = Math.min(Math.max(stepIndex, 0), EDITOR_STEPS.length - 1);
+    setEditorStepIndex(boundedStep);
+    setEditorMaxStepIndex((prev) => Math.max(prev, boundedStep));
+  };
+
+  const handleEditorNextStep = async () => {
+    try {
+      await validateEditorStep();
+      moveToEditorStep(editorStepIndex + 1);
+    } catch {
+      // antd form will surface validation feedback inline
+    }
+  };
+
+  const handleEditorStepChange = async (targetStep: number) => {
+    if (targetStep === editorStepIndex) {
+      return;
+    }
+    if (targetStep < editorStepIndex) {
+      setEditorStepIndex(targetStep);
+      return;
+    }
+    if (targetStep > editorMaxStepIndex) {
+      return;
+    }
+    try {
+      await validateEditorStep();
+      setEditorStepIndex(targetStep);
+    } catch {
+      // keep the user on the current step when required fields are incomplete
+    }
   };
 
   // Switching transport also aligns the protocol and default debug payload shape.
@@ -1216,6 +1378,8 @@ const ProtocolParserPage: React.FC = () => {
     setCurrentRecord(null);
     setEditorMode('create');
     setSelectedTemplateKey(undefined);
+    setEditorStepIndex(0);
+    setEditorMaxStepIndex(0);
     setEditorOpen(true);
   };
 
@@ -1265,6 +1429,8 @@ const ProtocolParserPage: React.FC = () => {
       });
       setSelectedTemplateKey(undefined);
       setEditorMode('edit');
+      setEditorStepIndex(0);
+      setEditorMaxStepIndex(0);
       setEditorOpen(true);
     } catch (error) {
       message.error(getErrorMessage(error, '加载解析规则详情失败'));
@@ -1896,13 +2062,36 @@ const ProtocolParserPage: React.FC = () => {
         footer={
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
             <Button onClick={closeEditorModal}>取消</Button>
-            <Button type="primary" loading={submitting} onClick={() => editorForm.submit()}>
+            {editorStepIndex > 0 ? <Button onClick={() => setEditorStepIndex(editorStepIndex - 1)}>上一步</Button> : null}
+            {isLastEditorStep ? (
+              <Button type="primary" loading={submitting} onClick={() => editorForm.submit()}>
               {editorMode === 'create' ? '新建协议解析规则' : '保存协议解析规则'}
             </Button>
+            ) : (
+              <Button type="primary" onClick={() => void handleEditorNextStep()}>
+                下一步
+              </Button>
+            )}
           </Space>
         }
       >
-        <Form form={editorForm} layout="vertical" preserve={false} onFinish={handleSubmitEditor}>
+        <Form form={editorForm} layout="vertical" onFinish={handleSubmitEditor}>
+          <Steps
+            current={editorStepIndex}
+            items={editorStepItems}
+            onChange={(step) => void handleEditorStepChange(step)}
+            size="small"
+            style={{ marginBottom: 16 }}
+          />
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={EDITOR_STEPS[editorStepIndex].description}
+            description="抽屉会保留已经填写的内容，你可以返回前面的步骤继续调整。"
+          />
+          {editorStepIndex === 0 ? (
+          <>
           <Card size="small" style={{ marginBottom: 16, borderRadius: 12 }}>
             <Row gutter={[16, 16]}>
               <Col xs={24} lg={10}>
@@ -1996,8 +2185,10 @@ const ProtocolParserPage: React.FC = () => {
             <InputNumber min={1} />
           </Form.Item>
           <Alert type="info" showIcon style={{ marginBottom: 16 }} message={editorScopeSummary} />
+          </>
+          ) : null}
 
-          <Row gutter={16}>
+          {editorStepIndex === 1 ? <><Row gutter={16}>
             <Col xs={24} md={6}>
               <Form.Item
                 name="protocol"
@@ -2164,7 +2355,9 @@ const ProtocolParserPage: React.FC = () => {
             </Col>
           </Row>
 
-          <Form.Item
+          </> : null}
+
+          {editorStepIndex === 2 ? <><Form.Item
             name="parserConfigJson"
             label="解析配置 JSON"
             extra={
@@ -2334,8 +2527,9 @@ const ProtocolParserPage: React.FC = () => {
               </Form.Item>
             </>
           )}
+          </> : null}
 
-          <Card
+          {editorStepIndex === 3 ? <><Card
             size="small"
             title="灰度发布"
             extra={
@@ -2415,6 +2609,95 @@ const ProtocolParserPage: React.FC = () => {
               </Col>
             </Row>
           </Card>
+          </> : null}
+
+          {editorStepIndex === 4 ? (
+            <Space direction="vertical" size={16} style={{ width: '100%' }}>
+              <Card size="small" title="关键信息确认" style={{ borderRadius: 12 }}>
+                <Descriptions size="small" column={1} bordered>
+                  {editorPreviewSummary.map((item) => (
+                    <Descriptions.Item key={item.key} label={item.label}>
+                      {item.value}
+                    </Descriptions.Item>
+                  ))}
+                </Descriptions>
+              </Card>
+
+              <Row gutter={[16, 16]}>
+                <Col xs={24} lg={12}>
+                  <Card size="small" title="匹配规则" style={{ borderRadius: 12 }}>
+                    <TextArea
+                      readOnly
+                      value={(editorForm.getFieldValue('matchRuleJson') as string) || '{}'}
+                      autoSize={{ minRows: 6, maxRows: 12 }}
+                      style={{ fontFamily: 'monospace' }}
+                    />
+                  </Card>
+                </Col>
+                <Col xs={24} lg={12}>
+                  <Card size="small" title="拆帧配置" style={{ borderRadius: 12 }}>
+                    <TextArea
+                      readOnly
+                      value={(editorForm.getFieldValue('frameConfigJson') as string) || '{}'}
+                      autoSize={{ minRows: 6, maxRows: 12 }}
+                      style={{ fontFamily: 'monospace' }}
+                    />
+                  </Card>
+                </Col>
+                <Col xs={24} lg={12}>
+                  <Card size="small" title="解析配置" style={{ borderRadius: 12 }}>
+                    <TextArea
+                      readOnly
+                      value={(editorForm.getFieldValue('parserConfigJson') as string) || '{}'}
+                      autoSize={{ minRows: 6, maxRows: 12 }}
+                      style={{ fontFamily: 'monospace' }}
+                    />
+                  </Card>
+                </Col>
+                <Col xs={24} lg={12}>
+                  <Card size="small" title="可视化流" style={{ borderRadius: 12 }}>
+                    <TextArea
+                      readOnly
+                      value={(editorForm.getFieldValue('visualConfigJson') as string) || '{}'}
+                      autoSize={{ minRows: 6, maxRows: 12 }}
+                      style={{ fontFamily: 'monospace' }}
+                    />
+                  </Card>
+                </Col>
+                <Col xs={24} lg={12}>
+                  <Card size="small" title={currentParserMode === 'SCRIPT' ? '脚本内容' : '插件信息'} style={{ borderRadius: 12 }}>
+                    {currentParserMode === 'SCRIPT' ? (
+                      <TextArea
+                        readOnly
+                        value={(editorForm.getFieldValue('scriptContent') as string) || ''}
+                        autoSize={{ minRows: 8, maxRows: 16 }}
+                        style={{ fontFamily: 'monospace' }}
+                      />
+                    ) : (
+                      <Descriptions size="small" column={1}>
+                        <Descriptions.Item label="插件 ID">
+                          {(editorForm.getFieldValue('pluginId') as string) || '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="插件版本">
+                          {(editorForm.getFieldValue('pluginVersion') as string) || '自动选择'}
+                        </Descriptions.Item>
+                      </Descriptions>
+                    )}
+                  </Card>
+                </Col>
+                <Col xs={24} lg={12}>
+                  <Card size="small" title="发布配置" style={{ borderRadius: 12 }}>
+                    <TextArea
+                      readOnly
+                      value={(editorForm.getFieldValue('releaseConfigJson') as string) || '{}'}
+                      autoSize={{ minRows: 8, maxRows: 16 }}
+                      style={{ fontFamily: 'monospace' }}
+                    />
+                  </Card>
+                </Col>
+              </Row>
+            </Space>
+          ) : null}
         </Form>
       </Drawer>
 
