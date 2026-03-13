@@ -79,6 +79,16 @@ public class UserController {
         return R.ok(userService.listUsers(query));
     }
 
+    @GetMapping("/options")
+    @RequiresPermission(
+        value = {"user:read", "alarm:read", "alarm:update"},
+        logical = RequiresPermission.Logical.OR
+    )
+    @Operation(summary = "List selectable users")
+    public R<List<UserOptionVO>> listUserOptions() {
+        return R.ok(userService.listSelectableUsers());
+    }
+
     @GetMapping("/{id}")
     @RequiresPermission("user:read")
     @Operation(summary = "获取用户详情")

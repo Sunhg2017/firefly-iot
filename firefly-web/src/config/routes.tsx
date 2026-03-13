@@ -128,6 +128,12 @@ const routeConfigs: RouteEntry[] = [
       { path: '/rule-engine', label: '规则引擎', icon: <ThunderboltOutlined />, permission: 'rule:read' },
       { path: '/alarm-rules', label: ALARM_TEXT.ruleMenu, icon: <AlertOutlined />, permission: 'alarm:read' },
       {
+        path: '/alarm-recipient-groups',
+        label: ALARM_TEXT.recipientGroupMenu,
+        icon: <TeamOutlined />,
+        permission: 'alarm:update',
+      },
+      {
         path: '/alarm-records',
         label: ALARM_TEXT.recordMenu,
         icon: <ToolOutlined />,

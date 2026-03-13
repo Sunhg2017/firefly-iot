@@ -27,10 +27,25 @@ import {
   ToolOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-import { alarmRecordApi, alarmRuleApi, deviceApi, productApi, projectApi } from '../../services/api';
+import {
+  alarmRecipientGroupApi,
+  alarmRecordApi,
+  alarmRuleApi,
+  deviceApi,
+  notificationChannelApi,
+  productApi,
+  projectApi,
+  userApi,
+} from '../../services/api';
 import useAuthStore from '../../store/useAuthStore';
 import { ALARM_LEVEL_LABELS, ALARM_STATUS_LABELS, ALARM_TEXT } from './alarmText';
-import AlarmRuleForm, { type AlarmMetricOption, type AlarmScopeOption } from './AlarmRuleForm';
+import AlarmRuleForm, {
+  type AlarmMetricOption,
+  type AlarmNotificationMethodOption,
+  type AlarmRecipientGroupOption,
+  type AlarmRecipientUserOption,
+  type AlarmScopeOption,
+} from './AlarmRuleForm';
 import {
   DEFAULT_ALARM_CONDITION_VALUES,
   buildAlarmConditionExpr,
@@ -42,6 +57,12 @@ import {
   getAlarmConditionTypes,
   parseAlarmConditionExpr,
 } from './alarmCondition';
+import {
+  buildAlarmNotifyConfig,
+  describeAlarmNotifyConfig,
+  getAlarmNotificationMethodLabel,
+  parseAlarmNotifyConfig,
+} from './alarmNotify';
 
 const { TextArea } = Input;
 
@@ -54,6 +75,7 @@ interface AlarmRuleRecord {
   deviceId?: number;
   level: string;
   conditionExpr: string;
+  notifyConfig?: string;
   enabled: boolean;
   createdAt: string;
 }
@@ -97,6 +119,25 @@ interface AlarmRecordItem {
   createdAt: string;
 }
 
+interface NotificationTypeRecord {
+  type: string;
+  label: string;
+  channelCount?: number;
+}
+
+interface RecipientGroupRecord {
+  code: string;
+  name: string;
+  memberCount?: number;
+}
+
+interface RecipientUserRecord {
+  username: string;
+  realName?: string;
+  phone?: string;
+  email?: string;
+}
+
 const levelColors: Record<string, string> = {
   CRITICAL: 'red',
   WARNING: 'orange',
@@ -112,6 +153,9 @@ const statusColors: Record<string, string> = {
 
 const DEFAULT_RULE_FORM_VALUES = {
   ...DEFAULT_ALARM_CONDITION_VALUES,
+  notifyChannels: [],
+  recipientGroupCodes: [],
+  recipientUsernames: [],
   enabled: true,
 };
 
@@ -215,6 +259,9 @@ export const AlarmRulesPanel: React.FC = () => {
   const [projectOptions, setProjectOptions] = useState<AlarmScopeOption[]>([]);
   const [productOptions, setProductOptions] = useState<AlarmScopeOption[]>([]);
   const [deviceOptions, setDeviceOptions] = useState<AlarmScopeOption[]>([]);
+  const [notificationMethodOptions, setNotificationMethodOptions] = useState<AlarmNotificationMethodOption[]>([]);
+  const [recipientGroupOptions, setRecipientGroupOptions] = useState<AlarmRecipientGroupOption[]>([]);
+  const [recipientUserOptions, setRecipientUserOptions] = useState<AlarmRecipientUserOption[]>([]);
   const [metricOptionsMap, setMetricOptionsMap] = useState<Record<number, AlarmMetricOption[]>>({});
   const [metricLoadingMap, setMetricLoadingMap] = useState<Record<number, boolean>>({});
 
@@ -236,6 +283,14 @@ export const AlarmRulesPanel: React.FC = () => {
     () => Object.fromEntries(deviceOptions.map((item) => [String(item.value), item.label])),
     [deviceOptions],
   );
+  const recipientGroupLabelMap = useMemo(
+    () => Object.fromEntries(recipientGroupOptions.map((item) => [item.value, item.label])),
+    [recipientGroupOptions],
+  );
+  const recipientUserLabelMap = useMemo(
+    () => Object.fromEntries(recipientUserOptions.map((item) => [item.value, item.label])),
+    [recipientUserOptions],
+  );
 
   const loadScopeOptions = async () => {
     try {
@@ -254,6 +309,43 @@ export const AlarmRulesPanel: React.FC = () => {
       setDeviceOptions(deviceRecords.map(buildDeviceOption));
     } catch {
       message.error(ALARM_TEXT.loadScopeError);
+    }
+  };
+
+  const loadNotifyOptions = async () => {
+    try {
+      const [channelRes, groupRes, userRes] = await Promise.all([
+        notificationChannelApi.listAvailableTypes(),
+        alarmRecipientGroupApi.listOptions(),
+        userApi.options(),
+      ]);
+
+      const methodRecords = (channelRes.data.data || []) as NotificationTypeRecord[];
+      const groupRecords = (groupRes.data.data || []) as RecipientGroupRecord[];
+      const userRecords = (userRes.data.data || []) as RecipientUserRecord[];
+
+      setNotificationMethodOptions(
+        methodRecords.map((item) => ({
+          value: item.type as AlarmNotificationMethodOption['value'],
+          label: item.label || getAlarmNotificationMethodLabel(item.type),
+          channelCount: item.channelCount,
+        })),
+      );
+      setRecipientGroupOptions(
+        groupRecords.map((item) => ({
+          value: item.code,
+          label: item.name,
+          memberCount: item.memberCount,
+        })),
+      );
+      setRecipientUserOptions(
+        userRecords.map((item) => ({
+          value: item.username,
+          label: item.realName ? `${item.realName} (@${item.username})` : item.username,
+        })),
+      );
+    } catch {
+      message.error(ALARM_TEXT.loadNotifyOptionsError);
     }
   };
 
@@ -302,6 +394,7 @@ export const AlarmRulesPanel: React.FC = () => {
 
   useEffect(() => {
     void loadScopeOptions();
+    void loadNotifyOptions();
   }, []);
 
   useEffect(() => {
@@ -341,6 +434,7 @@ export const AlarmRulesPanel: React.FC = () => {
     deviceId: values.deviceId,
     level: deriveAlarmRuleLevel(values as Parameters<typeof deriveAlarmRuleLevel>[0]),
     conditionExpr: buildAlarmConditionExpr(values as Parameters<typeof buildAlarmConditionExpr>[0]),
+    notifyConfig: buildAlarmNotifyConfig(values as Parameters<typeof buildAlarmNotifyConfig>[0]),
     enabled: values.enabled,
   });
 
@@ -360,6 +454,7 @@ export const AlarmRulesPanel: React.FC = () => {
   const handleEdit = (record: AlarmRuleRecord) => {
     setEditingId(record.id);
     const parsedCondition = parseAlarmConditionExpr(record.conditionExpr);
+    const parsedNotify = parseAlarmNotifyConfig(record.notifyConfig);
     editForm.setFieldsValue({
       ...DEFAULT_RULE_FORM_VALUES,
       name: record.name,
@@ -368,6 +463,7 @@ export const AlarmRulesPanel: React.FC = () => {
       productId: record.productId,
       deviceId: record.deviceId,
       ...parsedCondition,
+      ...parsedNotify,
       enabled: record.enabled,
     });
     if (record.productId) {
@@ -484,6 +580,31 @@ export const AlarmRulesPanel: React.FC = () => {
           </Space>
         );
       },
+    },
+    {
+      title: ALARM_TEXT.methodColumn,
+      width: 220,
+      render: (_: unknown, record: AlarmRuleRecord) => {
+        const notifyConfig = parseAlarmNotifyConfig(record.notifyConfig);
+        if ((notifyConfig.notifyChannels || []).length === 0) {
+          return '-';
+        }
+        return (
+          <Space size={[4, 4]} wrap>
+            {(notifyConfig.notifyChannels || []).map((item) => (
+              <Tag key={item} color="geekblue">
+                {getAlarmNotificationMethodLabel(item)}
+              </Tag>
+            ))}
+          </Space>
+        );
+      },
+    },
+    {
+      title: ALARM_TEXT.receiverColumn,
+      width: 260,
+      render: (_: unknown, record: AlarmRuleRecord) =>
+        describeAlarmNotifyConfig(record.notifyConfig, recipientGroupLabelMap, recipientUserLabelMap),
     },
     {
       title: ALARM_TEXT.condition,
@@ -631,7 +752,7 @@ export const AlarmRulesPanel: React.FC = () => {
           columns={columns}
           dataSource={data}
           loading={loading}
-          scroll={{ x: 1380 }}
+          scroll={{ x: 1820 }}
           pagination={{
             current: params.pageNum,
             pageSize: params.pageSize,
@@ -672,6 +793,9 @@ export const AlarmRulesPanel: React.FC = () => {
             deviceOptions={deviceOptions}
             metricOptions={createProductId ? metricOptionsMap[createProductId] || [] : []}
             metricLabelMap={getMetricLabelMap(createProductId)}
+            notificationMethodOptions={notificationMethodOptions}
+            recipientGroupOptions={recipientGroupOptions}
+            recipientUserOptions={recipientUserOptions}
           />
         </Form>
       </Drawer>
@@ -710,6 +834,9 @@ export const AlarmRulesPanel: React.FC = () => {
             deviceOptions={deviceOptions}
             metricOptions={editProductId ? metricOptionsMap[editProductId] || [] : []}
             metricLabelMap={getMetricLabelMap(editProductId)}
+            notificationMethodOptions={notificationMethodOptions}
+            recipientGroupOptions={recipientGroupOptions}
+            recipientUserOptions={recipientUserOptions}
             showEnabled
           />
         </Form>

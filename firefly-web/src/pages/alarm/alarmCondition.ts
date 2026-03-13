@@ -69,7 +69,7 @@ export interface AlarmConditionOption {
 
 const CONDITION_TYPE_LABELS: Record<AlarmConditionType, string> = {
   THRESHOLD: '阈值触发',
-  COMPARE: '同比/环比',
+  COMPARE: '同环比',
   CONTINUOUS: '连续触发',
   ACCUMULATE: '累计聚合',
   CUSTOM: '自定义表达式',
@@ -110,7 +110,7 @@ const CHANGE_MODE_LABELS: Record<AlarmChangeMode, string> = {
 };
 
 const CHANGE_DIRECTION_LABELS: Record<AlarmChangeDirection, string> = {
-  UP: '上涨',
+  UP: '上升',
   DOWN: '下降',
   EITHER: '双向',
 };
@@ -250,7 +250,6 @@ const parseStructuredConditionGroup = (conditionExpr?: string | null): Structure
     if (!isRecord(parsed) || parsed.mode !== 'STRUCTURED' || !Array.isArray(parsed.groups)) {
       return null;
     }
-
     return parsed as unknown as StructuredAlarmConditionGroup;
   } catch {
     return null;
@@ -318,13 +317,13 @@ const buildStructuredConditionItem = (
   const next = normalizeConditionItem(item);
   const type = next.conditionType;
   if (!type) {
-    throw new Error(`请为第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条条件选择触发方式`);
+    throw new Error(`请为第 ${groupIndex + 1} 个等级块的第 ${itemIndex + 1} 条条件选择触发方式`);
   }
 
   if (type === 'CUSTOM') {
     const customExpr = next.customExpr.trim();
     if (!customExpr) {
-      throw new Error(`请填写第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条自定义表达式`);
+      throw new Error(`请填写第 ${groupIndex + 1} 个等级块的第 ${itemIndex + 1} 条自定义表达式`);
     }
     return {
       type,
@@ -334,7 +333,7 @@ const buildStructuredConditionItem = (
 
   const metricKey = next.metricKey.trim();
   if (!metricKey) {
-    throw new Error(`请为第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条条件选择指标`);
+    throw new Error(`请为第 ${groupIndex + 1} 个等级块的第 ${itemIndex + 1} 条条件选择指标`);
   }
 
   const payload: StructuredAlarmConditionItem = {
@@ -347,7 +346,7 @@ const buildStructuredConditionItem = (
     payload.operator = next.operator;
     payload.threshold = next.threshold;
     if (payload.threshold === undefined || !Number.isFinite(payload.threshold)) {
-      throw new Error(`请填写第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条条件阈值`);
+      throw new Error(`请填写第 ${groupIndex + 1} 个等级块的第 ${itemIndex + 1} 条条件阈值`);
     }
     return payload;
   }
@@ -357,10 +356,10 @@ const buildStructuredConditionItem = (
     payload.threshold = next.threshold;
     payload.consecutiveCount = next.consecutiveCount;
     if (payload.threshold === undefined || !Number.isFinite(payload.threshold)) {
-      throw new Error(`请填写第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条条件阈值`);
+      throw new Error(`请填写第 ${groupIndex + 1} 个等级块的第 ${itemIndex + 1} 条条件阈值`);
     }
     if (!payload.consecutiveCount || payload.consecutiveCount <= 0) {
-      throw new Error(`请填写第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条条件连续次数`);
+      throw new Error(`请填写第 ${groupIndex + 1} 个等级块的第 ${itemIndex + 1} 条条件连续次数`);
     }
     return payload;
   }
@@ -370,10 +369,10 @@ const buildStructuredConditionItem = (
   payload.windowSize = next.windowSize;
   payload.windowUnit = next.windowUnit;
   if (payload.threshold === undefined || !Number.isFinite(payload.threshold)) {
-    throw new Error(`请填写第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条条件阈值`);
+    throw new Error(`请填写第 ${groupIndex + 1} 个等级块的第 ${itemIndex + 1} 条条件阈值`);
   }
   if (!payload.windowSize || payload.windowSize <= 0) {
-    throw new Error(`请填写第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条条件统计窗口`);
+    throw new Error(`请填写第 ${groupIndex + 1} 个等级块的第 ${itemIndex + 1} 条条件统计窗口`);
   }
 
   if (type === 'ACCUMULATE') {
@@ -393,22 +392,21 @@ const buildRuleGroup = (group: AlarmRuleGroupFormValues, groupIndex: number): St
   const triggerMode = next.triggerMode;
   const conditions = next.conditions || [];
 
-  // A rule is organized by level blocks first, then each block defines how its conditions combine.
   if (!level) {
-    throw new Error(`请为第 ${groupIndex + 1} 个级别块选择告警级别`);
+    throw new Error(`请为第 ${groupIndex + 1} 个等级块选择告警级别`);
   }
   if (!triggerMode) {
-    throw new Error(`请为第 ${groupIndex + 1} 个级别块选择触发语义`);
+    throw new Error(`请为第 ${groupIndex + 1} 个等级块选择触发语义`);
   }
   if (conditions.length === 0) {
-    throw new Error(`第 ${groupIndex + 1} 个级别块至少需要一条条件`);
+    throw new Error(`第 ${groupIndex + 1} 个等级块至少需要一条条件`);
   }
 
   const builtConditions = conditions.map((item, itemIndex) => buildStructuredConditionItem(item, groupIndex, itemIndex));
   if (triggerMode === 'AT_LEAST') {
     const matchCount = next.matchCount;
     if (!matchCount || matchCount <= 0 || matchCount > builtConditions.length) {
-      throw new Error(`第 ${groupIndex + 1} 个级别块的满足条数必须在 1 到条件总数之间`);
+      throw new Error(`第 ${groupIndex + 1} 个等级块的满足条数必须在 1 到条件总数之间`);
     }
     return {
       level,
@@ -428,7 +426,7 @@ const buildRuleGroup = (group: AlarmRuleGroupFormValues, groupIndex: number): St
 export const buildAlarmConditionExpr = (values: AlarmConditionFormValues): string => {
   const ruleGroups = values.ruleGroups || [];
   if (ruleGroups.length === 0) {
-    throw new Error('请至少维护一个告警级别块');
+    throw new Error('请至少维护一个告警等级块');
   }
 
   const payload: StructuredAlarmConditionGroup = {
@@ -483,7 +481,7 @@ export const describeAlarmConditionValues = (
 ): string => {
   const ruleGroups = values.ruleGroups || [];
   if (ruleGroups.length === 0) {
-    return '请至少维护一个告警级别块';
+    return '请至少维护一个告警等级块';
   }
 
   return ruleGroups.map((group) => describeAlarmRuleGroup(group, metricLabelMap)).join(' | ');

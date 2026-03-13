@@ -393,6 +393,7 @@ export const tenantSelfApi = {
 // ==================== User API ====================
 export const userApi = {
   list: (data: Record<string, unknown> = {}) => request.post('/users/list', data),
+  options: () => request.get('/users/options'),
   get: (id: number) => request.get(`/users/${id}`),
   create: (data: Record<string, unknown>) => request.post('/users', data),
   update: (id: number, data: Record<string, unknown>) => request.put(`/users/${id}`, data),
@@ -735,6 +736,7 @@ export const sharePolicyApi = {
 // ==================== Notification API ====================
 export const notificationChannelApi = {
   list: () => supportRequest.get('/notifications/channels'),
+  listAvailableTypes: () => supportRequest.get('/notifications/channel-types/available'),
   get: (id: number) => supportRequest.get(`/notifications/channels/${id}`),
   create: (data: Record<string, unknown>) => supportRequest.post('/notifications/channels', data),
   update: (id: number, data: Record<string, unknown>) => supportRequest.put(`/notifications/channels/${id}`, data),
@@ -811,6 +813,15 @@ export const alarmRecordApi = {
   confirm: (id: number) => ruleRequest.put(`/alarm-records/${id}/confirm`),
   process: (id: number, data?: Record<string, unknown>) => ruleRequest.put(`/alarm-records/${id}/process`, data),
   close: (id: number) => ruleRequest.put(`/alarm-records/${id}/close`),
+};
+
+export const alarmRecipientGroupApi = {
+  list: (data: Record<string, unknown> = {}) => request.post('/alarm-recipient-groups/list', data),
+  listOptions: () => request.get('/alarm-recipient-groups/options'),
+  get: (code: string) => request.get(`/alarm-recipient-groups/${code}`),
+  create: (data: Record<string, unknown>) => request.post('/alarm-recipient-groups', data),
+  update: (code: string, data: Record<string, unknown>) => request.put(`/alarm-recipient-groups/${code}`, data),
+  delete: (code: string) => request.delete(`/alarm-recipient-groups/${code}`),
 };
 
 // ==================== Rule Engine API ====================

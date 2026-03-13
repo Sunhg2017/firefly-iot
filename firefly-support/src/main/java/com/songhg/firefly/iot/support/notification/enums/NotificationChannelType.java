@@ -30,4 +30,16 @@ public enum NotificationChannelType {
     public String code() {
         return name();
     }
+
+    public String label() {
+        return switch (this) {
+            case EMAIL -> "邮件";
+            case SMS -> "短信";
+            case PHONE -> "电话";
+            case WEBHOOK -> "Webhook";
+            case DINGTALK -> "钉钉";
+            case WECHAT -> "企业微信";
+            case IN_APP -> "站内信";
+        };
+    }
 }

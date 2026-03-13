@@ -34,6 +34,16 @@ public class NotificationController {
         return R.ok(channelService.listAll());
     }
 
+    @GetMapping("/channel-types/available")
+    @RequiresPermission(
+        value = {"notification:read", "alarm:read", "alarm:update"},
+        logical = RequiresPermission.Logical.OR
+    )
+    @Operation(summary = "List available notification channel types")
+    public R<List<NotificationChannelTypeOptionVO>> listAvailableChannelTypes() {
+        return R.ok(channelService.listAvailableChannelTypes());
+    }
+
     @GetMapping("/channels/{id}")
     @RequiresPermission("notification:read")
     @Operation(summary = "获取通知渠道详情")

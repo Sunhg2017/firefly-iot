@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.AlarmLevel;
 import com.songhg.firefly.iot.common.enums.AlarmStatus;
@@ -30,6 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -47,6 +49,15 @@ public class AlarmService {
             "CUSTOM"
     );
     private static final Set<String> SUPPORTED_TRIGGER_MODES = Set.of("ALL", "ANY", "AT_LEAST");
+    private static final Set<String> SUPPORTED_NOTIFY_CHANNEL_TYPES = Set.of(
+            "EMAIL",
+            "SMS",
+            "PHONE",
+            "WECHAT",
+            "DINGTALK",
+            "WEBHOOK",
+            "IN_APP"
+    );
     private static final List<AlarmLevel> LEVEL_PRIORITY = List.of(
             AlarmLevel.CRITICAL,
             AlarmLevel.WARNING,
@@ -63,7 +74,9 @@ public class AlarmService {
         Long userId = AppContextHolder.getUserId();
 
         NormalizedCondition normalizedCondition = normalizeConditionExpr(dto.getConditionExpr());
+        NormalizedNotifyConfig normalizedNotifyConfig = normalizeNotifyConfig(dto.getNotifyConfig());
         dto.setConditionExpr(normalizedCondition.conditionExpr());
+        dto.setNotifyConfig(normalizedNotifyConfig.notifyConfig());
         dto.setLevel(normalizedCondition.level());
 
         AlarmRule rule = AlarmConvert.INSTANCE.toRuleEntity(dto);
@@ -124,8 +137,16 @@ public class AlarmService {
             dto.setConditionExpr(normalizedCondition.conditionExpr());
             dto.setLevel(normalizedCondition.level());
         }
+        boolean shouldUpdateNotifyConfig = dto.getNotifyConfig() != null;
+        if (shouldUpdateNotifyConfig) {
+            NormalizedNotifyConfig normalizedNotifyConfig = normalizeNotifyConfig(dto.getNotifyConfig());
+            dto.setNotifyConfig(normalizedNotifyConfig.notifyConfig());
+        }
 
         AlarmConvert.INSTANCE.updateRuleEntity(dto, rule);
+        if (shouldUpdateNotifyConfig) {
+            rule.setNotifyConfig(dto.getNotifyConfig());
+        }
         alarmRuleMapper.updateById(rule);
         return AlarmConvert.INSTANCE.toRuleVO(rule);
     }
@@ -285,6 +306,47 @@ public class AlarmService {
         }
     }
 
+    private NormalizedNotifyConfig normalizeNotifyConfig(String rawNotifyConfig) {
+        if (rawNotifyConfig == null || rawNotifyConfig.isBlank()) {
+            return new NormalizedNotifyConfig(null);
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(rawNotifyConfig.trim());
+            if (!root.isObject()) {
+                throw new BizException(ResultCode.PARAM_ERROR, "通知配置必须是合法的 JSON 对象");
+            }
+
+            Set<String> channels = normalizeStringSet(root.get("channels"), "通知方式");
+            Set<String> recipientGroupCodes = normalizeStringSet(root.get("recipientGroupCodes"), "接收组");
+            Set<String> recipientUsernames = normalizeStringSet(root.get("recipientUsernames"), "接收人");
+
+            if (channels.isEmpty() && recipientGroupCodes.isEmpty() && recipientUsernames.isEmpty()) {
+                return new NormalizedNotifyConfig(null);
+            }
+            if (channels.isEmpty()) {
+                throw new BizException(ResultCode.PARAM_ERROR, "请至少选择一种通知方式");
+            }
+            if (recipientGroupCodes.isEmpty() && recipientUsernames.isEmpty()) {
+                throw new BizException(ResultCode.PARAM_ERROR, "请至少选择一个告警接收组或指定接收人");
+            }
+            if (!SUPPORTED_NOTIFY_CHANNEL_TYPES.containsAll(channels)) {
+                Set<String> unsupportedChannels = new LinkedHashSet<>(channels);
+                unsupportedChannels.removeAll(SUPPORTED_NOTIFY_CHANNEL_TYPES);
+                throw new BizException(ResultCode.PARAM_ERROR, "存在不支持的通知方式: " + String.join(", ", unsupportedChannels));
+            }
+
+            ObjectNode normalizedNode = objectMapper.createObjectNode();
+            normalizedNode.put("version", 1);
+            normalizedNode.set("channels", objectMapper.valueToTree(channels));
+            normalizedNode.set("recipientGroupCodes", objectMapper.valueToTree(recipientGroupCodes));
+            normalizedNode.set("recipientUsernames", objectMapper.valueToTree(recipientUsernames));
+            return new NormalizedNotifyConfig(objectMapper.writeValueAsString(normalizedNode));
+        } catch (JsonProcessingException exception) {
+            throw new BizException(ResultCode.PARAM_ERROR, "通知配置必须使用合法的 JSON");
+        }
+    }
+
     private void validateCondition(int groupIndex, int conditionIndex, JsonNode condition) {
         if (condition == null || !condition.isObject()) {
             throw new BizException(ResultCode.PARAM_ERROR, buildConditionMessage(groupIndex, conditionIndex, "条件格式不正确"));
@@ -370,6 +432,27 @@ public class AlarmService {
         return value.asInt();
     }
 
+    private Set<String> normalizeStringSet(JsonNode node, String fieldName) {
+        if (node == null || node.isNull()) {
+            return Set.of();
+        }
+        if (!node.isArray()) {
+            throw new BizException(ResultCode.PARAM_ERROR, fieldName + "必须是数组");
+        }
+
+        Set<String> values = new LinkedHashSet<>();
+        node.forEach(item -> {
+            if (!item.isTextual()) {
+                throw new BizException(ResultCode.PARAM_ERROR, fieldName + "只能包含字符串");
+            }
+            String value = item.asText().trim();
+            if (!value.isEmpty()) {
+                values.add(value);
+            }
+        });
+        return values;
+    }
+
     private String buildGroupMessage(int groupIndex, String message) {
         return "第 " + (groupIndex + 1) + " 个级别块" + message;
     }
@@ -379,5 +462,8 @@ public class AlarmService {
     }
 
     private record NormalizedCondition(String conditionExpr, AlarmLevel level) {
+    }
+
+    private record NormalizedNotifyConfig(String notifyConfig) {
     }
 }

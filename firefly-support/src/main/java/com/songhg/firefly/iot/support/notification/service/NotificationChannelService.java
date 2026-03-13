@@ -8,6 +8,7 @@ import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.support.notification.convert.NotificationConvert;
 import com.songhg.firefly.iot.support.notification.dto.notification.NotificationChannelCreateDTO;
+import com.songhg.firefly.iot.support.notification.dto.notification.NotificationChannelTypeOptionVO;
 import com.songhg.firefly.iot.support.notification.dto.notification.NotificationChannelVO;
 import com.songhg.firefly.iot.support.notification.entity.NotificationChannel;
 import com.songhg.firefly.iot.support.notification.enums.NotificationChannelType;
@@ -18,7 +19,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -61,6 +64,49 @@ public class NotificationChannelService {
                 .stream()
                 .map(NotificationConvert.INSTANCE::toChannelVO)
                 .collect(Collectors.toList());
+    }
+
+    public List<NotificationChannelTypeOptionVO> listAvailableChannelTypes() {
+        Long tenantId = AppContextHolder.getTenantId();
+        if (tenantId == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "tenantId is required");
+        }
+
+        List<NotificationChannel> channels = channelMapper.selectList(new LambdaQueryWrapper<NotificationChannel>()
+                .eq(NotificationChannel::getEnabled, true)
+                .and(wrapper -> {
+                    wrapper.eq(NotificationChannel::getTenantId, tenantId);
+                    if (!tenantId.equals(PLATFORM_CHANNEL_TENANT_ID)) {
+                        wrapper.or(item -> item.eq(NotificationChannel::getTenantId, PLATFORM_CHANNEL_TENANT_ID)
+                                .ne(NotificationChannel::getType, WEBHOOK_CHANNEL_TYPE));
+                    }
+                })
+                .orderByAsc(NotificationChannel::getType)
+                .orderByAsc(NotificationChannel::getName));
+
+        Map<String, Integer> typeCountMap = new LinkedHashMap<>();
+        for (NotificationChannel channel : channels) {
+            if (tenantId.equals(PLATFORM_CHANNEL_TENANT_ID) && WEBHOOK_CHANNEL_TYPE.equals(channel.getType())) {
+                continue;
+            }
+            if (!tenantId.equals(PLATFORM_CHANNEL_TENANT_ID)
+                    && PLATFORM_CHANNEL_TENANT_ID.equals(channel.getTenantId())
+                    && WEBHOOK_CHANNEL_TYPE.equals(channel.getType())) {
+                continue;
+            }
+            typeCountMap.merge(channel.getType(), 1, Integer::sum);
+        }
+
+        return typeCountMap.entrySet().stream()
+                .map(entry -> {
+                    NotificationChannelType channelType = NotificationChannelType.of(entry.getKey());
+                    NotificationChannelTypeOptionVO option = new NotificationChannelTypeOptionVO();
+                    option.setType(channelType.code());
+                    option.setLabel(channelType.label());
+                    option.setChannelCount(entry.getValue());
+                    return option;
+                })
+                .toList();
     }
 
     public NotificationChannelVO getById(Long id) {
