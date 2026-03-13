@@ -1,12 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Tabs, Table, Button, Space, message, Modal, Form, Input, Select, Switch, Tag, Descriptions, Card, Row, Col } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, PlayCircleOutlined, EyeOutlined, BellOutlined, MailOutlined, CheckCircleOutlined, CloseCircleOutlined, SendOutlined } from '@ant-design/icons';
-import { notificationChannelApi, notificationRecordApi } from '../../services/api';
+import React, { useEffect, useState } from 'react';
+import { Button, Card, Descriptions, Drawer, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
+import { DeleteOutlined, EditOutlined, EyeOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import { notificationChannelApi, notificationRecordApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
-
-
-// ==================== Types ====================
+import {
+  notificationChannelColors,
+  notificationChannelLabels,
+  notificationChannelOptions,
+  notificationStatusColors,
+  notificationStatusLabels,
+} from '../../constants/notification';
 
 interface ChannelItem {
   id: number;
@@ -14,13 +18,11 @@ interface ChannelItem {
   type: string;
   config: string;
   enabled: boolean;
-  createdAt: string;
   updatedAt: string;
 }
 
 interface RecordItem {
   id: number;
-  channelId: number;
   channelType: string;
   templateCode: string;
   subject: string;
@@ -33,320 +35,279 @@ interface RecordItem {
   createdAt: string;
 }
 
-const typeLabels: Record<string, string> = {
-  EMAIL: '邮件', SMS: '短信', WEBHOOK: 'Webhook', DINGTALK: '钉钉', WECHAT: '企业微信',
+const parseConfig = (value: string) => {
+  try {
+    return JSON.parse(value || '{}') as Record<string, unknown>;
+  } catch {
+    return {};
+  }
 };
 
-const typeColors: Record<string, string> = {
-  EMAIL: 'blue', SMS: 'green', WEBHOOK: 'purple', DINGTALK: 'orange', WECHAT: 'cyan',
+const toCsv = (value: unknown) => (Array.isArray(value) ? value.join(', ') : '');
+const splitCsv = (value?: string) =>
+  (value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const renderChannelFields = (type: string) => {
+  switch (type) {
+    case 'EMAIL':
+      return (
+        <>
+          <Form.Item name="smtpHost" label="SMTP 主机" rules={[{ required: true, message: '请输入 SMTP 主机' }]}><Input /></Form.Item>
+          <Form.Item name="smtpPort" label="SMTP 端口" rules={[{ required: true, message: '请输入 SMTP 端口' }]}><InputNumber min={1} max={65535} style={{ width: '100%' }} /></Form.Item>
+          <Form.Item name="username" label="登录账号" rules={[{ required: true, message: '请输入登录账号' }]}><Input /></Form.Item>
+          <Form.Item name="password" label="登录密码" rules={[{ required: true, message: '请输入登录密码' }]}><Input.Password /></Form.Item>
+          <Form.Item name="from" label="发件人地址"><Input placeholder="不填则默认使用登录账号" /></Form.Item>
+          <Form.Item name="useSsl" label="启用 SSL" valuePropName="checked"><Switch /></Form.Item>
+        </>
+      );
+    case 'WEBHOOK':
+      return (
+        <>
+          <Form.Item name="url" label="Webhook 地址" rules={[{ required: true, message: '请输入 Webhook 地址' }]}><Input /></Form.Item>
+          <Form.Item name="method" label="请求方法"><Select options={[{ value: 'POST', label: 'POST' }, { value: 'GET', label: 'GET' }]} /></Form.Item>
+          <Form.Item name="contentType" label="Content-Type"><Select options={[{ value: 'application/json', label: 'application/json' }, { value: 'text/plain', label: 'text/plain' }]} /></Form.Item>
+          <Form.Item name="secret" label="签名密钥"><Input.Password /></Form.Item>
+        </>
+      );
+    case 'SMS':
+    case 'PHONE':
+      return (
+        <>
+          <Form.Item name="apiUrl" label="网关地址" rules={[{ required: true, message: '请输入网关地址' }]}><Input /></Form.Item>
+          <Form.Item name="provider" label="供应商标识"><Input /></Form.Item>
+          <Form.Item name="token" label="访问令牌"><Input.Password /></Form.Item>
+          <Form.Item name="signName" label="签名"><Input /></Form.Item>
+          <Form.Item name="templateId" label="供应商模板 ID"><Input /></Form.Item>
+          {type === 'PHONE' && <Form.Item name="callerId" label="主叫号码"><Input /></Form.Item>}
+        </>
+      );
+    case 'WECHAT':
+      return (
+        <>
+          <Form.Item name="webhookUrl" label="机器人地址" rules={[{ required: true, message: '请输入机器人地址' }]}><Input /></Form.Item>
+          <Form.Item name="messageType" label="消息格式"><Select options={[{ value: 'markdown', label: 'Markdown' }, { value: 'text', label: '文本' }]} /></Form.Item>
+          <Form.Item name="mentionedList" label="提醒成员账号"><Input placeholder="多个账号用英文逗号分隔" /></Form.Item>
+          <Form.Item name="mentionedMobileList" label="提醒手机号"><Input placeholder="多个手机号用英文逗号分隔" /></Form.Item>
+        </>
+      );
+    case 'DINGTALK':
+      return (
+        <>
+          <Form.Item name="webhookUrl" label="机器人地址" rules={[{ required: true, message: '请输入机器人地址' }]}><Input /></Form.Item>
+          <Form.Item name="secret" label="加签密钥"><Input.Password /></Form.Item>
+          <Form.Item name="messageType" label="消息格式"><Select options={[{ value: 'markdown', label: 'Markdown' }, { value: 'text', label: '文本' }]} /></Form.Item>
+          <Form.Item name="atMobiles" label="@手机号"><Input placeholder="多个手机号用英文逗号分隔" /></Form.Item>
+          <Form.Item name="isAtAll" label="全员提醒" valuePropName="checked"><Switch /></Form.Item>
+        </>
+      );
+    case 'IN_APP':
+      return (
+        <>
+          <Form.Item name="messageSource" label="默认来源"><Input placeholder="NOTIFICATION_CENTER" /></Form.Item>
+          <Form.Item name="messageLevel" label="默认级别"><Select options={[{ value: 'INFO', label: 'INFO' }, { value: 'WARN', label: 'WARN' }, { value: 'ERROR', label: 'ERROR' }]} /></Form.Item>
+          <Form.Item name="messageCategory" label="默认类别"><Select options={[{ value: 'SYSTEM', label: 'SYSTEM' }, { value: 'ALARM', label: 'ALARM' }, { value: 'NOTICE', label: 'NOTICE' }]} /></Form.Item>
+        </>
+      );
+    default:
+      return null;
+  }
 };
 
-// ==================== Channel Tab ====================
+const buildPayload = (values: Record<string, unknown>) => {
+  const type = String(values.type || 'EMAIL');
+  const config: Record<string, unknown> = {};
+  if (type === 'EMAIL') {
+    Object.assign(config, {
+      smtpHost: values.smtpHost,
+      smtpPort: values.smtpPort || 465,
+      username: values.username,
+      password: values.password,
+      from: values.from,
+      useSsl: values.useSsl ?? true,
+    });
+  } else if (type === 'WEBHOOK') {
+    Object.assign(config, { url: values.url, method: values.method || 'POST', contentType: values.contentType || 'application/json', secret: values.secret });
+  } else if (type === 'SMS' || type === 'PHONE') {
+    Object.assign(config, { apiUrl: values.apiUrl, provider: values.provider, token: values.token, signName: values.signName, templateId: values.templateId, callerId: values.callerId });
+  } else if (type === 'WECHAT') {
+    Object.assign(config, { webhookUrl: values.webhookUrl, messageType: values.messageType || 'markdown', mentionedList: splitCsv(values.mentionedList as string), mentionedMobileList: splitCsv(values.mentionedMobileList as string) });
+  } else if (type === 'DINGTALK') {
+    Object.assign(config, { webhookUrl: values.webhookUrl, secret: values.secret, messageType: values.messageType || 'markdown', atMobiles: splitCsv(values.atMobiles as string), isAtAll: values.isAtAll ?? false });
+  } else if (type === 'IN_APP') {
+    Object.assign(config, { source: values.messageSource || 'NOTIFICATION_CENTER', level: values.messageLevel || 'INFO', type: values.messageCategory || 'SYSTEM' });
+  }
+  return { name: values.name, type, enabled: values.enabled, config: JSON.stringify(config) };
+};
 
 const ChannelTab: React.FC = () => {
   const [data, setData] = useState<ChannelItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  const [editRecord, setEditRecord] = useState<ChannelItem | null>(null);
+  const [open, setOpen] = useState(false);
+  const [record, setRecord] = useState<ChannelItem | null>(null);
   const [form] = Form.useForm();
-  const [channelType, setChannelType] = useState('EMAIL');
+  const type = Form.useWatch('type', form) || 'EMAIL';
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const res = await notificationChannelApi.list();
-      setData(res.data.data || []);
-    } catch { message.error('加载渠道失败'); } finally { setLoading(false); }
-  };
-
-  useEffect(() => { fetchData(); }, []);
-
-  const handleEdit = (record: ChannelItem | null) => {
-    setEditRecord(record);
-    if (record) {
-      let configObj = {};
-      try { configObj = JSON.parse(record.config || '{}'); } catch {}
-      form.setFieldsValue({ name: record.name, type: record.type, enabled: record.enabled, ...configObj });
-      setChannelType(record.type);
-    } else {
-      form.resetFields();
-      setChannelType('EMAIL');
+      setData(res.data?.data || []);
+    } catch {
+      message.error('加载通知渠道失败');
+    } finally {
+      setLoading(false);
     }
-    setEditOpen(true);
   };
 
-  const handleSave = async (values: Record<string, unknown>) => {
-    const { name, type, enabled, ...configFields } = values;
-    const payload = { name, type, enabled, config: JSON.stringify(configFields) };
+  useEffect(() => {
+    void fetchData();
+  }, []);
+
+  const openEditor = (item: ChannelItem | null) => {
+    setRecord(item);
+    if (!item) {
+      form.resetFields();
+      form.setFieldsValue({ type: 'EMAIL', enabled: true, smtpPort: 465, useSsl: true, method: 'POST', contentType: 'application/json', messageType: 'markdown', messageSource: 'NOTIFICATION_CENTER', messageLevel: 'INFO', messageCategory: 'SYSTEM' });
+      setOpen(true);
+      return;
+    }
+    const config = parseConfig(item.config);
+    form.setFieldsValue({
+      name: item.name,
+      type: item.type,
+      enabled: item.enabled,
+      ...config,
+      mentionedList: toCsv(config.mentionedList),
+      mentionedMobileList: toCsv(config.mentionedMobileList),
+      atMobiles: toCsv(config.atMobiles),
+      messageSource: config.source,
+      messageLevel: config.level,
+      messageCategory: config.type,
+    });
+    setOpen(true);
+  };
+
+  const save = async (values: Record<string, unknown>) => {
     try {
-      if (editRecord) {
-        await notificationChannelApi.update(editRecord.id, payload);
-        message.success('更新成功');
+      const payload = buildPayload(values);
+      if (record) {
+        await notificationChannelApi.update(record.id, payload);
+        message.success('通知渠道已更新');
       } else {
         await notificationChannelApi.create(payload);
-        message.success('创建成功');
+        message.success('通知渠道已创建');
       }
-      setEditOpen(false);
-      fetchData();
-    } catch { message.error('保存失败'); }
-  };
-
-  const handleDelete = (record: ChannelItem) => {
-    Modal.confirm({
-      title: '确认删除渠道？', content: `删除「${record.name}」？`,
-      onOk: async () => { await notificationChannelApi.delete(record.id); message.success('删除成功'); fetchData(); },
-    });
-  };
-
-  const handleToggle = async (record: ChannelItem, enabled: boolean) => {
-    await notificationChannelApi.toggle(record.id, enabled);
-    message.success(enabled ? '已启用' : '已禁用');
-    fetchData();
-  };
-
-  const handleTest = async (record: ChannelItem) => {
-    try {
-      const res = await notificationChannelApi.test(record.id);
-      message.info(res.data.data || '测试完成');
-    } catch { message.error('测试失败'); }
+      setOpen(false);
+      await fetchData();
+    } catch {
+      message.error('保存通知渠道失败');
+    }
   };
 
   const columns: ColumnsType<ChannelItem> = [
-    { title: '名称', dataIndex: 'name', width: 180 },
-    { title: '类型', dataIndex: 'type', width: 100, render: (v: string) => <Tag color={typeColors[v]}>{typeLabels[v] || v}</Tag> },
-    { title: '状态', dataIndex: 'enabled', width: 80,
-      render: (v: boolean, record: ChannelItem) => <Switch checked={v} size="small" onChange={(c: boolean) => handleToggle(record, c)} /> },
-    { title: '更新时间', dataIndex: 'updatedAt', width: 170 },
+    { title: '渠道名称', dataIndex: 'name', width: 180 },
+    { title: '渠道类型', dataIndex: 'type', width: 120, render: (value: string) => <Tag color={notificationChannelColors[value] || 'default'}>{notificationChannelLabels[value] || value}</Tag> },
+    { title: '启用', dataIndex: 'enabled', width: 80, render: (value: boolean, item) => <Switch checked={value} size="small" onChange={async (checked) => { await notificationChannelApi.toggle(item.id, checked); await fetchData(); }} /> },
+    { title: '更新时间', dataIndex: 'updatedAt', width: 180 },
     {
-      title: '操作', width: 200, fixed: 'right',
-      render: (_: unknown, record: ChannelItem) => (
-        <Space>
-          <Button type="link" size="small" icon={<PlayCircleOutlined />} onClick={() => handleTest(record)}>测试</Button>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
-          <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>删除</Button>
+      title: '操作',
+      width: 220,
+      render: (_value, item) => (
+        <Space size="small">
+          <Button type="link" size="small" icon={<PlayCircleOutlined />} onClick={async () => { const res = await notificationChannelApi.test(item.id); message.info(res.data?.data || '测试完成'); }}>测试</Button>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEditor(item)}>编辑</Button>
+          <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => Modal.confirm({ title: '删除通知渠道', content: `确定删除“${item.name}”吗？`, onOk: async () => { await notificationChannelApi.delete(item.id); await fetchData(); } })}>删除</Button>
         </Space>
       ),
     },
   ];
 
-  const channelStats = useMemo(() => ({
-    total: data.length,
-    enabled: data.filter(d => d.enabled).length,
-    disabled: data.filter(d => !d.enabled).length,
-  }), [data]);
-
   return (
-    <div>
-      {/* Channel stats */}
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        {[
-          { title: '渠道总数', value: channelStats.total, icon: <BellOutlined />, color: '#4f46e5', bg: 'rgba(79,70,229,0.08)' },
-          { title: '已启用', value: channelStats.enabled, icon: <CheckCircleOutlined />, color: '#10b981', bg: 'rgba(16,185,129,0.08)' },
-          { title: '已禁用', value: channelStats.disabled, icon: <CloseCircleOutlined />, color: '#8c8c8c', bg: 'rgba(140,140,140,0.08)' },
-        ].map((s, i) => (
-          <Col xs={8} key={i}>
-            <Card bodyStyle={{ padding: '14px 16px' }} style={{ borderRadius: 10, border: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: s.color }}>
-                  {s.icon}
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, color: '#8c8c8c' }}>{s.title}</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: '#1a1a2e' }}>{s.value}</div>
-                </div>
-              </div>
-            </Card>
-          </Col>
-        ))}
-      </Row>
-
-      <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => handleEdit(null)}>新建渠道</Button>
-      </Card>
-
-      <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={false} size="small" scroll={{ x: 800 }} />
-      </Card>
-
-      <Modal title={editRecord ? '编辑渠道' : '新建渠道'} open={editOpen} onCancel={() => setEditOpen(false)} onOk={() => form.submit()} destroyOnClose width={560}>
-        <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="name" label="渠道名称" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="type" label="渠道类型" rules={[{ required: true }]}>
-            <Select options={Object.entries(typeLabels).map(([k, v]) => ({ value: k, label: v }))} onChange={(v: string) => setChannelType(v)} />
-          </Form.Item>
-          <Form.Item name="enabled" label="启用" valuePropName="checked" initialValue={true}><Switch /></Form.Item>
-
-          {channelType === 'EMAIL' && (<>
-            <Form.Item name="smtpHost" label="SMTP 服务器" rules={[{ required: true }]}><Input placeholder="smtp.example.com" /></Form.Item>
-            <Form.Item name="smtpPort" label="SMTP 端口" initialValue={465}><Input type="number" /></Form.Item>
-            <Form.Item name="username" label="用户名" rules={[{ required: true }]}><Input /></Form.Item>
-            <Form.Item name="password" label="密码" rules={[{ required: true }]}><Input.Password /></Form.Item>
-            <Form.Item name="from" label="发件人"><Input placeholder="noreply@example.com" /></Form.Item>
-            <Form.Item name="useSsl" label="SSL" valuePropName="checked" initialValue={true}><Switch /></Form.Item>
-          </>)}
-
-          {channelType === 'WEBHOOK' && (<>
-            <Form.Item name="url" label="Webhook URL" rules={[{ required: true }]}><Input placeholder="https://example.com/webhook" /></Form.Item>
-            <Form.Item name="method" label="HTTP 方法" initialValue="POST">
-              <Select options={[{ value: 'POST', label: 'POST' }, { value: 'GET', label: 'GET' }]} />
-            </Form.Item>
-            <Form.Item name="contentType" label="Content-Type" initialValue="application/json"><Input /></Form.Item>
-            <Form.Item name="secret" label="Secret"><Input.Password placeholder="可选" /></Form.Item>
-          </>)}
-
-          {channelType === 'SMS' && (<>
-            <Form.Item name="provider" label="短信服务商"><Input placeholder="aliyun / tencent" /></Form.Item>
-            <Form.Item name="accessKeyId" label="AccessKey ID"><Input /></Form.Item>
-            <Form.Item name="accessKeySecret" label="AccessKey Secret"><Input.Password /></Form.Item>
-            <Form.Item name="signName" label="签名"><Input /></Form.Item>
-          </>)}
+    <Card bordered={false} style={{ borderRadius: 12, marginBottom: 16 }} title="通知渠道" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor(null)}>新建渠道</Button>}>
+      <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={false} scroll={{ x: 900 }} />
+      <Drawer title={record ? '编辑通知渠道' : '新建通知渠道'} open={open} onClose={() => setOpen(false)} width={640} destroyOnClose footer={<Space style={{ width: '100%', justifyContent: 'flex-end' }}><Button onClick={() => setOpen(false)}>取消</Button><Button type="primary" onClick={() => form.submit()}>{record ? '保存修改' : '创建渠道'}</Button></Space>}>
+        <Form form={form} layout="vertical" onFinish={(values) => void save(values)}>
+          <Form.Item name="name" label="渠道名称" rules={[{ required: true, message: '请输入渠道名称' }]}><Input placeholder="例如：生产告警短信" /></Form.Item>
+          <Form.Item name="type" label="渠道类型" rules={[{ required: true, message: '请选择渠道类型' }]}><Select options={notificationChannelOptions as unknown as { value: string; label: string }[]} /></Form.Item>
+          <Form.Item name="enabled" label="启用状态" valuePropName="checked"><Switch /></Form.Item>
+          {renderChannelFields(type)}
         </Form>
-      </Modal>
-    </div>
+      </Drawer>
+    </Card>
   );
 };
-
-// ==================== Record Tab ====================
 
 const RecordTab: React.FC = () => {
   const [data, setData] = useState<RecordItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
-  const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
-  const [filterType, setFilterType] = useState<string | undefined>();
-  const [filterStatus, setFilterStatus] = useState<string | undefined>();
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [detailRecord, setDetailRecord] = useState<RecordItem | null>(null);
+  const [params, setParams] = useState({ pageNum: 1, pageSize: 20, channelType: undefined as string | undefined, status: undefined as string | undefined });
+  const [detail, setDetail] = useState<RecordItem | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await notificationRecordApi.list({ ...params, channelType: filterType, status: filterStatus });
-      const page = res.data.data;
-      setData(page.records || []);
-      setTotal(page.total || 0);
-    } catch { message.error('加载记录失败'); } finally { setLoading(false); }
+      const res = await notificationRecordApi.list(params);
+      setData(res.data?.data?.records || []);
+      setTotal(res.data?.data?.total || 0);
+    } catch {
+      message.error('加载通知记录失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { fetchData(); }, [params.pageNum, params.pageSize, filterType, filterStatus]);
-
-  const handleViewDetail = async (record: RecordItem) => {
-    try {
-      const res = await notificationRecordApi.get(record.id);
-      setDetailRecord(res.data.data);
-      setDetailOpen(true);
-    } catch { message.error('加载详情失败'); }
-  };
+  useEffect(() => {
+    void fetchData();
+  }, [params]);
 
   const columns: ColumnsType<RecordItem> = [
-    { title: '时间', dataIndex: 'createdAt', width: 170 },
-    { title: '渠道', dataIndex: 'channelType', width: 90, render: (v: string) => <Tag color={typeColors[v]}>{typeLabels[v] || v}</Tag> },
-    { title: '模板', dataIndex: 'templateCode', width: 150, ellipsis: true, render: (v: string) => v || '-' },
-    { title: '主题', dataIndex: 'subject', width: 200, ellipsis: true, render: (v: string) => v || '-' },
-    { title: '接收方', dataIndex: 'recipient', width: 200, ellipsis: true },
-    { title: '状态', dataIndex: 'status', width: 80,
-      render: (v: string) => <Tag color={v === 'SUCCESS' ? 'success' : v === 'FAILED' ? 'error' : 'processing'}>{v === 'SUCCESS' ? '成功' : v === 'FAILED' ? '失败' : '待发送'}</Tag> },
-    { title: '重试', dataIndex: 'retryCount', width: 60 },
-    {
-      title: '操作', width: 70, fixed: 'right',
-      render: (_: unknown, record: RecordItem) => <a onClick={() => handleViewDetail(record)}><EyeOutlined /> 详情</a>,
-    },
+    { title: '发送时间', dataIndex: 'createdAt', width: 180 },
+    { title: '渠道', dataIndex: 'channelType', width: 120, render: (value: string) => <Tag color={notificationChannelColors[value] || 'default'}>{notificationChannelLabels[value] || value}</Tag> },
+    { title: '模板编码', dataIndex: 'templateCode', width: 160, ellipsis: true },
+    { title: '主题', dataIndex: 'subject', width: 220, ellipsis: true, render: (value: string) => value || '-' },
+    { title: '接收方', dataIndex: 'recipient', width: 220, ellipsis: true },
+    { title: '状态', dataIndex: 'status', width: 120, render: (value: string) => <Tag color={notificationStatusColors[value] || 'default'}>{notificationStatusLabels[value] || value}</Tag> },
+    { title: '重试次数', dataIndex: 'retryCount', width: 90 },
+    { title: '操作', width: 90, render: (_value, item) => <Button type="link" size="small" icon={<EyeOutlined />} onClick={async () => { const res = await notificationRecordApi.get(item.id); setDetail(res.data?.data || null); }}>详情</Button> },
   ];
 
-  const recordStats = useMemo(() => ({
-    success: data.filter(d => d.status === 'SUCCESS').length,
-    failed: data.filter(d => d.status === 'FAILED').length,
-    pending: data.filter(d => d.status === 'PENDING').length,
-  }), [data]);
-
   return (
-    <div>
-      {/* Record stats */}
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        {[
-          { title: '记录总数', value: total, icon: <SendOutlined />, color: '#4f46e5', bg: 'rgba(79,70,229,0.08)' },
-          { title: '发送成功', value: recordStats.success, icon: <CheckCircleOutlined />, color: '#10b981', bg: 'rgba(16,185,129,0.08)' },
-          { title: '发送失败', value: recordStats.failed, icon: <CloseCircleOutlined />, color: '#ef4444', bg: 'rgba(239,68,68,0.08)' },
-          { title: '待发送', value: recordStats.pending, icon: <MailOutlined />, color: '#f59e0b', bg: 'rgba(245,158,11,0.08)' },
-        ].map((s, i) => (
-          <Col xs={12} sm={6} key={i}>
-            <Card bodyStyle={{ padding: '14px 16px' }} style={{ borderRadius: 10, border: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: s.color }}>
-                  {s.icon}
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, color: '#8c8c8c' }}>{s.title}</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: '#1a1a2e' }}>{s.value}</div>
-                </div>
-              </div>
-            </Card>
-          </Col>
-        ))}
-      </Row>
-
-      {/* Filters */}
-      <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Space wrap>
-          <Select placeholder="渠道" allowClear style={{ width: 120 }}
-            options={Object.entries(typeLabels).map(([k, v]) => ({ value: k, label: v }))}
-            onChange={(v: string) => { setFilterType(v); setParams({ ...params, pageNum: 1 }); }} />
-          <Select placeholder="状态" allowClear style={{ width: 100 }}
-            options={[{ value: 'SUCCESS', label: '成功' }, { value: 'FAILED', label: '失败' }, { value: 'PENDING', label: '待发送' }]}
-            onChange={(v: string) => { setFilterStatus(v); setParams({ ...params, pageNum: 1 }); }} />
-        </Space>
-      </Card>
-
-      {/* Table */}
-      <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} scroll={{ x: 1100 }}
-          pagination={{ current: params.pageNum, pageSize: params.pageSize, total, showSizeChanger: true,
-            showTotal: (t: number) => `共 ${t} 条`,
-            onChange: (page: number, size: number) => setParams({ pageNum: page, pageSize: size }) }} />
-      </Card>
-
-      <Modal title="通知记录详情" open={detailOpen} onCancel={() => setDetailOpen(false)} footer={null} width={650}>
-        {detailRecord && (
-          <Descriptions bordered column={2} size="small">
-            <Descriptions.Item label="ID">{detailRecord.id}</Descriptions.Item>
-            <Descriptions.Item label="时间">{detailRecord.createdAt}</Descriptions.Item>
-            <Descriptions.Item label="渠道"><Tag color={typeColors[detailRecord.channelType]}>{typeLabels[detailRecord.channelType]}</Tag></Descriptions.Item>
-            <Descriptions.Item label="状态">
-              <Tag color={detailRecord.status === 'SUCCESS' ? 'success' : 'error'}>{detailRecord.status === 'SUCCESS' ? '成功' : '失败'}</Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="模板">{detailRecord.templateCode || '-'}</Descriptions.Item>
-            <Descriptions.Item label="发送时间">{detailRecord.sentAt || '-'}</Descriptions.Item>
-            <Descriptions.Item label="主题" span={2}>{detailRecord.subject || '-'}</Descriptions.Item>
-            <Descriptions.Item label="接收方" span={2}>{detailRecord.recipient}</Descriptions.Item>
-            <Descriptions.Item label="内容" span={2}>
-              <pre style={{ maxHeight: 200, overflow: 'auto', whiteSpace: 'pre-wrap', margin: 0, fontSize: 12 }}>{detailRecord.content}</pre>
-            </Descriptions.Item>
-            {detailRecord.errorMessage && (
-              <Descriptions.Item label="错误信息" span={2}>
-                <span style={{ color: '#ff4d4f' }}>{detailRecord.errorMessage}</span>
-              </Descriptions.Item>
-            )}
+    <Card bordered={false} style={{ borderRadius: 12 }} title="发送记录">
+      <Space wrap style={{ marginBottom: 16 }}>
+        <Select allowClear placeholder="按渠道筛选" style={{ width: 160 }} options={notificationChannelOptions as unknown as { value: string; label: string }[]} onChange={(value) => setParams((prev) => ({ ...prev, pageNum: 1, channelType: value }))} />
+        <Select allowClear placeholder="按状态筛选" style={{ width: 140 }} options={[{ value: 'SUCCESS', label: '发送成功' }, { value: 'FAILED', label: '发送失败' }, { value: 'PENDING', label: '待发送' }]} onChange={(value) => setParams((prev) => ({ ...prev, pageNum: 1, status: value }))} />
+      </Space>
+      <Table rowKey="id" columns={columns} dataSource={data} loading={loading} scroll={{ x: 1180 }} pagination={{ current: params.pageNum, pageSize: params.pageSize, total, showSizeChanger: true, showTotal: (value) => `共 ${value} 条记录`, onChange: (page, pageSize) => setParams((prev) => ({ ...prev, pageNum: page, pageSize })) }} />
+      <Modal title="通知记录详情" open={!!detail} onCancel={() => setDetail(null)} footer={null} width={720}>
+        {detail && (
+          <Descriptions bordered size="small" column={2}>
+            <Descriptions.Item label="记录 ID">{detail.id}</Descriptions.Item>
+            <Descriptions.Item label="发送时间">{detail.createdAt}</Descriptions.Item>
+            <Descriptions.Item label="渠道"><Tag color={notificationChannelColors[detail.channelType] || 'default'}>{notificationChannelLabels[detail.channelType] || detail.channelType}</Tag></Descriptions.Item>
+            <Descriptions.Item label="状态"><Tag color={notificationStatusColors[detail.status] || 'default'}>{notificationStatusLabels[detail.status] || detail.status}</Tag></Descriptions.Item>
+            <Descriptions.Item label="模板编码">{detail.templateCode || '-'}</Descriptions.Item>
+            <Descriptions.Item label="发送完成时间">{detail.sentAt || '-'}</Descriptions.Item>
+            <Descriptions.Item label="接收方" span={2}>{detail.recipient || '-'}</Descriptions.Item>
+            <Descriptions.Item label="主题" span={2}>{detail.subject || '-'}</Descriptions.Item>
+            <Descriptions.Item label="内容" span={2}><pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{detail.content || '-'}</pre></Descriptions.Item>
+            {detail.errorMessage ? <Descriptions.Item label="失败原因" span={2}><span style={{ color: '#ff4d4f' }}>{detail.errorMessage}</span></Descriptions.Item> : null}
           </Descriptions>
         )}
       </Modal>
-    </div>
+    </Card>
   );
 };
 
-// ==================== Main Page ====================
-
-const NotificationPage: React.FC = () => {
-  return (
-    <div>
-      <PageHeader title="通知中心" description="管理通知渠道与发送记录" />
-      <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Tabs defaultActiveKey="channel" items={[
-          { key: 'channel', label: <span><BellOutlined style={{ marginRight: 6 }} />通知渠道</span>, children: <ChannelTab /> },
-          { key: 'record', label: <span><SendOutlined style={{ marginRight: 6 }} />发送记录</span>, children: <RecordTab /> },
-        ]} />
-      </Card>
-    </div>
-  );
-};
+const NotificationPage: React.FC = () => (
+  <div>
+    <PageHeader title="通知中心" description="统一维护通知渠道和发送记录，支持邮件、短信、电话、企业微信、钉钉、Webhook、站内信等多种渠道。" />
+    <ChannelTab />
+    <RecordTab />
+  </div>
+);
 
 export default NotificationPage;

@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
-import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.support.convert.InAppMessageConvert;
@@ -50,16 +49,17 @@ public class InAppMessageService {
     }
 
     public void markAsRead(Long id) {
-        InAppMessage msg = inAppMessageMapper.selectById(id);
-        if (msg == null) {
-            throw new BizException(ResultCode.NOT_FOUND, "站内信不存在");
+        InAppMessage message = inAppMessageMapper.selectById(id);
+        if (message == null) {
+            throw new BizException(ResultCode.NOT_FOUND, "in-app message not found");
         }
-        if (!msg.getUserId().equals(AppContextHolder.getUserId())) {
-            throw new BizException(ResultCode.FORBIDDEN, "无权操作");
+        if (!message.getUserId().equals(AppContextHolder.getUserId())) {
+            throw new BizException(ResultCode.FORBIDDEN, "permission denied");
         }
-        if (Boolean.TRUE.equals(msg.getIsRead())) {
+        if (Boolean.TRUE.equals(message.getIsRead())) {
             return;
         }
+
         LambdaUpdateWrapper<InAppMessage> wrapper = new LambdaUpdateWrapper<>();
         wrapper.eq(InAppMessage::getId, id)
                 .set(InAppMessage::getIsRead, true)
@@ -80,48 +80,70 @@ public class InAppMessageService {
     }
 
     public void deleteMessage(Long id) {
-        InAppMessage msg = inAppMessageMapper.selectById(id);
-        if (msg == null) {
-            throw new BizException(ResultCode.NOT_FOUND, "站内信不存在");
+        InAppMessage message = inAppMessageMapper.selectById(id);
+        if (message == null) {
+            throw new BizException(ResultCode.NOT_FOUND, "in-app message not found");
         }
-        if (!msg.getUserId().equals(AppContextHolder.getUserId())) {
-            throw new BizException(ResultCode.FORBIDDEN, "无权操作");
+        if (!message.getUserId().equals(AppContextHolder.getUserId())) {
+            throw new BizException(ResultCode.FORBIDDEN, "permission denied");
         }
         inAppMessageMapper.deleteById(id);
     }
 
     public InAppMessageVO sendMessage(InAppMessageCreateDTO dto) {
-        InAppMessage msg = new InAppMessage();
-        msg.setTenantId(AppContextHolder.getTenantId());
-        msg.setUserId(dto.getUserId());
-        msg.setTitle(dto.getTitle());
-        msg.setContent(dto.getContent());
-        msg.setType(dto.getType() != null ? dto.getType() : "SYSTEM");
-        msg.setLevel(dto.getLevel() != null ? dto.getLevel() : "INFO");
-        msg.setSource(dto.getSource());
-        msg.setSourceId(dto.getSourceId());
-        msg.setIsRead(false);
-        msg.setCreatedBy(AppContextHolder.getUserId());
-        inAppMessageMapper.insert(msg);
-        return InAppMessageConvert.INSTANCE.toVO(msg);
+        InAppMessage message = new InAppMessage();
+        message.setTenantId(AppContextHolder.getTenantId());
+        message.setUserId(dto.getUserId());
+        message.setTitle(dto.getTitle());
+        message.setContent(dto.getContent());
+        message.setType(dto.getType() != null ? dto.getType() : "SYSTEM");
+        message.setLevel(dto.getLevel() != null ? dto.getLevel() : "INFO");
+        message.setSource(dto.getSource());
+        message.setSourceId(dto.getSourceId());
+        message.setIsRead(false);
+        message.setCreatedBy(AppContextHolder.getUserId());
+        inAppMessageMapper.insert(message);
+        return InAppMessageConvert.INSTANCE.toVO(message);
     }
 
     public void sendBatch(List<Long> userIds, String title, String content, String type, String level, String source, String sourceId) {
-        Long tenantId = AppContextHolder.getTenantId();
-        Long createdBy = AppContextHolder.getUserId();
+        sendBatch(
+                AppContextHolder.getTenantId(),
+                AppContextHolder.getUserId(),
+                userIds,
+                title,
+                content,
+                type,
+                level,
+                source,
+                sourceId
+        );
+    }
+
+    public void sendBatch(
+            Long tenantId,
+            Long createdBy,
+            List<Long> userIds,
+            String title,
+            String content,
+            String type,
+            String level,
+            String source,
+            String sourceId
+    ) {
         for (Long userId : userIds) {
-            InAppMessage msg = new InAppMessage();
-            msg.setTenantId(tenantId);
-            msg.setUserId(userId);
-            msg.setTitle(title);
-            msg.setContent(content);
-            msg.setType(type != null ? type : "SYSTEM");
-            msg.setLevel(level != null ? level : "INFO");
-            msg.setSource(source);
-            msg.setSourceId(sourceId);
-            msg.setIsRead(false);
-            msg.setCreatedBy(createdBy);
-            inAppMessageMapper.insert(msg);
+            InAppMessage message = new InAppMessage();
+            message.setTenantId(tenantId);
+            message.setUserId(userId);
+            message.setTitle(title);
+            message.setContent(content);
+            message.setType(type != null ? type : "SYSTEM");
+            message.setLevel(level != null ? level : "INFO");
+            message.setSource(source);
+            message.setSourceId(sourceId);
+            message.setIsRead(false);
+            message.setCreatedBy(createdBy);
+            inAppMessageMapper.insert(message);
         }
     }
 }

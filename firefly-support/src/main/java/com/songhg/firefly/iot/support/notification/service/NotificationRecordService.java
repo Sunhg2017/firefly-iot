@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.exception.BizException;
+import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.support.notification.convert.NotificationConvert;
 import com.songhg.firefly.iot.support.notification.dto.notification.NotificationRecordQueryDTO;
 import com.songhg.firefly.iot.support.notification.dto.notification.NotificationRecordVO;
@@ -26,26 +28,33 @@ public class NotificationRecordService {
         wrapper.eq(NotificationRecord::getTenantId, tenantId);
 
         if (query.getChannelType() != null && !query.getChannelType().isBlank()) {
-            wrapper.eq(NotificationRecord::getChannelType, query.getChannelType());
+            wrapper.eq(NotificationRecord::getChannelType, query.getChannelType().trim().toUpperCase());
         }
         if (query.getTemplateCode() != null && !query.getTemplateCode().isBlank()) {
-            wrapper.eq(NotificationRecord::getTemplateCode, query.getTemplateCode());
+            wrapper.eq(NotificationRecord::getTemplateCode, query.getTemplateCode().trim());
         }
         if (query.getStatus() != null && !query.getStatus().isBlank()) {
-            wrapper.eq(NotificationRecord::getStatus, query.getStatus());
+            wrapper.eq(NotificationRecord::getStatus, query.getStatus().trim().toUpperCase());
         }
         if (query.getKeyword() != null && !query.getKeyword().isBlank()) {
-            wrapper.and(w -> w.like(NotificationRecord::getRecipient, query.getKeyword())
-                    .or().like(NotificationRecord::getSubject, query.getKeyword()));
+            String keyword = query.getKeyword().trim();
+            wrapper.and(w -> w.like(NotificationRecord::getRecipient, keyword)
+                    .or()
+                    .like(NotificationRecord::getSubject, keyword));
         }
         wrapper.orderByDesc(NotificationRecord::getCreatedAt);
 
-        IPage<NotificationRecord> result = recordMapper.selectPage(page, wrapper);
-        return result.convert(NotificationConvert.INSTANCE::toRecordVO);
+        return recordMapper.selectPage(page, wrapper).convert(NotificationConvert.INSTANCE::toRecordVO);
     }
 
     public NotificationRecordVO getById(Long id) {
-        NotificationRecord record = recordMapper.selectById(id);
-        return record != null ? NotificationConvert.INSTANCE.toRecordVO(record) : null;
+        Long tenantId = AppContextHolder.getTenantId();
+        NotificationRecord record = recordMapper.selectOne(new LambdaQueryWrapper<NotificationRecord>()
+                .eq(NotificationRecord::getId, id)
+                .eq(NotificationRecord::getTenantId, tenantId));
+        if (record == null) {
+            throw new BizException(ResultCode.NOT_FOUND, "notification record not found");
+        }
+        return NotificationConvert.INSTANCE.toRecordVO(record);
     }
 }

@@ -4,11 +4,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
-import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.support.notification.dto.messagetemplate.MessageTemplateQueryDTO;
 import com.songhg.firefly.iot.support.notification.entity.MessageTemplate;
+import com.songhg.firefly.iot.support.notification.enums.NotificationChannelType;
 import com.songhg.firefly.iot.support.notification.mapper.MessageTemplateMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +16,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -25,59 +27,76 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class MessageTemplateService {
 
-    private final MessageTemplateMapper templateMapper;
-
     private static final Pattern VAR_PATTERN = Pattern.compile("\\$\\{(\\w+)}");
+    private static final Set<String> TEMPLATE_TYPES = Set.of("TEXT", "HTML", "MARKDOWN");
+
+    private final MessageTemplateMapper templateMapper;
 
     @Transactional
     public MessageTemplate create(MessageTemplate template) {
         Long tenantId = AppContextHolder.getTenantId();
         Long userId = AppContextHolder.getUserId();
 
-        Long exists = templateMapper.selectCount(new LambdaQueryWrapper<MessageTemplate>()
-                .eq(MessageTemplate::getTenantId, tenantId)
-                .eq(MessageTemplate::getCode, template.getCode()));
-        if (exists > 0) {
-            throw new BizException(ResultCode.PARAM_ERROR, "模板编码已存在");
-        }
+        String normalizedCode = normalizeCode(template.getCode());
+        ensureCodeUnique(tenantId, normalizedCode, null);
 
         template.setTenantId(tenantId);
+        template.setCode(normalizedCode);
+        template.setName(requireText(template.getName(), "template name"));
+        template.setChannel(normalizeChannel(template.getChannel()));
+        template.setTemplateType(normalizeTemplateType(template.getTemplateType()));
+        template.setContent(requireText(template.getContent(), "template content"));
+        template.setSubject(trimToNull(template.getSubject()));
+        template.setVariables(trimToNull(template.getVariables()));
+        template.setDescription(trimToNull(template.getDescription()));
         template.setCreatedBy(userId);
-        if (template.getEnabled() == null) template.setEnabled(true);
+        if (template.getEnabled() == null) {
+            template.setEnabled(true);
+        }
+
         templateMapper.insert(template);
-        log.info("MessageTemplate created: id={}, code={}, channel={}", template.getId(), template.getCode(), template.getChannel());
+        log.info("Message template created, id={}, code={}, channel={}", template.getId(), template.getCode(), template.getChannel());
         return template;
     }
 
     public MessageTemplate getById(Long id) {
-        MessageTemplate t = templateMapper.selectById(id);
-        if (t == null) throw new BizException(ResultCode.PARAM_ERROR, "模板不存在");
-        return t;
+        Long tenantId = AppContextHolder.getTenantId();
+        MessageTemplate template = templateMapper.selectOne(new LambdaQueryWrapper<MessageTemplate>()
+                .eq(MessageTemplate::getId, id)
+                .eq(MessageTemplate::getTenantId, tenantId));
+        if (template == null) {
+            throw new BizException(ResultCode.NOT_FOUND, "message template not found");
+        }
+        return template;
     }
 
     public MessageTemplate getByCode(String code) {
         Long tenantId = AppContextHolder.getTenantId();
         return templateMapper.selectOne(new LambdaQueryWrapper<MessageTemplate>()
                 .eq(MessageTemplate::getTenantId, tenantId)
-                .eq(MessageTemplate::getCode, code));
+                .eq(MessageTemplate::getCode, normalizeCode(code)));
     }
 
     public IPage<MessageTemplate> list(MessageTemplateQueryDTO query) {
         Long tenantId = AppContextHolder.getTenantId();
         Page<MessageTemplate> page = new Page<>(query.getPageNum(), query.getPageSize());
+
         LambdaQueryWrapper<MessageTemplate> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(MessageTemplate::getTenantId, tenantId);
         if (query.getChannel() != null && !query.getChannel().isBlank()) {
-            wrapper.eq(MessageTemplate::getChannel, query.getChannel());
+            wrapper.eq(MessageTemplate::getChannel, normalizeChannel(query.getChannel()));
         }
         if (query.getTemplateType() != null && !query.getTemplateType().isBlank()) {
-            wrapper.eq(MessageTemplate::getTemplateType, query.getTemplateType());
+            wrapper.eq(MessageTemplate::getTemplateType, normalizeTemplateType(query.getTemplateType()));
         }
         if (query.getEnabled() != null) {
             wrapper.eq(MessageTemplate::getEnabled, query.getEnabled());
         }
         if (query.getKeyword() != null && !query.getKeyword().isBlank()) {
-            wrapper.and(w -> w.like(MessageTemplate::getName, query.getKeyword()).or().like(MessageTemplate::getCode, query.getKeyword()));
+            String keyword = query.getKeyword().trim();
+            wrapper.and(w -> w.like(MessageTemplate::getName, keyword)
+                    .or()
+                    .like(MessageTemplate::getCode, keyword));
         }
         wrapper.orderByDesc(MessageTemplate::getCreatedAt);
         return templateMapper.selectPage(page, wrapper);
@@ -87,43 +106,60 @@ public class MessageTemplateService {
         Long tenantId = AppContextHolder.getTenantId();
         return templateMapper.selectList(new LambdaQueryWrapper<MessageTemplate>()
                 .eq(MessageTemplate::getTenantId, tenantId)
-                .eq(MessageTemplate::getChannel, channel)
+                .eq(MessageTemplate::getChannel, normalizeChannel(channel))
                 .eq(MessageTemplate::getEnabled, true)
                 .orderByAsc(MessageTemplate::getCode));
     }
 
     @Transactional
     public MessageTemplate update(Long id, MessageTemplate update) {
-        MessageTemplate t = getById(id);
-        if (update.getName() != null) t.setName(update.getName());
-        if (update.getChannel() != null) t.setChannel(update.getChannel());
-        if (update.getTemplateType() != null) t.setTemplateType(update.getTemplateType());
-        if (update.getSubject() != null) t.setSubject(update.getSubject());
-        if (update.getContent() != null) t.setContent(update.getContent());
-        if (update.getVariables() != null) t.setVariables(update.getVariables());
-        if (update.getEnabled() != null) t.setEnabled(update.getEnabled());
-        if (update.getDescription() != null) t.setDescription(update.getDescription());
-        templateMapper.updateById(t);
-        return t;
+        MessageTemplate template = getById(id);
+
+        if (update.getName() != null) {
+            template.setName(requireText(update.getName(), "template name"));
+        }
+        if (update.getChannel() != null) {
+            template.setChannel(normalizeChannel(update.getChannel()));
+        }
+        if (update.getTemplateType() != null) {
+            template.setTemplateType(normalizeTemplateType(update.getTemplateType()));
+        }
+        if (update.getSubject() != null) {
+            template.setSubject(trimToNull(update.getSubject()));
+        }
+        if (update.getContent() != null) {
+            template.setContent(requireText(update.getContent(), "template content"));
+        }
+        if (update.getVariables() != null) {
+            template.setVariables(trimToNull(update.getVariables()));
+        }
+        if (update.getEnabled() != null) {
+            template.setEnabled(update.getEnabled());
+        }
+        if (update.getDescription() != null) {
+            template.setDescription(trimToNull(update.getDescription()));
+        }
+
+        templateMapper.updateById(template);
+        return template;
     }
 
     @Transactional
     public void delete(Long id) {
-        templateMapper.deleteById(id);
+        templateMapper.deleteById(getById(id).getId());
     }
 
     @Transactional
     public void toggleEnabled(Long id, boolean enabled) {
-        MessageTemplate t = getById(id);
-        t.setEnabled(enabled);
-        templateMapper.updateById(t);
+        MessageTemplate template = getById(id);
+        template.setEnabled(enabled);
+        templateMapper.updateById(template);
     }
 
-    /**
-     * 渲染模板：将 ${variable} 替换为实际值
-     */
     public String render(String templateContent, Map<String, String> variables) {
-        if (templateContent == null || variables == null) return templateContent;
+        if (templateContent == null || variables == null) {
+            return templateContent;
+        }
         Matcher matcher = VAR_PATTERN.matcher(templateContent);
         StringBuilder sb = new StringBuilder();
         while (matcher.find()) {
@@ -135,12 +171,64 @@ public class MessageTemplateService {
         return sb.toString();
     }
 
-    /**
-     * 根据模板编码渲染消息
-     */
     public String renderByCode(String code, Map<String, String> variables) {
-        MessageTemplate t = getByCode(code);
-        if (t == null) throw new BizException(ResultCode.PARAM_ERROR, "模板不存在: " + code);
-        return render(t.getContent(), variables);
+        MessageTemplate template = getByCode(code);
+        if (template == null) {
+            throw new BizException(ResultCode.NOT_FOUND, "message template not found: " + code);
+        }
+        return render(template.getContent(), variables);
+    }
+
+    private void ensureCodeUnique(Long tenantId, String code, Long currentId) {
+        MessageTemplate existing = templateMapper.selectOne(new LambdaQueryWrapper<MessageTemplate>()
+                .eq(MessageTemplate::getTenantId, tenantId)
+                .eq(MessageTemplate::getCode, code));
+        if (existing != null && (currentId == null || !existing.getId().equals(currentId))) {
+            throw new BizException(ResultCode.CONFLICT, "message template code already exists");
+        }
+    }
+
+    private String normalizeChannel(String channel) {
+        return NotificationChannelType.of(channel).code();
+    }
+
+    private String normalizeTemplateType(String templateType) {
+        String normalized = trimToNull(templateType);
+        if (normalized == null) {
+            return "TEXT";
+        }
+        normalized = normalized.toUpperCase(Locale.ROOT);
+        if (!TEMPLATE_TYPES.contains(normalized)) {
+            throw new BizException(ResultCode.PARAM_ERROR, "unsupported templateType: " + templateType);
+        }
+        return normalized;
+    }
+
+    private String normalizeCode(String code) {
+        String normalized = requireText(code, "template code")
+                .replaceAll("[^A-Za-z0-9]+", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_|_$", "")
+                .toUpperCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "template code is invalid");
+        }
+        return normalized;
+    }
+
+    private String requireText(String value, String fieldName) {
+        String trimmed = trimToNull(value);
+        if (trimmed == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, fieldName + " is required");
+        }
+        return trimmed;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }
