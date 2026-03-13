@@ -648,7 +648,7 @@ export const AlarmRulesPanel: React.FC = () => {
         onCancel={() => setCreateOpen(false)}
         onOk={() => createForm.submit()}
         destroyOnClose
-        width={920}
+        width={1120}
       >
         <Form
           form={createForm}
@@ -676,7 +676,7 @@ export const AlarmRulesPanel: React.FC = () => {
         }}
         onOk={() => editForm.submit()}
         destroyOnClose
-        width={920}
+        width={1120}
       >
         <Form form={editForm} layout="vertical" onFinish={handleUpdate}>
           <AlarmRuleForm
