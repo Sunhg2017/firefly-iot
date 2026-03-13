@@ -320,3 +320,40 @@ This update aligns debug interaction with the repository rule that user-facing p
 - 新建协议解析规则时，用户可以先完成范围选择，再逐步进入协议匹配、解析实现和发布配置。
 - 编辑已有规则时复用同一套步骤式抽屉，页面行为保持一致。
 - 页面交互与仓库抽屉规则保持一致，复杂表单可读性与可维护性同步提升。
+
+## 2026-03-13 协议解析编辑器增强
+
+### 背景
+
+- 协议解析规则里存在多段 JSON 和脚本配置，原先仅使用普通 `TextArea`。
+- 普通多行输入框缺少语法高亮、结构提示和脚本补全，复杂规则维护成本偏高，也容易因为 JSON 或脚本细节写错而反复调试。
+
+### 方案
+
+- 在前端新增通用 `CodeEditorField` 组件，基于 Monaco Editor 封装。
+- 协议解析页的以下编辑区统一替换为代码编辑器：
+  - `matchRuleJson`
+  - `frameConfigJson`
+  - `parserConfigJson`
+  - `visualConfigJson`
+  - `scriptContent`
+  - `releaseConfigJson`
+
+### 设计细节
+
+- JSON 字段启用语法高亮、格式化和字段级自动提示。
+- 依据不同字段的语义，提供差异化 schema 和补全：
+  - 匹配规则补全 `topicPrefix`、`headerEquals` 等关键属性
+  - 拆帧配置补全 `delimiterHex`、`fixedLength`、`maxBufferedBytes`
+  - 解析配置补全 `defaultTopic`、`tenantCode`、`productKey`
+  - 发布配置补全 `deviceNames`、`percent`
+- 脚本字段启用 JavaScript 高亮，并增加 `parse(ctx)`、`encode(ctx)` 代码片段和 `ctx` 上下文字段提示。
+
+### 性能处理
+
+- 编辑器组件通过懒加载引入，只在进入相关步骤时下载 Monaco 资源，避免把编辑器整体打进协议解析页主渲染路径。
+
+### 结果
+
+- 协议解析页从“纯文本录入”升级为“结构化代码编辑”体验。
+- JSON 与脚本配置更容易阅读、补全和维护，能明显降低复杂规则的配置门槛。

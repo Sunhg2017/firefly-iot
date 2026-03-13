@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Button,
@@ -51,6 +51,35 @@ import {
 
 const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
+const LazyCodeEditorField = React.lazy(() => import('../../components/CodeEditorField'));
+
+interface ProtocolCodeEditorProps {
+  language: 'json' | 'javascript';
+  path: string;
+  height?: number;
+}
+
+const ProtocolCodeEditor: React.FC<ProtocolCodeEditorProps> = ({ language, path, height = 220 }) => (
+  <Suspense
+    fallback={
+      <div
+        style={{
+          minHeight: height,
+          border: '1px solid #d9d9d9',
+          borderRadius: 8,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#fafafa',
+        }}
+      >
+        <Text type="secondary">编辑器加载中...</Text>
+      </div>
+    }
+  >
+    <LazyCodeEditorField language={language} path={path} height={height} />
+  </Suspense>
+);
 
 interface ProductOption {
   id: number;
@@ -2310,7 +2339,7 @@ const ProtocolParserPage: React.FC = () => {
                 }
                 rules={[{ required: true, message: '请输入匹配规则 JSON' }]}
               >
-                <TextArea rows={8} style={{ fontFamily: 'monospace' }} />
+                <ProtocolCodeEditor language="json" path="file:///protocol-parser/matchRule.json" height={220} />
               </Form.Item>
             </Col>
             <Col xs={24} lg={12}>
@@ -2350,7 +2379,7 @@ const ProtocolParserPage: React.FC = () => {
                 }
                 rules={[{ required: true, message: '请输入拆帧配置 JSON' }]}
               >
-                <TextArea rows={8} style={{ fontFamily: 'monospace' }} />
+                <ProtocolCodeEditor language="json" path="file:///protocol-parser/frameConfig.json" height={220} />
               </Form.Item>
             </Col>
           </Row>
@@ -2432,7 +2461,7 @@ const ProtocolParserPage: React.FC = () => {
             }
             rules={[{ required: true, message: '请输入解析配置 JSON' }]}
           >
-            <TextArea rows={6} style={{ fontFamily: 'monospace' }} />
+            <ProtocolCodeEditor language="json" path="file:///protocol-parser/parserConfig.json" height={220} />
           </Form.Item>
 
           <Card
@@ -2476,7 +2505,7 @@ const ProtocolParserPage: React.FC = () => {
               rules={[{ required: true, message: '请输入可视化配置 JSON' }]}
               style={{ marginBottom: 0 }}
             >
-              <TextArea rows={8} style={{ fontFamily: 'monospace' }} />
+              <ProtocolCodeEditor language="json" path="file:///protocol-parser/visualConfig.json" height={220} />
             </Form.Item>
           </Card>
 
@@ -2494,7 +2523,7 @@ const ProtocolParserPage: React.FC = () => {
                 label="脚本内容"
                 rules={[{ required: true, message: '请输入脚本内容' }]}
               >
-                <TextArea rows={14} style={{ fontFamily: 'monospace' }} />
+                <ProtocolCodeEditor language="javascript" path="file:///protocol-parser/scriptContent.js" height={320} />
               </Form.Item>
             </>
           ) : (
@@ -2604,7 +2633,7 @@ const ProtocolParserPage: React.FC = () => {
                   }
                   rules={[{ required: true, message: '请输入灰度配置 JSON' }]}
                 >
-                  <TextArea rows={6} style={{ fontFamily: 'monospace' }} />
+                  <ProtocolCodeEditor language="json" path="file:///protocol-parser/releaseConfig.json" height={220} />
                 </Form.Item>
               </Col>
             </Row>

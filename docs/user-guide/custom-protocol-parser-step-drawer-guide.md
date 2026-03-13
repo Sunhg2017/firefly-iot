@@ -100,6 +100,30 @@
 - 抽屉会保留之前已经填写的内容，不会因为切步骤而丢失。
 - 只有到最后一步才执行最终保存。
 
+## 4.1 编辑器能力
+
+协议解析规则里的关键 JSON 和脚本字段已经升级为代码编辑器：
+
+- `matchRuleJson`
+- `frameConfigJson`
+- `parserConfigJson`
+- `visualConfigJson`
+- `scriptContent`
+- `releaseConfigJson`
+
+现在可以直接获得：
+
+- JSON / JavaScript 语法高亮
+- JSON 结构提示和字段补全
+- `parse(ctx)`、`encode(ctx)` 脚本片段补全
+- `ctx.topic`、`ctx.payloadText`、`ctx.config` 等上下文字段提示
+
+使用建议：
+
+- JSON 字段优先配合自动提示录入关键属性，再按业务需要补充细节。
+- 脚本模式优先通过 `parse(ctx)` 或 `encode(ctx)` 片段起步，再做局部修改。
+- 如果只是微调结构，直接在编辑器里操作会比纯文本框更容易发现括号、逗号和字段名问题。
+
 ## 5. 常见问题
 
 ### 5.1 为什么不能直接跳到后面的步骤？
