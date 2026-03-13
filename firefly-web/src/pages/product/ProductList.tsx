@@ -370,10 +370,64 @@ const ProductList: React.FC = () => {
     () => ({
       currentPageCount: data.length,
       publishedCount: data.filter((item) => item.status === 'PUBLISHED').length,
+      developmentCount: data.filter((item) => item.status === 'DEVELOPMENT').length,
       totalDevices: data.reduce((sum, item) => sum + (item.deviceCount || 0), 0),
     }),
     [data],
   );
+
+  const overviewItems = useMemo(
+    () => [
+      {
+        title: '筛选结果',
+        value: stats.currentPageCount,
+        hint: '当前页产品数',
+        color: '#2563eb',
+        background: 'linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%)',
+      },
+      {
+        title: '已发布',
+        value: stats.publishedCount,
+        hint: '可正式接入',
+        color: '#16a34a',
+        background: 'linear-gradient(135deg, #ecfdf5 0%, #f7fee7 100%)',
+      },
+      {
+        title: '开发中',
+        value: stats.developmentCount,
+        hint: '待完善或待发布',
+        color: '#ea580c',
+        background: 'linear-gradient(135deg, #fff7ed 0%, #fffaf0 100%)',
+      },
+      {
+        title: '关联设备',
+        value: stats.totalDevices,
+        hint: '当前页设备总量',
+        color: '#7c3aed',
+        background: 'linear-gradient(135deg, #f5f3ff 0%, #faf5ff 100%)',
+      },
+    ],
+    [stats.currentPageCount, stats.publishedCount, stats.developmentCount, stats.totalDevices],
+  );
+
+  const activeFilterTags = useMemo(() => {
+    const tags: Array<{ key: string; label: string }> = [];
+
+    if (keyword) {
+      tags.push({ key: 'keyword', label: `关键词: ${keyword}` });
+    }
+    if (filterCategory) {
+      tags.push({ key: 'category', label: `分类: ${CATEGORY_LABELS[filterCategory] || filterCategory}` });
+    }
+    if (filterProtocol) {
+      tags.push({ key: 'protocol', label: `协议: ${filterProtocol}` });
+    }
+    if (filterStatus) {
+      tags.push({ key: 'status', label: `状态: ${STATUS_LABELS[filterStatus] || filterStatus}` });
+    }
+
+    return tags;
+  }, [filterCategory, filterProtocol, filterStatus, keyword]);
 
   const resetCreateForm = () => {
     createForm.resetFields();
@@ -539,32 +593,29 @@ const ProductList: React.FC = () => {
     );
   };
 
-  const renderModelBadge = (model?: string) => (
-    <span
+  const renderCompactMetric = (label: string, value: React.ReactNode) => (
+    <div
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '6px 12px',
-        borderRadius: 999,
-        background: model ? '#fff7e6' : '#fafafa',
-        border: `1px solid ${model ? '#ffd591' : '#f0f0f0'}`,
-        maxWidth: '100%',
+        minWidth: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 4,
       }}
     >
-      <span style={{ fontSize: 11, color: '#8c8c8c' }}>型号</span>
-      <Typography.Text
-        strong={!!model}
-        ellipsis
+      <span style={{ fontSize: 11, color: '#94a3b8' }}>{label}</span>
+      <span
         style={{
           fontSize: 13,
-          color: model ? '#ad4e00' : '#8c8c8c',
-          maxWidth: 220,
+          fontWeight: 600,
+          color: '#0f172a',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
         }}
       >
-        {model || '未设置'}
-      </Typography.Text>
-    </span>
+        {value}
+      </span>
+    </div>
   );
 
   const renderDeviceAuthTag = (deviceAuthType?: string) => (
@@ -579,26 +630,26 @@ const ProductList: React.FC = () => {
     const canViewProtocolParser = hasPermission('protocol-parser:read');
 
     return (
-      <Space size={isCard ? 8 : 4} wrap>
+      <Space size={isCard ? 4 : 4} wrap>
         <Button
-          type={isCard ? 'primary' : 'link'}
-          size={isCard ? 'middle' : 'small'}
+          type="link"
+          size="small"
           icon={<EditOutlined />}
           onClick={() => handleEdit(record)}
         >
           编辑
         </Button>
         <Button
-          type={isCard ? 'default' : 'link'}
-          size={isCard ? 'middle' : 'small'}
+          type="link"
+          size="small"
           icon={<ControlOutlined />}
           onClick={() => setThingModelProduct(record)}
         >
           物模型
         </Button>
         <Button
-          type={isCard ? 'default' : 'link'}
-          size={isCard ? 'middle' : 'small'}
+          type="link"
+          size="small"
           icon={<KeyOutlined />}
           onClick={() => openAccessDrawer(record, 'secret')}
         >
@@ -606,8 +657,8 @@ const ProductList: React.FC = () => {
         </Button>
         {canViewProtocolParser ? (
           <Button
-            type={isCard ? 'default' : 'link'}
-            size={isCard ? 'middle' : 'small'}
+            type="link"
+            size="small"
             icon={<ApiOutlined />}
             onClick={() => navigate(`/protocol-parser?productId=${record.id}`)}
           >
@@ -616,8 +667,8 @@ const ProductList: React.FC = () => {
         ) : null}
         {record.status === 'PUBLISHED' && supportsProductSecret ? (
           <Button
-            type={isCard ? 'default' : 'link'}
-            size={isCard ? 'middle' : 'small'}
+            type="link"
+            size="small"
             icon={<UsbOutlined />}
             onClick={() => openAccessDrawer(record, 'register')}
           >
@@ -626,8 +677,8 @@ const ProductList: React.FC = () => {
         ) : null}
         {record.status === 'DEVELOPMENT' ? (
           <Button
-            type={isCard ? 'default' : 'link'}
-            size={isCard ? 'middle' : 'small'}
+            type="link"
+            size="small"
             icon={<SendOutlined />}
             onClick={() => handlePublish(record)}
           >
@@ -636,8 +687,8 @@ const ProductList: React.FC = () => {
         ) : null}
         {record.status !== 'PUBLISHED' ? (
           <Button
-            type={isCard ? 'default' : 'link'}
-            size={isCard ? 'middle' : 'small'}
+            type="link"
+            size="small"
             danger
             icon={<DeleteOutlined />}
             disabled={record.deviceCount > 0}
@@ -665,8 +716,8 @@ const ProductList: React.FC = () => {
             {record.name}
           </Typography.Text>
           <Space wrap size={8}>
-            {renderModelBadge(record.model)}
             {renderDeviceAuthTag(record.deviceAuthType)}
+            {record.model ? <Tag style={{ margin: 0 }}>型号 {record.model}</Tag> : null}
           </Space>
           {record.description ? (
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -824,7 +875,7 @@ const ProductList: React.FC = () => {
     <div>
       <PageHeader
         title="产品管理"
-        description={`共 ${total} 个产品，当前页 ${stats.currentPageCount} 个，已发布 ${stats.publishedCount} 个，关联设备 ${stats.totalDevices} 台`}
+        description="按产品目录维护接入模型、认证方式与协议能力，卡片视图更适合快速浏览，列表视图适合批量管理。"
         extra={
           <Space>
             <Segmented
@@ -850,67 +901,127 @@ const ProductList: React.FC = () => {
       />
 
       <Card
+        title="页面总览"
+        size="small"
+        style={{
+          borderRadius: 18,
+          marginBottom: 16,
+          border: 'none',
+          boxShadow: '0 8px 28px rgba(15,23,42,0.05)',
+        }}
+      >
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Row gutter={[12, 12]}>
+            {overviewItems.map((item) => (
+              <Col xs={12} md={6} key={item.title}>
+                <div
+                  style={{
+                    padding: '16px 18px',
+                    borderRadius: 16,
+                    background: item.background,
+                    border: '1px solid rgba(148,163,184,0.14)',
+                  }}
+                >
+                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>{item.title}</div>
+                  <div style={{ fontSize: 28, lineHeight: 1.1, fontWeight: 700, color: item.color }}>{item.value}</div>
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#475569' }}>{item.hint}</div>
+                </div>
+              </Col>
+            ))}
+          </Row>
+          <Space wrap>
+            <Tag color="blue">总产品 {total}</Tag>
+            {activeFilterTags.length > 0 ? (
+              activeFilterTags.map((item) => (
+                <Tag key={item.key} color="default">
+                  {item.label}
+                </Tag>
+              ))
+            ) : (
+              <Tag>当前未启用筛选条件</Tag>
+            )}
+          </Space>
+        </Space>
+      </Card>
+
+      <Card
+        title="筛选条件"
+        size="small"
         styles={{ body: { padding: 14 } }}
         style={{
-          borderRadius: 16,
+          borderRadius: 18,
           marginBottom: 16,
           border: 'none',
           boxShadow: '0 6px 24px rgba(15,23,42,0.04)',
         }}
       >
-        <Space wrap size={[12, 12]}>
-          <Search
-            value={searchText}
-            placeholder="搜索产品名称 / 型号 / ProductKey"
-            allowClear
-            style={{ width: 280 }}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              setSearchText(nextValue);
-              if (!nextValue) {
-                setKeyword('');
-                setParams((prev) => ({ ...prev, pageNum: 1 }));
-              }
-            }}
-            onSearch={(value) => {
-              setSearchText(value);
-              setKeyword(value.trim());
-              setParams((prev) => ({ ...prev, pageNum: 1 }));
-            }}
-          />
-          <Select
-            value={filterCategory}
-            allowClear
-            placeholder="产品分类"
-            style={{ width: 140 }}
-            options={CATEGORY_OPTIONS}
-            onChange={(value) => {
-              setFilterCategory(value);
-              setParams((prev) => ({ ...prev, pageNum: 1 }));
-            }}
-          />
-          <Select
-            value={filterProtocol}
-            allowClear
-            placeholder="接入协议"
-            style={{ width: 140 }}
-            options={PROTOCOL_OPTIONS}
-            onChange={(value) => {
-              setFilterProtocol(value);
-              setParams((prev) => ({ ...prev, pageNum: 1 }));
-            }}
-          />
-          <Select
-            value={filterStatus}
-            allowClear
-            placeholder="状态"
-            style={{ width: 140 }}
-            options={STATUS_OPTIONS}
-            onChange={(value) => {
-              setFilterStatus(value);
-              setParams((prev) => ({ ...prev, pageNum: 1 }));
-            }}
-          />
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Row gutter={[12, 12]} align="middle">
+            <Col xs={24} md={10} lg={9}>
+              <Search
+                value={searchText}
+                placeholder="搜索产品名称 / 型号 / ProductKey"
+                allowClear
+                style={{ width: '100%' }}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setSearchText(nextValue);
+                  if (!nextValue) {
+                    setKeyword('');
+                    setParams((prev) => ({ ...prev, pageNum: 1 }));
+                  }
+                }}
+                onSearch={(value) => {
+                  setSearchText(value);
+                  setKeyword(value.trim());
+                  setParams((prev) => ({ ...prev, pageNum: 1 }));
+                }}
+              />
+            </Col>
+            <Col xs={24} sm={8} md={5}>
+              <Select
+                value={filterCategory}
+                allowClear
+                placeholder="产品分类"
+                style={{ width: '100%' }}
+                options={CATEGORY_OPTIONS}
+                onChange={(value) => {
+                  setFilterCategory(value);
+                  setParams((prev) => ({ ...prev, pageNum: 1 }));
+                }}
+              />
+            </Col>
+            <Col xs={24} sm={8} md={5}>
+              <Select
+                value={filterProtocol}
+                allowClear
+                placeholder="接入协议"
+                style={{ width: '100%' }}
+                options={PROTOCOL_OPTIONS}
+                onChange={(value) => {
+                  setFilterProtocol(value);
+                  setParams((prev) => ({ ...prev, pageNum: 1 }));
+                }}
+              />
+            </Col>
+            <Col xs={24} sm={8} md={4}>
+              <Select
+                value={filterStatus}
+                allowClear
+                placeholder="状态"
+                style={{ width: '100%' }}
+                options={STATUS_OPTIONS}
+                onChange={(value) => {
+                  setFilterStatus(value);
+                  setParams((prev) => ({ ...prev, pageNum: 1 }));
+                }}
+              />
+            </Col>
+            <Col xs={24} md={1} />
+          </Row>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            优先用分类、协议和状态筛选，再按关键词缩小范围，避免在卡片里反复扫重复字段。
+          </Typography.Text>
         </Space>
       </Card>
 
@@ -925,10 +1036,10 @@ const ProductList: React.FC = () => {
                       hoverable
                       styles={{ body: { padding: 0 } }}
                       style={{
-                        borderRadius: 18,
+                        borderRadius: 22,
                         overflow: 'hidden',
-                        border: '1px solid #eaeaea',
-                        boxShadow: '0 10px 28px rgba(15,23,42,0.05)',
+                        border: '1px solid #e5e7eb',
+                        boxShadow: '0 14px 34px rgba(15,23,42,0.06)',
                       }}
                     >
                       <div style={{ position: 'relative' }}>
@@ -936,182 +1047,118 @@ const ProductList: React.FC = () => {
                         <div
                           style={{
                             position: 'absolute',
-                            left: 16,
-                            right: 16,
                             top: 14,
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            gap: 8,
-                            alignItems: 'flex-start',
+                            right: 14,
                           }}
                         >
-                          <Space size={8} wrap>
-                            <Tag color={CATEGORY_COLORS[record.category]} style={{ margin: 0 }}>
-                              {CATEGORY_LABELS[record.category] || record.category}
-                            </Tag>
-                            <Tag color={PROTOCOL_COLORS[record.protocol]} style={{ margin: 0 }}>
-                              {record.protocol}
-                            </Tag>
-                          </Space>
-                          <Tag color={STATUS_COLORS[record.status]} style={{ margin: 0 }}>
+                          <Tag color={STATUS_COLORS[record.status]} style={{ margin: 0, borderRadius: 999, paddingInline: 10 }}>
                             {STATUS_LABELS[record.status] || record.status}
                           </Tag>
                         </div>
                         <div
                           style={{
                             position: 'absolute',
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            padding: '28px 16px 14px',
-                            background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(15,23,42,0.68) 100%)',
+                            left: 14,
+                            bottom: 14,
+                            width: 46,
+                            height: 46,
+                            borderRadius: 16,
+                            background: 'rgba(255,255,255,0.88)',
+                            backdropFilter: 'blur(10px)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: CATEGORY_ICON_COLORS[record.category] || CATEGORY_ICON_COLORS.OTHER,
+                            fontSize: 20,
+                            boxShadow: '0 10px 24px rgba(15,23,42,0.16)',
                           }}
                         >
-                          <Typography.Text style={{ color: '#fff', fontSize: 13 }}>
-                            {NODE_TYPE_LABELS[record.nodeType] || record.nodeType} · {record.deviceCount || 0} 台设备
-                          </Typography.Text>
+                          {CATEGORY_ICONS[record.category] || CATEGORY_ICONS.OTHER}
                         </div>
                       </div>
 
                       <div style={{ padding: 18 }}>
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                          <div
-                            style={{
-                              width: 42,
-                              height: 42,
-                              borderRadius: 14,
-                              background: CATEGORY_BACKGROUNDS[record.category] || CATEGORY_BACKGROUNDS.OTHER,
-                              color: CATEGORY_ICON_COLORS[record.category] || CATEGORY_ICON_COLORS.OTHER,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: 18,
-                              flexShrink: 0,
-                            }}
+                        <div style={{ minWidth: 0 }}>
+                          <Space wrap size={[8, 8]} style={{ marginBottom: 10 }}>
+                            <Tag color={CATEGORY_COLORS[record.category]} style={{ margin: 0, borderRadius: 999 }}>
+                              {CATEGORY_LABELS[record.category] || record.category}
+                            </Tag>
+                            <Tag color={PROTOCOL_COLORS[record.protocol]} style={{ margin: 0, borderRadius: 999 }}>
+                              {record.protocol}
+                            </Tag>
+                            {renderDeviceAuthTag(record.deviceAuthType)}
+                          </Space>
+                          <Typography.Title level={5} style={{ margin: 0, fontSize: 18, lineHeight: 1.35 }}>
+                            {record.name}
+                          </Typography.Title>
+                          <Typography.Text
+                            copyable={{ text: record.productKey }}
+                            style={{ display: 'block', marginTop: 6, fontSize: 12, color: '#64748b' }}
                           >
-                            {CATEGORY_ICONS[record.category] || CATEGORY_ICONS.OTHER}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <Typography.Title level={5} style={{ margin: 0, fontSize: 18, lineHeight: 1.35 }}>
-                              {record.name}
-                            </Typography.Title>
+                            {record.productKey}
+                          </Typography.Text>
+                          {record.model ? (
                             <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4, fontSize: 12 }}>
-                              创建时间 {record.createdAt}
+                              型号 {record.model}
                             </Typography.Text>
-                            <Space wrap size={8} style={{ marginTop: 12 }}>
-                              {renderModelBadge(record.model)}
-                              {renderDeviceAuthTag(record.deviceAuthType)}
-                            </Space>
-                          </div>
+                          ) : null}
                         </div>
 
                         <div
                           style={{
                             marginTop: 16,
-                            padding: '12px 14px',
-                            borderRadius: 14,
-                            background: '#fafafa',
-                            border: '1px solid #f0f0f0',
-                          }}
-                        >
-                          <div style={{ fontSize: 11, color: '#8c8c8c', marginBottom: 8 }}>ProductKey</div>
-                          <Typography.Text copyable={{ text: record.productKey }} code style={{ fontSize: 12 }}>
-                            {record.productKey}
-                          </Typography.Text>
-                        </div>
-
-                        <div
-                          style={{
-                            marginTop: 14,
                             display: 'grid',
-                            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                            gap: 10,
+                            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                            gap: 12,
+                            padding: '14px 16px',
+                            borderRadius: 16,
+                            background: 'linear-gradient(135deg, #f8fafc 0%, #ffffff 100%)',
+                            border: '1px solid #e2e8f0',
                           }}
                         >
-                          <div
-                            style={{
-                              padding: '12px 14px',
-                              borderRadius: 14,
-                              background: '#fafafa',
-                              border: '1px solid #f0f0f0',
-                            }}
-                          >
-                            <div style={{ fontSize: 11, color: '#8c8c8c', marginBottom: 6 }}>产品分类</div>
-                            <div style={{ fontWeight: 600 }}>{CATEGORY_LABELS[record.category] || record.category}</div>
-                          </div>
-                          <div
-                            style={{
-                              padding: '12px 14px',
-                              borderRadius: 14,
-                              background: '#fafafa',
-                              border: '1px solid #f0f0f0',
-                            }}
-                          >
-                            <div style={{ fontSize: 11, color: '#8c8c8c', marginBottom: 6 }}>接入协议</div>
-                            <div style={{ fontWeight: 600 }}>{record.protocol}</div>
-                          </div>
-                          <div
-                            style={{
-                              padding: '12px 14px',
-                              borderRadius: 14,
-                              background: '#fafafa',
-                              border: '1px solid #f0f0f0',
-                            }}
-                          >
-                            <div style={{ fontSize: 11, color: '#8c8c8c', marginBottom: 6 }}>节点类型</div>
-                            <div style={{ fontWeight: 600 }}>{NODE_TYPE_LABELS[record.nodeType] || record.nodeType}</div>
-                          </div>
-                          <div
-                            style={{
-                              padding: '12px 14px',
-                              borderRadius: 14,
-                              background: '#fafafa',
-                              border: '1px solid #f0f0f0',
-                            }}
-                          >
-                            <div style={{ fontSize: 11, color: '#8c8c8c', marginBottom: 6 }}>认证方式</div>
-                            <div>{renderDeviceAuthTag(record.deviceAuthType)}</div>
-                          </div>
-                          <div
-                            style={{
-                              padding: '12px 14px',
-                              borderRadius: 14,
-                              background: '#fafafa',
-                              border: '1px solid #f0f0f0',
-                            }}
-                          >
-                            <div style={{ fontSize: 11, color: '#8c8c8c', marginBottom: 6 }}>设备数量</div>
-                            <div style={{ fontWeight: 600 }}>{record.deviceCount || 0} 台</div>
-                          </div>
+                          {renderCompactMetric('节点类型', NODE_TYPE_LABELS[record.nodeType] || record.nodeType)}
+                          {renderCompactMetric('数据格式', record.dataFormat)}
+                          {renderCompactMetric('设备数量', `${record.deviceCount || 0} 台`)}
                         </div>
 
                         <div
                           style={{
                             marginTop: 14,
                             padding: '12px 14px',
-                            borderRadius: 14,
-                            background: '#fffdf7',
-                            border: '1px solid #fff1b8',
-                            minHeight: 74,
+                            borderRadius: 16,
+                            background: '#fcfcfd',
+                            border: '1px solid #eef2f7',
+                            minHeight: 84,
                           }}
                         >
-                          <div style={{ fontSize: 11, color: '#8c8c8c', marginBottom: 6 }}>产品说明</div>
+                          <div
+                            style={{
+                              marginBottom: 8,
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              gap: 12,
+                              alignItems: 'center',
+                            }}
+                          >
+                            <span style={{ fontSize: 11, color: '#94a3b8' }}>产品说明</span>
+                            <span style={{ fontSize: 11, color: '#94a3b8' }}>创建于 {record.createdAt}</span>
+                          </div>
                           <Typography.Paragraph
                             ellipsis={{ rows: 2 }}
-                            style={{ margin: 0, fontSize: 12, color: '#595959' }}
+                            style={{ margin: 0, fontSize: 12, color: '#475569' }}
                           >
-                            {record.description || '暂无产品描述'}
+                            {record.description || '暂未补充产品说明，可在编辑页完善产品用途、场景与安装信息。'}
                           </Typography.Paragraph>
                         </div>
                       </div>
 
                       <div
                         style={{
-                          padding: '0 18px 18px',
+                          padding: '0 14px 14px',
                           display: 'flex',
                           flexWrap: 'wrap',
-                          gap: 8,
-                          borderTop: '1px solid #f5f5f5',
+                          gap: 4,
+                          borderTop: '1px solid #f1f5f9',
                         }}
                       >
                         {renderActionGroup(record, 'card')}
