@@ -119,10 +119,10 @@ public class MessageRouterService {
                     .deviceId(message.getDeviceId())
                     .deviceName(message.getDeviceName())
                     .type(message.getType())
+                    .topic(message.getTopic())
                     .payload(message.getPayload())
                     .timestamp(message.getTimestamp())
                     .build();
-            ruleMsg.setTopic(KafkaTopics.RULE_ENGINE_INPUT);
             messageProducer.publishToTopic(KafkaTopics.RULE_ENGINE_INPUT, ruleMsg);
         } catch (Exception e) {
             log.error("Failed to forward message to rule engine: {}", e.getMessage());

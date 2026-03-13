@@ -3,6 +3,7 @@ package com.songhg.firefly.iot.device.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.songhg.firefly.iot.api.dto.DeviceBasicVO;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DeviceAuthType;
 import com.songhg.firefly.iot.common.enums.DeviceStatus;
@@ -201,6 +202,25 @@ public class DeviceService {
     public String getDeviceSecret(Long id) {
         Device device = getActiveDevice(id);
         return device.getDeviceSecret();
+    }
+
+    public DeviceBasicVO getDeviceBasic(Long id) {
+        return deviceMapper.selectBasicByIdIgnoreTenant(id);
+    }
+
+    public List<DeviceBasicVO> batchGetDeviceBasic(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return deviceMapper.selectBasicByIdsIgnoreTenant(ids);
+    }
+
+    public Long countByProductId(Long productId) {
+        if (productId == null) {
+            return 0L;
+        }
+        Long count = deviceMapper.countByProductIdIgnoreTenant(productId);
+        return count == null ? 0L : count;
     }
 
     private Product getProductOrThrow(Long productId) {

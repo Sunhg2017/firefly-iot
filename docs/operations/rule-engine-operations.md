@@ -2,14 +2,21 @@
 
 ## 1. 模块说明
 
-规则引擎由 `firefly-rule` 模块提供，当前已落地的能力是规则定义管理：
+规则引擎运行在 `firefly-rule` 模块中，当前已经包含完整运行时链路：
 
-- 规则 CRUD
-- 规则启用 / 停用
-- 规则动作配置管理
-- 规则分页查询与详情查询
+- Kafka 消费 `rule.engine.input`
+- 装载租户启用规则
+- 匹配 `FROM` / `WHERE`
+- 执行动作
+- 更新规则触发统计
 
-当前版本不包含独立的规则执行节点和动作投递 worker，规则表中的 `trigger_count`、`success_count`、`error_count`、`last_trigger_at` 主要为后续执行链路预留。
+规则运行时依赖以下外围服务：
+
+- PostgreSQL：规则定义、动作配置、统计数据
+- Kafka：消息接入与动作转发
+- Nacos：配置中心与注册发现
+- `firefly-device`：查询设备基础信息
+- `firefly-support`：发送通知类动作
 
 ## 2. 部署与启动
 
@@ -20,115 +27,218 @@ cd firefly-rule
 mvn spring-boot:run
 ```
 
-默认端口和基础依赖见 [`application.yml`](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/application.yml)：
+### 2.2 关键配置
 
-- HTTP: `9030`
-- 数据库：PostgreSQL
-- Redis：默认库 `0`
-- Kafka：`firefly-rule` 消费组
-- Nacos：读取 `firefly-rule.yml` / `firefly-rule-dev.yml`
+配置文件位置：
 
-### 2.2 Maven 验证
+- [application.yml](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/application.yml)
+- [application-prod.yml](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/application-prod.yml)
 
-```bash
-mvn -pl firefly-rule test
-mvn -pl firefly-rule -DskipTests compile
-```
-
-## 3. 配置项
-
-核心配置位于 [`application.yml`](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/application.yml)。
-
-重点关注：
+重点检查：
 
 - `spring.datasource.*`
-  - 规则定义、动作、告警等元数据都落 PostgreSQL
-- `spring.flyway.*`
-  - 规则相关表由 Flyway 管理，历史表名为 `flyway_rule_history`
-- `spring.kafka.*`
-  - 当前模块已声明 Kafka 依赖和消费组，后续规则执行链路会复用
-- `spring.cloud.nacos.*`
-  - 生产环境应把敏感配置放在 Nacos，不建议保留示例地址
+- `spring.kafka.bootstrap-servers`
+- `spring.cloud.nacos.discovery.*`
+- `spring.cloud.nacos.config.*`
 - `management.endpoints.web.exposure.include`
-  - 默认暴露 `health,info,metrics,prometheus`
 
-## 4. 数据库与迁移
+### 2.3 启动前检查
 
-规则引擎当前依赖以下迁移脚本：
+- Kafka 中已创建 `rule.engine.input`
+- `firefly-device`、`firefly-support` 已注册到 Nacos
+- `rules`、`rule_actions` 表迁移成功
+- `firefly-rule` 能连通 PostgreSQL、Kafka、Nacos
 
-- [`V1__init_rules.sql`](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/db/migration/V1__init_rules.sql)
-- [`V2__init_alarms.sql`](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/db/migration/V2__init_alarms.sql)
-- [`V3__init_notification_center.sql`](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/db/migration/V3__init_notification_center.sql)
-- [`V4__init_share_policies.sql`](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/db/migration/V4__init_share_policies.sql)
-- [`V5__init_message_templates.sql`](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/db/migration/V5__init_message_templates.sql)
+## 3. 运行时依赖链路
 
-规则引擎核心表：
+### 3.1 上游输入
+
+`firefly-rule` 只消费 `rule.engine.input`。该 topic 中的消息由 `firefly-device` 转发，消息体为 `DeviceMessage` JSON。
+
+需要特别确认：
+
+- `DeviceMessage.topic` 为真实设备上行 topic，而不是 `rule.engine.input`
+- HTTP 直连接入场景已经补齐标准 topic
+
+### 3.2 下游动作
+
+- `KAFKA_FORWARD`
+  - 由 `firefly-rule` 直接发送 Kafka
+- `WEBHOOK`
+  - 由 `firefly-rule` 直接发 HTTP
+- `EMAIL` / `SMS`
+  - 通过 `NotificationClient` 调 `firefly-support`
+- `DEVICE_COMMAND`
+  - 由 `firefly-rule` 投递到 `device.message.down`
+
+## 4. 支持的动作配置
+
+### 4.1 `KAFKA_FORWARD`
+
+```json
+{
+  "topic": "runtime.alerts",
+  "key": "${deviceId}",
+  "payload": {
+    "deviceName": "${deviceName}",
+    "temp": "${temp}"
+  }
+}
+```
+
+### 4.2 `WEBHOOK`
+
+```json
+{
+  "url": "https://ops.example.com/hooks/high-temp",
+  "method": "POST",
+  "headers": {
+    "X-Rule": "${ruleName}"
+  },
+  "body": {
+    "deviceName": "${deviceName}",
+    "payload": "${payloadJson}"
+  }
+}
+```
+
+### 4.3 `EMAIL` / `SMS`
+
+```json
+{
+  "channelId": 11,
+  "templateCode": "alarm_notify",
+  "recipient": "ops@example.com",
+  "variables": {
+    "deviceName": "${deviceName}",
+    "temp": "${temp}"
+  }
+}
+```
+
+### 4.4 `DEVICE_COMMAND`
+
+属性设置：
+
+```json
+{
+  "commandType": "PROPERTY_SET",
+  "payload": {
+    "targetTemp": "${temp}"
+  }
+}
+```
+
+服务调用：
+
+```json
+{
+  "commandType": "SERVICE_INVOKE",
+  "serviceName": "reboot",
+  "params": {
+    "delaySeconds": 5
+  }
+}
+```
+
+### 4.5 当前限制
+
+- `DB_WRITE` 暂不支持运行时执行，配置后会触发失败统计和错误日志。
+- `WEBHOOK` 暂未内置重试、熔断和回退。
+
+## 5. 监控与告警建议
+
+建议接入以下观测项：
+
+- `health`
+  - 检查 PostgreSQL、Kafka、Nacos 是否可用
+- `metrics`
+  - JVM、Hikari、Tomcat、Kafka 客户端指标
+- 应用日志
+  - 重点关注 `RuleRuntimeConsumer`、`RuleRuntimeService`
+
+建议配置日志关键字告警：
+
+- `Failed to consume rule runtime message`
+- `Rule action execution failed`
+- `Failed to query device basic info for runtime rule`
+- `Webhook invocation failed`
+- `Notification dispatch failed`
+
+## 6. 常见故障排查
+
+### 6.1 规则启用后没有触发
+
+排查顺序：
+
+1. 确认 `firefly-device` 是否确实向 `rule.engine.input` 发送消息。
+2. 查看消息里的 `tenantId`、`topic`、`type`、`payload` 是否正确。
+3. 确认规则 `status = ENABLED`。
+4. 对照 `sqlExpr` 检查 `FROM` 是否匹配真实 topic/type。
+5. 对照 `WHERE` 检查字段名是否和运行时上下文一致。
+
+### 6.2 项目级规则一直不生效
+
+排查顺序：
+
+1. 确认规则配置了正确的 `projectId`。
+2. 直接调用 `firefly-device` 内部接口检查设备 `projectId`：
+   - `/api/v1/internal/devices/{id}/basic`
+3. 检查 `firefly-rule` 到 `firefly-device` 的 Feign 调用是否正常。
+
+### 6.3 `WEBHOOK` 动作失败
+
+排查顺序：
+
+1. 检查 `url` 是否可达、协议是否正确。
+2. 检查请求头和 body 模板是否渲染出了空值。
+3. 检查远端是否返回 `4xx/5xx`。
+
+### 6.4 通知动作失败
+
+排查顺序：
+
+1. 检查 `channelId`、`templateCode` 是否有效。
+2. 检查 `firefly-support` 是否正常注册和启动。
+3. 检查通知渠道本身的配置与可达性。
+
+### 6.5 设备命令没有真正下发
+
+排查顺序：
+
+1. 检查 `device.message.down` 是否收到消息。
+2. 检查连接器对应协议的下行消费者是否在线。
+3. 检查 `commandType` 是否为 `PROPERTY_SET` 或 `SERVICE_INVOKE`。
+
+## 7. 数据库与迁移
+
+核心迁移脚本：
+
+- [V1__init_rules.sql](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/db/migration/V1__init_rules.sql)
+- [RuleEngineMapper.xml](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/mapper/rule/RuleEngineMapper.xml)
+
+核心表：
 
 - `rules`
 - `rule_actions`
 
-运维注意：
+关注字段：
 
-- `rule_actions.rule_id` 使用 `ON DELETE CASCADE`
-- `action_config` 是 JSONB，若业务请求传非法 JSON，当前版本会在服务层直接拒绝，不应再让数据库报语法错误
+- `status`
+- `trigger_count`
+- `success_count`
+- `error_count`
+- `last_trigger_at`
 
-## 5. 监控与排查
+## 8. 回滚说明
 
-### 5.1 建议关注指标
+如果需要回滚本次运行时补齐，必须同时回滚以下内容：
 
-- `health`
-  - 用于检查服务、数据库、Redis、Kafka 是否正常
-- `metrics`
-  - 建议接入 Prometheus 采集 JVM、Hikari、Tomcat 指标
-- 应用日志
-  - 规则创建、启停、删除都会输出结构化日志
+- `RuleRuntimeConsumer`
+- `RuleRuntimeService`
+- `RuleEngineMapper.xml` 中的统计更新 SQL
+- `firefly-device` 的原始 topic 透传
+- `firefly-device` 内部设备信息接口
+- 文档同步变更
 
-### 5.2 常见故障
-
-#### 规则详情/修改返回“规则不存在”
-
-排查方向：
-
-- 确认请求头中的租户上下文是否正确传入
-- 确认规则是否属于当前租户
-- 若数据库中记录存在但接口返回不存在，优先检查跨租户访问是否被正确拦截
-
-#### 创建/更新规则时报“规则动作配置必须是合法 JSON”
-
-排查方向：
-
-- 检查 `actions[].actionConfig` 是否为合法 JSON 文本
-- 常见问题是少双引号、少右括号，或把普通文本直接传进 JSONB 字段
-
-#### 规则列表响应慢
-
-当前版本已把动作加载从 N+1 查询收敛为批量加载。如果仍然偏慢，优先检查：
-
-- PostgreSQL 对 `rules(tenant_id, status)`、`rule_actions(rule_id)` 索引是否存在
-- 单租户规则总量是否异常增长
-- 是否存在慢 SQL 或连接池拥塞
-
-## 6. 日志定位
-
-关键日志来自 `RuleEngineService`：
-
-- `Rule created`
-- `Rule enabled`
-- `Rule disabled`
-- `Rule deleted`
-
-排查建议：
-
-- 按规则名称、规则 `id` 和租户上下文联合筛查
-- 对“创建成功但详情查不到”的场景，优先确认是否切换了租户
-
-## 7. 回滚方式
-
-若本次规则引擎整改需要回滚，应同时回滚以下内容：
-
-- `RuleEngineService` 的租户归属校验和动作 JSON 预校验
-- `RuleAction` 的 JSONB 显式 type handler 声明
-- `RuleEngineServiceTest`
-- 规则引擎三类文档
-
-仅部分回滚可能造成接口行为与文档不一致。
+只回滚其中一部分，会造成规则界面状态和实际运行行为不一致。

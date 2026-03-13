@@ -71,6 +71,7 @@ public class HttpProtocolAdapter {
                 .productId(auth.getProductId())
                 .deviceId(auth.getDeviceId())
                 .type(DeviceMessage.MessageType.PROPERTY_REPORT)
+                .topic("/sys/http/" + auth.getDeviceId() + "/thing/property/post")
                 .payload(properties)
                 .build();
         messageProducer.publishUpstream(message);
@@ -93,6 +94,7 @@ public class HttpProtocolAdapter {
                 .productId(auth.getProductId())
                 .deviceId(auth.getDeviceId())
                 .type(DeviceMessage.MessageType.EVENT_REPORT)
+                .topic("/sys/http/" + auth.getDeviceId() + "/thing/event/post")
                 .payload(event)
                 .build();
         messageProducer.publishUpstream(message);

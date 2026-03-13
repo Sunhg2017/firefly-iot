@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -28,6 +29,7 @@ class MessageRouterServiceTest {
                 .deviceId(3L)
                 .deviceName("dev-001")
                 .type(DeviceMessage.MessageType.EVENT_REPORT)
+                .topic("/sys/pk/dev-001/thing/event/post")
                 .payload(Map.of("event", "overheat"))
                 .timestamp(123456789L)
                 .build();
@@ -35,7 +37,10 @@ class MessageRouterServiceTest {
         routerService.routeUpstream(message);
 
         verify(deviceDataService).writeEventFromMessage(message);
-        verify(messageProducer).publishToTopic(eq(KafkaTopics.RULE_ENGINE_INPUT), any(DeviceMessage.class));
+        verify(messageProducer).publishToTopic(
+                eq(KafkaTopics.RULE_ENGINE_INPUT),
+                argThat(ruleMessage -> "/sys/pk/dev-001/thing/event/post".equals(ruleMessage.getTopic()))
+        );
         verify(messageProducer, never()).publishUpstream(any(DeviceMessage.class));
         verify(shadowService, never()).updateReported(any(), any());
     }
@@ -49,6 +54,7 @@ class MessageRouterServiceTest {
                 .deviceId(3L)
                 .deviceName("dev-001")
                 .type(DeviceMessage.MessageType.PROPERTY_REPORT)
+                .topic("/sys/pk/dev-001/thing/property/post")
                 .payload(Map.of("temperature", 26.5, "switch", true))
                 .timestamp(123456789L)
                 .build();
@@ -57,6 +63,9 @@ class MessageRouterServiceTest {
 
         verify(deviceDataService).writeTelemetryFromMessage(message);
         verify(shadowService).updateReported(eq(3L), eq(message.getPayload()));
-        verify(messageProducer).publishToTopic(eq(KafkaTopics.RULE_ENGINE_INPUT), any(DeviceMessage.class));
+        verify(messageProducer).publishToTopic(
+                eq(KafkaTopics.RULE_ENGINE_INPUT),
+                argThat(ruleMessage -> "/sys/pk/dev-001/thing/property/post".equals(ruleMessage.getTopic()))
+        );
     }
 }

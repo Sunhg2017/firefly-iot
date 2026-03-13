@@ -20,6 +20,7 @@ public class DeviceBasicVO implements Serializable {
     private Long productId;
     private String productName;
     private Long tenantId;
+    private Long projectId;
     private String status;
     private String onlineStatus;
 }

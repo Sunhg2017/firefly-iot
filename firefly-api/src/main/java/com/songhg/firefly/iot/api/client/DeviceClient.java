@@ -12,7 +12,7 @@ import java.util.List;
 /**
  * 设备服务 Feign Client（供其他微服务调用）
  */
-@FeignClient(name = "firefly-device", contextId = "deviceClient", path = "/api/v1/devices")
+@FeignClient(name = "firefly-device", contextId = "deviceClient", path = "/api/v1/internal/devices")
 public interface DeviceClient {
 
     @GetMapping("/{id}/basic")

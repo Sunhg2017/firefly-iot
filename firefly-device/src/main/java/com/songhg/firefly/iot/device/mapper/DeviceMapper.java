@@ -2,9 +2,12 @@ package com.songhg.firefly.iot.device.mapper;
 
 import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.songhg.firefly.iot.api.dto.DeviceBasicVO;
 import com.songhg.firefly.iot.device.entity.Device;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 @Mapper
 public interface DeviceMapper extends BaseMapper<Device> {
@@ -15,4 +18,13 @@ public interface DeviceMapper extends BaseMapper<Device> {
     @InterceptorIgnore(tenantLine = "true")
     Device selectByProductIdAndDeviceNameIgnoreTenant(@Param("productId") Long productId,
                                                       @Param("deviceName") String deviceName);
+
+    @InterceptorIgnore(tenantLine = "true")
+    DeviceBasicVO selectBasicByIdIgnoreTenant(@Param("id") Long id);
+
+    @InterceptorIgnore(tenantLine = "true")
+    List<DeviceBasicVO> selectBasicByIdsIgnoreTenant(@Param("ids") List<Long> ids);
+
+    @InterceptorIgnore(tenantLine = "true")
+    Long countByProductIdIgnoreTenant(@Param("productId") Long productId);
 }

@@ -2,158 +2,220 @@
 
 ## 1. 背景
 
-`firefly-rule` 同时承载规则引擎、告警和跨租户共享三类能力，其中规则引擎负责“规则定义”和“规则动作定义”的管理。当前代码已经具备规则 CRUD、启停和动作配置存储能力，但原有设计文档与实现存在偏差，服务层也有几处明显不合理点：
+`firefly-rule` 之前已经具备规则定义、启停和动作配置管理能力，但 `rule.engine.input` 仅有上游投递，没有真正的消费执行链路，导致：
 
-- 规则详情、更新、启停、删除仅按 `id` 查询，缺少租户归属校验。
-- 动作配置 `actionConfig` 直接写入 PostgreSQL JSONB，缺少服务层 JSON 预校验，错误会延迟到数据库层暴露。
-- 列表页构建 VO 时每条规则都会单独查询一次动作，形成 N+1 查询。
-- 返回对象暴露了 `createdBy` 这类前端不需要的内部主键信息。
+- 启用规则后不会实际匹配设备消息。
+- `trigger_count`、`success_count`、`error_count`、`last_trigger_at` 无法反映运行时结果。
+- `FROM 'topic'` 场景拿不到真实上行 topic，因为设备侧转发时覆盖成了 Kafka 目标 topic。
+- 项目级规则无法在运行时根据设备所属项目做过滤。
+
+本次设计把规则运行时最小闭环补齐，做到“消息进入 `rule.engine.input` 后可被真正消费、匹配、执行和统计”。
 
 ## 2. 目标
 
-- 规则读写必须限定在当前租户范围内。
-- 动作配置在进入持久层前完成 JSON 合法性校验和标准化。
-- 列表查询改成批量加载动作，避免不必要的数据库往返。
-- 文档、接口和运维说明保持与当前实现一致。
+- 在 `firefly-rule` 中增加 `rule.engine.input` Kafka 消费者。
+- 支持按租户加载启用规则，并按项目、来源、条件做运行时过滤。
+- 支持规则动作的真实执行与结果统计。
+- 保持现有规则维护接口不变，兼容当前规则表结构。
+- 对复杂链路补充必要注释，方便后续扩展更多动作类型。
 
 ## 3. 范围
 
-本次设计覆盖：
+本次覆盖：
 
-- `RuleEngineService`
-- `RuleAction` JSONB 映射
-- `RuleEngineCreateDTO` / `RuleEngineUpdateDTO` / `RuleEngineVO`
-- `RuleEngineServiceTest`
-- 规则引擎设计、运维、使用文档
+- `firefly-rule` 运行时消费者与执行服务
+- `rules` 触发/成功/失败统计回写
+- `firefly-device` 到 `firefly-rule` 的上行上下文透传
+- `firefly-connector` HTTP 直连接入的标准 topic 补齐
+- `firefly-device` 内部设备基础信息接口
+- 设计、运维、使用三类文档同步刷新
 
-不包含完整规则执行器、SQL 解析器、动作投递链路和告警处理逻辑扩展。
+本次暂不覆盖：
 
-## 4. 数据模型
+- 自定义 SQL 方言的完整解析器
+- `DB_WRITE` 动作的通用落库框架
+- 规则执行缓存、分布式编译缓存、回放重跑
 
-### 4.1 `rules`
+## 4. 运行时架构
 
-表结构来自 [`V1__init_rules.sql`](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/db/migration/V1__init_rules.sql)：
+### 4.1 执行链路
+
+1. 设备消息进入 `firefly-connector` 或 `firefly-device`。
+2. `firefly-device` 的 `MessageRouterService` 在处理属性/事件上报后，将消息投递到 Kafka `rule.engine.input`。
+3. `firefly-rule` 的 `RuleRuntimeConsumer` 消费 `rule.engine.input`。
+4. `RuleRuntimeService` 按 `tenantId` 加载所有启用规则及动作。
+5. 规则运行时依次执行：
+   - 解析 `sqlExpr`
+   - 匹配 `FROM` 来源
+   - 按需查询设备基础信息并校验 `projectId`
+   - 计算 `WHERE`
+   - 计算 `SELECT` 输出变量
+   - 依次执行动作
+6. 规则执行成功时累加 `trigger_count`、`success_count`，失败时累加 `trigger_count`、`error_count`，并刷新 `last_trigger_at`。
+
+### 4.2 关键组件
+
+- `RuleRuntimeConsumer`
+  - Kafka 消费入口
+  - 负责把字符串消息反序列化为 `DeviceMessage`
+- `RuleRuntimeService`
+  - 规则装载
+  - SQL-like 表达式解析
+  - SpEL 条件计算
+  - 动作执行
+  - 统计回写
+- `InternalDeviceController`
+  - 供 `firefly-rule` 通过 Feign 查询设备基础信息
+- `DeviceClient`
+  - 调整为访问 `/api/v1/internal/devices`
+
+## 5. 数据与上下文设计
+
+### 5.1 规则表
+
+沿用现有 `rules`、`rule_actions` 表结构，不新增迁移脚本。
+
+新增运行时统计更新 SQL：
+
+- `recordExecutionSuccess`
+- `recordExecutionFailure`
+
+这两个更新放在 `RuleEngineMapper.xml`，避免在 Java 中写内联 SQL。
+
+### 5.2 运行时上下文
+
+规则执行时构造统一上下文，供 `WHERE`、`SELECT` 和动作模板使用：
+
+- `message`
+- `messageId`
+- `tenantId`
+- `productId`
+- `deviceId`
+- `deviceName`
+- `type`
+- `topic`
+- `payload`
+- `payloadJson`
+- `timestamp`
+- `projectId`（查询到设备基础信息时补齐）
+- `productName`
+- `nickname`
+- `payload` 中的一级字段也会平铺到上下文，便于直接写 `${temperature}`、`${code}`
+
+### 5.3 真实来源 topic 透传
+
+修复前，`firefly-device` 转发到规则引擎时把 `DeviceMessage.topic` 覆盖成了 `rule.engine.input`，导致规则无法基于真实来源匹配。
+
+修复后：
+
+- `MessageRouterService` 保留原始 `message.topic`
+- 仅 Kafka 发送目标使用 `KafkaTopics.RULE_ENGINE_INPUT`
+- `HttpProtocolAdapter` 直连属性/事件上报补齐标准 topic
+  - `/sys/http/{deviceId}/thing/property/post`
+  - `/sys/http/{deviceId}/thing/event/post`
+
+## 6. 规则表达式设计
+
+### 6.1 支持语法
+
+当前运行时支持简化 SQL-like 语法：
 
 ```sql
-CREATE TABLE rules (
-    id              BIGSERIAL PRIMARY KEY,
-    tenant_id       BIGINT NOT NULL,
-    project_id      BIGINT,
-    name            VARCHAR(256) NOT NULL,
-    description     TEXT,
-    sql_expr        TEXT NOT NULL,
-    status          VARCHAR(16) NOT NULL DEFAULT 'DISABLED',
-    trigger_count   BIGINT NOT NULL DEFAULT 0,
-    success_count   BIGINT NOT NULL DEFAULT 0,
-    error_count     BIGINT NOT NULL DEFAULT 0,
-    last_trigger_at TIMESTAMPTZ,
-    created_by      BIGINT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+SELECT expr1 AS alias1, expr2 AS alias2
+FROM '/sys/*/thing/property/post'
+WHERE payload.temperature >= 80 AND deviceName == 'dev-001'
 ```
 
-说明：
-
-- `tenant_id` 是规则归属边界，服务层所有单条读写都必须基于该字段做约束。
-- `project_id` 用于项目维度筛选，但当前未在规则引擎接口中展开项目详情。
-- `status` 仅保存启停状态，真正执行链路由后续运行时组件消费。
-
-### 4.2 `rule_actions`
+也支持：
 
 ```sql
-CREATE TABLE rule_actions (
-    id            BIGSERIAL PRIMARY KEY,
-    rule_id       BIGINT NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
-    action_type   VARCHAR(32) NOT NULL,
-    action_config JSONB NOT NULL DEFAULT '{}',
-    sort_order    INT NOT NULL DEFAULT 0,
-    enabled       BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+SELECT *
+FROM 'PROPERTY_REPORT'
+WHERE payload.code == 'overheat'
 ```
 
-说明：
+### 6.2 语义说明
 
-- `action_config` 以 JSONB 存储，不同动作类型的结构不同。
-- 本次补充 `JsonbStringTypeHandler` 显式映射，保证读写一致。
+- `FROM`
+  - 支持真实 topic 或消息类型
+  - 支持 `*`、`?` 通配
+  - 同时用真实 `topic` 和 `type` 作为候选来源匹配
+- `WHERE`
+  - 使用 SpEL 执行
+  - 自动把 `AND/OR/NOT` 归一化为 `&&/||/!`
+  - 自动把 SQL 风格 `=`、`<>` 归一化为 `==`、`!=`
+- `SELECT`
+  - `SELECT *` 表示把整个运行时上下文直接提供给动作模板
+  - 非 `*` 时只额外产出显式表达式结果
+  - 没有写 `AS` 时会自动推导变量名
 
-## 5. 核心接口
+### 6.3 项目级过滤
 
-| 方法 | 路径 | 权限 | 说明 |
-| --- | --- | --- | --- |
-| `POST` | `/api/v1/rules` | `rule:create` | 创建规则 |
-| `POST` | `/api/v1/rules/list` | `rule:read` | 分页查询规则 |
-| `GET` | `/api/v1/rules/{id}` | `rule:read` | 获取规则详情 |
-| `PUT` | `/api/v1/rules/{id}` | `rule:update` | 更新规则 |
-| `PUT` | `/api/v1/rules/{id}/enable` | `rule:enable` | 启用规则 |
-| `PUT` | `/api/v1/rules/{id}/disable` | `rule:enable` | 停用规则 |
-| `DELETE` | `/api/v1/rules/{id}` | `rule:delete` | 删除规则 |
+如果规则配置了 `projectId`，运行时会通过 `DeviceClient` 查询设备基础信息并对比 `projectId`，只有匹配时才继续执行。
 
-接口约束：
+## 7. 动作执行设计
 
-- `name` 创建时必填，更新时如传入则不能为空且会自动去掉首尾空格。
-- `sqlExpr` 创建时必填，更新时如传入则不能为空且会自动去掉首尾空格。
-- `actions` 支持嵌套校验；`actionType` 不能为空。
-- `actionConfig` 如为空，服务层会落成 `{}`；如非空，必须是合法 JSON。
-- 规则详情与列表响应不再暴露 `createdBy`。
+### 7.1 已支持动作
 
-## 6. 关键设计
+- `KAFKA_FORWARD`
+  - 向任意 Kafka topic 发送渲染后的消息体
+- `WEBHOOK`
+  - 通过 JDK `HttpClient` 发送 HTTP 请求
+- `EMAIL`
+  - 通过 `NotificationClient` 调用 `firefly-support` 内部通知接口
+- `SMS`
+  - 通过 `NotificationClient` 调用 `firefly-support` 内部通知接口
+- `DEVICE_COMMAND`
+  - 组装下行 `DeviceMessage` 并投递到 `device.message.down`
 
-### 6.1 单条规则统一走租户归属校验
+### 7.2 暂不支持动作
 
-新增 `requireOwnedRule(id)`：
+- `DB_WRITE`
+  - 当前没有通用、安全且可运维的动态落库目标定义
+  - 运行时遇到该动作会记一次失败统计并输出错误日志
 
-- 查询条件固定为 `id + tenantId`
-- 查询不到时返回 `RULE_ENGINE_NOT_FOUND`
-- 详情、更新、启停、删除都复用该逻辑
+### 7.3 动作模板渲染
 
-这样可以避免“猜到其他租户规则主键后直接访问”的越权风险。
+动作配置中的字符串字段支持 `${...}` 模板，例如：
 
-### 6.2 动作配置在服务层做 JSON 标准化
+```json
+{
+  "topic": "runtime.alerts",
+  "key": "${deviceId}",
+  "payload": {
+    "deviceName": "${deviceName}",
+    "temp": "${temp}"
+  }
+}
+```
 
-新增 `normalizeActionConfig`：
+模板表达式同样走 SpEL 取值，可引用 `SELECT` 结果或上下文字段。
 
-- 空值或空白串归一化为 `{}`，避免前端未填动作配置时写入异常
-- 非空值先用 `ObjectMapper.readTree(...)` 校验合法性
-- 校验通过后再序列化成紧凑 JSON 字符串写入库中
+## 8. 关键设计取舍
 
-这样数据库层只负责存储，不再承担输入校验职责。
+- 不引入完整 SQL 引擎
+  - 当前规则编辑页就是 SQL-like 文本，先用“受限语法 + SpEL”补齐运行时，复杂度和可维护性更平衡。
+- 统计更新使用 XML SQL
+  - 避免 `selectById -> Java 累加 -> updateById` 带来的并发覆盖问题。
+- 项目过滤通过内部设备接口兜底
+  - 没有强行修改所有消息模型和所有上游生产者，先用内部查询补齐项目维度。
+- `DB_WRITE` 明确失败而不是静默忽略
+  - 避免规则看似启用、实际上没有任何动作落地。
 
-### 6.3 列表批量加载动作
+## 9. 风险与后续建议
 
-`listRules` 不再在 `result.convert(this::buildVO)` 中逐条查动作，而是：
+- 当前规则在每次消息到达时都会解析 `sqlExpr`，后续可增加规则编译缓存。
+- `WEBHOOK` 为同步调用，若远端慢会拖长单条消息处理时延，后续可引入异步派发或超时/重试策略。
+- 目前 `EMAIL`、`SMS` 走统一通知中心，后续若增加 `PHONE`、`WECHAT`、`IN_APP`，建议在枚举和动作配置层统一扩展。
+- 如果未来规则量增长明显，建议增加按租户缓存启用规则、按 topic/type 建索引分桶。
 
-1. 先查出当前页规则列表
-2. 一次性按 `rule_id in (...)` 把动作全部查出
-3. 按 `ruleId` 分组后回填到对应 VO
+## 10. 验证
 
-这一调整把列表场景从 `1 + N` 次动作查询收敛为固定 `1` 次。
+本次新增或更新验证：
 
-### 6.4 JSONB 显式映射
-
-`RuleAction.actionConfig` 显式声明：
-
-- `@TableField(typeHandler = JsonbStringTypeHandler.class)`
-- `@TableName(autoResultMap = true)`
-
-避免依赖隐式推断，提升 PostgreSQL JSONB 读写稳定性。
-
-## 7. 风险与权衡
-
-- 当前规则接口仍然以数据库主键 `id` 作为路径标识。
-  - 原因：现有表结构未提供独立业务唯一键，且前端主界面不直接展示该主键。
-- 规则引擎仍然只提供“定义管理”，不执行 SQL。
-  - 本次修复聚焦在已落地功能的正确性和可维护性，不扩展到完整执行运行时。
-- `actionConfig` 仍使用 JSON 文本承载多种动作配置。
-  - 原因：动作类型较多，短期内不适合强行拆成固定字段模型。
-
-## 8. 验证
-
-本次补充了 `RuleEngineServiceTest`，覆盖：
-
-- 创建规则时的输入标准化和动作默认值
-- 非法 JSON 动作配置拦截
-- 详情查询必须走租户约束
-- 列表查询批量加载动作
+- `RuleRuntimeServiceTest`
+  - 验证 `rule.engine.input` 的规则消费执行
+  - 验证项目级规则过滤
+  - 验证不支持动作的失败统计
+- `MessageRouterServiceTest`
+  - 验证转发到规则引擎时保留原始 topic
