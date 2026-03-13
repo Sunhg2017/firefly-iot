@@ -44,9 +44,6 @@ public class RuleEngineVO {
     @Schema(description = "Last trigger time")
     private LocalDateTime lastTriggerAt;
 
-    @Schema(description = "Creator user ID")
-    private Long createdBy;
-
     @Schema(description = "Creation time")
     private LocalDateTime createdAt;
 

@@ -1,6 +1,8 @@
 package com.songhg.firefly.iot.rule.dto.ruleengine;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.util.List;
@@ -13,6 +15,7 @@ import java.util.List;
 public class RuleEngineUpdateDTO {
 
     @Schema(description = "规则名称")
+    @Size(max = 256)
     private String name;
 
     @Schema(description = "描述")
@@ -25,5 +28,6 @@ public class RuleEngineUpdateDTO {
     private String sqlExpr;
 
     @Schema(description = "规则动作")
+    @Valid
     private List<RuleActionDTO> actions;
 }

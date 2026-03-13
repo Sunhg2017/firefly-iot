@@ -1,6 +1,7 @@
 package com.songhg.firefly.iot.rule.dto.ruleengine;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -30,5 +31,6 @@ public class RuleEngineCreateDTO {
     private String sqlExpr;
 
     @Schema(description = "规则动作")
+    @Valid
     private List<RuleActionDTO> actions;
 }

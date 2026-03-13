@@ -15,6 +15,7 @@ import org.mapstruct.factory.Mappers;
 @Mapper(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
 public interface RuleEngineConvert {
 
+    // Keep this interface explicit so DTO changes always flow into generated mappings.
     RuleEngineConvert INSTANCE = Mappers.getMapper(RuleEngineConvert.class);
 
     @Mapping(target = "actions", ignore = true)
@@ -25,16 +26,30 @@ public interface RuleEngineConvert {
     @Mapping(target = "successCount", ignore = true)
     @Mapping(target = "errorCount", ignore = true)
     @Mapping(target = "createdBy", ignore = true)
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "tenantId", ignore = true)
+    @Mapping(target = "lastTriggerAt", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
     RuleEngine toEntity(RuleEngineCreateDTO dto);
 
     @Mapping(target = "status", ignore = true)
     @Mapping(target = "triggerCount", ignore = true)
     @Mapping(target = "successCount", ignore = true)
     @Mapping(target = "errorCount", ignore = true)
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "createdBy", ignore = true)
+    @Mapping(target = "tenantId", ignore = true)
+    @Mapping(target = "lastTriggerAt", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
     void updateEntity(RuleEngineUpdateDTO dto, @MappingTarget RuleEngine entity);
 
     RuleActionDTO toActionDTO(RuleAction entity);
 
     @Mapping(target = "ruleId", ignore = true)
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
     RuleAction toActionEntity(RuleActionDTO dto);
 }

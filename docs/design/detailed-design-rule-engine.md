@@ -1,280 +1,159 @@
-# Firefly-IoT 规则引擎模块 — 详细设计文档
+# 规则引擎详细设计
 
-> **版本**: v1.0.0  
-> **日期**: 2026-02-27  
-> **状态**: Draft  
-> **关联**: [产品设计文档](./product-design.md) §8 规则引擎与数据流
+## 1. 背景
 
----
+`firefly-rule` 同时承载规则引擎、告警和跨租户共享三类能力，其中规则引擎负责“规则定义”和“规则动作定义”的管理。当前代码已经具备规则 CRUD、启停和动作配置存储能力，但原有设计文档与实现存在偏差，服务层也有几处明显不合理点：
 
-## 目录
+- 规则详情、更新、启停、删除仅按 `id` 查询，缺少租户归属校验。
+- 动作配置 `actionConfig` 直接写入 PostgreSQL JSONB，缺少服务层 JSON 预校验，错误会延迟到数据库层暴露。
+- 列表页构建 VO 时每条规则都会单独查询一次动作，形成 N+1 查询。
+- 返回对象暴露了 `createdBy` 这类前端不需要的内部主键信息。
 
-1. [模块概述](#1-模块概述)
-2. [核心概念与术语](#2-核心概念与术语)
-3. [数据库设计](#3-数据库设计)
-4. [枚举定义](#4-枚举定义)
-5. [API 接口设计](#5-api-接口设计)
-6. [后端实现](#6-后端实现)
-7. [前端交互设计](#7-前端交互设计)
-8. [非功能性需求](#8-非功能性需求)
+## 2. 目标
 
----
+- 规则读写必须限定在当前租户范围内。
+- 动作配置在进入持久层前完成 JSON 合法性校验和标准化。
+- 列表查询改成批量加载动作，避免不必要的数据库往返。
+- 文档、接口和运维说明保持与当前实现一致。
 
-## 1. 模块概述
+## 3. 范围
 
-### 1.1 模块定位
+本次设计覆盖：
 
-规则引擎模块是 Firefly-IoT 的 **数据处理核心**，负责对设备上报的消息进行实时筛选、转换和动作触发。用户通过 SQL-like 语法定义规则条件，配置一个或多个动作（数据存储、消息转发、Webhook、告警通知等），实现设备数据的自动化处理。
+- `RuleEngineService`
+- `RuleAction` JSONB 映射
+- `RuleEngineCreateDTO` / `RuleEngineUpdateDTO` / `RuleEngineVO`
+- `RuleEngineServiceTest`
+- 规则引擎设计、运维、使用文档
 
-### 1.2 核心能力
+不包含完整规则执行器、SQL 解析器、动作投递链路和告警处理逻辑扩展。
 
-| 能力 | 说明 |
-|------|------|
-| **规则 CRUD** | 创建、查看、编辑、删除规则 |
-| **SQL 筛选** | 基于 SQL-like 语法定义数据筛选条件和字段映射 |
-| **多动作** | 每条规则支持配置多个动作，按顺序执行 |
-| **启用/禁用** | 运行中的规则可以随时禁用/启用 |
-| **调试运行** | 模拟输入数据，验证规则和动作的执行结果 |
-| **规则统计** | 规则触发次数、成功/失败计数、最近触发时间 |
-| **数据权限** | 基于用户角色的项目级数据权限过滤 |
+## 4. 数据模型
 
-### 1.3 数据流
+### 4.1 `rules`
 
-```
-设备消息 ──► 规则引擎入口 ──► SQL 筛选 ──► 转换 ──► 动作(Action)
-                                                      │
-                              ┌────────────────────────┤
-                              ▼            ▼           ▼           ▼
-                         数据库写入    消息转发      Webhook     告警通知
-                         (TDB/PG)   (Kafka)    (HTTP POST)  (邮件/短信)
-```
-
----
-
-## 2. 核心概念与术语
-
-| 术语 | 英文 | 说明 |
-|------|------|------|
-| **规则 (Rule)** | Rule | 数据处理逻辑的基本单元，包含 SQL 筛选条件和动作列表 |
-| **规则 SQL** | Rule SQL | SQL-like 表达式，定义数据源 (FROM)、筛选条件 (WHERE)、输出字段 (SELECT) |
-| **动作 (Action)** | Rule Action | 规则匹配后执行的操作，如写数据库、转发消息、调用 Webhook |
-| **动作类型** | Action Type | DB_WRITE / KAFKA_FORWARD / WEBHOOK / EMAIL / SMS / DEVICE_COMMAND |
-| **动作配置** | Action Config | 动作的具体参数，如 Webhook URL、Kafka Topic、邮件地址等 |
-| **触发统计** | Trigger Stats | 规则的执行统计：触发次数、成功次数、失败次数 |
-
----
-
-## 3. 数据库设计
-
-### 3.1 rules 表
+表结构来自 [`V1__init_rules.sql`](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/db/migration/V1__init_rules.sql)：
 
 ```sql
 CREATE TABLE rules (
-    id                  BIGSERIAL PRIMARY KEY,
-    tenant_id           BIGINT NOT NULL REFERENCES tenants(id),
-    project_id          BIGINT REFERENCES projects(id),
-    name                VARCHAR(256) NOT NULL,
-    description         TEXT,
-    sql_expr            TEXT NOT NULL,
-    status              VARCHAR(16) NOT NULL DEFAULT 'DISABLED',
-    trigger_count       BIGINT NOT NULL DEFAULT 0,
-    success_count       BIGINT NOT NULL DEFAULT 0,
-    error_count         BIGINT NOT NULL DEFAULT 0,
-    last_trigger_at     TIMESTAMPTZ,
-    created_by          BIGINT,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX idx_rules_tenant ON rules(tenant_id);
-CREATE INDEX idx_rules_project ON rules(project_id);
-CREATE INDEX idx_rules_status ON rules(tenant_id, status);
-```
-
-### 3.2 rule_actions 表
-
-```sql
-CREATE TABLE rule_actions (
     id              BIGSERIAL PRIMARY KEY,
-    rule_id         BIGINT NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
-    action_type     VARCHAR(32) NOT NULL,
-    action_config   JSONB NOT NULL DEFAULT '{}',
-    sort_order      INT NOT NULL DEFAULT 0,
-    enabled         BOOLEAN NOT NULL DEFAULT TRUE,
+    tenant_id       BIGINT NOT NULL,
+    project_id      BIGINT,
+    name            VARCHAR(256) NOT NULL,
+    description     TEXT,
+    sql_expr        TEXT NOT NULL,
+    status          VARCHAR(16) NOT NULL DEFAULT 'DISABLED',
+    trigger_count   BIGINT NOT NULL DEFAULT 0,
+    success_count   BIGINT NOT NULL DEFAULT 0,
+    error_count     BIGINT NOT NULL DEFAULT 0,
+    last_trigger_at TIMESTAMPTZ,
+    created_by      BIGINT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_rule_actions_rule ON rule_actions(rule_id);
 ```
 
-### 3.3 字段说明
+说明：
 
-**rules 表**:
+- `tenant_id` 是规则归属边界，服务层所有单条读写都必须基于该字段做约束。
+- `project_id` 用于项目维度筛选，但当前未在规则引擎接口中展开项目详情。
+- `status` 仅保存启停状态，真正执行链路由后续运行时组件消费。
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `sql_expr` | TEXT | 规则 SQL 表达式 |
-| `status` | VARCHAR(16) | ENABLED / DISABLED |
-| `trigger_count` | BIGINT | 总触发次数 |
-| `success_count` | BIGINT | 成功次数 |
-| `error_count` | BIGINT | 失败次数 |
-| `last_trigger_at` | TIMESTAMPTZ | 最近触发时间 |
+### 4.2 `rule_actions`
 
-**rule_actions 表**:
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `action_type` | VARCHAR(32) | 动作类型枚举 |
-| `action_config` | JSONB | 动作配置 JSON |
-| `sort_order` | INT | 执行顺序 |
-| `enabled` | BOOLEAN | 是否启用 |
-
----
-
-## 4. 枚举定义
-
-### 4.1 RuleEngineStatus
-
-```java
-ENABLED("ENABLED"),
-DISABLED("DISABLED")
+```sql
+CREATE TABLE rule_actions (
+    id            BIGSERIAL PRIMARY KEY,
+    rule_id       BIGINT NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
+    action_type   VARCHAR(32) NOT NULL,
+    action_config JSONB NOT NULL DEFAULT '{}',
+    sort_order    INT NOT NULL DEFAULT 0,
+    enabled       BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 ```
 
-### 4.2 RuleActionType
+说明：
 
-```java
-DB_WRITE("DB_WRITE"),               // 写入数据库
-KAFKA_FORWARD("KAFKA_FORWARD"),     // 转发到 Kafka
-WEBHOOK("WEBHOOK"),                 // HTTP Webhook
-EMAIL("EMAIL"),                     // 邮件通知
-SMS("SMS"),                         // 短信通知
-DEVICE_COMMAND("DEVICE_COMMAND")    // 设备联动指令
-```
+- `action_config` 以 JSONB 存储，不同动作类型的结构不同。
+- 本次补充 `JsonbStringTypeHandler` 显式映射，保证读写一致。
 
----
-
-## 5. API 接口设计
-
-### 5.1 接口总览
+## 5. 核心接口
 
 | 方法 | 路径 | 权限 | 说明 |
-|------|------|------|------|
-| POST | `/api/v1/rules` | `rule:create` | 创建规则 |
-| POST | `/api/v1/rules/list` | `rule:read` | 分页查询 |
-| GET | `/api/v1/rules/{id}` | `rule:read` | 查看详情（含动作列表） |
-| PUT | `/api/v1/rules/{id}` | `rule:update` | 更新规则 |
-| PUT | `/api/v1/rules/{id}/enable` | `rule:enable` | 启用规则 |
-| PUT | `/api/v1/rules/{id}/disable` | `rule:enable` | 禁用规则 |
-| DELETE | `/api/v1/rules/{id}` | `rule:delete` | 删除规则 |
+| --- | --- | --- | --- |
+| `POST` | `/api/v1/rules` | `rule:create` | 创建规则 |
+| `POST` | `/api/v1/rules/list` | `rule:read` | 分页查询规则 |
+| `GET` | `/api/v1/rules/{id}` | `rule:read` | 获取规则详情 |
+| `PUT` | `/api/v1/rules/{id}` | `rule:update` | 更新规则 |
+| `PUT` | `/api/v1/rules/{id}/enable` | `rule:enable` | 启用规则 |
+| `PUT` | `/api/v1/rules/{id}/disable` | `rule:enable` | 停用规则 |
+| `DELETE` | `/api/v1/rules/{id}` | `rule:delete` | 删除规则 |
 
-### 5.2 创建规则
+接口约束：
 
-**Request**:
-```json
-{
-  "name": "高温告警",
-  "description": "温度超过50度触发告警",
-  "projectId": 1,
-  "sqlExpr": "SELECT deviceName, payload.temperature AS temp FROM 't_001/pk_smart_meter/+/PROPERTY_REPORT' WHERE payload.temperature > 50",
-  "actions": [
-    {
-      "actionType": "WEBHOOK",
-      "actionConfig": { "url": "https://example.com/alert", "method": "POST" },
-      "sortOrder": 1
-    },
-    {
-      "actionType": "EMAIL",
-      "actionConfig": { "to": "admin@example.com", "subject": "高温告警" },
-      "sortOrder": 2
-    }
-  ]
-}
-```
+- `name` 创建时必填，更新时如传入则不能为空且会自动去掉首尾空格。
+- `sqlExpr` 创建时必填，更新时如传入则不能为空且会自动去掉首尾空格。
+- `actions` 支持嵌套校验；`actionType` 不能为空。
+- `actionConfig` 如为空，服务层会落成 `{}`；如非空，必须是合法 JSON。
+- 规则详情与列表响应不再暴露 `createdBy`。
 
-### 5.3 规则详情响应
+## 6. 关键设计
 
-```json
-{
-  "id": 1,
-  "name": "高温告警",
-  "sqlExpr": "SELECT ...",
-  "status": "DISABLED",
-  "triggerCount": 0,
-  "successCount": 0,
-  "errorCount": 0,
-  "actions": [
-    { "id": 1, "actionType": "WEBHOOK", "actionConfig": { ... }, "sortOrder": 1, "enabled": true },
-    { "id": 2, "actionType": "EMAIL", "actionConfig": { ... }, "sortOrder": 2, "enabled": true }
-  ]
-}
-```
+### 6.1 单条规则统一走租户归属校验
 
----
+新增 `requireOwnedRule(id)`：
 
-## 6. 后端实现
+- 查询条件固定为 `id + tenantId`
+- 查询不到时返回 `RULE_ENGINE_NOT_FOUND`
+- 详情、更新、启停、删除都复用该逻辑
 
-### 6.1 文件结构
+这样可以避免“猜到其他租户规则主键后直接访问”的越权风险。
 
-```
-firefly-system/src/main/java/.../system/
-├── entity/
-│   ├── Rule.java
-│   └── RuleAction.java
-├── dto/rule_engine/
-│   ├── RuleEngineVO.java
-│   ├── RuleEngineCreateDTO.java
-│   ├── RuleEngineUpdateDTO.java
-│   ├── RuleEngineQueryDTO.java
-│   └── RuleActionDTO.java
-├── convert/
-│   └── RuleEngineConvert.java
-├── mapper/
-│   ├── RuleEngineMapper.java
-│   └── RuleActionMapper.java
-├── service/
-│   └── RuleEngineService.java
-└── controller/
-    └── RuleEngineController.java
+### 6.2 动作配置在服务层做 JSON 标准化
 
-firefly-common/src/main/java/.../common/enums/
-├── RuleEngineStatus.java
-└── RuleActionType.java
-```
+新增 `normalizeActionConfig`：
 
-### 6.2 关键设计
+- 空值或空白串归一化为 `{}`，避免前端未填动作配置时写入异常
+- 非空值先用 `ObjectMapper.readTree(...)` 校验合法性
+- 校验通过后再序列化成紧凑 JSON 字符串写入库中
 
-- **规则与动作一对多**: 创建/更新规则时同步保存动作列表
-- **动作配置**: JSONB 存储，不同动作类型的配置结构不同
-- **启用/禁用**: 仅修改 `status` 字段，实际的规则执行由消息处理模块根据 status 判断
-- **数据范围**: `listRules()` 标注 `@DataScope`
-- **删除级联**: 删除规则时级联删除所有动作 (ON DELETE CASCADE)
+这样数据库层只负责存储，不再承担输入校验职责。
 
----
+### 6.3 列表批量加载动作
 
-## 7. 前端交互设计
+`listRules` 不再在 `result.convert(this::buildVO)` 中逐条查动作，而是：
 
-### 7.1 规则列表页
+1. 先查出当前页规则列表
+2. 一次性按 `rule_id in (...)` 把动作全部查出
+3. 按 `ruleId` 分组后回填到对应 VO
 
-- **搜索栏**: 关键字搜索 + 状态筛选
-- **表格列**: 规则名称、SQL 表达式（截断）、状态、触发次数、成功/失败、最近触发、操作
-- **操作按钮**: 新建规则、编辑、启用/禁用、删除
-- **路由**: `/rule-engine`
+这一调整把列表场景从 `1 + N` 次动作查询收敛为固定 `1` 次。
 
-### 7.2 新建/编辑弹窗
+### 6.4 JSONB 显式映射
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| 规则名称 | Input | ✅ | |
-| 描述 | TextArea | ❌ | |
-| SQL 表达式 | TextArea | ✅ | 代码编辑区域 |
-| 动作列表 | 动态表单 | ≥1 | 类型 + 配置 JSON |
+`RuleAction.actionConfig` 显式声明：
 
----
+- `@TableField(typeHandler = JsonbStringTypeHandler.class)`
+- `@TableName(autoResultMap = true)`
 
-## 8. 非功能性需求
+避免依赖隐式推断，提升 PostgreSQL JSONB 读写稳定性。
 
-| 需求 | 指标 |
-|------|------|
-| **规则匹配延迟** | P99 < 50ms（单条规则） |
-| **并发规则** | 单租户最多 100 条启用规则 |
-| **动作执行** | 异步执行，不阻塞消息主流程 |
-| **配额** | 每租户规则数上限由 `tenant_quotas.max_rules` 控制 |
+## 7. 风险与权衡
+
+- 当前规则接口仍然以数据库主键 `id` 作为路径标识。
+  - 原因：现有表结构未提供独立业务唯一键，且前端主界面不直接展示该主键。
+- 规则引擎仍然只提供“定义管理”，不执行 SQL。
+  - 本次修复聚焦在已落地功能的正确性和可维护性，不扩展到完整执行运行时。
+- `actionConfig` 仍使用 JSON 文本承载多种动作配置。
+  - 原因：动作类型较多，短期内不适合强行拆成固定字段模型。
+
+## 8. 验证
+
+本次补充了 `RuleEngineServiceTest`，覆盖：
+
+- 创建规则时的输入标准化和动作默认值
+- 非法 JSON 动作配置拦截
+- 详情查询必须走租户约束
+- 列表查询批量加载动作
