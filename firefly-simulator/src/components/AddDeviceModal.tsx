@@ -95,7 +95,7 @@ const drawerPanelCardStyle = {
 } as const;
 
 function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, streamMode?: string, httpAuthMode?: string): string[] {
-  if (step === 0) return ['name', 'protocol'];
+  if (step === 0) return ['name', 'nickname', 'protocol'];
   if (step === 1) {
     switch (protocol) {
       case 'HTTP':
@@ -166,11 +166,25 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     setCurrentStep((prev) => Math.min(prev + 1, STEP_TITLES.length - 1));
   };
 
-  const handleAdd = async () => {
-    const values = await form.validateFields();
-    useSimStore.getState().addDevice(values);
-    addLog('system', 'System', 'info', `新增模拟设备：${values.name}`);
-    message.success(`已新增模拟设备：${values.name}`);
+  const handleCreateDevice = async () => {
+    const submitFields = Array.from(new Set([
+      ...getStepFields(protocol, 0, mqttAuthMode, streamMode, httpAuthMode),
+      ...getStepFields(protocol, 1, mqttAuthMode, streamMode, httpAuthMode),
+      ...getStepFields(protocol, 2, mqttAuthMode, streamMode, httpAuthMode),
+    ]));
+    if (submitFields.length > 0) {
+      await form.validateFields(submitFields);
+    }
+
+    const values = form.getFieldsValue(true);
+    const normalizedValues = {
+      ...values,
+      nickname: `${values.nickname || values.name || ''}`.trim(),
+    };
+
+    useSimStore.getState().addDevice(normalizedValues);
+    addLog('system', 'System', 'info', `新增模拟设备：${normalizedValues.name}`);
+    message.success(`已新增模拟设备：${normalizedValues.name}`);
     closeDrawer();
   };
 
@@ -479,7 +493,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
             {currentStep < STEP_TITLES.length - 1 ? (
               <Button type="primary" onClick={() => void nextStep()}>下一步</Button>
             ) : (
-              <Button type="primary" onClick={() => void handleAdd()}>创建设备</Button>
+              <Button type="primary" onClick={() => void handleCreateDevice()}>创建设备</Button>
             )}
           </Space>
         </Space>
