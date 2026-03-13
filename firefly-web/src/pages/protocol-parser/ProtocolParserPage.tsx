@@ -17,6 +17,7 @@ import {
   Steps,
   Table,
   Tag,
+  Tabs,
   Typography,
   message,
 } from 'antd';
@@ -824,6 +825,7 @@ const ProtocolParserPage: React.FC = () => {
   const [runtimeMetrics, setRuntimeMetrics] = useState<RuntimeMetrics | null>(null);
   const [runtimePlugins, setRuntimePlugins] = useState<RuntimePlugin[]>([]);
   const [runtimeCatalog, setRuntimeCatalog] = useState<RuntimePluginCatalogItem[]>([]);
+  const [mainTabKey, setMainTabKey] = useState<'rules' | 'runtime'>('rules');
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorMode, setEditorMode] = useState<'create' | 'edit'>('create');
   const [currentRecord, setCurrentRecord] = useState<ProtocolParserRecord | null>(null);
@@ -1020,6 +1022,15 @@ const ProtocolParserPage: React.FC = () => {
       tenantDefault: records.filter((item) => item.scopeType === 'TENANT').length,
     }),
     [records],
+  );
+  const overviewItems = useMemo(
+    () => [
+      { title: '已启用', value: stats.enabled, color: '#16a34a' },
+      { title: '草稿', value: stats.drafts, color: '#2563eb' },
+      { title: '下行规则', value: stats.downlink, color: '#c2410c' },
+      { title: '租户默认', value: stats.tenantDefault, color: '#7c3aed' },
+    ],
+    [stats],
   );
 
   const editorBusinessIdentifiers = useMemo(() => {
@@ -1953,7 +1964,38 @@ const ProtocolParserPage: React.FC = () => {
         }
       />
 
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+      {mainTabKey === 'rules' ? <Card title="筛选条件" size="small" style={{ marginBottom: 16, borderRadius: 16 }}>
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Space wrap>
+            <Tag color="blue">{currentTenant?.code ? `${currentTenantLabel} (${currentTenant.code})` : currentTenantLabel}</Tag>
+            {selectedProduct ? <Tag color="gold">{`${selectedProduct.name} (${selectedProduct.productKey})`}</Tag> : <Tag>当前查看全部产品</Tag>}
+            <Tag color="green">规则总数 {total}</Tag>
+            <Tag>{`已加载插件 ${runtimePlugins.length}`}</Tag>
+          </Space>
+          <Row gutter={[12, 12]}>
+            {overviewItems.map((item) => (
+              <Col xs={12} md={6} key={item.title}>
+                <Card size="small" style={{ borderRadius: 14, background: '#fafafa' }}>
+                  <Text type="secondary">{item.title}</Text>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: item.color }}>{item.value}</div>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        </Space>
+      </Card> : null}
+
+      <Tabs
+        activeKey={mainTabKey}
+        onChange={(key) => setMainTabKey(key as 'rules' | 'runtime')}
+        items={[
+          { key: 'rules', label: '规则维护' },
+          { key: 'runtime', label: '运行时状态' },
+        ]}
+        style={{ marginBottom: 16 }}
+      />
+
+      <Row gutter={[12, 12]} style={{ display: 'none' }}>
         {[
           { title: '已启用', value: stats.enabled, color: '#16a34a' },
           { title: '草稿', value: stats.drafts, color: '#2563eb' },
@@ -2049,7 +2091,7 @@ const ProtocolParserPage: React.FC = () => {
         </Row>
       </Card>
 
-      <ProtocolParserRuntimePanel
+      {mainTabKey === 'runtime' ? <ProtocolParserRuntimePanel
         loading={runtimeLoading}
         reloading={runtimeReloading}
         metrics={runtimeMetrics}
@@ -2057,9 +2099,9 @@ const ProtocolParserPage: React.FC = () => {
         catalog={runtimeCatalog}
         onRefresh={() => void fetchRuntime()}
         onReload={() => void handleReloadPlugins()}
-      />
+      /> : null}
 
-      <Card style={{ borderRadius: 16 }}>
+      {mainTabKey === 'rules' ? <Card title="规则列表" size="small" style={{ borderRadius: 16 }}>
         <Table
           rowKey="id"
           loading={loading}
@@ -2079,7 +2121,7 @@ const ProtocolParserPage: React.FC = () => {
             },
           }}
         />
-      </Card>
+      </Card> : null}
 
       <Drawer
         title={editorMode === 'create' ? '新建协议解析规则' : '编辑协议解析规则'}
