@@ -102,6 +102,14 @@ interface AsyncTaskRecord {
   errorMessage?: string;
 }
 
+interface ShadowDeviceContext {
+  id: number;
+  deviceName: string;
+  nickname?: string;
+  productName?: string;
+  productKey?: string;
+}
+
 const DEVICE_AUTH_LABELS: Record<string, string> = {
   DEVICE_SECRET: '一机一密',
   PRODUCT_SECRET: '一型一密',
@@ -238,7 +246,7 @@ const DeviceList: React.FC = () => {
   const [keyword, setKeyword] = useState('');
   const [searchText, setSearchText] = useState('');
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  const [shadowDeviceId, setShadowDeviceId] = useState<number | null>(null);
+  const [shadowDevice, setShadowDevice] = useState<ShadowDeviceContext | null>(null);
   const [shadowOpen, setShadowOpen] = useState(false);
   const [locatorDevice, setLocatorDevice] = useState<DeviceRecord | null>(null);
   const [batchImportFile, setBatchImportFile] = useState<File | null>(null);
@@ -254,6 +262,34 @@ const DeviceList: React.FC = () => {
     () => products.filter((item) => item.deviceAuthType !== 'PRODUCT_SECRET'),
     [products],
   );
+
+  const productLookup = useMemo(
+    () => new Map(products.map((item) => [item.id, item])),
+    [products],
+  );
+
+  const activeFilters = useMemo(() => {
+    const chips: Array<{ key: string; label: string; value: string }> = [];
+    if (keyword) {
+      chips.push({ key: 'keyword', label: '关键词', value: keyword });
+    }
+    if (filterProduct) {
+      const product = productLookup.get(filterProduct);
+      chips.push({
+        key: 'product',
+        label: '产品',
+        value: product ? `${product.name} / ${product.productKey}` : `${filterProduct}`,
+      });
+    }
+    if (filterStatus) {
+      chips.push({ key: 'status', label: '设备状态', value: statusLabels[filterStatus] || filterStatus });
+    }
+    if (filterOnline) {
+      const badge = onlineBadge[filterOnline] || onlineBadge.UNKNOWN;
+      chips.push({ key: 'online', label: '在线状态', value: badge.text });
+    }
+    return chips;
+  }, [filterOnline, filterProduct, filterStatus, keyword, productLookup]);
 
   const fetchProducts = async () => {
     try {
@@ -591,15 +627,36 @@ const DeviceList: React.FC = () => {
       dataIndex: 'deviceName',
       width: 180,
       render: (value: string, record: DeviceRecord) => (
-        <div>
-          <div>
-            <Typography.Text code style={{ fontSize: 12 }}>
-              {value}
-            </Typography.Text>
-          </div>
-          {record.nickname ? <div style={{ color: '#888', fontSize: 12 }}>{record.nickname}</div> : null}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <Typography.Text style={{ fontWeight: 600, color: '#0f172a' }}>
+            {record.nickname || value}
+          </Typography.Text>
+          <Typography.Text code style={{ fontSize: 12, width: 'fit-content' }}>
+            {value}
+          </Typography.Text>
         </div>
       ),
+    },
+    {
+      title: '产品',
+      dataIndex: 'productId',
+      width: 220,
+      render: (value: number) => {
+        const product = productLookup.get(value);
+        if (!product) {
+          return <Typography.Text type="secondary">-</Typography.Text>;
+        }
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <Typography.Text style={{ fontWeight: 600, color: '#0f172a' }}>
+              {product.name}
+            </Typography.Text>
+            <Typography.Text code style={{ fontSize: 12, width: 'fit-content' }}>
+              {product.productKey}
+            </Typography.Text>
+          </div>
+        );
+      },
     },
     {
       title: '状态',
@@ -668,7 +725,14 @@ const DeviceList: React.FC = () => {
             size="small"
             icon={<CloudOutlined />}
             onClick={() => {
-              setShadowDeviceId(record.id);
+              const product = productLookup.get(record.productId);
+              setShadowDevice({
+                id: record.id,
+                deviceName: record.deviceName,
+                nickname: record.nickname || undefined,
+                productName: product?.name,
+                productKey: product?.productKey,
+              });
               setShadowOpen(true);
             }}
           >
@@ -727,7 +791,12 @@ const DeviceList: React.FC = () => {
           <Col xs={12} sm={6} key={item.title}>
             <Card
               styles={{ body: { padding: '14px 16px' } }}
-              style={{ borderRadius: 10, border: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+              style={{
+                borderRadius: 18,
+                border: '1px solid rgba(148,163,184,0.14)',
+                boxShadow: '0 12px 28px rgba(15,23,42,0.05)',
+                background: 'linear-gradient(135deg, #ffffff 0%, #f8fbff 100%)',
+              }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div
@@ -757,9 +826,15 @@ const DeviceList: React.FC = () => {
 
       <Card
         styles={{ body: { padding: '12px 16px' } }}
-        style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+        style={{
+          borderRadius: 18,
+          marginBottom: 16,
+          border: '1px solid rgba(148,163,184,0.14)',
+          boxShadow: '0 14px 32px rgba(15,23,42,0.05)',
+          background: 'linear-gradient(135deg, #ffffff 0%, #f8fbff 100%)',
+        }}
       >
-        <Space wrap>
+        <Space wrap style={{ width: '100%' }}>
           <Search
             value={searchText}
             placeholder="搜索设备名称/别名"
@@ -817,9 +892,47 @@ const DeviceList: React.FC = () => {
             }}
           />
         </Space>
+        <div
+          style={{
+            marginTop: 14,
+            paddingTop: 14,
+            borderTop: '1px solid rgba(148,163,184,0.12)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <Space wrap size={[8, 8]}>
+            <Typography.Text type="secondary">当前筛选</Typography.Text>
+            {activeFilters.length > 0 ? activeFilters.map((item) => (
+              <Tag key={item.key} color="blue">
+                {item.label}: {item.value}
+              </Tag>
+            )) : <Tag>全部设备</Tag>}
+          </Space>
+          <Space wrap size={[8, 8]}>
+            <Tag color="purple">已选 {selectedDeviceIds.length} 台</Tag>
+            <Tag color="green">当前页在线 {stats.online} 台</Tag>
+            <Tag>当前页离线 {stats.offline} 台</Tag>
+          </Space>
+        </div>
       </Card>
 
-      <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+      <Card
+        title="设备目录"
+        extra={(
+          <Space wrap size={[8, 8]}>
+            {selectedDeviceIds.length > 0 ? <Tag color="purple">已选择 {selectedDeviceIds.length} 台设备</Tag> : null}
+            <Tag color="blue">支持直接查看影子、标识和密钥</Tag>
+          </Space>
+        )}
+        style={{
+          borderRadius: 18,
+          border: '1px solid rgba(148,163,184,0.14)',
+          boxShadow: '0 16px 36px rgba(15,23,42,0.05)',
+        }}
+      >
         <Table
           rowKey="id"
           rowSelection={rowSelection}
@@ -985,7 +1098,18 @@ const DeviceList: React.FC = () => {
         </Form>
       </Modal>
 
-      <DeviceShadowDrawer deviceId={shadowDeviceId} open={shadowOpen} onClose={() => setShadowOpen(false)} />
+      <DeviceShadowDrawer
+        deviceId={shadowDevice?.id || null}
+        deviceName={shadowDevice?.deviceName}
+        nickname={shadowDevice?.nickname}
+        productName={shadowDevice?.productName}
+        productKey={shadowDevice?.productKey}
+        open={shadowOpen}
+        onClose={() => {
+          setShadowOpen(false);
+          setShadowDevice(null);
+        }}
+      />
       <DeviceLocatorModal
         deviceId={locatorDevice?.id || null}
         deviceName={locatorDevice?.deviceName}
