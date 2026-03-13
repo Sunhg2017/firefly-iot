@@ -19,11 +19,11 @@ export default function StatusBar() {
   return (
     <div
       style={{
-        marginLeft: 16,
         flexShrink: 0,
-        minWidth: 420,
         display: 'flex',
         alignItems: 'center',
+        marginTop: 12,
+        minWidth: 0,
       }}
     >
       <div
@@ -40,6 +40,8 @@ export default function StatusBar() {
           boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
           color: '#94a3b8',
           fontSize: 11,
+          minWidth: 0,
+          flexWrap: 'wrap',
         }}
       >
         <Text style={{ fontSize: 11, color: '#cbd5e1' }}>

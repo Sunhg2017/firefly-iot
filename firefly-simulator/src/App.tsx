@@ -74,66 +74,73 @@ export default function App() {
           'radial-gradient(circle at top left, rgba(251,191,36,0.14), transparent 24%), radial-gradient(circle at top right, rgba(59,130,246,0.16), transparent 28%), linear-gradient(180deg, #08111f 0%, #101826 52%, #0b1220 100%)',
       }}
     >
-      {/* Left: Device List */}
-      <Sider
-        width={344}
-        style={{
-          background: 'rgba(9, 14, 24, 0.72)',
-          border: '1px solid rgba(148, 163, 184, 0.16)',
-          borderRadius: 24,
-          backdropFilter: 'blur(18px)',
-          boxShadow: '0 18px 60px rgba(0, 0, 0, 0.30)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
-        <DeviceListPanel />
-        <div
+      <Layout style={{ flex: 1, background: 'transparent', minHeight: 0 }}>
+        {/* Left: Device List */}
+        <Sider
+          width={344}
+          breakpoint="lg"
+          collapsedWidth={284}
           style={{
-            padding: '14px 16px 16px',
-            borderTop: '1px solid rgba(148,163,184,0.12)',
-            background: 'linear-gradient(180deg, rgba(15,23,42,0.82) 0%, rgba(8,15,29,0.94) 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <StressTestPanel />
-          <ScenarioPanel />
-          <TemplateEditorPanel />
-        </div>
-      </Sider>
-
-      {/* Right: Control + Logs */}
-      <Layout style={{ background: 'transparent', marginLeft: 16 }}>
-        <Content
-          style={{
-            overflow: 'hidden',
+            background: 'rgba(9, 14, 24, 0.72)',
+            border: '1px solid rgba(148, 163, 184, 0.16)',
+            borderRadius: 24,
+            backdropFilter: 'blur(18px)',
+            boxShadow: '0 18px 60px rgba(0, 0, 0, 0.30)',
             display: 'flex',
             flexDirection: 'column',
-            borderRadius: 28,
-            background: 'rgba(9, 14, 24, 0.68)',
-            border: '1px solid rgba(148, 163, 184, 0.14)',
-            backdropFilter: 'blur(18px)',
-            boxShadow: '0 18px 60px rgba(0, 0, 0, 0.25)',
+            overflow: 'hidden',
+            minWidth: 284,
           }}
         >
-          {/* Top: Device Control */}
-          <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-            <DeviceControlPanel />
-          </div>
-          {/* Bottom: Logs */}
+          <DeviceListPanel />
           <div
             style={{
-              height: 260,
+              padding: '14px 16px 16px',
               borderTop: '1px solid rgba(148,163,184,0.12)',
-              background: 'linear-gradient(180deg, rgba(8,15,29,0.82) 0%, rgba(4,8,17,0.94) 100%)',
+              background: 'linear-gradient(180deg, rgba(15,23,42,0.82) 0%, rgba(8,15,29,0.94) 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
             }}
           >
-            <LogPanel />
+            <StressTestPanel />
+            <ScenarioPanel />
+            <TemplateEditorPanel />
           </div>
-        </Content>
+        </Sider>
+
+        {/* Right: Control + Logs */}
+        <Layout style={{ background: 'transparent', marginLeft: 16, minWidth: 0 }}>
+          <Content
+            style={{
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              borderRadius: 28,
+              background: 'rgba(9, 14, 24, 0.68)',
+              border: '1px solid rgba(148, 163, 184, 0.14)',
+              backdropFilter: 'blur(18px)',
+              boxShadow: '0 18px 60px rgba(0, 0, 0, 0.25)',
+              minWidth: 0,
+            }}
+          >
+            {/* Top: Device Control */}
+            <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+              <DeviceControlPanel />
+            </div>
+            {/* Bottom: Logs */}
+            <div
+              style={{
+                height: 260,
+                borderTop: '1px solid rgba(148,163,184,0.12)',
+                background: 'linear-gradient(180deg, rgba(8,15,29,0.82) 0%, rgba(4,8,17,0.94) 100%)',
+                minHeight: 180,
+              }}
+            >
+              <LogPanel />
+            </div>
+          </Content>
+        </Layout>
       </Layout>
       {/* Global Status Bar */}
       <StatusBar />
