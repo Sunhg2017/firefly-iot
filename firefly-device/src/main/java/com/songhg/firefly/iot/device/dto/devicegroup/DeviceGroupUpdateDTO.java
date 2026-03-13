@@ -21,4 +21,10 @@ public class DeviceGroupUpdateDTO {
 
     @Schema(description = "动态分组规则")
     private String dynamicRule;
+
+    @Schema(description = "分组类型", example = "STATIC")
+    private String type;
+
+    @Schema(description = "父分组编号")
+    private Long parentId;
 }

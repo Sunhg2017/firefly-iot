@@ -72,7 +72,14 @@ public class DeviceGroupController {
     public R<DeviceGroupVO> updateGroup(
             @Parameter(description = "分组编号", required = true) @PathVariable Long id,
             @Valid @RequestBody DeviceGroupUpdateDTO dto) {
-        DeviceGroup group = groupService.updateGroup(id, dto.getName(), dto.getDescription(), dto.getDynamicRule());
+        DeviceGroup group = groupService.updateGroup(
+                id,
+                dto.getName(),
+                dto.getDescription(),
+                dto.getType(),
+                dto.getDynamicRule(),
+                dto.getParentId()
+        );
         return R.ok(DeviceGroupConvert.INSTANCE.toVO(group));
     }
 
@@ -92,8 +99,7 @@ public class DeviceGroupController {
     @RequiresPermission("device-group:read")
     public R<List<DeviceGroupMemberVO>> listDevices(
             @Parameter(description = "分组编号", required = true) @PathVariable Long id) {
-        return R.ok(groupService.listMembers(id).stream()
-                .map(DeviceGroupConvert.INSTANCE::toMemberVO).toList());
+        return R.ok(groupService.listMemberDetails(id));
     }
 
     @Operation(summary = "添加分组成员")
