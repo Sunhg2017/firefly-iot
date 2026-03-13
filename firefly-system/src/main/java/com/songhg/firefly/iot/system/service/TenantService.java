@@ -460,8 +460,8 @@ public class TenantService {
             throw new BizException(ResultCode.TENANT_NOT_FOUND);
         }
         tenant.setStatus(TenantStatus.DEACTIVATING);
-        tenant.setDeletedAt(LocalDateTime.now());
         tenantMapper.updateById(tenant);
+        tenantMapper.deleteById(tenant.getId());
         evictTenantCache(tenantId);
         log.info("Tenant deactivated: id={}, code={}", tenantId, tenant.getCode());
 

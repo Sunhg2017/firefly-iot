@@ -138,16 +138,14 @@ public class DeviceLocatorService {
     public void delete(Long deviceId, Long locatorId) {
         Device device = getDeviceOrThrow(deviceId);
         DeviceLocator locator = getLocatorOrThrow(device.getId(), locatorId);
-        locator.setDeletedAt(LocalDateTime.now());
-        deviceLocatorMapper.updateById(locator);
+        deviceLocatorMapper.deleteById(locator.getId());
     }
 
     @Transactional
     public void deleteByDeviceId(Long deviceId) {
-        deviceLocatorMapper.update(new DeviceLocator(), new LambdaUpdateWrapper<DeviceLocator>()
+        deviceLocatorMapper.delete(new LambdaUpdateWrapper<DeviceLocator>()
                 .eq(DeviceLocator::getDeviceId, deviceId)
-                .isNull(DeviceLocator::getDeletedAt)
-                .set(DeviceLocator::getDeletedAt, LocalDateTime.now()));
+                .isNull(DeviceLocator::getDeletedAt));
     }
 
     private void ensureUniqueLocator(Long productId, String locatorType, String locatorValue, Long currentId) {

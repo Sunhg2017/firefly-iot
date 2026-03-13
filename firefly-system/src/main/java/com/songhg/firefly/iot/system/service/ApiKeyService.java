@@ -7,7 +7,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
-import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.ApiKeyStatus;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
@@ -151,9 +150,9 @@ public class ApiKeyService {
         if (entity == null || entity.getDeletedAt() != null) {
             throw new BizException(ResultCode.APIKEY_NOT_FOUND);
         }
-        entity.setDeletedAt(LocalDateTime.now());
         entity.setStatus(ApiKeyStatus.DELETED);
         apiKeyMapper.updateById(entity);
+        apiKeyMapper.deleteById(entity.getId());
         log.info("API Key deleted: id={}, accessKey={}", id, entity.getAccessKey());
     }
 

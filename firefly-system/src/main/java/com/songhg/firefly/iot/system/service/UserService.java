@@ -157,9 +157,9 @@ public class UserService {
         if (user == null || user.getDeletedAt() != null) {
             throw new BizException(ResultCode.USER_NOT_FOUND);
         }
-        user.setDeletedAt(LocalDateTime.now());
         user.setStatus(UserStatus.DISABLED);
         userMapper.updateById(user);
+        userMapper.deleteById(user.getId());
     }
 
     @Transactional
