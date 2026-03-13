@@ -10,6 +10,7 @@ import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.mybatis.DataScope;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.system.dto.user.UserCreateDTO;
+import com.songhg.firefly.iot.system.dto.user.UserOptionVO;
 import com.songhg.firefly.iot.system.dto.user.UserQueryDTO;
 import com.songhg.firefly.iot.system.dto.user.UserUpdateDTO;
 import com.songhg.firefly.iot.system.dto.user.UserVO;
@@ -29,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -216,6 +218,33 @@ public class UserService {
             dto.setProjectId(ur.getProjectId());
             return dto;
         }).collect(Collectors.toList());
+    }
+
+    public List<UserOptionVO> listSelectableUsers() {
+        Long tenantId = AppContextHolder.getTenantId();
+        if (tenantId == null || tenantId <= 0) {
+            throw new BizException(ResultCode.PARAM_ERROR, "tenant context required");
+        }
+
+        return userMapper.selectList(new LambdaQueryWrapper<User>()
+                        .select(User::getUsername, User::getRealName, User::getPhone, User::getEmail, User::getStatus)
+                        .eq(User::getTenantId, tenantId)
+                        .eq(User::getStatus, UserStatus.ACTIVE)
+                        .isNull(User::getDeletedAt)
+                        .orderByAsc(User::getRealName)
+                        .orderByAsc(User::getUsername))
+                .stream()
+                .map(user -> {
+                    UserOptionVO option = new UserOptionVO();
+                    option.setUsername(user.getUsername());
+                    option.setRealName(user.getRealName());
+                    option.setPhone(user.getPhone());
+                    option.setEmail(user.getEmail());
+                    option.setStatus(user.getStatus());
+                    return option;
+                })
+                .filter(option -> Objects.nonNull(option.getUsername()))
+                .toList();
     }
 
     private String generateRandomPassword() {
