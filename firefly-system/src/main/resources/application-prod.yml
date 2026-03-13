@@ -6,6 +6,7 @@ spring:
     import: optional:nacos:${spring.application.name}-${spring.profiles.active}.${spring.cloud.nacos.config.file-extension},optional:nacos:${spring.application.name}.${spring.cloud.nacos.config.file-extension}
   flyway:
     connect-retries: ${FLYWAY_CONNECT_RETRIES:30}
+    validate-on-migrate: ${FLYWAY_VALIDATE_ON_MIGRATE:true}
     placeholder-replacement: true
     placeholder-prefix: "@{"
     placeholder-suffix: "}"

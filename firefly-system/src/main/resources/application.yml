@@ -51,6 +51,8 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
     baseline-version: 0
+    # Dev environments may have historical checksum drift; keep startup available by default.
+    validate-on-migrate: ${FLYWAY_VALIDATE_ON_MIGRATE:false}
     table: flyway_system_history
     placeholder-replacement: true
     placeholder-prefix: "@{"
