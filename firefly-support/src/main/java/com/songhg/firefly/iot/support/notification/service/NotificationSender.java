@@ -8,7 +8,7 @@ import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.support.notification.entity.NotificationChannel;
 import com.songhg.firefly.iot.support.notification.entity.NotificationRecord;
-import com.songhg.firefly.iot.support.notification.entity.NotificationTemplate;
+import com.songhg.firefly.iot.support.notification.entity.MessageTemplate;
 import com.songhg.firefly.iot.support.notification.enums.NotificationChannelType;
 import com.songhg.firefly.iot.support.notification.mapper.NotificationChannelMapper;
 import com.songhg.firefly.iot.support.notification.mapper.NotificationRecordMapper;
@@ -45,7 +45,7 @@ public class NotificationSender {
 
     private final NotificationChannelMapper channelMapper;
     private final NotificationRecordMapper recordMapper;
-    private final NotificationTemplateService templateService;
+    private final MessageTemplateService templateService;
     private final InAppMessageService inAppMessageService;
     private final ObjectMapper objectMapper;
 
@@ -113,7 +113,7 @@ public class NotificationSender {
 
             NotificationChannel channel = getEnabledChannel(tenantId, channelId);
             NotificationChannelType channelType = NotificationChannelType.of(channel.getType());
-            NotificationTemplate template = templateService.getEntityByCode(tenantId, templateCode);
+            MessageTemplate template = templateService.getEntityByCode(tenantId, templateCode);
             if (template == null || !Boolean.TRUE.equals(template.getEnabled())) {
                 throw new BizException(ResultCode.NOT_FOUND, "notification template is missing or disabled");
             }

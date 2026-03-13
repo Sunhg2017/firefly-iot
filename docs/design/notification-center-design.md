@@ -24,7 +24,6 @@
 - `NotificationSender`
 - `InternalNotificationController`
 - `NotificationChannelService`
-- `NotificationTemplateService`
 - `MessageTemplateService`
 - `NotificationRecordService`
 - `InAppMessageService`
@@ -104,7 +103,6 @@
 以下服务统一改为按 `tenantId + id/code` 查询：
 
 - `NotificationChannelService`
-- `NotificationTemplateService`
 - `NotificationRecordService`
 - `MessageTemplateService`
 
@@ -126,28 +124,27 @@
 - 支持模板预览
 - 中文文案统一修正，避免乱码
 
-## 5. 模板体系边界
+## 5. 模板体系
 
-仓库内目前存在两类模板：
+本次改造后，系统只保留 `message_templates` 一套模板体系：
 
-1. `message_templates`
-   - 面向业务消息模板维护页面
-   - 适合租户日常自定义模板
-2. `notification_templates`
-   - 面向系统通知中心发送链路
-   - 适合系统事件、预置通知模板
+1. 通知发送链路统一从 `message_templates` 读取模板
+2. 消息模板页面是唯一模板维护入口
+3. 系统设置页不再提供第二套“通知模板”维护入口
 
-本次没有合并两张表，但统一了渠道能力和租户校验，并在文档中明确边界，避免维护侧误用。
+旧的 `notification_templates` 表和对应服务、接口、前端入口已移除，不再继续维护。
 
 ## 6. 数据库变更
 
-新增 `V7__extend_notification_channels.sql`：
+新增迁移：
 
 - 更新渠道字段注释，声明支持的完整渠道集合
 - 补充电话、企业微信、钉钉、站内信默认通知模板
+- `V8__merge_notification_templates_into_message_templates.sql`
+  - 将系统默认模板收敛到 `message_templates`
+  - 删除旧的 `notification_templates` 表
 
 ## 7. 风险与取舍
 
 - 当前短信和电话仍采用“统一 HTTP 网关协议”，未绑定某一家云厂商 SDK。这样扩展性更好，但要求网关服务按约定接收请求。
-- `notification_templates` 与 `message_templates` 仍并存，当前通过边界说明和 UI 收敛降低混淆，后续可再评估合并方案。
 - 企业微信和钉钉测试接口当前做的是地址有效性校验，不会真正发送测试消息，避免误触发群通知。

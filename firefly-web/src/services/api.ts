@@ -473,14 +473,6 @@ export const systemConfigApi = {
     request.put('/settings/tenant-admin/default-permissions', { permissions }),
 };
 
-export const notificationTemplateApi = {
-  list: (channel?: string) => supportRequest.get('/notifications/templates', { params: { channel } }),
-  get: (id: number) => supportRequest.get(`/notifications/templates/${id}`),
-  create: (data: Record<string, unknown>) => supportRequest.post('/notifications/templates', data),
-  update: (id: number, data: Record<string, unknown>) => supportRequest.put(`/notifications/templates/${id}`, data),
-  delete: (id: number) => supportRequest.delete(`/notifications/templates/${id}`),
-};
-
 // ==================== Operation Log API ====================
 export const operationLogApi = {
   list: (data: Record<string, unknown> = {}) => request.post('/operation-logs/list', data),

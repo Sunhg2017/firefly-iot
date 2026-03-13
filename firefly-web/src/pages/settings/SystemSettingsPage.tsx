@@ -1,24 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Alert,
-  Button,
-  Card,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Switch,
-  Table,
-  Tabs,
-  Tag,
-  Typography,
-  message,
-} from 'antd';
-import { DeleteOutlined, EditOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Input, Space, Switch, Table, Tabs, Tag, Typography, message } from 'antd';
+import { EditOutlined, SaveOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
-import { notificationTemplateApi, systemConfigApi } from '../../services/api';
+import { systemConfigApi } from '../../services/api';
 import useAuthStore from '../../store/useAuthStore';
 
 const { TextArea } = Input;
@@ -32,18 +17,6 @@ interface ConfigItem {
   description: string;
   updatedAt: string;
   sourceLabel?: string;
-}
-
-interface TemplateItem {
-  id: number;
-  code: string;
-  name: string;
-  channel: string;
-  subject: string;
-  content: string;
-  variables: string;
-  enabled: boolean;
-  updatedAt: string;
 }
 
 interface PermissionItem {
@@ -69,22 +42,6 @@ const groupLabels: Record<string, string> = {
   security: '????',
   notification: '????',
   custom: '?????',
-};
-
-const channelLabels: Record<string, string> = {
-  EMAIL: '??',
-  SMS: '??',
-  WEBHOOK: 'Webhook',
-  DINGTALK: '??',
-  WECHAT: '????',
-};
-
-const channelColors: Record<string, string> = {
-  EMAIL: 'blue',
-  SMS: 'green',
-  WEBHOOK: 'purple',
-  DINGTALK: 'orange',
-  WECHAT: 'cyan',
 };
 
 const normalizeStringArray = (value: unknown): string[] => {
@@ -528,146 +485,6 @@ const TenantAdminPermissionTab: React.FC = () => {
   );
 };
 
-const TemplateTab: React.FC = () => {
-  const [data, setData] = useState<TemplateItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  const [editRecord, setEditRecord] = useState<TemplateItem | null>(null);
-  const [form] = Form.useForm();
-
-  const fetchTemplates = async () => {
-    setLoading(true);
-    try {
-      const res = await notificationTemplateApi.list();
-      setData((res.data?.data as TemplateItem[]) || []);
-    } catch {
-      message.error('????????');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void fetchTemplates();
-  }, []);
-
-  const handleEdit = (record: TemplateItem | null) => {
-    setEditRecord(record);
-    if (record) {
-      form.setFieldsValue(record);
-    } else {
-      form.resetFields();
-      form.setFieldsValue({ enabled: true });
-    }
-    setEditOpen(true);
-  };
-
-  const handleSave = async (values: Record<string, unknown>) => {
-    try {
-      if (editRecord) {
-        await notificationTemplateApi.update(editRecord.id, values);
-        message.success('?????');
-      } else {
-        await notificationTemplateApi.create(values);
-        message.success('?????');
-      }
-      setEditOpen(false);
-      await fetchTemplates();
-    } catch {
-      message.error('??????');
-    }
-  };
-
-  const handleDelete = (record: TemplateItem) => {
-    Modal.confirm({
-      title: '?????????',
-      content: `?????${record.name}??????`,
-      onOk: async () => {
-        await notificationTemplateApi.delete(record.id);
-        message.success('?????');
-        await fetchTemplates();
-      },
-    });
-  };
-
-  const columns: ColumnsType<TemplateItem> = [
-    { title: '????', dataIndex: 'name', width: 180, ellipsis: true },
-    { title: '????', dataIndex: 'code', width: 160, ellipsis: true },
-    {
-      title: '??',
-      dataIndex: 'channel',
-      width: 120,
-      render: (value: string) => <Tag color={channelColors[value] || 'default'}>{channelLabels[value] || value}</Tag>,
-    },
-    { title: '??', dataIndex: 'subject', width: 220, ellipsis: true, render: (value: string) => value || '-' },
-    {
-      title: '??',
-      dataIndex: 'enabled',
-      width: 90,
-      render: (value: boolean) => <Tag color={value ? 'success' : 'default'}>{value ? '??' : '??'}</Tag>,
-    },
-    { title: '????', dataIndex: 'updatedAt', width: 180 },
-    {
-      title: '??',
-      width: 150,
-      fixed: 'right',
-      render: (_value: unknown, record) => (
-        <Space>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
-            ??
-          </Button>
-          <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>
-            ??
-          </Button>
-        </Space>
-      ),
-    },
-  ];
-
-  return (
-    <div>
-      <Space style={{ marginBottom: 16 }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => handleEdit(null)}>
-          ????
-        </Button>
-      </Space>
-
-      <Table
-        rowKey="id"
-        columns={columns}
-        dataSource={data}
-        loading={loading}
-        pagination={false}
-        size="small"
-        scroll={{ x: 1120 }}
-      />
-
-      <Modal title={editRecord ? '??????' : '??????'} open={editOpen} onCancel={() => setEditOpen(false)} onOk={() => form.submit()} destroyOnClose width={640}>
-        <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="name" label="????" rules={[{ required: true, message: '???????' }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="channel" label="????" rules={[{ required: true, message: '???????' }]}>
-            <Select options={Object.entries(channelLabels).map(([value, label]) => ({ value, label }))} />
-          </Form.Item>
-          <Form.Item name="subject" label="????????">
-            <Input placeholder="?? ${variable} ??" />
-          </Form.Item>
-          <Form.Item name="content" label="????" rules={[{ required: true, message: '???????' }]}>
-            <TextArea rows={6} placeholder="?? ${variable} ??" />
-          </Form.Item>
-          <Form.Item name="variables" label="????">
-            <Input placeholder="????????device_name,alarm_level" />
-          </Form.Item>
-          <Form.Item name="enabled" label="????" valuePropName="checked" initialValue>
-            <Switch />
-          </Form.Item>
-        </Form>
-      </Modal>
-    </div>
-  );
-};
-
 const SystemSettingsPage: React.FC = () => {
   const user = useAuthStore((state) => state.user);
   const isSystemOps = user?.userType === 'SYSTEM_OPS';
@@ -675,7 +492,6 @@ const SystemSettingsPage: React.FC = () => {
   const tabItems = [
     { key: 'config', label: '????', children: <ConfigTab isSystemOps={isSystemOps} /> },
     ...(isSystemOps ? [{ key: 'tenant-admin', label: '?????', children: <TenantAdminPermissionTab /> }] : []),
-    { key: 'template', label: '????', children: <TemplateTab /> },
   ];
 
   return (

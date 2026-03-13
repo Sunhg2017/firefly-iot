@@ -71,7 +71,10 @@ public class MessageTemplateService {
     }
 
     public MessageTemplate getByCode(String code) {
-        Long tenantId = AppContextHolder.getTenantId();
+        return getEntityByCode(AppContextHolder.getTenantId(), code);
+    }
+
+    public MessageTemplate getEntityByCode(Long tenantId, String code) {
         return templateMapper.selectOne(new LambdaQueryWrapper<MessageTemplate>()
                 .eq(MessageTemplate::getTenantId, tenantId)
                 .eq(MessageTemplate::getCode, normalizeCode(code)));

@@ -31,8 +31,9 @@
 - `V2__init_notification_center.sql`
 - `V3__init_in_app_messages.sql`
 - `V7__extend_notification_channels.sql`
+- `V8__merge_notification_templates_into_message_templates.sql`
 
-如果 `V7` 未执行，新的渠道注释和默认模板不会生效。
+如果 `V8` 未执行，系统仍会残留旧的 `notification_templates` 表。
 
 ## 3. 配置检查
 
@@ -184,7 +185,7 @@
 
 注意：
 
-本次新增渠道类型后，若代码回滚到不识别这些枚举的版本，旧版本可能无法正确处理 `PHONE`、`IN_APP` 等新渠道配置。
+本次已将模板体系合并为 `message_templates`。如果代码回滚到旧版本，旧版本可能仍依赖 `notification_templates` 表，需谨慎评估。
 
 ## 8. 验证命令
 

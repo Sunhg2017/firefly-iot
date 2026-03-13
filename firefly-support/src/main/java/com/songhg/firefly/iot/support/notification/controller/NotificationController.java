@@ -7,7 +7,6 @@ import com.songhg.firefly.iot.support.notification.dto.notification.*;
 import com.songhg.firefly.iot.support.notification.service.NotificationChannelService;
 import com.songhg.firefly.iot.support.notification.service.NotificationRecordService;
 import com.songhg.firefly.iot.support.notification.service.NotificationSender;
-import com.songhg.firefly.iot.support.notification.service.NotificationTemplateService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -17,7 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@Tag(name = "通知中心", description = "通知渠道、通知记录与通知模板")
+@Tag(name = "通知中心", description = "通知渠道与通知记录")
 @RestController
 @RequestMapping("/api/v1/notifications")
 @RequiredArgsConstructor
@@ -26,8 +25,6 @@ public class NotificationController {
     private final NotificationChannelService channelService;
     private final NotificationRecordService recordService;
     private final NotificationSender notificationSender;
-    private final NotificationTemplateService templateService;
-
     // ==================== Channels ====================
 
     @GetMapping("/channels")
@@ -95,46 +92,5 @@ public class NotificationController {
     @Operation(summary = "获取通知记录详情")
     public R<NotificationRecordVO> getRecord(@Parameter(description = "记录编号", required = true) @PathVariable Long id) {
         return R.ok(recordService.getById(id));
-    }
-
-    // ==================== Templates ====================
-
-    @GetMapping("/templates")
-    @RequiresPermission("notification:read")
-    @Operation(summary = "查询通知模板列表")
-    public R<List<NotificationTemplateVO>> listTemplates(@Parameter(description = "渠道筛选") @RequestParam(required = false) String channel) {
-        if (channel != null && !channel.isBlank()) {
-            return R.ok(templateService.listByChannel(channel));
-        }
-        return R.ok(templateService.listAll());
-    }
-
-    @GetMapping("/templates/{id}")
-    @RequiresPermission("notification:read")
-    @Operation(summary = "获取通知模板详情")
-    public R<NotificationTemplateVO> getTemplate(@Parameter(description = "模板编号", required = true) @PathVariable Long id) {
-        return R.ok(templateService.getById(id));
-    }
-
-    @PostMapping("/templates")
-    @RequiresPermission("notification:update")
-    @Operation(summary = "创建通知模板")
-    public R<NotificationTemplateVO> createTemplate(@Valid @RequestBody NotificationTemplateUpdateDTO dto) {
-        return R.ok(templateService.create(dto));
-    }
-
-    @PutMapping("/templates/{id}")
-    @RequiresPermission("notification:update")
-    @Operation(summary = "更新通知模板")
-    public R<NotificationTemplateVO> updateTemplate(@Parameter(description = "模板编号", required = true) @PathVariable Long id, @Valid @RequestBody NotificationTemplateUpdateDTO dto) {
-        return R.ok(templateService.update(id, dto));
-    }
-
-    @DeleteMapping("/templates/{id}")
-    @RequiresPermission("notification:delete")
-    @Operation(summary = "删除通知模板")
-    public R<Void> deleteTemplate(@Parameter(description = "模板编号", required = true) @PathVariable Long id) {
-        templateService.delete(id);
-        return R.ok();
     }
 }
