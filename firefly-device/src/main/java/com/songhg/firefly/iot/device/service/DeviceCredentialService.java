@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.songhg.firefly.iot.api.dto.DeviceAuthDTO;
 import com.songhg.firefly.iot.api.dto.DeviceRegisterDTO;
 import com.songhg.firefly.iot.api.dto.DeviceRegisterRequestDTO;
+import com.songhg.firefly.iot.api.dto.DeviceUnregisterDTO;
+import com.songhg.firefly.iot.api.dto.DeviceUnregisterRequestDTO;
 import com.songhg.firefly.iot.common.context.AppContext;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DeviceAuthType;
@@ -41,6 +43,7 @@ public class DeviceCredentialService {
     private final ProductMapper productMapper;
     private final DeviceMapper deviceMapper;
     private final StringRedisTemplate redisTemplate;
+    private final DeviceService deviceService;
 
     public DeviceAuthDTO authenticate(String productKey, String deviceName, String deviceSecret) {
         if (isBlank(productKey) || isBlank(deviceName)) {
@@ -134,6 +137,27 @@ public class DeviceCredentialService {
         }
     }
 
+    @Transactional
+    public DeviceUnregisterDTO dynamicUnregister(DeviceUnregisterRequestDTO request) {
+        if (request == null || isBlank(request.getProductKey()) || isBlank(request.getProductSecret())
+                || isBlank(request.getDeviceName())) {
+            return unregisterFailed("INVALID_REQUEST");
+        }
+
+        Product product = productMapper.selectByProductKeyIgnoreTenant(request.getProductKey());
+        if (product == null) {
+            return unregisterFailed("PRODUCT_NOT_FOUND");
+        }
+        if (product.getDeviceAuthType() != DeviceAuthType.PRODUCT_SECRET) {
+            return unregisterFailed("PRODUCT_DYNAMIC_REGISTER_DISABLED");
+        }
+        if (isBlank(product.getProductSecret()) || !product.getProductSecret().equals(request.getProductSecret())) {
+            return unregisterFailed("INVALID_PRODUCT_SECRET");
+        }
+
+        return executeWithTenant(product.getTenantId(), () -> doDynamicUnregister(product, request));
+    }
+
     private DeviceRegisterDTO doDynamicRegister(Product product, DeviceRegisterRequestDTO request) {
         Device existing = deviceMapper.selectOne(new LambdaQueryWrapper<Device>()
                 .eq(Device::getProductId, product.getId())
@@ -173,6 +197,26 @@ public class DeviceCredentialService {
         return dto;
     }
 
+    private DeviceUnregisterDTO doDynamicUnregister(Product product, DeviceUnregisterRequestDTO request) {
+        Device existing = deviceMapper.selectByProductIdAndDeviceNameIgnoreTenant(product.getId(), request.getDeviceName());
+        if (existing == null) {
+            DeviceUnregisterDTO dto = new DeviceUnregisterDTO();
+            dto.setSuccess(true);
+            dto.setRemoved(false);
+            dto.setDeviceName(request.getDeviceName());
+            return dto;
+        }
+
+        deviceService.deleteDevice(existing.getId());
+        clearSession(request.getProductKey(), request.getDeviceName());
+
+        DeviceUnregisterDTO dto = new DeviceUnregisterDTO();
+        dto.setSuccess(true);
+        dto.setRemoved(true);
+        dto.setDeviceName(existing.getDeviceName());
+        return dto;
+    }
+
     private void cacheSession(String productKey, String deviceName, Device device) {
         redisTemplate.opsForValue().set(
                 buildSessionKey(productKey, deviceName),
@@ -203,6 +247,13 @@ public class DeviceCredentialService {
 
     private DeviceRegisterDTO registerFailed(String errorCode) {
         DeviceRegisterDTO dto = new DeviceRegisterDTO();
+        dto.setSuccess(false);
+        dto.setErrorCode(errorCode);
+        return dto;
+    }
+
+    private DeviceUnregisterDTO unregisterFailed(String errorCode) {
+        DeviceUnregisterDTO dto = new DeviceUnregisterDTO();
         dto.setSuccess(false);
         dto.setErrorCode(errorCode);
         return dto;

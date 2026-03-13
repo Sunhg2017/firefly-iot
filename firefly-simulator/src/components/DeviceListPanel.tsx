@@ -24,7 +24,15 @@ import {
 } from '@ant-design/icons';
 import { Protocol, SimDevice, useSimStore } from '../store';
 import AddDeviceModal from './AddDeviceModal';
-import { buildMqttServiceTopic, dynamicRegisterDevice, resolveMqttIdentity, validateMqttDevice } from '../utils/mqtt';
+import {
+  buildMqttServiceTopic,
+  dynamicRegisterDevice,
+  resolveMqttIdentity,
+  shouldCleanupDynamicRegistration,
+  shouldDynamicRegister,
+  unregisterDynamicDevice,
+  validateMqttDevice,
+} from '../utils/mqtt';
 import { getDeviceAccessMissingFields, getDeviceAccessValidationError } from '../utils/deviceAccess';
 
 const { Search } = Input;
@@ -110,6 +118,16 @@ function getDeviceSubtitle(device: SimDevice) {
   return '等待配置接入参数';
 }
 
+function getDynamicRegisterBaseUrl(device: SimDevice): string | undefined {
+  if (device.protocol === 'HTTP') {
+    return device.httpRegisterBaseUrl;
+  }
+  if (device.protocol === 'MQTT') {
+    return device.mqttRegisterBaseUrl;
+  }
+  return undefined;
+}
+
 export default function DeviceListPanel() {
   const { devices, selectedDeviceId, selectDevice, removeDevice, addLog } = useSimStore();
   const [addOpen, setAddOpen] = useState(false);
@@ -151,6 +169,7 @@ export default function DeviceListPanel() {
 
     const exportData = devices.map((device) => ({
       name: device.name,
+      nickname: device.nickname,
       protocol: device.protocol,
       productKey: device.productKey,
       productSecret: device.productSecret,
@@ -265,6 +284,7 @@ export default function DeviceListPanel() {
       for (const row of rows) {
         const protocol = (row.protocol || 'HTTP').toUpperCase() as Protocol;
         useSimStore.getState().addDevice({
+          nickname: row.nickname || row.name || row.deviceName || '',
           name: row.name || row.deviceName || `导入设备 ${count + 1}`,
           protocol,
           httpBaseUrl: row.httpBaseUrl || row.baseUrl || 'http://localhost:9070',
@@ -317,15 +337,25 @@ export default function DeviceListPanel() {
   };
 
   const handleRemove = async (device: SimDevice) => {
-    if (device.status === 'online') {
-      if (device.protocol === 'MQTT') await window.electronAPI.mqttDisconnect(device.id);
-      if (device.protocol === 'WebSocket') await window.electronAPI.wsDisconnect(device.id);
-      if (device.protocol === 'TCP') await window.electronAPI.tcpDisconnect(device.id);
-      if (device.protocol === 'Video' && device.streamMode === 'GB28181') await window.electronAPI.sipStop(device.id);
-    }
+    try {
+      if (device.status === 'online') {
+        if (device.protocol === 'MQTT') await window.electronAPI.mqttDisconnect(device.id);
+        if (device.protocol === 'WebSocket') await window.electronAPI.wsDisconnect(device.id);
+        if (device.protocol === 'TCP') await window.electronAPI.tcpDisconnect(device.id);
+        if (device.protocol === 'Video' && device.streamMode === 'GB28181') await window.electronAPI.sipStop(device.id);
+      }
     if (device.autoTimerId) clearInterval(device.autoTimerId);
+    if (shouldCleanupDynamicRegistration(device)) {
+      await unregisterDynamicDevice(device, getDynamicRegisterBaseUrl(device));
+      addLog(device.id, device.name, 'success', `已同步删除平台设备：${device.deviceName}`);
+    }
     removeDevice(device.id);
     addLog('system', 'System', 'info', `已移除模拟设备：${device.name}`);
+    } catch (error: any) {
+      const messageText = error?.message || 'unknown error';
+      addLog(device.id, device.name, 'error', `删除设备失败：${messageText}`);
+      message.error(`删除失败：${messageText}`);
+    }
   };
 
   const handleBatchConnect = async () => {
@@ -365,10 +395,10 @@ export default function DeviceListPanel() {
 
         if (device.protocol === 'HTTP') {
           let target = device;
-          if ((device.httpAuthMode || 'DEVICE_SECRET') === 'PRODUCT_SECRET') {
+          if (shouldDynamicRegister(device)) {
             const registerResult = await dynamicRegisterDevice(device, device.httpRegisterBaseUrl);
             target = { ...device, deviceSecret: registerResult.deviceSecret };
-            updateDevice(device.id, { deviceSecret: registerResult.deviceSecret });
+            updateDevice(device.id, { deviceSecret: registerResult.deviceSecret, dynamicRegistered: true });
             addLog(device.id, device.name, 'success', `HTTP 动态注册成功：${registerResult.deviceName}`);
           }
           const result = await window.electronAPI.httpAuth(target.httpBaseUrl, target.productKey, target.deviceName, target.deviceSecret);
@@ -406,10 +436,10 @@ export default function DeviceListPanel() {
         if (validationError) throw new Error(validationError);
 
         let target = device;
-        if (device.mqttAuthMode === 'PRODUCT_SECRET') {
+        if (shouldDynamicRegister(device)) {
           const registerResult = await dynamicRegisterDevice(device, device.mqttRegisterBaseUrl);
           target = { ...device, deviceSecret: registerResult.deviceSecret };
-          updateDevice(device.id, { deviceSecret: registerResult.deviceSecret });
+          updateDevice(device.id, { deviceSecret: registerResult.deviceSecret, dynamicRegistered: true });
           addLog(device.id, device.name, 'success', `动态注册成功：${registerResult.deviceName}`);
         }
 
@@ -478,11 +508,13 @@ export default function DeviceListPanel() {
   const handleClone = (device: SimDevice) => {
     useSimStore.getState().addDevice({
       ...device,
+      nickname: device.nickname || device.name,
       name: `${device.name}（副本）`,
       deviceSecret: device.mqttAuthMode === 'PRODUCT_SECRET' ? '' : device.deviceSecret,
       mqttClientId: '',
       mqttUsername: '',
       mqttPassword: '',
+      dynamicRegistered: false,
     } as never);
     addLog('system', 'System', 'info', `已复制模拟设备：${device.name}`);
     message.success(`已复制 ${device.name}`);

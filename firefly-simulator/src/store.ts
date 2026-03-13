@@ -26,6 +26,7 @@ export type DeviceStatus = 'offline' | 'connecting' | 'online' | 'error';
 export interface SimDevice {
   id: string;
   name: string;
+  nickname: string;
   protocol: Protocol;
   status: DeviceStatus;
   // HTTP config
@@ -105,6 +106,7 @@ export interface SimDevice {
   // Stats
   sentCount: number;
   errorCount: number;
+  dynamicRegistered: boolean;
 }
 
 export interface LogEntry {
@@ -344,6 +346,7 @@ export const useSimStore = create<SimulatorState>()(
     const id = uuidv4();
     const device: SimDevice = {
       id,
+      nickname: partial.nickname || partial.name || `device-${get().devices.length + 1}`,
       name: partial.name || `设备-${get().devices.length + 1}`,
       protocol: partial.protocol || 'HTTP',
       status: 'offline',
@@ -412,6 +415,7 @@ export const useSimStore = create<SimulatorState>()(
       autoTimerId: null,
       sentCount: 0,
       errorCount: 0,
+      dynamicRegistered: partial.dynamicRegistered ?? false,
     };
     set((s) => ({ devices: [...s.devices, device], selectedDeviceId: id }));
   },

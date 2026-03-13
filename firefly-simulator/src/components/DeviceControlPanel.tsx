@@ -43,6 +43,7 @@ import {
   buildMqttServiceTopic,
   dynamicRegisterDevice,
   resolveMqttIdentity,
+  shouldDynamicRegister,
   validateMqttDevice,
 } from '../utils/mqtt';
 import { getDeviceAccessOverviewItems, getDeviceAccessValidationError } from '../utils/deviceAccess';
@@ -311,10 +312,10 @@ export default function DeviceControlPanel() {
     if (validationError) throw new Error(validationError);
 
     let target = device;
-    if (device.mqttAuthMode === 'PRODUCT_SECRET') {
+    if (shouldDynamicRegister(device)) {
       const registerResult = await dynamicRegisterDevice(device, device.mqttRegisterBaseUrl);
       target = { ...device, deviceSecret: registerResult.deviceSecret };
-      updateDevice(device.id, { deviceSecret: registerResult.deviceSecret });
+      updateDevice(device.id, { deviceSecret: registerResult.deviceSecret, dynamicRegistered: true });
       addLog(device.id, device.name, 'success', `Dynamic registration succeeded: ${registerResult.deviceName}`);
     }
 
@@ -365,10 +366,10 @@ export default function DeviceControlPanel() {
       if (device.protocol === 'HTTP') {
         const authUrl = `${device.httpBaseUrl}/api/v1/protocol/http/auth`;
         let target = device;
-        if ((device.httpAuthMode || 'DEVICE_SECRET') === 'PRODUCT_SECRET') {
+        if (shouldDynamicRegister(device)) {
           const registerResult = await dynamicRegisterDevice(device, device.httpRegisterBaseUrl);
           target = { ...device, deviceSecret: registerResult.deviceSecret };
-          updateDevice(device.id, { deviceSecret: registerResult.deviceSecret });
+          updateDevice(device.id, { deviceSecret: registerResult.deviceSecret, dynamicRegistered: true });
           addLog(device.id, device.name, 'success', `HTTP 动态注册成功：${registerResult.deviceName}`);
         }
         const result = await window.electronAPI.httpAuth(target.httpBaseUrl, target.productKey, target.deviceName, target.deviceSecret);

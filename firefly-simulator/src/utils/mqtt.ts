@@ -22,7 +22,12 @@ type DeviceIdentitySource = Partial<Pick<
 
 type DynamicRegisterSource = Pick<
   SimDevice,
-  'name' | 'productKey' | 'productSecret' | 'deviceName'
+  'name' | 'nickname' | 'productKey' | 'productSecret' | 'deviceName'
+>;
+
+type DynamicCleanupSource = Pick<
+  SimDevice,
+  'protocol' | 'httpAuthMode' | 'mqttAuthMode' | 'dynamicRegistered' | 'productKey' | 'productSecret' | 'deviceName'
 >;
 
 function trim(value?: string | null): string {
@@ -100,7 +105,7 @@ export async function dynamicRegisterDevice(device: DynamicRegisterSource, regis
     productKey,
     productSecret,
     deviceName,
-    nickname: trim(device.name) || undefined,
+    nickname: trim(device.nickname) || trim(device.name) || undefined,
   });
 
   if (!response?.success) {
@@ -122,4 +127,50 @@ export async function dynamicRegisterDevice(device: DynamicRegisterSource, regis
     deviceName: trim(data.deviceName) || deviceName,
     deviceSecret,
   };
+}
+
+export function shouldDynamicRegister(
+  device: Pick<SimDevice, 'protocol' | 'httpAuthMode' | 'mqttAuthMode' | 'deviceSecret'>,
+): boolean {
+  const deviceSecret = trim(device.deviceSecret);
+  if (device.protocol === 'HTTP') {
+    return (device.httpAuthMode || 'DEVICE_SECRET') === 'PRODUCT_SECRET' && !deviceSecret;
+  }
+  if (device.protocol === 'MQTT') {
+    return (device.mqttAuthMode || 'DEVICE_SECRET') === 'PRODUCT_SECRET' && !deviceSecret;
+  }
+  return false;
+}
+
+export function shouldCleanupDynamicRegistration(device: DynamicCleanupSource): boolean {
+  if (!device.dynamicRegistered) {
+    return false;
+  }
+  if (device.protocol === 'HTTP') {
+    return device.httpAuthMode === 'PRODUCT_SECRET';
+  }
+  if (device.protocol === 'MQTT') {
+    return device.mqttAuthMode === 'PRODUCT_SECRET';
+  }
+  return false;
+}
+
+export async function unregisterDynamicDevice(device: DynamicCleanupSource, registerBaseUrl?: string): Promise<void> {
+  const baseUrl = trim(registerBaseUrl) || 'http://localhost:9070';
+  const productKey = trim(device.productKey);
+  const productSecret = trim(device.productSecret);
+  const deviceName = trim(device.deviceName);
+
+  const response = await window.electronAPI.deviceDynamicUnregister(baseUrl, {
+    productKey,
+    productSecret,
+    deviceName,
+  });
+
+  if (!response?.success) {
+    throw new Error(response?.message || 'Dynamic unregister request failed');
+  }
+  if (typeof response.code === 'number' && response.code !== 0) {
+    throw new Error(response.message || 'Dynamic unregister failed');
+  }
 }

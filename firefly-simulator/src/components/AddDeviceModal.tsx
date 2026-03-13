@@ -31,6 +31,7 @@ interface Props {
 }
 
 const initialValues = {
+  nickname: '',
   protocol: 'HTTP',
   httpBaseUrl: 'http://localhost:9070',
   httpAuthMode: 'DEVICE_SECRET',
@@ -130,6 +131,7 @@ function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, 
 function buildSummary(values: Record<string, unknown>) {
   const protocol = (values.protocol || 'HTTP') as string;
   return [
+    { key: 'nickname', label: 'Nickname', value: values.nickname || values.name || '-' },
     { key: 'name', label: '模拟设备名称', value: values.name || '-' },
     { key: 'protocol', label: '接入协议', value: protocol },
     { key: 'main1', label: '核心标识', value: values.productKey || values.gbDeviceId || values.loraDevEui || values.snmpHost || values.modbusHost || values.wsEndpoint || values.tcpHost || values.udpHost || '-' },
@@ -190,6 +192,9 @@ export default function AddDeviceModal({ open, onClose }: Props) {
             label: `${value} · ${item.label}`,
           }))}
         />
+      </Form.Item>
+      <Form.Item name="nickname" label="Nickname" tooltip="用于一型一密动态注册时写入平台设备昵称，留空时默认使用模拟器名称">
+        <Input placeholder="留空时默认使用模拟器名称" maxLength={64} />
       </Form.Item>
       <Card size="small" style={drawerPanelCardStyle}>
         <Text strong>{meta.label}</Text>

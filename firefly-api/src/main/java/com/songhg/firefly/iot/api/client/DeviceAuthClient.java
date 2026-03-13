@@ -5,6 +5,8 @@ import com.songhg.firefly.iot.api.dto.DeviceLocatorResolveDTO;
 import com.songhg.firefly.iot.api.dto.DeviceLocatorResolveRequestDTO;
 import com.songhg.firefly.iot.api.dto.DeviceRegisterDTO;
 import com.songhg.firefly.iot.api.dto.DeviceRegisterRequestDTO;
+import com.songhg.firefly.iot.api.dto.DeviceUnregisterDTO;
+import com.songhg.firefly.iot.api.dto.DeviceUnregisterRequestDTO;
 import com.songhg.firefly.iot.common.result.R;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -34,6 +36,9 @@ public interface DeviceAuthClient {
 
     @PostMapping("/dynamic-register")
     R<DeviceRegisterDTO> dynamicRegister(@RequestBody DeviceRegisterRequestDTO request);
+
+    @PostMapping("/dynamic-unregister")
+    R<DeviceUnregisterDTO> dynamicUnregister(@RequestBody DeviceUnregisterRequestDTO request);
 
     @PostMapping("/resolve-by-locator")
     R<DeviceLocatorResolveDTO> resolveByLocator(@RequestBody DeviceLocatorResolveRequestDTO request);

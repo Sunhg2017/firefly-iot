@@ -4,9 +4,12 @@ import com.songhg.firefly.iot.api.client.DeviceAuthClient;
 import com.songhg.firefly.iot.api.dto.DeviceAuthDTO;
 import com.songhg.firefly.iot.api.dto.DeviceRegisterDTO;
 import com.songhg.firefly.iot.api.dto.DeviceRegisterRequestDTO;
+import com.songhg.firefly.iot.api.dto.DeviceUnregisterDTO;
+import com.songhg.firefly.iot.api.dto.DeviceUnregisterRequestDTO;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.connector.protocol.dto.DeviceAuthResult;
 import com.songhg.firefly.iot.connector.protocol.dto.DeviceRegisterResult;
+import com.songhg.firefly.iot.connector.protocol.dto.DeviceUnregisterResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -68,6 +71,23 @@ public class DeviceAuthService {
         } catch (Exception e) {
             log.error("Device register RPC failed: {}", e.getMessage(), e);
             return DeviceRegisterResult.fail("RPC_ERROR");
+        }
+    }
+
+    public DeviceUnregisterResult dynamicUnregister(DeviceUnregisterRequestDTO request) {
+        try {
+            R<DeviceUnregisterDTO> resp = deviceAuthClient.dynamicUnregister(request);
+            if (resp == null || resp.getData() == null) {
+                return DeviceUnregisterResult.fail("RPC_ERROR");
+            }
+            DeviceUnregisterDTO dto = resp.getData();
+            if (dto.isSuccess()) {
+                return DeviceUnregisterResult.success(dto.getDeviceName(), dto.isRemoved());
+            }
+            return DeviceUnregisterResult.fail(dto.getErrorCode());
+        } catch (Exception e) {
+            log.error("Device unregister RPC failed: {}", e.getMessage(), e);
+            return DeviceUnregisterResult.fail("RPC_ERROR");
         }
     }
 

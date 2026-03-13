@@ -27,6 +27,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   ) => ipcRenderer.invoke('device:dynamicRegister', baseUrl, payload),
 
+  deviceDynamicUnregister: (
+    baseUrl: string,
+    payload: {
+      productKey: string;
+      productSecret: string;
+      deviceName: string;
+    },
+  ) => ipcRenderer.invoke('device:dynamicUnregister', baseUrl, payload),
+
   // File Import / Export
   fileImport: () => ipcRenderer.invoke('file:import'),
   fileExport: (content: string, defaultName: string) => ipcRenderer.invoke('file:export', content, defaultName),

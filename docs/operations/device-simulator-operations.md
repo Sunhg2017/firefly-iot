@@ -171,3 +171,25 @@ npm run build:vite
 - `docs/user-guide/device-simulator-guide.md`
 
 回滚后建议重新执行 `npm run build:vite`。
+## 7. 2026-03-14 运维补充
+
+### 7.1 动态注册删除链路检查
+
+- connector 需要提供 `POST /api/v1/protocol/device/unregister`
+- device 需要提供 `POST /api/v1/internal/device-auth/dynamic-unregister`
+- 上述两个服务升级需同时发布，否则模拟器删除动态注册设备时会只删本地或提示失败
+
+### 7.2 典型排查
+
+- 现象：模拟器删除后平台设备仍然存在
+- 排查顺序：
+  1. 确认该设备是否是一型一密动态注册创建
+  2. 确认 connector 的注销接口是否返回成功
+  3. 确认 device 服务是否能用 `productSecret` 校验通过
+  4. 检查 device 服务日志里是否执行了 `DeviceService.deleteDevice`
+
+### 7.3 回归验证
+
+- 新建一台 HTTP 或 MQTT 一型一密设备，填写 `Nickname`
+- 首次连接成功后断开，再次连接应直接成功，不能再报设备已存在
+- 删除该设备后，平台设备列表中对应 `deviceName` 应被同步删除

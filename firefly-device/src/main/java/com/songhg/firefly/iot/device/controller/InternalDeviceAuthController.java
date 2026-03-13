@@ -5,6 +5,8 @@ import com.songhg.firefly.iot.api.dto.DeviceLocatorResolveDTO;
 import com.songhg.firefly.iot.api.dto.DeviceLocatorResolveRequestDTO;
 import com.songhg.firefly.iot.api.dto.DeviceRegisterDTO;
 import com.songhg.firefly.iot.api.dto.DeviceRegisterRequestDTO;
+import com.songhg.firefly.iot.api.dto.DeviceUnregisterDTO;
+import com.songhg.firefly.iot.api.dto.DeviceUnregisterRequestDTO;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.device.protocolparser.service.DeviceLocatorService;
 import com.songhg.firefly.iot.device.service.DeviceCredentialService;
@@ -67,6 +69,12 @@ public class InternalDeviceAuthController {
     @Operation(summary = "一型一密动态注册")
     public R<DeviceRegisterDTO> dynamicRegister(@RequestBody DeviceRegisterRequestDTO request) {
         return R.ok(credentialService.dynamicRegister(request));
+    }
+
+    @PostMapping("/dynamic-unregister")
+    @Operation(summary = "一型一密动态注销")
+    public R<DeviceUnregisterDTO> dynamicUnregister(@RequestBody DeviceUnregisterRequestDTO request) {
+        return R.ok(credentialService.dynamicUnregister(request));
     }
 
     @GetMapping("/by-token")

@@ -1,8 +1,10 @@
 package com.songhg.firefly.iot.connector.protocol;
 
 import com.songhg.firefly.iot.api.dto.DeviceRegisterRequestDTO;
+import com.songhg.firefly.iot.api.dto.DeviceUnregisterRequestDTO;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.connector.protocol.dto.DeviceRegisterResult;
+import com.songhg.firefly.iot.connector.protocol.dto.DeviceUnregisterResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,19 @@ public class DeviceRegisterController {
                 "productId", result.getProductId(),
                 "deviceName", result.getDeviceName(),
                 "deviceSecret", result.getDeviceSecret()
+        ));
+    }
+
+    @PostMapping("/unregister")
+    @Operation(summary = "设备动态注销")
+    public R<Map<String, Object>> unregister(@RequestBody DeviceUnregisterRequestDTO request) {
+        DeviceUnregisterResult result = authService.dynamicUnregister(request);
+        if (!result.isSuccess()) {
+            return R.fail(400, result.getErrorCode());
+        }
+        return R.ok(Map.of(
+                "deviceName", result.getDeviceName(),
+                "removed", result.isRemoved()
         ));
     }
 }

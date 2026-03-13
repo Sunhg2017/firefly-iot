@@ -166,6 +166,24 @@ ipcMain.handle('device:dynamicRegister', async (
   }
 });
 
+ipcMain.handle('device:dynamicUnregister', async (
+  _e,
+  baseUrl: string,
+  payload: {
+    productKey: string;
+    productSecret: string;
+    deviceName: string;
+  },
+) => {
+  try {
+    const url = `${baseUrl}/api/v1/protocol/device/unregister`;
+    const res = await httpRequest(url, 'POST', {}, JSON.stringify(payload));
+    return { success: true, ...JSON.parse(res.data), _status: res.status, _headers: res.headers, _elapsed: res.elapsed };
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+});
+
 // ============================================================
 // CoAP Bridge Protocol IPC Handlers
 // ============================================================

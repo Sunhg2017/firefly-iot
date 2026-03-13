@@ -15,6 +15,14 @@ interface ElectronAPI {
       tags?: string;
     },
   ) => Promise<any>;
+  deviceDynamicUnregister: (
+    baseUrl: string,
+    payload: {
+      productKey: string;
+      productSecret: string;
+      deviceName: string;
+    },
+  ) => Promise<any>;
 
   fileImport: () => Promise<{ success: boolean; content?: string; ext?: string; filePath?: string; message?: string }>;
   fileExport: (content: string, defaultName: string) => Promise<{ success: boolean; filePath?: string; message?: string }>;
