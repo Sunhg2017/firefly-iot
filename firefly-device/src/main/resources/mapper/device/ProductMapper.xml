@@ -6,7 +6,6 @@
         SELECT *
         FROM products
         WHERE id = #{id}
-          AND deleted_at IS NULL
         LIMIT 1
     </select>
 
@@ -14,7 +13,6 @@
         SELECT *
         FROM products
         WHERE product_key = #{productKey}
-          AND deleted_at IS NULL
         LIMIT 1
     </select>
 
