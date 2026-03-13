@@ -84,6 +84,13 @@ const PROTOCOL_META: Record<Protocol, { label: string; description: string }> = 
   LoRaWAN: { label: 'LoRaWAN 设备', description: '通过 Webhook 模拟 LoRaWAN 上行。' },
 };
 
+const drawerPanelCardStyle = {
+  borderRadius: 16,
+  background: 'linear-gradient(180deg, rgba(15,23,42,0.88) 0%, rgba(8,15,29,0.94) 100%)',
+  border: '1px solid rgba(59,130,246,0.18)',
+  boxShadow: '0 14px 30px rgba(2,6,23,0.24)',
+} as const;
+
 function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, streamMode?: string): string[] {
   if (step === 0) return ['name', 'protocol'];
   if (step === 1) {
@@ -179,7 +186,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
           }))}
         />
       </Form.Item>
-      <Card size="small" style={{ borderRadius: 16, background: '#fafafa' }}>
+      <Card size="small" style={drawerPanelCardStyle}>
         <Text strong>{meta.label}</Text>
         <Paragraph type="secondary" style={{ margin: '8px 0 0' }}>{meta.description}</Paragraph>
       </Card>
@@ -391,7 +398,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
         </Card>
       ) : null}
 
-      <Card size="small" title="配置摘要" style={{ borderRadius: 16, background: '#fafafa' }}>
+      <Card size="small" title="配置摘要" style={drawerPanelCardStyle}>
         <Descriptions
           size="small"
           column={1}
