@@ -11,13 +11,17 @@ import {
   CONDITION_TYPE_OPTIONS,
   DEFAULT_ALARM_CONDITION_ITEM,
   DEFAULT_ALARM_CONDITION_VALUES,
+  DEFAULT_ALARM_RULE_GROUP,
   LEVEL_OPTIONS,
   OPERATOR_OPTIONS,
+  TRIGGER_MODE_OPTIONS,
   WINDOW_UNIT_OPTIONS,
+  deriveAlarmRuleLevel,
   describeAlarmConditionItem,
   describeAlarmConditionValues,
-  deriveAlarmRuleLevel,
+  getAlarmTriggerModeLabel,
   type AlarmConditionItemFormValues,
+  type AlarmRuleGroupFormValues,
 } from './alarmCondition';
 
 const { TextArea } = Input;
@@ -46,32 +50,44 @@ interface Props {
 
 interface ConditionEditorProps {
   form: FormInstance;
-  index: number;
+  groupIndex: number;
+  conditionIndex: number;
   canRemove: boolean;
   metricOptions: AlarmMetricOption[];
   metricLabelMap: Record<string, string>;
   onRemove: () => void;
 }
 
-const resetConditionMetrics = (form: FormInstance, conditions: AlarmConditionItemFormValues[]) => {
-  conditions.forEach((_, index) => {
-    form.setFieldValue(['ruleConditions', index, 'metricKey'], undefined);
+interface RuleGroupEditorProps {
+  form: FormInstance;
+  groupIndex: number;
+  canRemove: boolean;
+  metricOptions: AlarmMetricOption[];
+  metricLabelMap: Record<string, string>;
+  onRemove: () => void;
+}
+
+const resetConditionMetrics = (form: FormInstance, groups: AlarmRuleGroupFormValues[]) => {
+  groups.forEach((group, groupIndex) => {
+    (group.conditions || []).forEach((_, conditionIndex) => {
+      form.setFieldValue(['ruleGroups', groupIndex, 'conditions', conditionIndex, 'metricKey'], undefined);
+    });
   });
 };
 
 const ConditionEditor: React.FC<ConditionEditorProps> = ({
   form,
-  index,
+  groupIndex,
+  conditionIndex,
   canRemove,
   metricOptions,
   metricLabelMap,
   onRemove,
 }) => {
-  const path = ['ruleConditions', index] as const;
+  const path = ['ruleGroups', groupIndex, 'conditions', conditionIndex] as const;
   const conditionType =
     (Form.useWatch([...path, 'conditionType'], form) as AlarmConditionItemFormValues['conditionType']) ||
     DEFAULT_ALARM_CONDITION_ITEM.conditionType;
-  const level = (Form.useWatch([...path, 'level'], form) as AlarmConditionItemFormValues['level']) || 'WARNING';
   const itemValues = (Form.useWatch(path, form) as AlarmConditionItemFormValues | undefined) || DEFAULT_ALARM_CONDITION_ITEM;
   const previewText = useMemo(
     () => describeAlarmConditionItem(itemValues, metricLabelMap),
@@ -81,43 +97,29 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
   return (
     <Card
       size="small"
-      title={`${ALARM_TEXT.conditionItemTitle} ${index + 1}`}
+      title={`${ALARM_TEXT.conditionItemTitle} ${conditionIndex + 1}`}
       extra={
-        <Space size={8}>
-          <Typography.Text type="secondary">
-            {ALARM_TEXT.level}: {LEVEL_OPTIONS.find((item) => item.value === level)?.label || level}
-          </Typography.Text>
-          <Button type="text" danger icon={<DeleteOutlined />} disabled={!canRemove} onClick={onRemove}>
-            {ALARM_TEXT.removeCondition}
-          </Button>
-        </Space>
+        <Button type="text" danger icon={<DeleteOutlined />} disabled={!canRemove} onClick={onRemove}>
+          {ALARM_TEXT.removeCondition}
+        </Button>
       }
-      style={{ marginBottom: 16 }}
+      style={{ marginBottom: 12 }}
     >
       <Row gutter={12}>
-        <Col xs={24} md={8}>
+        <Col xs={24} md={12}>
           <Form.Item
-            name={[index, 'level']}
-            label={ALARM_TEXT.conditionLevel}
-            rules={[{ required: true, message: ALARM_TEXT.levelRequired }]}
-          >
-            <Select options={LEVEL_OPTIONS} placeholder={ALARM_TEXT.levelPlaceholder} />
-          </Form.Item>
-        </Col>
-        <Col xs={24} md={8}>
-          <Form.Item
-            name={[index, 'conditionType']}
+            name={[conditionIndex, 'conditionType']}
             label={ALARM_TEXT.triggerType}
             rules={[{ required: true, message: ALARM_TEXT.conditionRequired }]}
           >
             <Select options={CONDITION_TYPE_OPTIONS} />
           </Form.Item>
         </Col>
-        <Col xs={24} md={8}>
+        <Col xs={24} md={12}>
           <Form.Item
-            name={[index, 'metricKey']}
+            name={[conditionIndex, 'metricKey']}
             label={ALARM_TEXT.metric}
-            rules={conditionType === 'CUSTOM' ? [] : [{ required: true, message: ALARM_TEXT.metricPlaceholder }]}
+            rules={conditionType === 'CUSTOM' ? [] : [{ required: true, message: ALARM_TEXT.metricRequired }]}
           >
             {conditionType === 'CUSTOM' ? (
               <Input disabled placeholder={ALARM_TEXT.customExpressionMetricHint} />
@@ -146,17 +148,17 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
       {conditionType === 'THRESHOLD' && (
         <Row gutter={12}>
           <Col xs={24} md={8}>
-            <Form.Item name={[index, 'aggregateType']} label={ALARM_TEXT.aggregateType}>
+            <Form.Item name={[conditionIndex, 'aggregateType']} label={ALARM_TEXT.aggregateType}>
               <Select options={AGGREGATE_OPTIONS} />
             </Form.Item>
           </Col>
           <Col xs={24} md={8}>
-            <Form.Item name={[index, 'operator']} label={ALARM_TEXT.operator}>
+            <Form.Item name={[conditionIndex, 'operator']} label={ALARM_TEXT.operator}>
               <Select options={OPERATOR_OPTIONS} />
             </Form.Item>
           </Col>
           <Col xs={24} md={8}>
-            <Form.Item name={[index, 'threshold']} label={ALARM_TEXT.thresholdValue}>
+            <Form.Item name={[conditionIndex, 'threshold']} label={ALARM_TEXT.thresholdValue}>
               <InputNumber style={{ width: '100%' }} placeholder={ALARM_TEXT.thresholdPlaceholder} />
             </Form.Item>
           </Col>
@@ -167,41 +169,41 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
         <>
           <Row gutter={12}>
             <Col xs={24} md={8}>
-              <Form.Item name={[index, 'aggregateType']} label={ALARM_TEXT.aggregateType}>
+              <Form.Item name={[conditionIndex, 'aggregateType']} label={ALARM_TEXT.aggregateType}>
                 <Select options={AGGREGATE_OPTIONS} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name={[index, 'compareTarget']} label={ALARM_TEXT.compareTarget}>
+              <Form.Item name={[conditionIndex, 'compareTarget']} label={ALARM_TEXT.compareTarget}>
                 <Select options={COMPARE_TARGET_OPTIONS} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name={[index, 'threshold']} label={ALARM_TEXT.thresholdValue}>
+              <Form.Item name={[conditionIndex, 'threshold']} label={ALARM_TEXT.thresholdValue}>
                 <InputNumber style={{ width: '100%' }} placeholder={ALARM_TEXT.thresholdPlaceholder} />
               </Form.Item>
             </Col>
           </Row>
           <Row gutter={12}>
             <Col xs={24} md={8}>
-              <Form.Item name={[index, 'windowSize']} label={ALARM_TEXT.windowSize}>
+              <Form.Item name={[conditionIndex, 'windowSize']} label={ALARM_TEXT.windowSize}>
                 <InputNumber style={{ width: '100%' }} placeholder={ALARM_TEXT.windowSizePlaceholder} min={1} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name={[index, 'windowUnit']} label={ALARM_TEXT.windowUnit}>
+              <Form.Item name={[conditionIndex, 'windowUnit']} label={ALARM_TEXT.windowUnit}>
                 <Select options={WINDOW_UNIT_OPTIONS} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name={[index, 'changeMode']} label={ALARM_TEXT.changeMode}>
+              <Form.Item name={[conditionIndex, 'changeMode']} label={ALARM_TEXT.changeMode}>
                 <Select options={CHANGE_MODE_OPTIONS} />
               </Form.Item>
             </Col>
           </Row>
           <Row gutter={12}>
             <Col xs={24} md={8}>
-              <Form.Item name={[index, 'changeDirection']} label={ALARM_TEXT.changeDirection}>
+              <Form.Item name={[conditionIndex, 'changeDirection']} label={ALARM_TEXT.changeDirection}>
                 <Select options={CHANGE_DIRECTION_OPTIONS} />
               </Form.Item>
             </Col>
@@ -212,17 +214,17 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
       {conditionType === 'CONTINUOUS' && (
         <Row gutter={12}>
           <Col xs={24} md={8}>
-            <Form.Item name={[index, 'operator']} label={ALARM_TEXT.operator}>
+            <Form.Item name={[conditionIndex, 'operator']} label={ALARM_TEXT.operator}>
               <Select options={OPERATOR_OPTIONS} />
             </Form.Item>
           </Col>
           <Col xs={24} md={8}>
-            <Form.Item name={[index, 'threshold']} label={ALARM_TEXT.thresholdValue}>
+            <Form.Item name={[conditionIndex, 'threshold']} label={ALARM_TEXT.thresholdValue}>
               <InputNumber style={{ width: '100%' }} placeholder={ALARM_TEXT.thresholdPlaceholder} />
             </Form.Item>
           </Col>
           <Col xs={24} md={8}>
-            <Form.Item name={[index, 'consecutiveCount']} label={ALARM_TEXT.consecutiveCount}>
+            <Form.Item name={[conditionIndex, 'consecutiveCount']} label={ALARM_TEXT.consecutiveCount}>
               <InputNumber
                 style={{ width: '100%' }}
                 min={1}
@@ -237,29 +239,29 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
         <>
           <Row gutter={12}>
             <Col xs={24} md={8}>
-              <Form.Item name={[index, 'aggregateType']} label={ALARM_TEXT.aggregateType}>
+              <Form.Item name={[conditionIndex, 'aggregateType']} label={ALARM_TEXT.aggregateType}>
                 <Select options={AGGREGATE_OPTIONS} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name={[index, 'operator']} label={ALARM_TEXT.operator}>
+              <Form.Item name={[conditionIndex, 'operator']} label={ALARM_TEXT.operator}>
                 <Select options={OPERATOR_OPTIONS} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name={[index, 'threshold']} label={ALARM_TEXT.thresholdValue}>
+              <Form.Item name={[conditionIndex, 'threshold']} label={ALARM_TEXT.thresholdValue}>
                 <InputNumber style={{ width: '100%' }} placeholder={ALARM_TEXT.thresholdPlaceholder} />
               </Form.Item>
             </Col>
           </Row>
           <Row gutter={12}>
             <Col xs={24} md={12}>
-              <Form.Item name={[index, 'windowSize']} label={ALARM_TEXT.windowSize}>
+              <Form.Item name={[conditionIndex, 'windowSize']} label={ALARM_TEXT.windowSize}>
                 <InputNumber style={{ width: '100%' }} placeholder={ALARM_TEXT.windowSizePlaceholder} min={1} />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item name={[index, 'windowUnit']} label={ALARM_TEXT.windowUnit}>
+              <Form.Item name={[conditionIndex, 'windowUnit']} label={ALARM_TEXT.windowUnit}>
                 <Select options={WINDOW_UNIT_OPTIONS} />
               </Form.Item>
             </Col>
@@ -269,9 +271,9 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
 
       {conditionType === 'CUSTOM' && (
         <Form.Item
-          name={[index, 'customExpr']}
+          name={[conditionIndex, 'customExpr']}
           label={ALARM_TEXT.customExpression}
-          rules={[{ required: true, message: ALARM_TEXT.conditionRequired }]}
+          rules={[{ required: true, message: ALARM_TEXT.customExprRequired }]}
         >
           <TextArea
             rows={4}
@@ -282,6 +284,121 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
       )}
 
       <Alert type="success" showIcon message={ALARM_TEXT.preview} description={previewText} />
+    </Card>
+  );
+};
+
+const RuleGroupEditor: React.FC<RuleGroupEditorProps> = ({
+  form,
+  groupIndex,
+  canRemove,
+  metricOptions,
+  metricLabelMap,
+  onRemove,
+}) => {
+  const basePath = ['ruleGroups', groupIndex] as const;
+  const triggerMode =
+    (Form.useWatch([...basePath, 'triggerMode'], form) as AlarmRuleGroupFormValues['triggerMode']) ||
+    DEFAULT_ALARM_RULE_GROUP.triggerMode;
+  const ruleGroup = (Form.useWatch(basePath, form) as AlarmRuleGroupFormValues | undefined) || DEFAULT_ALARM_RULE_GROUP;
+  const conditionCount = ruleGroup.conditions?.length || 1;
+  const levelLabel =
+    LEVEL_OPTIONS.find((item) => item.value === ruleGroup.level)?.label || ruleGroup.level || DEFAULT_ALARM_RULE_GROUP.level;
+  const groupPreview = useMemo(
+    () => describeAlarmConditionValues({ ruleGroups: [ruleGroup] }, metricLabelMap),
+    [metricLabelMap, ruleGroup],
+  );
+
+  return (
+    <Card
+      size="small"
+      title={`${ALARM_TEXT.ruleGroupTitle} ${groupIndex + 1}`}
+      extra={
+        <Space size={8}>
+          <Typography.Text type="secondary">{levelLabel}</Typography.Text>
+          <Button type="text" danger icon={<DeleteOutlined />} disabled={!canRemove} onClick={onRemove}>
+            {ALARM_TEXT.removeRuleGroup}
+          </Button>
+        </Space>
+      }
+      style={{ marginBottom: 16 }}
+    >
+      <Row gutter={12}>
+        <Col xs={24} md={8}>
+          <Form.Item
+            name={[groupIndex, 'level']}
+            label={ALARM_TEXT.ruleGroupLevel}
+            rules={[{ required: true, message: ALARM_TEXT.levelRequired }]}
+          >
+            <Select options={LEVEL_OPTIONS} placeholder={ALARM_TEXT.levelPlaceholder} />
+          </Form.Item>
+        </Col>
+        <Col xs={24} md={8}>
+          <Form.Item
+            name={[groupIndex, 'triggerMode']}
+            label={ALARM_TEXT.triggerMode}
+            rules={[{ required: true, message: ALARM_TEXT.triggerModeRequired }]}
+          >
+            <Select options={TRIGGER_MODE_OPTIONS} placeholder={ALARM_TEXT.triggerModePlaceholder} />
+          </Form.Item>
+        </Col>
+        <Col xs={24} md={8}>
+          {triggerMode === 'AT_LEAST' ? (
+            <Form.Item
+              name={[groupIndex, 'matchCount']}
+              label={ALARM_TEXT.matchCount}
+              rules={[{ required: true, message: ALARM_TEXT.matchCountRequired }]}
+            >
+              <InputNumber
+                style={{ width: '100%' }}
+                min={1}
+                max={conditionCount}
+                placeholder={ALARM_TEXT.matchCountPlaceholder}
+              />
+            </Form.Item>
+          ) : (
+            <Alert
+              type="info"
+              showIcon
+              message={ALARM_TEXT.triggerModeDescription}
+              description={getAlarmTriggerModeLabel(triggerMode)}
+            />
+          )}
+        </Col>
+      </Row>
+
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+        {ALARM_TEXT.triggerModeHint}
+      </Typography.Paragraph>
+
+      <Form.List name={[groupIndex, 'conditions']}>
+        {(fields, { add, remove }) => (
+          <>
+            {fields.map((field) => (
+              <ConditionEditor
+                key={field.key}
+                form={form}
+                groupIndex={groupIndex}
+                conditionIndex={field.name}
+                canRemove={fields.length > 1}
+                metricOptions={metricOptions}
+                metricLabelMap={metricLabelMap}
+                onRemove={() => remove(field.name)}
+              />
+            ))}
+            <Button
+              block
+              icon={<PlusOutlined />}
+              onClick={() => add({ ...DEFAULT_ALARM_CONDITION_ITEM })}
+              style={{ marginBottom: 16 }}
+            >
+              {ALARM_TEXT.addCondition}
+            </Button>
+          </>
+        )}
+      </Form.List>
+
+      <Alert type="success" showIcon message={ALARM_TEXT.ruleGroupPreview} description={groupPreview} />
     </Card>
   );
 };
@@ -297,10 +414,10 @@ const AlarmRuleForm: React.FC<Props> = ({
 }) => {
   const projectId = Form.useWatch('projectId', form) as number | undefined;
   const productId = Form.useWatch('productId', form) as number | undefined;
-  const watchedValues = (Form.useWatch([], form) || {}) as AlarmConditionItemFormValues & {
-    ruleConditions?: AlarmConditionItemFormValues[];
+  const watchedValues = (Form.useWatch([], form) || {}) as AlarmRuleGroupFormValues & {
+    ruleGroups?: AlarmRuleGroupFormValues[];
   };
-  const ruleConditions = watchedValues.ruleConditions || DEFAULT_ALARM_CONDITION_VALUES.ruleConditions;
+  const ruleGroups = watchedValues.ruleGroups || DEFAULT_ALARM_CONDITION_VALUES.ruleGroups;
 
   const filteredProductOptions = useMemo(
     () => productOptions.filter((item) => !projectId || !item.projectId || item.projectId === projectId),
@@ -322,13 +439,13 @@ const AlarmRuleForm: React.FC<Props> = ({
   );
 
   const previewText = useMemo(
-    () => describeAlarmConditionValues({ ruleConditions }, metricLabelMap),
-    [metricLabelMap, ruleConditions],
+    () => describeAlarmConditionValues({ ruleGroups }, metricLabelMap),
+    [metricLabelMap, ruleGroups],
   );
 
-  const derivedLevel = useMemo(
-    () => LEVEL_OPTIONS.find((item) => item.value === deriveAlarmRuleLevel({ ruleConditions }))?.label || '--',
-    [ruleConditions],
+  const primaryLevel = useMemo(
+    () => LEVEL_OPTIONS.find((item) => item.value === deriveAlarmRuleLevel({ ruleGroups }))?.label || '--',
+    [ruleGroups],
   );
 
   return (
@@ -370,7 +487,7 @@ const AlarmRuleForm: React.FC<Props> = ({
               onChange={() => {
                 form.setFieldValue('productId', undefined);
                 form.setFieldValue('deviceId', undefined);
-                resetConditionMetrics(form, ruleConditions);
+                resetConditionMetrics(form, ruleGroups);
               }}
             />
           </Form.Item>
@@ -385,7 +502,7 @@ const AlarmRuleForm: React.FC<Props> = ({
               placeholder={ALARM_TEXT.productPlaceholder}
               onChange={() => {
                 form.setFieldValue('deviceId', undefined);
-                resetConditionMetrics(form, ruleConditions);
+                resetConditionMetrics(form, ruleGroups);
               }}
             />
           </Form.Item>
@@ -409,25 +526,25 @@ const AlarmRuleForm: React.FC<Props> = ({
             type="warning"
             showIcon
             message={ALARM_TEXT.primaryLevel}
-            description={`${ALARM_TEXT.primaryLevelDescription}${derivedLevel}`}
+            description={`${ALARM_TEXT.primaryLevelDescription}${primaryLevel}`}
             style={{ marginBottom: 24 }}
           />
         </Col>
       </Row>
 
-      <Divider orientation="left">{ALARM_TEXT.conditionList}</Divider>
+      <Divider orientation="left">{ALARM_TEXT.ruleGroupList}</Divider>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
         {ALARM_TEXT.multipleConditionHint}
       </Typography.Paragraph>
 
-      <Form.List name="ruleConditions">
+      <Form.List name="ruleGroups">
         {(fields, { add, remove }) => (
           <>
             {fields.map((field) => (
-              <ConditionEditor
+              <RuleGroupEditor
                 key={field.key}
                 form={form}
-                index={field.name}
+                groupIndex={field.name}
                 canRemove={fields.length > 1}
                 metricOptions={metricOptions}
                 metricLabelMap={metricLabelMap}
@@ -437,10 +554,15 @@ const AlarmRuleForm: React.FC<Props> = ({
             <Button
               block
               icon={<PlusOutlined />}
-              onClick={() => add({ ...DEFAULT_ALARM_CONDITION_ITEM })}
+              onClick={() =>
+                add({
+                  ...DEFAULT_ALARM_RULE_GROUP,
+                  conditions: [{ ...DEFAULT_ALARM_CONDITION_ITEM }],
+                })
+              }
               style={{ marginBottom: 16 }}
             >
-              {ALARM_TEXT.addCondition}
+              {ALARM_TEXT.addRuleGroup}
             </Button>
           </>
         )}

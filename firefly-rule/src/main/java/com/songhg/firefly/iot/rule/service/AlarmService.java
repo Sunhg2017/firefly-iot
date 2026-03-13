@@ -46,6 +46,7 @@ public class AlarmService {
             "ACCUMULATE",
             "CUSTOM"
     );
+    private static final Set<String> SUPPORTED_TRIGGER_MODES = Set.of("ALL", "ANY", "AT_LEAST");
     private static final List<AlarmLevel> LEVEL_PRIORITY = List.of(
             AlarmLevel.CRITICAL,
             AlarmLevel.WARNING,
@@ -235,66 +236,97 @@ public class AlarmService {
                 throw new BizException(ResultCode.PARAM_ERROR, "告警规则必须使用结构化条件");
             }
 
-            JsonNode conditions = root.get("conditions");
-            if (conditions == null || !conditions.isArray() || conditions.isEmpty()) {
-                throw new BizException(ResultCode.PARAM_ERROR, "告警规则至少需要维护一条告警条件");
+            JsonNode groups = root.get("groups");
+            if (groups == null || !groups.isArray() || groups.size() == 0) {
+                throw new BizException(ResultCode.PARAM_ERROR, "告警规则至少需要维护一个级别块");
             }
 
+            // The persisted rule level is always derived from the highest-severity group for filtering and statistics.
             AlarmLevel primaryLevel = null;
-            for (int index = 0; index < conditions.size(); index++) {
-                JsonNode condition = conditions.get(index);
-                if (condition == null || !condition.isObject()) {
-                    throw new BizException(ResultCode.PARAM_ERROR, "第 " + (index + 1) + " 条告警条件格式不正确");
+            for (int groupIndex = 0; groupIndex < groups.size(); groupIndex++) {
+                JsonNode group = groups.get(groupIndex);
+                if (group == null || !group.isObject()) {
+                    throw new BizException(ResultCode.PARAM_ERROR, buildGroupMessage(groupIndex, "级别块格式不正确"));
                 }
 
-                AlarmLevel conditionLevel = parseLevel(requireText(condition, "level", "第 " + (index + 1) + " 条告警条件缺少告警级别"));
-                primaryLevel = primaryLevel == null ? conditionLevel : pickHigherLevel(primaryLevel, conditionLevel);
+                AlarmLevel groupLevel = parseLevel(requireText(group, "level", buildGroupMessage(groupIndex, "缺少告警级别")));
+                primaryLevel = primaryLevel == null ? groupLevel : pickHigherLevel(primaryLevel, groupLevel);
 
-                String type = requireText(condition, "type", "第 " + (index + 1) + " 条告警条件缺少触发类型");
-                if (!SUPPORTED_CONDITION_TYPES.contains(type)) {
-                    throw new BizException(ResultCode.PARAM_ERROR, "第 " + (index + 1) + " 条告警条件触发类型不支持: " + type);
+                String triggerMode = requireText(group, "triggerMode", buildGroupMessage(groupIndex, "缺少触发语义"));
+                if (!SUPPORTED_TRIGGER_MODES.contains(triggerMode)) {
+                    throw new BizException(ResultCode.PARAM_ERROR, buildGroupMessage(groupIndex, "不支持的触发语义: " + triggerMode));
                 }
 
-                if ("CUSTOM".equals(type)) {
-                    requireText(condition, "customExpr", "第 " + (index + 1) + " 条自定义表达式不能为空");
-                    continue;
+                JsonNode conditions = group.get("conditions");
+                if (conditions == null || !conditions.isArray() || conditions.size() == 0) {
+                    throw new BizException(ResultCode.PARAM_ERROR, buildGroupMessage(groupIndex, "至少需要一条触发条件"));
                 }
 
-                requireText(condition, "metricKey", "第 " + (index + 1) + " 条告警条件缺少指标标识");
-                requireText(condition, "operator", "第 " + (index + 1) + " 条告警条件缺少比较符");
-                requireNumber(condition, "threshold", "第 " + (index + 1) + " 条告警条件缺少触发阈值");
-
-                if ("THRESHOLD".equals(type)) {
-                    requireText(condition, "aggregateType", "第 " + (index + 1) + " 条阈值条件缺少统计口径");
-                    continue;
+                if ("AT_LEAST".equals(triggerMode)) {
+                    int matchCount = requirePositiveInteger(group, "matchCount", buildGroupMessage(groupIndex, "缺少满足条数"));
+                    if (matchCount > conditions.size()) {
+                        throw new BizException(ResultCode.PARAM_ERROR, buildGroupMessage(groupIndex, "满足条数不能大于条件总数"));
+                    }
                 }
 
-                if ("CONTINUOUS".equals(type)) {
-                    requirePositiveInteger(condition, "consecutiveCount", "第 " + (index + 1) + " 条连续条件缺少连续次数");
-                    continue;
+                for (int conditionIndex = 0; conditionIndex < conditions.size(); conditionIndex++) {
+                    JsonNode condition = conditions.get(conditionIndex);
+                    validateCondition(groupIndex, conditionIndex, condition);
                 }
-
-                requireText(condition, "aggregateType", "第 " + (index + 1) + " 条聚合条件缺少统计口径");
-                requirePositiveInteger(condition, "windowSize", "第 " + (index + 1) + " 条聚合条件缺少统计窗口");
-                requireText(condition, "windowUnit", "第 " + (index + 1) + " 条聚合条件缺少时间单位");
-
-                if ("ACCUMULATE".equals(type)) {
-                    continue;
-                }
-
-                requireText(condition, "compareTarget", "第 " + (index + 1) + " 条同比/环比条件缺少对标方式");
-                requireText(condition, "changeMode", "第 " + (index + 1) + " 条同比/环比条件缺少变化口径");
-                requireText(condition, "changeDirection", "第 " + (index + 1) + " 条同比/环比条件缺少变化方向");
             }
 
             if (primaryLevel == null) {
-                throw new BizException(ResultCode.PARAM_ERROR, "告警规则至少需要维护一条有效的告警条件");
+                throw new BizException(ResultCode.PARAM_ERROR, "告警规则至少需要一个有效级别块");
             }
 
             return new NormalizedCondition(objectMapper.writeValueAsString(root), primaryLevel);
         } catch (JsonProcessingException exception) {
-            throw new BizException(ResultCode.PARAM_ERROR, "告警规则必须使用结构化条件");
+            throw new BizException(ResultCode.PARAM_ERROR, "告警规则必须使用合法的结构化 JSON");
         }
+    }
+
+    private void validateCondition(int groupIndex, int conditionIndex, JsonNode condition) {
+        if (condition == null || !condition.isObject()) {
+            throw new BizException(ResultCode.PARAM_ERROR, buildConditionMessage(groupIndex, conditionIndex, "条件格式不正确"));
+        }
+
+        String type = requireText(condition, "type", buildConditionMessage(groupIndex, conditionIndex, "缺少触发方式"));
+        if (!SUPPORTED_CONDITION_TYPES.contains(type)) {
+            throw new BizException(ResultCode.PARAM_ERROR, buildConditionMessage(groupIndex, conditionIndex, "不支持的触发方式: " + type));
+        }
+
+        if ("CUSTOM".equals(type)) {
+            requireText(condition, "customExpr", buildConditionMessage(groupIndex, conditionIndex, "自定义表达式不能为空"));
+            return;
+        }
+
+        requireText(condition, "metricKey", buildConditionMessage(groupIndex, conditionIndex, "缺少指标标识"));
+        requireNumber(condition, "threshold", buildConditionMessage(groupIndex, conditionIndex, "缺少触发阈值"));
+
+        if ("THRESHOLD".equals(type)) {
+            requireText(condition, "aggregateType", buildConditionMessage(groupIndex, conditionIndex, "缺少统计口径"));
+            requireText(condition, "operator", buildConditionMessage(groupIndex, conditionIndex, "缺少比较符"));
+            return;
+        }
+
+        if ("CONTINUOUS".equals(type)) {
+            requireText(condition, "operator", buildConditionMessage(groupIndex, conditionIndex, "缺少比较符"));
+            requirePositiveInteger(condition, "consecutiveCount", buildConditionMessage(groupIndex, conditionIndex, "缺少连续次数"));
+            return;
+        }
+
+        requireText(condition, "aggregateType", buildConditionMessage(groupIndex, conditionIndex, "缺少统计口径"));
+        requirePositiveInteger(condition, "windowSize", buildConditionMessage(groupIndex, conditionIndex, "缺少统计窗口"));
+        requireText(condition, "windowUnit", buildConditionMessage(groupIndex, conditionIndex, "缺少时间单位"));
+
+        if ("ACCUMULATE".equals(type)) {
+            requireText(condition, "operator", buildConditionMessage(groupIndex, conditionIndex, "缺少比较符"));
+            return;
+        }
+
+        requireText(condition, "compareTarget", buildConditionMessage(groupIndex, conditionIndex, "缺少对标方式"));
+        requireText(condition, "changeMode", buildConditionMessage(groupIndex, conditionIndex, "缺少变化口径"));
+        requireText(condition, "changeDirection", buildConditionMessage(groupIndex, conditionIndex, "缺少变化方向"));
     }
 
     private AlarmLevel parseLevel(String rawLevel) {
@@ -336,6 +368,14 @@ public class AlarmService {
             throw new BizException(ResultCode.PARAM_ERROR, errorMessage);
         }
         return value.asInt();
+    }
+
+    private String buildGroupMessage(int groupIndex, String message) {
+        return "第 " + (groupIndex + 1) + " 个级别块" + message;
+    }
+
+    private String buildConditionMessage(int groupIndex, int conditionIndex, String message) {
+        return "第 " + (groupIndex + 1) + " 个级别块的第 " + (conditionIndex + 1) + " 条条件" + message;
     }
 
     private record NormalizedCondition(String conditionExpr, AlarmLevel level) {

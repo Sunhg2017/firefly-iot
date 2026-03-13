@@ -1,4 +1,5 @@
 export type AlarmRuleLevel = 'CRITICAL' | 'WARNING' | 'INFO';
+export type AlarmTriggerMode = 'ALL' | 'ANY' | 'AT_LEAST';
 export type AlarmConditionType = 'THRESHOLD' | 'COMPARE' | 'CONTINUOUS' | 'ACCUMULATE' | 'CUSTOM';
 export type AlarmAggregateType = 'LATEST' | 'AVG' | 'MAX' | 'MIN' | 'SUM' | 'COUNT';
 export type AlarmOperator = 'GT' | 'GTE' | 'LT' | 'LTE' | 'EQ' | 'NEQ';
@@ -8,7 +9,6 @@ export type AlarmChangeMode = 'PERCENT' | 'ABSOLUTE';
 export type AlarmChangeDirection = 'UP' | 'DOWN' | 'EITHER';
 
 export interface AlarmConditionItemFormValues {
-  level?: AlarmRuleLevel;
   conditionType?: AlarmConditionType;
   metricKey?: string;
   aggregateType?: AlarmAggregateType;
@@ -23,12 +23,18 @@ export interface AlarmConditionItemFormValues {
   customExpr?: string;
 }
 
+export interface AlarmRuleGroupFormValues {
+  level?: AlarmRuleLevel;
+  triggerMode?: AlarmTriggerMode;
+  matchCount?: number;
+  conditions?: AlarmConditionItemFormValues[];
+}
+
 export interface AlarmConditionFormValues {
-  ruleConditions?: AlarmConditionItemFormValues[];
+  ruleGroups?: AlarmRuleGroupFormValues[];
 }
 
 interface StructuredAlarmConditionItem {
-  level: AlarmRuleLevel;
   type: AlarmConditionType;
   metricKey?: string;
   aggregateType?: AlarmAggregateType;
@@ -43,10 +49,17 @@ interface StructuredAlarmConditionItem {
   customExpr?: string;
 }
 
+interface StructuredAlarmRuleGroup {
+  level: AlarmRuleLevel;
+  triggerMode: AlarmTriggerMode;
+  matchCount?: number;
+  conditions: StructuredAlarmConditionItem[];
+}
+
 interface StructuredAlarmConditionGroup {
   mode: 'STRUCTURED';
-  version: 2;
-  conditions: StructuredAlarmConditionItem[];
+  version: 3;
+  groups: StructuredAlarmRuleGroup[];
 }
 
 export interface AlarmConditionOption {
@@ -110,6 +123,12 @@ const CONDITION_TYPE_COLORS: Record<AlarmConditionType, string> = {
   CUSTOM: 'default',
 };
 
+const TRIGGER_MODE_LABELS: Record<AlarmTriggerMode, string> = {
+  ALL: '全部满足',
+  ANY: '任意满足',
+  AT_LEAST: '至少 N 条满足',
+};
+
 const LEVEL_ORDER: AlarmRuleLevel[] = ['CRITICAL', 'WARNING', 'INFO'];
 
 export const CONDITION_TYPE_OPTIONS: AlarmConditionOption[] = (
@@ -140,6 +159,10 @@ export const CHANGE_DIRECTION_OPTIONS: AlarmConditionOption[] = (
   Object.entries(CHANGE_DIRECTION_LABELS) as Array<[AlarmChangeDirection, string]>
 ).map(([value, label]) => ({ value, label }));
 
+export const TRIGGER_MODE_OPTIONS: AlarmConditionOption[] = (
+  Object.entries(TRIGGER_MODE_LABELS) as Array<[AlarmTriggerMode, string]>
+).map(([value, label]) => ({ value, label }));
+
 export const LEVEL_OPTIONS: AlarmConditionOption[] = [
   { value: 'CRITICAL', label: '紧急' },
   { value: 'WARNING', label: '告警' },
@@ -147,7 +170,6 @@ export const LEVEL_OPTIONS: AlarmConditionOption[] = [
 ];
 
 export const DEFAULT_ALARM_CONDITION_ITEM: Required<AlarmConditionItemFormValues> = {
-  level: 'WARNING',
   conditionType: 'THRESHOLD',
   metricKey: '',
   aggregateType: 'LATEST',
@@ -162,8 +184,15 @@ export const DEFAULT_ALARM_CONDITION_ITEM: Required<AlarmConditionItemFormValues
   customExpr: '',
 };
 
+export const DEFAULT_ALARM_RULE_GROUP: Required<AlarmRuleGroupFormValues> = {
+  level: 'WARNING',
+  triggerMode: 'ALL',
+  matchCount: 1,
+  conditions: [{ ...DEFAULT_ALARM_CONDITION_ITEM }],
+};
+
 export const DEFAULT_ALARM_CONDITION_VALUES: Required<AlarmConditionFormValues> = {
-  ruleConditions: [{ ...DEFAULT_ALARM_CONDITION_ITEM }],
+  ruleGroups: [{ ...DEFAULT_ALARM_RULE_GROUP, conditions: [{ ...DEFAULT_ALARM_CONDITION_ITEM }] }],
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -184,9 +213,14 @@ const asLevel = (value: unknown): AlarmRuleLevel | undefined => {
   return next && LEVEL_ORDER.includes(next) ? next : undefined;
 };
 
+const asTriggerMode = (value: unknown): AlarmTriggerMode | undefined => {
+  const next = asString(value) as AlarmTriggerMode | undefined;
+  return next && next in TRIGGER_MODE_LABELS ? next : undefined;
+};
+
 const getMetricLabel = (metricKey: string | undefined, metricLabelMap?: Record<string, string>): string => {
   if (!metricKey) {
-    return '未选指标';
+    return '未选择指标';
   }
   return metricLabelMap?.[metricKey] || metricKey;
 };
@@ -194,6 +228,15 @@ const getMetricLabel = (metricKey: string | undefined, metricLabelMap?: Record<s
 const normalizeConditionItem = (item: AlarmConditionItemFormValues): Required<AlarmConditionItemFormValues> => ({
   ...DEFAULT_ALARM_CONDITION_ITEM,
   ...item,
+});
+
+const normalizeRuleGroup = (group: AlarmRuleGroupFormValues): Required<AlarmRuleGroupFormValues> => ({
+  ...DEFAULT_ALARM_RULE_GROUP,
+  ...group,
+  conditions:
+    group.conditions && group.conditions.length > 0
+      ? group.conditions.map((item) => normalizeConditionItem(item))
+      : [{ ...DEFAULT_ALARM_CONDITION_ITEM }],
 });
 
 const parseStructuredConditionGroup = (conditionExpr?: string | null): StructuredAlarmConditionGroup | null => {
@@ -204,7 +247,7 @@ const parseStructuredConditionGroup = (conditionExpr?: string | null): Structure
 
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (!isRecord(parsed) || parsed.mode !== 'STRUCTURED' || !Array.isArray(parsed.conditions)) {
+    if (!isRecord(parsed) || parsed.mode !== 'STRUCTURED' || !Array.isArray(parsed.groups)) {
       return null;
     }
 
@@ -220,60 +263,70 @@ export const getAlarmConditionTypeLabel = (type?: AlarmConditionType): string =>
 export const getAlarmConditionTypeColor = (type?: AlarmConditionType): string =>
   (type && CONDITION_TYPE_COLORS[type]) || CONDITION_TYPE_COLORS.CUSTOM;
 
+export const getAlarmTriggerModeLabel = (mode?: AlarmTriggerMode): string =>
+  (mode && TRIGGER_MODE_LABELS[mode]) || TRIGGER_MODE_LABELS.ALL;
+
 export const parseAlarmConditionExpr = (conditionExpr?: string | null): AlarmConditionFormValues => {
   const group = parseStructuredConditionGroup(conditionExpr);
-  if (!group || group.conditions.length === 0) {
+  if (!group || group.groups.length === 0) {
     return { ...DEFAULT_ALARM_CONDITION_VALUES };
   }
 
   return {
-    ruleConditions: group.conditions.map((condition) => ({
-      ...DEFAULT_ALARM_CONDITION_ITEM,
-      level: asLevel(condition.level) || DEFAULT_ALARM_CONDITION_ITEM.level,
-      conditionType: (asString(condition.type) as AlarmConditionType | undefined) || DEFAULT_ALARM_CONDITION_ITEM.conditionType,
-      metricKey: asString(condition.metricKey) || '',
-      aggregateType:
-        (asString(condition.aggregateType) as AlarmAggregateType | undefined) || DEFAULT_ALARM_CONDITION_ITEM.aggregateType,
-      operator: (asString(condition.operator) as AlarmOperator | undefined) || DEFAULT_ALARM_CONDITION_ITEM.operator,
-      threshold: asNumber(condition.threshold) ?? DEFAULT_ALARM_CONDITION_ITEM.threshold,
-      windowSize: asNumber(condition.windowSize) ?? DEFAULT_ALARM_CONDITION_ITEM.windowSize,
-      windowUnit:
-        (asString(condition.windowUnit) as AlarmWindowUnit | undefined) || DEFAULT_ALARM_CONDITION_ITEM.windowUnit,
-      compareTarget:
-        (asString(condition.compareTarget) as AlarmCompareTarget | undefined) || DEFAULT_ALARM_CONDITION_ITEM.compareTarget,
-      changeMode:
-        (asString(condition.changeMode) as AlarmChangeMode | undefined) || DEFAULT_ALARM_CONDITION_ITEM.changeMode,
-      changeDirection:
-        (asString(condition.changeDirection) as AlarmChangeDirection | undefined) || DEFAULT_ALARM_CONDITION_ITEM.changeDirection,
-      consecutiveCount: asNumber(condition.consecutiveCount) ?? DEFAULT_ALARM_CONDITION_ITEM.consecutiveCount,
-      customExpr: asString(condition.customExpr) || '',
+    ruleGroups: group.groups.map((ruleGroup) => ({
+      level: asLevel(ruleGroup.level) || DEFAULT_ALARM_RULE_GROUP.level,
+      triggerMode: asTriggerMode(ruleGroup.triggerMode) || DEFAULT_ALARM_RULE_GROUP.triggerMode,
+      matchCount: asNumber(ruleGroup.matchCount) ?? DEFAULT_ALARM_RULE_GROUP.matchCount,
+      conditions:
+        Array.isArray(ruleGroup.conditions) && ruleGroup.conditions.length > 0
+          ? ruleGroup.conditions.map((condition) => ({
+              ...DEFAULT_ALARM_CONDITION_ITEM,
+              conditionType:
+                (asString(condition.type) as AlarmConditionType | undefined) || DEFAULT_ALARM_CONDITION_ITEM.conditionType,
+              metricKey: asString(condition.metricKey) || '',
+              aggregateType:
+                (asString(condition.aggregateType) as AlarmAggregateType | undefined) ||
+                DEFAULT_ALARM_CONDITION_ITEM.aggregateType,
+              operator:
+                (asString(condition.operator) as AlarmOperator | undefined) || DEFAULT_ALARM_CONDITION_ITEM.operator,
+              threshold: asNumber(condition.threshold) ?? DEFAULT_ALARM_CONDITION_ITEM.threshold,
+              windowSize: asNumber(condition.windowSize) ?? DEFAULT_ALARM_CONDITION_ITEM.windowSize,
+              windowUnit:
+                (asString(condition.windowUnit) as AlarmWindowUnit | undefined) ||
+                DEFAULT_ALARM_CONDITION_ITEM.windowUnit,
+              compareTarget:
+                (asString(condition.compareTarget) as AlarmCompareTarget | undefined) ||
+                DEFAULT_ALARM_CONDITION_ITEM.compareTarget,
+              changeMode:
+                (asString(condition.changeMode) as AlarmChangeMode | undefined) || DEFAULT_ALARM_CONDITION_ITEM.changeMode,
+              changeDirection:
+                (asString(condition.changeDirection) as AlarmChangeDirection | undefined) ||
+                DEFAULT_ALARM_CONDITION_ITEM.changeDirection,
+              consecutiveCount: asNumber(condition.consecutiveCount) ?? DEFAULT_ALARM_CONDITION_ITEM.consecutiveCount,
+              customExpr: asString(condition.customExpr) || '',
+            }))
+          : [{ ...DEFAULT_ALARM_CONDITION_ITEM }],
     })),
   };
 };
 
 const buildStructuredConditionItem = (
   item: AlarmConditionItemFormValues,
-  index: number,
+  groupIndex: number,
+  itemIndex: number,
 ): StructuredAlarmConditionItem => {
   const next = normalizeConditionItem(item);
   const type = next.conditionType;
-  const level = next.level;
-
-  if (!level) {
-    throw new Error(`请为第 ${index + 1} 条条件选择告警级别`);
-  }
-
   if (!type) {
-    throw new Error(`请为第 ${index + 1} 条条件选择触发方式`);
+    throw new Error(`请为第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条条件选择触发方式`);
   }
 
   if (type === 'CUSTOM') {
     const customExpr = next.customExpr.trim();
     if (!customExpr) {
-      throw new Error(`请填写第 ${index + 1} 条条件的自定义表达式`);
+      throw new Error(`请填写第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条自定义表达式`);
     }
     return {
-      level,
       type,
       customExpr,
     };
@@ -281,16 +334,10 @@ const buildStructuredConditionItem = (
 
   const metricKey = next.metricKey.trim();
   if (!metricKey) {
-    throw new Error(`请为第 ${index + 1} 条条件选择指标标识`);
-  }
-
-  const threshold = next.threshold;
-  if (threshold === undefined || threshold === null || !Number.isFinite(threshold)) {
-    throw new Error(`请填写第 ${index + 1} 条条件的触发阈值`);
+    throw new Error(`请为第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条条件选择指标`);
   }
 
   const payload: StructuredAlarmConditionItem = {
-    level,
     type,
     metricKey,
   };
@@ -298,31 +345,39 @@ const buildStructuredConditionItem = (
   if (type === 'THRESHOLD') {
     payload.aggregateType = next.aggregateType;
     payload.operator = next.operator;
-    payload.threshold = threshold;
+    payload.threshold = next.threshold;
+    if (payload.threshold === undefined || !Number.isFinite(payload.threshold)) {
+      throw new Error(`请填写第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条条件阈值`);
+    }
     return payload;
   }
 
   if (type === 'CONTINUOUS') {
-    if (!next.consecutiveCount || next.consecutiveCount <= 0) {
-      throw new Error(`请填写第 ${index + 1} 条条件的连续次数`);
-    }
     payload.operator = next.operator;
-    payload.threshold = threshold;
+    payload.threshold = next.threshold;
     payload.consecutiveCount = next.consecutiveCount;
+    if (payload.threshold === undefined || !Number.isFinite(payload.threshold)) {
+      throw new Error(`请填写第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条条件阈值`);
+    }
+    if (!payload.consecutiveCount || payload.consecutiveCount <= 0) {
+      throw new Error(`请填写第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条条件连续次数`);
+    }
     return payload;
   }
 
-  if (!next.windowSize || next.windowSize <= 0) {
-    throw new Error(`请填写第 ${index + 1} 条条件的统计窗口`);
-  }
-
   payload.aggregateType = next.aggregateType;
-  payload.operator = next.operator;
-  payload.threshold = threshold;
+  payload.threshold = next.threshold;
   payload.windowSize = next.windowSize;
   payload.windowUnit = next.windowUnit;
+  if (payload.threshold === undefined || !Number.isFinite(payload.threshold)) {
+    throw new Error(`请填写第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条条件阈值`);
+  }
+  if (!payload.windowSize || payload.windowSize <= 0) {
+    throw new Error(`请填写第 ${groupIndex + 1} 个级别块的第 ${itemIndex + 1} 条条件统计窗口`);
+  }
 
   if (type === 'ACCUMULATE') {
+    payload.operator = next.operator;
     return payload;
   }
 
@@ -332,17 +387,54 @@ const buildStructuredConditionItem = (
   return payload;
 };
 
-export const buildAlarmConditionExpr = (values: AlarmConditionFormValues): string => {
-  const ruleConditions = values.ruleConditions || [];
-  if (ruleConditions.length === 0) {
-    throw new Error('请至少维护一条告警条件');
+const buildRuleGroup = (group: AlarmRuleGroupFormValues, groupIndex: number): StructuredAlarmRuleGroup => {
+  const next = normalizeRuleGroup(group);
+  const level = next.level;
+  const triggerMode = next.triggerMode;
+  const conditions = next.conditions || [];
+
+  // A rule is organized by level blocks first, then each block defines how its conditions combine.
+  if (!level) {
+    throw new Error(`请为第 ${groupIndex + 1} 个级别块选择告警级别`);
+  }
+  if (!triggerMode) {
+    throw new Error(`请为第 ${groupIndex + 1} 个级别块选择触发语义`);
+  }
+  if (conditions.length === 0) {
+    throw new Error(`第 ${groupIndex + 1} 个级别块至少需要一条条件`);
   }
 
-  const conditions = ruleConditions.map((item, index) => buildStructuredConditionItem(item, index));
+  const builtConditions = conditions.map((item, itemIndex) => buildStructuredConditionItem(item, groupIndex, itemIndex));
+  if (triggerMode === 'AT_LEAST') {
+    const matchCount = next.matchCount;
+    if (!matchCount || matchCount <= 0 || matchCount > builtConditions.length) {
+      throw new Error(`第 ${groupIndex + 1} 个级别块的满足条数必须在 1 到条件总数之间`);
+    }
+    return {
+      level,
+      triggerMode,
+      matchCount,
+      conditions: builtConditions,
+    };
+  }
+
+  return {
+    level,
+    triggerMode,
+    conditions: builtConditions,
+  };
+};
+
+export const buildAlarmConditionExpr = (values: AlarmConditionFormValues): string => {
+  const ruleGroups = values.ruleGroups || [];
+  if (ruleGroups.length === 0) {
+    throw new Error('请至少维护一个告警级别块');
+  }
+
   const payload: StructuredAlarmConditionGroup = {
     mode: 'STRUCTURED',
-    version: 2,
-    conditions,
+    version: 3,
+    groups: ruleGroups.map((group, index) => buildRuleGroup(group, index)),
   };
   return JSON.stringify(payload);
 };
@@ -360,9 +452,9 @@ export const describeAlarmConditionItem = (
     case 'COMPARE':
       return `${metric}${COMPARE_TARGET_LABELS[next.compareTarget]}${CHANGE_DIRECTION_LABELS[next.changeDirection]}${next.threshold}${CHANGE_MODE_LABELS[next.changeMode]}，统计口径 ${AGGREGATE_LABELS[next.aggregateType]}，窗口 ${next.windowSize}${WINDOW_UNIT_LABELS[next.windowUnit]}`;
     case 'CONTINUOUS':
-      return `${metric}连续${next.consecutiveCount}次 ${OPERATOR_LABELS[next.operator]} ${next.threshold}`;
+      return `${metric} 连续 ${next.consecutiveCount} 次 ${OPERATOR_LABELS[next.operator]} ${next.threshold}`;
     case 'ACCUMULATE':
-      return `${next.windowSize}${WINDOW_UNIT_LABELS[next.windowUnit]}${AGGREGATE_LABELS[next.aggregateType]} ${metric} ${OPERATOR_LABELS[next.operator]} ${next.threshold}`;
+      return `${next.windowSize}${WINDOW_UNIT_LABELS[next.windowUnit]} ${AGGREGATE_LABELS[next.aggregateType]} ${metric} ${OPERATOR_LABELS[next.operator]} ${next.threshold}`;
     case 'CUSTOM':
       return next.customExpr?.trim() || '自定义表达式';
     default:
@@ -370,18 +462,31 @@ export const describeAlarmConditionItem = (
   }
 };
 
+export const describeAlarmRuleGroup = (
+  group: AlarmRuleGroupFormValues,
+  metricLabelMap?: Record<string, string>,
+): string => {
+  const next = normalizeRuleGroup(group);
+  const levelLabel = LEVEL_OPTIONS.find((item) => item.value === next.level)?.label || next.level;
+  const triggerText =
+    next.triggerMode === 'AT_LEAST'
+      ? `满足至少 ${next.matchCount} 条条件时触发`
+      : `${getAlarmTriggerModeLabel(next.triggerMode)}时触发`;
+  const conditionText = next.conditions.map((item) => describeAlarmConditionItem(item, metricLabelMap)).join('；');
+
+  return `${levelLabel}：${triggerText}；条件为 ${conditionText}`;
+};
+
 export const describeAlarmConditionValues = (
   values: AlarmConditionFormValues,
   metricLabelMap?: Record<string, string>,
 ): string => {
-  const conditions = values.ruleConditions || [];
-  if (conditions.length === 0) {
-    return '请至少维护一条告警条件';
+  const ruleGroups = values.ruleGroups || [];
+  if (ruleGroups.length === 0) {
+    return '请至少维护一个告警级别块';
   }
 
-  return conditions
-    .map((item) => `${LEVEL_OPTIONS.find((option) => option.value === normalizeConditionItem(item).level)?.label || '告警'}: ${describeAlarmConditionItem(item, metricLabelMap)}`)
-    .join('；');
+  return ruleGroups.map((group) => describeAlarmRuleGroup(group, metricLabelMap)).join(' | ');
 };
 
 export const describeAlarmConditionExpr = (
@@ -389,7 +494,7 @@ export const describeAlarmConditionExpr = (
   metricLabelMap?: Record<string, string>,
 ): string => {
   const group = parseStructuredConditionGroup(conditionExpr);
-  if (!group || group.conditions.length === 0) {
+  if (!group || group.groups.length === 0) {
     return '无效规则配置';
   }
 
@@ -405,7 +510,14 @@ export const getAlarmConditionTypes = (conditionExpr?: string | null): AlarmCond
     return [];
   }
 
-  return Array.from(new Set(group.conditions.map((item) => item.type).filter(Boolean))) as AlarmConditionType[];
+  return Array.from(
+    new Set(
+      group.groups
+        .flatMap((item) => item.conditions || [])
+        .map((item) => item.type)
+        .filter(Boolean),
+    ),
+  ) as AlarmConditionType[];
 };
 
 export const getAlarmConditionLevels = (conditionExpr?: string | null): AlarmRuleLevel[] => {
@@ -414,14 +526,16 @@ export const getAlarmConditionLevels = (conditionExpr?: string | null): AlarmRul
     return [];
   }
 
-  const uniqueLevels = Array.from(new Set(group.conditions.map((item) => asLevel(item.level)).filter(Boolean))) as AlarmRuleLevel[];
+  const uniqueLevels = Array.from(
+    new Set(group.groups.map((item) => asLevel(item.level)).filter(Boolean)),
+  ) as AlarmRuleLevel[];
   return LEVEL_ORDER.filter((level) => uniqueLevels.includes(level));
 };
 
 export const deriveAlarmRuleLevel = (values: AlarmConditionFormValues): AlarmRuleLevel => {
-  const ruleConditions = values.ruleConditions || [];
-  const levels = ruleConditions
-    .map((item) => normalizeConditionItem(item).level)
+  const ruleGroups = values.ruleGroups || [];
+  const levels = ruleGroups
+    .map((group) => normalizeRuleGroup(group).level)
     .filter((level): level is AlarmRuleLevel => Boolean(level));
 
   return LEVEL_ORDER.find((level) => levels.includes(level)) || 'WARNING';
