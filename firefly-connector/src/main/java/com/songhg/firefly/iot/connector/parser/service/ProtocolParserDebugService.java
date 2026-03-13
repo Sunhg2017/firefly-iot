@@ -196,7 +196,6 @@ public class ProtocolParserDebugService {
             dto.setLocatorValue(identity.getLocatorValue());
         }
         if (resolved != null) {
-            dto.setDeviceId(resolved.getDeviceId());
             if (dto.getProductKey() == null) {
                 dto.setProductKey(resolved.getProductKey());
             }

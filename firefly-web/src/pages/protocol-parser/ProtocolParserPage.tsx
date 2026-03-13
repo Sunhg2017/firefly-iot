@@ -65,7 +65,7 @@ interface TenantOption {
 }
 
 interface DeviceOption {
-  id: number;
+  productId?: number;
   deviceName: string;
 }
 
@@ -120,7 +120,6 @@ interface DebugIdentity {
   deviceName?: string;
   locatorType?: string;
   locatorValue?: string;
-  deviceId?: number;
 }
 
 interface DebugMessage {
@@ -186,15 +185,12 @@ interface UplinkDebugFormValues {
   headersText: string;
   sessionId?: string;
   remoteAddress?: string;
-  deviceId?: number;
-  deviceName?: string;
 }
 
 interface DownlinkDebugFormValues {
   productId?: number;
   topic?: string;
   messageType: string;
-  deviceId?: number;
   deviceName?: string;
   headersText: string;
   sessionId?: string;
@@ -348,7 +344,6 @@ const DEFAULT_UPLINK_DEBUG_VALUES: UplinkDebugFormValues = {
   headersText: '{}',
   sessionId: '',
   remoteAddress: '',
-  deviceName: '',
 };
 
 const DEFAULT_DOWNLINK_DEBUG_VALUES: DownlinkDebugFormValues = {
@@ -498,7 +493,7 @@ const transportColor = (transport?: string) => {
 const releaseModePreset = (mode?: string) => {
   switch ((mode || '').toUpperCase()) {
     case 'DEVICE_LIST':
-      return JSON.stringify({ deviceIds: [1001], deviceNames: ['demo-device-01'] }, null, 2);
+      return JSON.stringify({ deviceNames: ['demo-device-01'] }, null, 2);
     case 'HASH_PERCENT':
       return JSON.stringify({ percent: 10 }, null, 2);
     default:
@@ -804,6 +799,8 @@ const ProtocolParserPage: React.FC = () => {
   const currentPluginId = Form.useWatch('pluginId', editorForm);
   const currentEditorProductId = Form.useWatch('productId', editorForm);
   const currentUplinkTransport = Form.useWatch('transport', uplinkDebugForm) || DEFAULT_EDITOR_VALUES.transport;
+  const currentDownlinkProductId = Form.useWatch('productId', downlinkDebugForm);
+  const currentDownlinkDeviceName = Form.useWatch('deviceName', downlinkDebugForm);
   const currentDownlinkMessageType =
     Form.useWatch('messageType', downlinkDebugForm) || DEFAULT_DOWNLINK_DEBUG_VALUES.messageType;
 
@@ -924,6 +921,15 @@ const ProtocolParserPage: React.FC = () => {
       ),
     [currentPluginId, currentRecord?.pluginVersion, runtimeCatalog, runtimePlugins],
   );
+  const downlinkDeviceOptions = useMemo(() => {
+    const visibleDevices = currentDownlinkProductId
+      ? deviceOptions.filter((item) => item.productId === currentDownlinkProductId)
+      : deviceOptions;
+    return visibleDevices.map((item) => ({
+      value: item.deviceName,
+      label: item.deviceName,
+    }));
+  }, [currentDownlinkProductId, deviceOptions]);
 
   const stats = useMemo(
     () => ({
@@ -982,7 +988,12 @@ const ProtocolParserPage: React.FC = () => {
     try {
       const response = await deviceApi.list({ pageSize: 500 });
       const page = response.data.data as { records?: DeviceOption[] };
-      setDeviceOptions((page.records || []).map((d: DeviceOption) => ({ id: d.id, deviceName: d.deviceName })));
+      setDeviceOptions(
+        (page.records || []).map((d: DeviceOption) => ({
+          productId: d.productId,
+          deviceName: d.deviceName,
+        })),
+      );
     } catch {
       // ignore
     }
@@ -1067,6 +1078,16 @@ const ProtocolParserPage: React.FC = () => {
       });
     }
   }, [editorBusinessIdentifiers, editorForm, editorOpen]);
+
+  useEffect(() => {
+    if (!currentDownlinkDeviceName) {
+      return;
+    }
+    const stillVisible = downlinkDeviceOptions.some((item) => item.value === currentDownlinkDeviceName);
+    if (!stillVisible) {
+      downlinkDebugForm.setFieldsValue({ deviceName: undefined });
+    }
+  }, [currentDownlinkDeviceName, downlinkDebugForm, downlinkDeviceOptions]);
 
   // Auto-pick a detected version so plugin mode usually needs only one selection.
   useEffect(() => {
@@ -1385,8 +1406,6 @@ const ProtocolParserPage: React.FC = () => {
         headers,
         sessionId: trimOptional(values.sessionId),
         remoteAddress: trimOptional(values.remoteAddress),
-        deviceId: values.deviceId,
-        deviceName: trimOptional(values.deviceName),
       });
       const data = response.data.data as DebugResult;
       setDebugResult(data);
@@ -1414,7 +1433,6 @@ const ProtocolParserPage: React.FC = () => {
         productId: values.productId,
         topic: trimOptional(values.topic),
         messageType: trimOptional(values.messageType),
-        deviceId: values.deviceId,
         deviceName: trimOptional(values.deviceName),
         headers,
         sessionId: trimOptional(values.sessionId),
@@ -2357,7 +2375,7 @@ const ProtocolParserPage: React.FC = () => {
                   extra={
                     <Space direction="vertical" size={4}>
                       <Text type="secondary">
-                        ALL 使用 {'{}'}，DEVICE_LIST 使用 deviceIds/deviceNames，HASH_PERCENT 使用 {'{ percent }'}。
+                        ALL 使用 {'{}'}，DEVICE_LIST 优先使用 deviceNames，HASH_PERCENT 使用 {'{ percent }'}。
                       </Text>
                       <Space wrap>
                         <Button size="small" onClick={() => applyEditorJsonPreset('releaseConfigJson', '{}')}>
@@ -2406,7 +2424,7 @@ const ProtocolParserPage: React.FC = () => {
             type="info"
             showIcon
             style={{ marginBottom: 16 }}
-            message="优先使用下拉和示例填充，通常只需选择传输方式后再补设备标识即可完成调试。"
+            message="优先使用下拉和示例填充，通常只需选择传输方式并准备载荷即可完成上行调试。"
           />
           <Row gutter={16}>
             <Col xs={24} md={8}>
@@ -2465,25 +2483,12 @@ const ProtocolParserPage: React.FC = () => {
                 <Input placeholder="10.0.0.10:9000" />
               </Form.Item>
             </Col>
-            <Col xs={24} md={8}>
-              <Form.Item name="deviceId" label="设备">
-                <Select
-                  placeholder="请选择设备"
-                  allowClear
-                  showSearch
-                  optionFilterProp="label"
-                  options={deviceOptions.map(d => ({ value: d.id, label: d.deviceName }))}
-                  onChange={(deviceId: number | undefined) => {
-                    const device = deviceOptions.find(d => d.id === deviceId);
-                    uplinkDebugForm.setFieldsValue({ deviceName: device?.deviceName || '' });
-                  }}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={8}>
-              <Form.Item name="deviceName" label="设备名称">
-                <Input disabled placeholder="选择设备后自动填充" />
-              </Form.Item>
+            <Col xs={24} md={16}>
+              <Alert
+                type="warning"
+                showIcon
+                message="上行调试会按载荷和脚本自动识别设备，不再手工指定设备主键或设备名称。"
+              />
             </Col>
           </Row>
           <Form.Item
@@ -2621,6 +2626,7 @@ const ProtocolParserPage: React.FC = () => {
                   options={productOptions}
                   optionFilterProp="label"
                   placeholder="租户默认级规则调试时请选择产品"
+                  onChange={() => downlinkDebugForm.setFieldsValue({ deviceName: undefined })}
                 />
               </Form.Item>
             </Col>
@@ -2642,23 +2648,14 @@ const ProtocolParserPage: React.FC = () => {
           </Row>
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item name="deviceId" label="设备">
+              <Form.Item name="deviceName" label="设备名称">
                 <Select
-                  placeholder="请选择设备"
+                  placeholder={currentDownlinkProductId ? '请选择设备名称' : '可先选择产品再选择设备'}
                   allowClear
                   showSearch
                   optionFilterProp="label"
-                  options={deviceOptions.map(d => ({ value: d.id, label: d.deviceName }))}
-                  onChange={(deviceId: number | undefined) => {
-                    const device = deviceOptions.find(d => d.id === deviceId);
-                    downlinkDebugForm.setFieldsValue({ deviceName: device?.deviceName || '' });
-                  }}
+                  options={downlinkDeviceOptions}
                 />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={8}>
-              <Form.Item name="deviceName" label="设备名称">
-                <Input disabled placeholder="选择设备后自动填充" />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>

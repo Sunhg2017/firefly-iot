@@ -9,7 +9,9 @@ import com.songhg.firefly.iot.api.dto.ProtocolParserPublishedDTO;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.result.ResultCode;
+import com.songhg.firefly.iot.device.entity.Device;
 import com.songhg.firefly.iot.device.entity.Product;
+import com.songhg.firefly.iot.device.mapper.DeviceMapper;
 import com.songhg.firefly.iot.device.mapper.ProductMapper;
 import com.songhg.firefly.iot.device.protocolparser.dto.ProtocolParserEncodeTestRequestDTO;
 import com.songhg.firefly.iot.device.protocolparser.dto.ProtocolParserTestRequestDTO;
@@ -21,6 +23,7 @@ import org.springframework.stereotype.Service;
 public class ProtocolParserDebugService {
 
     private final ProtocolParserService protocolParserService;
+    private final DeviceMapper deviceMapper;
     private final ProductMapper productMapper;
     private final ProtocolParserDebugClient protocolParserDebugClient;
 
@@ -62,8 +65,9 @@ public class ProtocolParserDebugService {
         encodeRequest.setProductKey(product.getProductKey());
         encodeRequest.setTopic(request == null ? null : request.getTopic());
         encodeRequest.setMessageType(request == null ? null : request.getMessageType());
-        encodeRequest.setDeviceId(request == null ? null : request.getDeviceId());
-        encodeRequest.setDeviceName(request == null ? null : request.getDeviceName());
+        Device debugDevice = resolveDebugDevice(definition.getProductId(), request == null ? null : request.getDeviceName());
+        encodeRequest.setDeviceId(debugDevice == null ? null : debugDevice.getId());
+        encodeRequest.setDeviceName(debugDevice == null ? null : debugDevice.getDeviceName());
         encodeRequest.setHeaders(request == null ? null : request.getHeaders());
         encodeRequest.setSessionId(request == null ? null : request.getSessionId());
         encodeRequest.setRemoteAddress(request == null ? null : request.getRemoteAddress());
@@ -99,5 +103,16 @@ public class ProtocolParserDebugService {
             throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
         }
         return product;
+    }
+
+    private Device resolveDebugDevice(Long productId, String deviceName) {
+        if (deviceName == null || deviceName.isBlank()) {
+            return null;
+        }
+        Device device = deviceMapper.selectByProductIdAndDeviceNameIgnoreTenant(productId, deviceName.trim());
+        if (device == null) {
+            throw new BizException(ResultCode.DEVICE_NOT_FOUND, "Debug device does not exist under current product");
+        }
+        return device;
     }
 }

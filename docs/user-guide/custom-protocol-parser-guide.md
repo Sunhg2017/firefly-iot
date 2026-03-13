@@ -526,3 +526,33 @@ function encode(ctx) {
 
 - Debug frame splitting no longer writes into production TCP/UDP session buffers.
 - Running debug half-packet cases will not affect online device sessions.
+
+## 2026-03-13 调试方式更新
+
+### 上行调试
+
+- 页面不再手工选择设备。
+- 你只需要准备：
+  - 调试产品
+  - 协议 / 传输方式
+  - 主题
+  - 载荷和请求头
+- 设备身份需要由报文内容、主题、请求头或定位字段自动识别。
+
+### 下行编码测试
+
+- 页面优先按 `deviceName` 选择设备，不再把数据库主键作为主交互口径。
+- 推荐顺序：
+  1. 先选择调试产品
+  2. 再选择设备名称
+  3. 再填写消息类型、主题和载荷
+
+### 灰度配置建议
+
+- `DEVICE_LIST` 新配置优先使用 `deviceNames`
+- 旧配置如果仍然包含 `deviceIds`，系统在下行调试时仍会兼容
+
+### 为什么这样调整
+
+- 上行调试原来的设备选择不会真正参与解析执行，容易造成误解。
+- 下行调试继续使用业务唯一键选择设备，服务端再在内部解析成运行时所需的设备上下文。

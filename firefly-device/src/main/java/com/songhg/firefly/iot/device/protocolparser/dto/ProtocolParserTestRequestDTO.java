@@ -35,10 +35,4 @@ public class ProtocolParserTestRequestDTO {
 
     @Schema(description = "Remote address")
     private String remoteAddress;
-
-    @Schema(description = "Debug device id override")
-    private Long deviceId;
-
-    @Schema(description = "Debug device name override")
-    private String deviceName;
 }

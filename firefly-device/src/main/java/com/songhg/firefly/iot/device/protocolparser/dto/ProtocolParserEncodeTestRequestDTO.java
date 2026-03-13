@@ -18,10 +18,7 @@ public class ProtocolParserEncodeTestRequestDTO {
     @Schema(description = "Message type", example = "PROPERTY_SET")
     private String messageType;
 
-    @Schema(description = "Device id override")
-    private Long deviceId;
-
-    @Schema(description = "Device name override")
+    @Schema(description = "Debug device name override")
     private String deviceName;
 
     @Schema(description = "Headers")

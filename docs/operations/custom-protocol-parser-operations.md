@@ -263,3 +263,27 @@ mvn -pl firefly-system -am -DskipTests compile
 2. For TCP/UDP long-frame protocols, explicitly set `frameConfig.maxBufferedBytes`.
 3. Confirm expected fallback behavior per rule (`ERROR`, `DROP`, `RAW_DATA`) in debug and production.
 4. Watch parser warnings and executor busy logs during traffic peaks.
+
+## 2026-03-13 Debug Operations Update
+
+### Changed Behavior
+
+- Uplink debug:
+  - no longer supports manual device override in the management page
+  - device identity must come from payload, topic, headers, or locator rules
+- Downlink debug:
+  - device selection is now based on `deviceName`
+  - operators should choose debug product first, then choose device name
+
+### Operational Checks
+
+1. If uplink debug cannot identify the device, first inspect whether payload examples still carry the expected identity fields such as `deviceName` or locator values.
+2. If downlink debug reports that the selected device does not exist, verify:
+   - the selected debug product is correct
+   - the device still belongs to that product
+   - the device name has not been renamed
+3. For `DEVICE_LIST` release configs, prefer maintaining `deviceNames` in new and updated rules.
+
+### Compatibility Note
+
+- Legacy release configs that still contain `deviceIds` remain compatible during downlink debug because the device service resolves `deviceName` to internal device context before invoking connector encode debug.

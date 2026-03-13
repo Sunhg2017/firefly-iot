@@ -16,5 +16,4 @@ public class ProtocolParserDebugIdentityDTO implements Serializable {
     private String deviceName;
     private String locatorType;
     private String locatorValue;
-    private Long deviceId;
 }
