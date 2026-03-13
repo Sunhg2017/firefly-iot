@@ -85,7 +85,7 @@ export default function DeviceListPanel() {
 
   const handleExport = async () => {
     if (devices.length === 0) {
-      message.warning('No devices to export');
+      message.warning('当前没有可导出的模拟设备');
       return;
     }
 
@@ -159,17 +159,17 @@ export default function DeviceListPanel() {
 
     const result = await window.electronAPI.fileExport(JSON.stringify(exportData, null, 2), 'devices.json');
     if (result.success) {
-      addLog('system', 'System', 'success', `Exported ${devices.length} devices to ${result.filePath}`);
-      message.success(`Exported ${devices.length} devices`);
+      addLog('system', 'System', 'success', `已导出 ${devices.length} 台模拟设备到 ${result.filePath}`);
+      message.success(`已导出 ${devices.length} 台模拟设备`);
     } else if (result.message !== 'canceled') {
-      message.error(`Export failed: ${result.message}`);
+      message.error(`导出失败：${result.message}`);
     }
   };
 
   const handleBatchImport = async () => {
     const result = await window.electronAPI.fileImport();
     if (!result.success) {
-      if (result.message !== 'canceled') message.error(`Import failed: ${result.message}`);
+      if (result.message !== 'canceled') message.error(`导入失败：${result.message}`);
       return;
     }
 
@@ -182,7 +182,7 @@ export default function DeviceListPanel() {
         rows = parseCSV(result.content || '');
       }
       if (rows.length === 0) {
-        message.warning('No device rows found');
+        message.warning('导入文件里没有可识别的设备记录');
         return;
       }
 
@@ -190,7 +190,7 @@ export default function DeviceListPanel() {
       for (const row of rows) {
         const protocol = (row.protocol || 'HTTP').toUpperCase() as Protocol;
         useSimStore.getState().addDevice({
-          name: row.name || row.deviceName || `Imported Device ${count + 1}`,
+          name: row.name || row.deviceName || `导入设备 ${count + 1}`,
           protocol,
           httpBaseUrl: row.httpBaseUrl || row.baseUrl || 'http://localhost:9070',
           productKey: row.productKey || '',
@@ -231,11 +231,11 @@ export default function DeviceListPanel() {
         count++;
       }
 
-      addLog('system', 'System', 'success', `Imported ${count} devices from ${result.filePath}`);
-      message.success(`Imported ${count} devices`);
+      addLog('system', 'System', 'success', `已从 ${result.filePath} 导入 ${count} 台模拟设备`);
+      message.success(`已导入 ${count} 台模拟设备`);
     } catch (error: any) {
-      addLog('system', 'System', 'error', `Import parse failed: ${error.message}`);
-      message.error(`Import parse failed: ${error.message}`);
+      addLog('system', 'System', 'error', `导入解析失败：${error.message}`);
+      message.error(`导入解析失败：${error.message}`);
     }
   };
 
@@ -248,7 +248,7 @@ export default function DeviceListPanel() {
     }
     if (device.autoTimerId) clearInterval(device.autoTimerId);
     removeDevice(device.id);
-    addLog('system', 'System', 'info', `Removed device: ${device.name}`);
+    addLog('system', 'System', 'info', `已移除模拟设备：${device.name}`);
   };
 
   const handleBatchConnect = async () => {
@@ -263,12 +263,12 @@ export default function DeviceListPanel() {
       device.protocol !== 'LoRaWAN',
     );
     if (connectable.length === 0) {
-      message.info('No offline HTTP/CoAP/MQTT devices to connect');
+      message.info('当前没有可批量连接的离线 HTTP / CoAP / MQTT 设备');
       return;
     }
 
     setBatchConnecting(true);
-    addLog('system', 'System', 'info', `Batch connect started: ${connectable.length} devices`);
+    addLog('system', 'System', 'info', `开始批量连接 ${connectable.length} 台模拟设备`);
     const { updateDevice } = useSimStore.getState();
     let ok = 0;
     let fail = 0;
@@ -281,11 +281,11 @@ export default function DeviceListPanel() {
           const result = await window.electronAPI.httpAuth(device.httpBaseUrl, device.productKey, device.deviceName, device.deviceSecret);
           if (result.success && result.data?.token) {
             updateDevice(device.id, { status: 'online', token: result.data.token });
-            addLog(device.id, device.name, 'success', 'HTTP connected in batch');
+            addLog(device.id, device.name, 'success', 'HTTP 批量连接成功');
             ok++;
           } else {
             updateDevice(device.id, { status: 'error' });
-            addLog(device.id, device.name, 'error', `HTTP batch connect failed: ${result.message || result.msg || JSON.stringify(result)}`);
+            addLog(device.id, device.name, 'error', `HTTP 批量连接失败：${result.message || result.msg || JSON.stringify(result)}`);
             fail++;
           }
           continue;
@@ -299,11 +299,11 @@ export default function DeviceListPanel() {
           });
           if (result.success && result.data?.token) {
             updateDevice(device.id, { status: 'online', token: result.data.token });
-            addLog(device.id, device.name, 'success', 'CoAP connected in batch');
+            addLog(device.id, device.name, 'success', 'CoAP 批量连接成功');
             ok++;
           } else {
             updateDevice(device.id, { status: 'error' });
-            addLog(device.id, device.name, 'error', `CoAP batch connect failed: ${result.message || result.msg || JSON.stringify(result)}`);
+            addLog(device.id, device.name, 'error', `CoAP 批量连接失败：${result.message || result.msg || JSON.stringify(result)}`);
             fail++;
           }
           continue;
@@ -317,7 +317,7 @@ export default function DeviceListPanel() {
           const registerResult = await dynamicRegisterDevice(device);
           target = { ...device, deviceSecret: registerResult.deviceSecret };
           updateDevice(device.id, { deviceSecret: registerResult.deviceSecret });
-          addLog(device.id, device.name, 'success', `Dynamic registration succeeded: ${registerResult.deviceName}`);
+          addLog(device.id, device.name, 'success', `动态注册成功：${registerResult.deviceName}`);
         }
 
         const identity = resolveMqttIdentity(target);
@@ -341,29 +341,29 @@ export default function DeviceListPanel() {
           updateDevice(target.id, { status: 'online' });
           const serviceTopic = buildMqttServiceTopic(target);
           if (serviceTopic) await window.electronAPI.mqttSubscribe(target.id, serviceTopic, 1);
-          addLog(target.id, target.name, 'success', 'MQTT connected in batch');
+          addLog(target.id, target.name, 'success', 'MQTT 批量连接成功');
           ok++;
         } else {
           updateDevice(target.id, { status: 'error' });
-          addLog(target.id, target.name, 'error', `MQTT batch connect failed: ${result.message}`);
+          addLog(target.id, target.name, 'error', `MQTT 批量连接失败：${result.message}`);
           fail++;
         }
       } catch (error: any) {
         updateDevice(device.id, { status: 'error' });
-        addLog(device.id, device.name, 'error', `Batch connect error: ${error?.message || 'unknown error'}`);
+        addLog(device.id, device.name, 'error', `批量连接异常：${error?.message || 'unknown error'}`);
         fail++;
       }
     }
 
     setBatchConnecting(false);
-    addLog('system', 'System', 'success', `Batch connect finished: success=${ok}, failed=${fail}`);
-    message.success(`Batch connect finished: success ${ok}, failed ${fail}`);
+    addLog('system', 'System', 'success', `批量连接完成：成功 ${ok}，失败 ${fail}`);
+    message.success(`批量连接完成：成功 ${ok}，失败 ${fail}`);
   };
 
   const handleBatchDisconnect = async () => {
     const onlineDevices = devices.filter((device) => device.status === 'online');
     if (onlineDevices.length === 0) {
-      message.info('No online devices');
+      message.info('当前没有在线设备');
       return;
     }
 
@@ -376,21 +376,21 @@ export default function DeviceListPanel() {
       if (device.protocol === 'Video' && device.streamMode === 'GB28181') await window.electronAPI.sipStop(device.id);
       updateDevice(device.id, { status: 'offline', autoReport: false, autoTimerId: null, token: '' });
     }
-    addLog('system', 'System', 'info', `Disconnected ${onlineDevices.length} devices`);
-    message.success(`Disconnected ${onlineDevices.length} devices`);
+    addLog('system', 'System', 'info', `已断开 ${onlineDevices.length} 台模拟设备`);
+    message.success(`已断开 ${onlineDevices.length} 台模拟设备`);
   };
 
   const handleClone = (device: SimDevice) => {
     useSimStore.getState().addDevice({
       ...device,
-      name: `${device.name} (Copy)`,
+      name: `${device.name}（副本）`,
       deviceSecret: device.mqttAuthMode === 'PRODUCT_SECRET' ? '' : device.deviceSecret,
       mqttClientId: '',
       mqttUsername: '',
       mqttPassword: '',
     } as any);
-    addLog('system', 'System', 'info', `Cloned device: ${device.name}`);
-    message.success(`Cloned ${device.name}`);
+    addLog('system', 'System', 'info', `已复制模拟设备：${device.name}`);
+    message.success(`已复制 ${device.name}`);
   };
 
   useEffect(() => {
@@ -414,39 +414,39 @@ export default function DeviceListPanel() {
     <>
       <div style={{ padding: '16px 12px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Title level={5} style={{ margin: 0, color: '#e0e0e0' }}>
-          Devices <Text type="secondary" style={{ fontSize: 11 }}>({devices.length})</Text>
+          模拟设备 <Text type="secondary" style={{ fontSize: 11 }}>({devices.length})</Text>
         </Title>
         <Space size={4}>
-          <Tooltip title="Batch import JSON/CSV">
+          <Tooltip title="导入 JSON / CSV 模拟设备配置">
             <Button size="small" icon={<ImportOutlined />} onClick={handleBatchImport} />
           </Tooltip>
-          <Tooltip title="Export device configuration">
+          <Tooltip title="导出当前模拟设备配置">
             <Button size="small" icon={<ExportOutlined />} onClick={handleExport} disabled={devices.length === 0} />
           </Tooltip>
-          <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>Add</Button>
+          <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>新建</Button>
         </Space>
       </div>
 
       {devices.length > 0 && (
         <div style={{ padding: '0 12px 6px', display: 'flex', gap: 4, alignItems: 'center' }}>
-          <Tooltip title={`Connect offline HTTP/CoAP/MQTT devices (${offlineCount})`}>
+          <Tooltip title={`连接离线 HTTP / CoAP / MQTT 设备（${offlineCount} 台）`}>
             <Button size="small" type="text" icon={<ApiOutlined />} onClick={handleBatchConnect} loading={batchConnecting} disabled={offlineCount === 0 || batchConnecting} style={{ color: '#52c41a' }}>
-              Connect all
+              全部连接
             </Button>
           </Tooltip>
-          <Tooltip title={`Disconnect all online devices (${onlineCount})`}>
+          <Tooltip title={`断开全部在线设备（${onlineCount} 台）`}>
             <Button size="small" type="text" icon={<DisconnectOutlined />} onClick={handleBatchDisconnect} disabled={onlineCount === 0} style={{ color: '#ff4d4f' }}>
-              Disconnect all
+              全部断开
             </Button>
           </Tooltip>
           <div style={{ flex: 1 }} />
-          <Text type="secondary" style={{ fontSize: 10 }}>{onlineCount} online / {offlineCount} offline</Text>
+          <Text type="secondary" style={{ fontSize: 10 }}>{onlineCount} 在线 / {offlineCount} 离线</Text>
         </div>
       )}
 
       {devices.length > 0 && (
         <div style={{ padding: '0 12px 6px' }}>
-          <Input size="small" placeholder="Search by name / product / device" value={searchKey} onChange={(event) => setSearchKey(event.target.value)} allowClear style={{ marginBottom: 4 }} />
+          <Input size="small" placeholder="按名称 / ProductKey / DeviceName 搜索" value={searchKey} onChange={(event) => setSearchKey(event.target.value)} allowClear style={{ marginBottom: 4 }} />
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             <Select
               size="small"
@@ -454,7 +454,7 @@ export default function DeviceListPanel() {
               onChange={setFilterProto}
               style={{ width: 110 }}
               options={[
-                { label: 'All protocols', value: 'all' },
+                { label: '全部协议', value: 'all' },
                 { label: 'HTTP', value: 'HTTP' },
                 { label: 'MQTT', value: 'MQTT' },
                 { label: 'CoAP', value: 'CoAP' },
@@ -473,15 +473,15 @@ export default function DeviceListPanel() {
               onChange={setFilterStatus}
               style={{ width: 110 }}
               options={[
-                { label: 'All status', value: 'all' },
-                { label: 'Online', value: 'online' },
-                { label: 'Offline', value: 'offline' },
-                { label: 'Error', value: 'error' },
+                { label: '全部状态', value: 'all' },
+                { label: '在线', value: 'online' },
+                { label: '离线', value: 'offline' },
+                { label: '异常', value: 'error' },
               ]}
             />
             {(filterProto !== 'all' || filterStatus !== 'all' || searchKey) && (
               <Button size="small" type="link" style={{ padding: 0 }} onClick={() => { setFilterProto('all'); setFilterStatus('all'); setSearchKey(''); }}>
-                Reset
+                重置
               </Button>
             )}
           </div>
@@ -490,7 +490,7 @@ export default function DeviceListPanel() {
 
       <List
         dataSource={filteredDevices}
-        locale={{ emptyText: <Empty description={searchKey || filterProto !== 'all' || filterStatus !== 'all' ? 'No matching devices' : 'No devices'} image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+        locale={{ emptyText: <Empty description={searchKey || filterProto !== 'all' || filterStatus !== 'all' ? '没有匹配的模拟设备' : '暂无模拟设备'} image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
         style={{ padding: '0 8px', overflow: 'auto', flex: 1 }}
         renderItem={(device) => (
           <List.Item
@@ -504,10 +504,10 @@ export default function DeviceListPanel() {
               border: selectedDeviceId === device.id ? '1px solid rgba(79,70,229,0.3)' : '1px solid transparent',
             }}
             actions={[
-              <Tooltip key="clone" title="Clone device">
+              <Tooltip key="clone" title="复制设备">
                 <Button type="text" size="small" icon={<CopyOutlined />} onClick={(event) => { event.stopPropagation(); handleClone(device); }} />
               </Tooltip>,
-              <Popconfirm key="delete" title="Delete this device?" onConfirm={() => handleRemove(device)}>
+              <Popconfirm key="delete" title="确认删除当前模拟设备吗？" onConfirm={() => handleRemove(device)}>
                 <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={(event) => event.stopPropagation()} />
               </Popconfirm>,
             ]}
@@ -525,7 +525,7 @@ export default function DeviceListPanel() {
                   {(device.productKey || device.deviceName) && (
                     <Text type="secondary" style={{ fontSize: 11 }}>{device.productKey || '-'} / {device.deviceName || '-'}</Text>
                   )}
-                  <Text type="secondary" style={{ fontSize: 11 }}>sent {device.sentCount}</Text>
+                  <Text type="secondary" style={{ fontSize: 11 }}>已发送 {device.sentCount}</Text>
                 </Space>
               )}
             />
