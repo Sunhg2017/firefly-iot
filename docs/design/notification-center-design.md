@@ -8,12 +8,13 @@
 2. 内部调用依赖 `AppContextHolder` 的租户上下文，异步线程和跨服务调用下存在租户丢失风险。
 3. 前端渠道维护和消息模板维护对渠道枚举支持不一致，且复杂表单交互不直观。
 
-本次改造将通知中心收敛为“显式租户、多渠道发送、抽屉式配置”的实现方式。
+本次改造将通知能力收敛为“平台默认渠道、租户模板与记录、抽屉式配置”的实现方式。
 
 ## 2. 目标
 
 - 支持 `EMAIL`、`SMS`、`PHONE`、`WECHAT`、`DINGTALK`、`WEBHOOK`、`IN_APP` 七类渠道。
 - 修复租户隔离，避免通过主键直接跨租户读取通知渠道、模板和记录。
+- 支持“租户优先、平台回落”的渠道解析策略，由系统运维空间统一维护平台默认通知渠道。
 - 发送失败必须落失败记录，禁止“未发送但记录成功”。
 - 将复杂表单统一改为抽屉交互，降低通知渠道和消息模板的维护成本。
 
@@ -32,6 +33,7 @@
 ### 前端
 
 - `firefly-web/src/pages/notification/NotificationPage.tsx`
+- `firefly-web/src/pages/notification/NotificationRecordPage.tsx`
 - `firefly-web/src/pages/message-template/MessageTemplatePage.tsx`
 - `firefly-web/src/constants/notification.ts`
 
@@ -69,7 +71,7 @@
 发送处理流程：
 
 1. 初始化通知记录，状态为 `PENDING`
-2. 按租户加载渠道并校验启用状态
+2. 先按租户加载渠道并校验启用状态，未命中时回落到平台默认渠道
 3. 按租户加载消息模板并渲染变量
 4. 根据渠道类型分发到对应发送实现
 5. 成功则更新记录为 `SUCCESS`
@@ -100,22 +102,29 @@
 
 ## 4.4 租户隔离
 
-以下服务统一改为按 `tenantId + id/code` 查询：
+以下服务统一按租户边界查询，其中通知渠道补充平台默认回落：
 
 - `NotificationChannelService`
 - `NotificationRecordService`
 - `MessageTemplateService`
 
-这样可以避免通过数据库主键跨租户读取或修改通知资源。
+这样可以避免通过数据库主键跨租户读取或修改通知资源，同时让系统运维空间统一维护平台默认渠道。
 
 ## 4.5 前端交互设计
 
 ### 通知渠道页
 
+- 仅在系统运维空间展示
 - 复杂配置表单由弹窗改为抽屉
 - 渠道类型统一使用下拉选择
 - 不同渠道展示不同字段，减少无关输入
-- 渠道列表和发送记录列表分开展示
+- 统一维护平台默认通知渠道
+
+### 通知记录页
+
+- 仅在租户业务空间展示
+- 提供渠道、状态筛选和失败原因查看
+- 用于值班排障，不承担渠道配置职责
 
 ### 消息模板页
 
@@ -140,6 +149,8 @@
 
 - 更新渠道字段注释，声明支持的完整渠道集合
 - 补充电话、企业微信、钉钉、站内信默认消息模板
+- `V9__promote_platform_notification_channels.sql`
+  - 将系统运维租户历史通知渠道提升为平台默认渠道（`tenant_id = 0`）
 - `V8__merge_notification_templates_into_message_templates.sql`
   - 将系统默认模板收敛到 `message_templates`
   - 删除旧的 `notification_templates` 表

@@ -26,11 +26,14 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class NotificationChannelService {
 
+    private static final Long PLATFORM_CHANNEL_TENANT_ID = 0L;
+    private static final String PLATFORM_TENANT_CODE = "system-ops";
+
     private final NotificationChannelMapper channelMapper;
     private final ObjectMapper objectMapper;
 
     public List<NotificationChannelVO> listAll() {
-        Long tenantId = AppContextHolder.getTenantId();
+        Long tenantId = resolveManagedTenantId();
         LambdaQueryWrapper<NotificationChannel> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(NotificationChannel::getTenantId, tenantId)
                 .orderByAsc(NotificationChannel::getType)
@@ -42,7 +45,7 @@ public class NotificationChannelService {
     }
 
     public List<NotificationChannelVO> listByType(String type) {
-        Long tenantId = AppContextHolder.getTenantId();
+        Long tenantId = resolveManagedTenantId();
         String normalizedType = NotificationChannelType.of(type).code();
         LambdaQueryWrapper<NotificationChannel> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(NotificationChannel::getTenantId, tenantId)
@@ -60,7 +63,7 @@ public class NotificationChannelService {
     }
 
     public NotificationChannel getEntityById(Long id) {
-        Long tenantId = AppContextHolder.getTenantId();
+        Long tenantId = resolveManagedTenantId();
         NotificationChannel channel = channelMapper.selectById(id);
         if (channel == null || !tenantId.equals(channel.getTenantId())) {
             throw new BizException(ResultCode.NOT_FOUND, "notification channel not found");
@@ -70,7 +73,7 @@ public class NotificationChannelService {
 
     @Transactional
     public NotificationChannelVO create(NotificationChannelCreateDTO dto) {
-        Long tenantId = AppContextHolder.getTenantId();
+        Long tenantId = resolveManagedTenantId();
         NotificationChannelType channelType = NotificationChannelType.of(dto.getType());
 
         NotificationChannel channel = new NotificationChannel();
@@ -159,5 +162,15 @@ public class NotificationChannelService {
         if (!configNode.has(fieldName) || configNode.path(fieldName).asText().isBlank()) {
             throw new BizException(ResultCode.PARAM_ERROR, "channel config field is required: " + fieldName);
         }
+    }
+
+    /**
+     * 平台运维空间统一维护平台默认渠道，租户空间仍维护本租户自有渠道。
+     */
+    private Long resolveManagedTenantId() {
+        if (PLATFORM_TENANT_CODE.equalsIgnoreCase(AppContextHolder.getTenantCode())) {
+            return PLATFORM_CHANNEL_TENANT_ID;
+        }
+        return AppContextHolder.getTenantId();
     }
 }

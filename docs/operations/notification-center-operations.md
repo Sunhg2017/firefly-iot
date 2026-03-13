@@ -14,6 +14,11 @@
 
 通知中心后端位于 `firefly-support` 模块。
 
+前端入口分为两处：
+
+- 系统运维空间：`/notification`，维护平台默认通知渠道
+- 租户业务空间：`/notification-records`，查看通知发送记录
+
 ## 2. 部署与依赖
 
 ## 2.1 依赖服务
@@ -32,6 +37,7 @@
 - `V3__init_in_app_messages.sql`
 - `V7__extend_notification_channels.sql`
 - `V8__merge_notification_templates_into_message_templates.sql`
+- `V9__promote_platform_notification_channels.sql`
 
 如果 `V8` 未执行，系统仍会残留历史 `notification_templates` 表。
 
@@ -120,7 +126,7 @@
 
 ## 5.1 发送失败排查路径
 
-1. 打开通知中心发送记录，查看失败原因
+1. 打开租户业务空间的通知记录页面，查看失败原因
 2. 根据渠道类型定位配置
 3. 检查外部依赖连通性
 4. 检查模板编码是否存在且启用
@@ -186,6 +192,8 @@
 注意：
 
 本次已将模板体系合并为 `message_templates`。如果代码回滚到更早版本，需先确认是否还依赖历史 `notification_templates` 表。
+
+如果本次版本已启用平台默认通知渠道，请同时确认是否需要回滚 `tenant_id = 0` 的平台默认渠道数据。
 
 ## 8. 验证命令
 

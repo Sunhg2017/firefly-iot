@@ -120,5 +120,5 @@ INSERT INTO permission_groups (code, name, permissions, sort_order) VALUES
 ('ANALYTICS','数据分析', '["analytics:read","analytics:export"]', 10),
 ('AUDIT',    '审计日志', '["audit:read","audit:export"]', 11),
 ('SYSTEM',   '系统设置', '["system:config"]', 12),
-('NOTIFICATION', '通知中心', '["notification:read","notification:update","notification:delete"]', 15),
+('NOTIFICATION', '通知管理', '["notification:read","notification:update","notification:delete"]', 15),
 ('MESSAGE_TEMPLATE', '消息模板', '["message-template:create","message-template:read","message-template:update","message-template:delete"]', 16);

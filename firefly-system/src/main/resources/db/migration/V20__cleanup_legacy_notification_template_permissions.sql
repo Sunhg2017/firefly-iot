@@ -11,7 +11,7 @@ BEGIN
     INSERT INTO permission_groups (code, name, permissions, sort_order)
     VALUES
         ('SYSTEM', '系统设置', '["system:config"]', 12),
-        ('NOTIFICATION', '通知中心', '["notification:read","notification:update","notification:delete"]', 15),
+        ('NOTIFICATION', '通知管理', '["notification:read","notification:update","notification:delete"]', 15),
         ('MESSAGE_TEMPLATE', '消息模板', '["message-template:create","message-template:read","message-template:update","message-template:delete"]', 16)
     ON CONFLICT (code) DO UPDATE
     SET name = EXCLUDED.name,
@@ -50,13 +50,13 @@ BEGIN
     ) VALUES (
         0,
         'notification:read',
-        '通知中心',
+        '通知渠道',
         'MENU',
         'BellOutlined',
         '/notification',
         36,
         TRUE,
-        '查看通知渠道与发送记录页面'
+        '查看平台默认通知渠道页面'
     )
     ON CONFLICT (code) DO UPDATE
     SET parent_id = EXCLUDED.parent_id,

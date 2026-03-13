@@ -33,6 +33,7 @@ const VideoList = React.lazy(() => import('./pages/video/VideoList'));
 const AuditLogPage = React.lazy(() => import('./pages/audit/AuditLogPage'));
 const SystemSettingsPage = React.lazy(() => import('./pages/settings/SystemSettingsPage'));
 const NotificationPage = React.lazy(() => import('./pages/notification/NotificationPage'));
+const NotificationRecordPage = React.lazy(() => import('./pages/notification/NotificationRecordPage'));
 const SharePage = React.lazy(() => import('./pages/share/SharePage'));
 const DataAnalysisPage = React.lazy(() => import('./pages/analysis/DataAnalysisPage'));
 const OperationLogPage = React.lazy(() => import('./pages/operation-log/OperationLogPage'));
@@ -91,6 +92,7 @@ const App: React.FC = () => {
             <Route path="audit-log" element={<AuditLogPage />} />
             <Route path="settings" element={<SystemSettingsPage />} />
             <Route path="notification" element={<NotificationPage />} />
+            <Route path="notification-records" element={<NotificationRecordPage />} />
             <Route path="share" element={<SharePage />} />
             <Route path="analysis" element={<DataAnalysisPage />} />
             <Route path="operation-log" element={<OperationLogPage />} />

@@ -1,7 +1,7 @@
 export const ALARM_TEXT = {
-  ruleMenu: '告警规则维护',
+  ruleMenu: '告警规则',
   recordMenu: '告警处理',
-  ruleTitle: '告警规则维护',
+  ruleTitle: '告警规则',
   ruleDescription: '面向规则维护人员，负责定义规则组、触发条件、级别块和启停状态。',
   recordTitle: '告警处理',
   recordDescription: '面向值班和运维人员，负责确认、处理和关闭已触发的告警记录。',

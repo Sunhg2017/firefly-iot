@@ -131,6 +131,7 @@ BEGIN
         'permission:*',
         'dict:*',
         'system:*',
+        'notification:*',
         'apikey:*',
         'audit:*',
         'operation-log:*',

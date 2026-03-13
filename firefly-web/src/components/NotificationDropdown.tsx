@@ -3,6 +3,7 @@ import { Badge, Popover, List, Typography, Button, Space, Tabs, Empty, Tag, mess
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { inAppMessageApi } from '../services/api';
+import useAuthStore from '../store/useAuthStore';
 
 interface InAppMessage {
   id: number;
@@ -23,6 +24,7 @@ const levelColorMap: Record<string, string> = {
 
 const NotificationDropdown: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const [open, setOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [messages, setMessages] = useState<InAppMessage[]>([]);
@@ -183,7 +185,7 @@ const NotificationDropdown: React.FC = () => {
           size="small"
           onClick={() => {
             setOpen(false);
-            navigate('/notification');
+            navigate(user?.userType === 'SYSTEM_OPS' ? '/notification' : '/notification-records');
           }}
         >
           查看全部

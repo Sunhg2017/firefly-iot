@@ -42,6 +42,8 @@ import java.util.Properties;
 public class NotificationSender {
 
     private static final int MAX_ERROR_MESSAGE_LENGTH = 500;
+    private static final Long PLATFORM_CHANNEL_TENANT_ID = 0L;
+    private static final String PLATFORM_TENANT_CODE = "system-ops";
 
     private final NotificationChannelMapper channelMapper;
     private final NotificationRecordMapper recordMapper;
@@ -67,7 +69,7 @@ public class NotificationSender {
     }
 
     public String testChannel(Long channelId) {
-        Long tenantId = AppContextHolder.getTenantId();
+        Long tenantId = resolveManagedTenantId(AppContextHolder.getTenantId(), AppContextHolder.getTenantCode());
         NotificationChannel channel = getChannel(tenantId, channelId);
         NotificationChannelType channelType = NotificationChannelType.of(channel.getType());
         JsonNode config = parseConfig(channel);
@@ -357,10 +359,23 @@ public class NotificationSender {
         NotificationChannel channel = channelMapper.selectOne(new LambdaQueryWrapper<NotificationChannel>()
                 .eq(NotificationChannel::getTenantId, tenantId)
                 .eq(NotificationChannel::getId, channelId));
+        // 告警发送优先读取租户自有渠道，未命中时回落到平台默认渠道。
+        if (channel == null && tenantId != null && !PLATFORM_CHANNEL_TENANT_ID.equals(tenantId)) {
+            channel = channelMapper.selectOne(new LambdaQueryWrapper<NotificationChannel>()
+                    .eq(NotificationChannel::getTenantId, PLATFORM_CHANNEL_TENANT_ID)
+                    .eq(NotificationChannel::getId, channelId));
+        }
         if (channel == null) {
             throw new BizException(ResultCode.NOT_FOUND, "notification channel not found");
         }
         return channel;
+    }
+
+    private Long resolveManagedTenantId(Long tenantId, String tenantCode) {
+        if (tenantCode != null && PLATFORM_TENANT_CODE.equalsIgnoreCase(tenantCode)) {
+            return PLATFORM_CHANNEL_TENANT_ID;
+        }
+        return tenantId;
     }
 
     private JsonNode parseConfig(NotificationChannel channel) {

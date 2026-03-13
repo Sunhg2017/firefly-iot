@@ -115,11 +115,11 @@ Platform Admin (超级管理员)  ── 平台级，管理所有租户
 
 | 角色 | 角色代码 | userType | 前端空间 | 典型功能域 | 典型路由 |
 |------|---------|----------|----------|------------|----------|
-| 超级管理员 | `PLATFORM_ADMIN` | `SYSTEM_OPS` | 系统运维空间 | 租户管理、用户管理、角色权限、权限资源、系统设置、安全审计、系统监控、定时任务 | `/tenant`, `/user`, `/role`, `/permission`, `/settings`, `/security`, `/audit-log`, `/monitor`, `/scheduled-task` |
+| 超级管理员 | `PLATFORM_ADMIN` | `SYSTEM_OPS` | 系统运维空间 | 租户管理、用户管理、角色权限、权限资源、系统设置、通知渠道、安全审计、系统监控、定时任务 | `/tenant`, `/user`, `/role`, `/permission`, `/settings`, `/notification`, `/security`, `/audit-log`, `/monitor`, `/scheduled-task` |
 | 租户管理员 | `TENANT_ADMIN` | `TENANT_USER` | 租户业务空间 | 项目管理、设备中心、规则告警、数据洞察、租户运维工具 | `/project`, `/product`, `/device`, `/rule-engine`, `/alarm`, `/device-data`, `/analysis`, `/firmware`, `/ota`, `/video` |
-| 项目管理员 | `PROJECT_ADMIN` | `TENANT_USER` | 租户业务空间 | 项目内资源管理、人员协作、设备与规则配置 | `/project`, `/product`, `/device`, `/device-group`, `/rule-engine`, `/notification` |
+| 项目管理员 | `PROJECT_ADMIN` | `TENANT_USER` | 租户业务空间 | 项目内资源管理、人员协作、设备与规则配置 | `/project`, `/product`, `/device`, `/device-group`, `/rule-engine`, `/notification-records` |
 | 开发者 | `DEVELOPER` | `TENANT_USER` | 租户业务空间 | 设备接入与产品建模、规则开发、消息调试 | `/product`, `/device`, `/device-shadow`, `/device-message`, `/rule-engine`, `/websocket`, `/modbus`, `/tcp-udp` |
-| 运维人员 | `OPERATOR` | `TENANT_USER` | 租户业务空间 | 告警处置、升级发布、视频巡检、运行保障 | `/alarm`, `/notification`, `/ota`, `/firmware`, `/video`, `/export` |
+| 运维人员 | `OPERATOR` | `TENANT_USER` | 租户业务空间 | 告警处置、通知记录排障、升级发布、视频巡检、运行保障 | `/alarm`, `/notification-records`, `/ota`, `/firmware`, `/video`, `/export` |
 | 只读用户 | `VIEWER` | `TENANT_USER` | 租户业务空间 | 只读查看业务数据与运行状态 | `/dashboard`, `/device`, `/device-data`, `/analysis`, `/alarm` |
 
 ### 3.3 权限定义体系
@@ -211,9 +211,9 @@ Platform Admin (超级管理员)  ── 平台级，管理所有租户
 | **审计日志** | `audit:read` | 查看审计日志 |
 | | `audit:export` | 导出审计报告 |
 | **系统设置** | `system:config` | 系统参数配置 |
-| **通知中心** | `notification:read` | 查看通知渠道与发送记录 |
-| | `notification:update` | 创建、编辑、启停与测试通知渠道 |
-| | `notification:delete` | 删除通知渠道 |
+| **通知管理** | `notification:read` | 查看通知渠道或通知记录 |
+| | `notification:update` | 创建、编辑、启停与测试平台默认通知渠道 |
+| | `notification:delete` | 删除平台默认通知渠道 |
 | **消息模板** | `message-template:create` | 创建消息模板 |
 | | `message-template:read` | 查看消息模板 |
 | | `message-template:update` | 编辑或启停消息模板 |
@@ -493,7 +493,7 @@ INSERT INTO permission_groups (code, name, permissions, sort_order) VALUES
 ('ANALYTICS','数据分析', '["analytics:read","analytics:export"]', 10),
 ('AUDIT',    '审计日志', '["audit:read","audit:export"]', 11),
 ('SYSTEM',   '系统设置', '["system:config"]', 12),
-('NOTIFICATION', '通知中心', '["notification:read","notification:update","notification:delete"]', 15),
+('NOTIFICATION', '通知管理', '["notification:read","notification:update","notification:delete"]', 15),
 ('MESSAGE_TEMPLATE', '消息模板', '["message-template:create","message-template:read","message-template:update","message-template:delete"]', 16);
 ```
 
