@@ -373,9 +373,11 @@ This update aligns debug interaction with the repository rule that user-facing p
   - 规则总数
   - 已加载插件数量
   - 核心统计指标
+- 概览卡片在页面中以“页面总览”命名，始终展示，不受标签页切换影响。
 - 页面主体改为双标签页：
   - `规则维护`
   - `运行时状态`
+- `规则维护` 标签页仅保留“筛选条件”和规则列表，避免和运行时信息混排。
 
 ### 设计结果
 

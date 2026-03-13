@@ -1964,7 +1964,7 @@ const ProtocolParserPage: React.FC = () => {
         }
       />
 
-      {mainTabKey === 'rules' ? <Card title="筛选条件" size="small" style={{ marginBottom: 16, borderRadius: 16 }}>
+      <Card title="页面总览" size="small" style={{ marginBottom: 16, borderRadius: 16 }}>
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           <Space wrap>
             <Tag color="blue">{currentTenant?.code ? `${currentTenantLabel} (${currentTenant.code})` : currentTenantLabel}</Tag>
@@ -1983,7 +1983,7 @@ const ProtocolParserPage: React.FC = () => {
             ))}
           </Row>
         </Space>
-      </Card> : null}
+      </Card>
 
       <Tabs
         activeKey={mainTabKey}
@@ -1995,101 +1995,89 @@ const ProtocolParserPage: React.FC = () => {
         style={{ marginBottom: 16 }}
       />
 
-      <Row gutter={[12, 12]} style={{ display: 'none' }}>
-        {[
-          { title: '已启用', value: stats.enabled, color: '#16a34a' },
-          { title: '草稿', value: stats.drafts, color: '#2563eb' },
-          { title: '下行', value: stats.downlink, color: '#c2410c' },
-          { title: '租户默认级', value: stats.tenantDefault, color: '#7c3aed' },
-        ].map((item) => (
-          <Col xs={12} md={6} key={item.title}>
-            <Card size="small" style={{ borderRadius: 16 }}>
-              <Text type="secondary">{item.title}</Text>
-              <div style={{ fontSize: 28, fontWeight: 700, color: item.color }}>{item.value}</div>
-            </Card>
-          </Col>
-        ))}
-      </Row>
-
-      <Card style={{ marginBottom: 16, borderRadius: 16 }}>
-        <Row gutter={[12, 12]} align="middle">
-          <Col xs={24} md={6}>
-            <Select
-              allowClear
-              showSearch
-              loading={productLoading}
-              value={filterProductId}
-              style={{ width: '100%' }}
-              placeholder="按产品筛选"
-              options={productOptions}
-              optionFilterProp="label"
-              onChange={(value) => {
-                setFilterProductId(value);
-                setPageNum(1);
-              }}
-            />
-          </Col>
-          <Col xs={24} md={5}>
-            <Select
-              allowClear
-              showSearch
-              value={filterProtocol}
-              style={{ width: '100%' }}
-              placeholder="协议"
-              options={protocolOptions}
-              optionFilterProp="label"
-              onChange={(value) => {
-                setFilterProtocol(value);
-                setPageNum(1);
-              }}
-            />
-          </Col>
-          <Col xs={24} md={5}>
-            <Select
-              allowClear
-              showSearch
-              value={filterTransport}
-              style={{ width: '100%' }}
-              placeholder="传输方式"
-              options={transportOptions}
-              optionFilterProp="label"
-              onChange={(value) => {
-                setFilterTransport(value);
-                setPageNum(1);
-              }}
-            />
-          </Col>
-          <Col xs={24} md={4}>
-            <Select
-              allowClear
-              value={filterStatus}
-              style={{ width: '100%' }}
-              placeholder="状态"
-              options={Object.entries(STATUS_META).map(([value, meta]) => ({ value, label: meta.label }))}
-              onChange={(value) => {
-                setFilterStatus(value);
-                setPageNum(1);
-              }}
-            />
-          </Col>
-          <Col xs={24} md={4}>
-            <Space wrap>
-              <Button
-                onClick={() => {
-                  setFilterProductId(undefined);
-                  setFilterProtocol(undefined);
-                  setFilterTransport(undefined);
-                  setFilterStatus(undefined);
+      {mainTabKey === 'rules' ? (
+        <Card title="筛选条件" size="small" style={{ marginBottom: 16, borderRadius: 16 }}>
+          <Row gutter={[12, 12]} align="middle">
+            <Col xs={24} md={6}>
+              <Select
+                allowClear
+                showSearch
+                loading={productLoading}
+                value={filterProductId}
+                style={{ width: '100%' }}
+                placeholder="按产品筛选"
+                options={productOptions}
+                optionFilterProp="label"
+                onChange={(value) => {
+                  setFilterProductId(value);
                   setPageNum(1);
                 }}
-              >
-                重置
-              </Button>
-              <Button onClick={() => void fetchRuntime()}>刷新运行时</Button>
-            </Space>
-          </Col>
-        </Row>
-      </Card>
+              />
+            </Col>
+            <Col xs={24} md={5}>
+              <Select
+                allowClear
+                showSearch
+                value={filterProtocol}
+                style={{ width: '100%' }}
+                placeholder="协议"
+                options={protocolOptions}
+                optionFilterProp="label"
+                onChange={(value) => {
+                  setFilterProtocol(value);
+                  setPageNum(1);
+                }}
+              />
+            </Col>
+            <Col xs={24} md={5}>
+              <Select
+                allowClear
+                showSearch
+                value={filterTransport}
+                style={{ width: '100%' }}
+                placeholder="传输方式"
+                options={transportOptions}
+                optionFilterProp="label"
+                onChange={(value) => {
+                  setFilterTransport(value);
+                  setPageNum(1);
+                }}
+              />
+            </Col>
+            <Col xs={24} md={4}>
+              <Select
+                allowClear
+                value={filterStatus}
+                style={{ width: '100%' }}
+                placeholder="状态"
+                options={Object.entries(STATUS_META).map(([value, meta]) => ({ value, label: meta.label }))}
+                onChange={(value) => {
+                  setFilterStatus(value);
+                  setPageNum(1);
+                }}
+              />
+            </Col>
+            <Col xs={24} md={4}>
+              <Space wrap>
+                <Button
+                  onClick={() => {
+                    setFilterProductId(undefined);
+                    setFilterProtocol(undefined);
+                    setFilterTransport(undefined);
+                    setFilterStatus(undefined);
+                    setPageNum(1);
+                  }}
+                >
+                  重置
+                </Button>
+                <Button icon={<ApiOutlined />} onClick={() => void fetchData()}>
+                  刷新规则
+                </Button>
+              </Space>
+            </Col>
+          </Row>
+        </Card>
+      ) : null}
 
       {mainTabKey === 'runtime' ? <ProtocolParserRuntimePanel
         loading={runtimeLoading}
