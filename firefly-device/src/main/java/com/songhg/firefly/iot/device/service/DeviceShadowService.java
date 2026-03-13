@@ -90,7 +90,7 @@ public class DeviceShadowService {
 
         updateMetadata(key, reported, "reported");
 
-        log.info("Device shadow reported updated: deviceId={}, version={}", deviceId, version);
+        log.debug("Device shadow reported updated: deviceId={}, version={}", deviceId, version);
         return getShadow(deviceId);
     }
 
