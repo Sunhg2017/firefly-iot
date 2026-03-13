@@ -25,6 +25,8 @@ const PermissionResourcePage = React.lazy(() => import('./pages/permission/Permi
 const DictPage = React.lazy(() => import('./pages/dict/DictPage'));
 const RuleEngineList = React.lazy(() => import('./pages/rule-engine/RuleEngineList'));
 const AlarmList = React.lazy(() => import('./pages/alarm/AlarmList'));
+const AlarmRulePage = React.lazy(() => import('./pages/alarm/AlarmRulePage'));
+const AlarmRecordPage = React.lazy(() => import('./pages/alarm/AlarmRecordPage'));
 const OtaList = React.lazy(() => import('./pages/ota/OtaList'));
 const DeviceDataPage = React.lazy(() => import('./pages/device-data/DeviceDataPage'));
 const VideoList = React.lazy(() => import('./pages/video/VideoList'));
@@ -81,6 +83,8 @@ const App: React.FC = () => {
             <Route path="dict" element={<DictPage />} />
             <Route path="rule-engine" element={<RuleEngineList />} />
             <Route path="alarm" element={<AlarmList />} />
+            <Route path="alarm-rules" element={<AlarmRulePage />} />
+            <Route path="alarm-records" element={<AlarmRecordPage />} />
             <Route path="ota" element={<OtaList />} />
             <Route path="device-data" element={<DeviceDataPage />} />
             <Route path="video" element={<VideoList />} />

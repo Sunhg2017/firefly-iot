@@ -42,7 +42,7 @@ export interface RouteItem {
   path: string;
   label: string;
   icon: React.ReactNode;
-  permission?: string;
+  permission?: string | string[];
 }
 
 export interface RouteGroup {
@@ -124,7 +124,13 @@ const routeConfigs: RouteEntry[] = [
     icon: <ControlOutlined />,
     children: [
       { path: '/rule-engine', label: '规则引擎', icon: <ThunderboltOutlined />, permission: 'rule:read' },
-      { path: '/alarm', label: '告警管理', icon: <AlertOutlined />, permission: 'alarm:read' },
+      { path: '/alarm-rules', label: '告警规则维护', icon: <AlertOutlined />, permission: 'alarm:read' },
+      {
+        path: '/alarm-records',
+        label: '告警处理',
+        icon: <ToolOutlined />,
+        permission: ['alarm:read', 'alarm:confirm', 'alarm:process'],
+      },
       { path: '/notification', label: '通知中心', icon: <BellOutlined />, permission: 'notification:read' },
       { path: '/message-template', label: '消息模板', icon: <MessageOutlined />, permission: 'message-template:read' },
     ],

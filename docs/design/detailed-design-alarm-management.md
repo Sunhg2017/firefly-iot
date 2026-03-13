@@ -1,233 +1,159 @@
-# Firefly-IoT 告警管理模块 — 详细设计文档
+# Firefly IoT 告警管理详细设计
 
-> **版本**: v1.0.0  
-> **日期**: 2026-02-27  
-> **状态**: Draft  
-> **关联**: [产品设计文档](./product-design.md) §8 规则引擎、§12 安全体系
+## 1. 背景
 
----
+告警模块原先将“告警规则维护”和“告警处理”放在同一个菜单、同一个页面 Tab 中。实际使用中，这两类能力面向的角色不同：
 
-## 目录
+- 规则维护人员更关注规则定义、级别和启停状态。
+- 值班/运维人员更关注已触发告警的确认、处理和关闭。
 
-1. [模块概述](#1-模块概述)
-2. [核心概念与术语](#2-核心概念与术语)
-3. [数据库设计](#3-数据库设计)
-4. [枚举定义](#4-枚举定义)
-5. [告警生命周期](#5-告警生命周期)
-6. [API 接口设计](#6-api-接口设计)
-7. [后端实现](#7-后端实现)
-8. [前端交互设计](#8-前端交互设计)
-9. [非功能性需求](#9-非功能性需求)
+继续共用一个入口会带来两个问题：
 
----
+- 菜单信息噪声大，处理人员进入后仍然看到规则维护入口。
+- 读取权限只绑定 `alarm:read`，导致仅具备 `alarm:confirm` 或 `alarm:process` 的处理角色无法直接访问告警记录。
 
-## 1. 模块概述
+## 2. 目标与范围
 
-### 1.1 模块定位
+### 2.1 目标
 
-告警管理模块负责 **告警规则定义** 和 **告警记录管理**。当规则引擎或设备事件触发告警条件时，系统生成告警记录，支持告警确认、处理、关闭等全生命周期管理。
+1. 将告警规则维护和告警处理拆分为两个独立菜单和独立页面。
+2. 保持旧 `'/alarm'` 路径可兼容访问，避免已有收藏链接失效。
+3. 保证规则维护权限和告警处理权限边界清晰。
+4. 让处理角色在只有处理类权限时，也能访问告警记录列表和详情。
 
-### 1.2 核心能力
+### 2.2 范围
 
-| 能力 | 说明 |
-|------|------|
-| **告警规则** | 定义告警条件、级别、通知方式 |
-| **告警记录** | 记录每次告警触发的详情 |
-| **告警确认** | 运维人员确认告警，记录确认人和时间 |
-| **告警处理** | 填写处理备注，标记为已处理 |
-| **告警统计** | 按级别、状态、设备、时间段统计告警 |
-| **数据权限** | 基于项目级数据权限过滤 |
+- 前端菜单、路由、页面拆分
+- 前端菜单权限判定能力增强
+- 后端告警记录读取权限调整
+- 模块文档更新
 
-### 1.3 模块依赖
+### 2.3 非目标
 
-```
-┌──────────────────────────────────────────────┐
-│                告警管理模块                     │
-│                                               │
-│  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
-│  │ 告警规则  │  │ 告警记录  │  │ 告警统计   │  │
-│  └──────────┘  └──────────┘  └────────────┘  │
-└──────────────────┬───────────────────────────┘
-                   │
-       ┌───────────┼───────────┐
-       ▼           ▼           ▼
-  ┌──────────┐ ┌──────────┐ ┌──────────┐
-  │ 规则引擎  │ │ 设备管理  │ │ 产品管理  │
-  └──────────┘ └──────────┘ └──────────┘
-```
+- 不新增新的告警领域模型
+- 不重构告警规则或告警记录表结构
+- 不调整告警确认、处理、关闭的业务状态机
 
----
+## 3. 角色与权限模型
 
-## 2. 核心概念与术语
+### 3.1 页面与角色映射
 
-| 术语 | 英文 | 说明 |
-|------|------|------|
-| **告警规则** | Alarm Rule | 定义告警触发条件、级别、关联产品/设备 |
-| **告警记录** | Alarm Record | 告警触发后生成的记录实例 |
-| **告警级别** | Alarm Level | CRITICAL / WARNING / INFO |
-| **告警状态** | Alarm Status | TRIGGERED / CONFIRMED / PROCESSED / CLOSED |
-| **告警确认** | Acknowledge | 运维人员确认已知晓该告警 |
+| 页面 | 路径 | 主要角色 | 菜单权限 |
+| --- | --- | --- | --- |
+| 告警规则维护 | `/alarm-rules` | 规则管理员、系统配置人员 | `alarm:read` |
+| 告警处理 | `/alarm-records` | 值班人员、运维处理人员 | `alarm:read` 或 `alarm:confirm` 或 `alarm:process` |
 
----
+### 3.2 操作权限
 
-## 3. 数据库设计
+| 操作 | 权限 |
+| --- | --- |
+| 查看规则列表/详情 | `alarm:read` |
+| 创建规则 | `alarm:create` |
+| 编辑规则 | `alarm:update` |
+| 删除规则 | `alarm:delete` |
+| 查看告警记录列表/详情 | `alarm:read` 或 `alarm:confirm` 或 `alarm:process` |
+| 确认告警 | `alarm:confirm` |
+| 处理/关闭告警 | `alarm:process` |
 
-### 3.1 alarm_rules 表
+## 4. 前端设计
 
-```sql
-CREATE TABLE alarm_rules (
-    id                  BIGSERIAL PRIMARY KEY,
-    tenant_id           BIGINT NOT NULL REFERENCES tenants(id),
-    project_id          BIGINT REFERENCES projects(id),
-    name                VARCHAR(256) NOT NULL,
-    description         TEXT,
-    product_id          BIGINT REFERENCES products(id),
-    device_id           BIGINT REFERENCES devices(id),
-    level               VARCHAR(16) NOT NULL DEFAULT 'WARNING',
-    condition_expr      TEXT NOT NULL,
-    enabled             BOOLEAN NOT NULL DEFAULT TRUE,
-    notify_config       JSONB DEFAULT '{}',
-    created_by          BIGINT,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
+### 4.1 路由与菜单
 
-### 3.2 alarm_records 表
+告警菜单拆分为两个独立入口：
 
-```sql
-CREATE TABLE alarm_records (
-    id                  BIGSERIAL PRIMARY KEY,
-    tenant_id           BIGINT NOT NULL REFERENCES tenants(id),
-    alarm_rule_id       BIGINT REFERENCES alarm_rules(id),
-    product_id          BIGINT REFERENCES products(id),
-    device_id           BIGINT REFERENCES devices(id),
-    project_id          BIGINT REFERENCES projects(id),
-    level               VARCHAR(16) NOT NULL,
-    status              VARCHAR(16) NOT NULL DEFAULT 'TRIGGERED',
-    title               VARCHAR(512) NOT NULL,
-    content             TEXT,
-    trigger_value       TEXT,
-    confirmed_by        BIGINT,
-    confirmed_at        TIMESTAMPTZ,
-    processed_by        BIGINT,
-    processed_at        TIMESTAMPTZ,
-    process_remark      TEXT,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
+- `/alarm-rules` 对应“告警规则维护”
+- `/alarm-records` 对应“告警处理”
 
----
+同时保留旧路径：
 
-## 4. 枚举定义
+- `/alarm` 重定向到 `/alarm-records`
 
-### 4.1 AlarmLevel
+### 4.2 页面结构
 
-```java
-CRITICAL("CRITICAL"),   // 紧急
-WARNING("WARNING"),     // 警告
-INFO("INFO")            // 通知
-```
+前端将原先单页 Tab 结构重组为三个文件：
 
-### 4.2 AlarmStatus
+- `AlarmPanels.tsx`
+  - 承载规则维护面板和告警处理面板的共享实现
+- `AlarmRulePage.tsx`
+  - 规则维护页面包装与页头说明
+- `AlarmRecordPage.tsx`
+  - 告警处理页面包装与页头说明
 
-```java
-TRIGGERED("TRIGGERED"),     // 已触发
-CONFIRMED("CONFIRMED"),     // 已确认
-PROCESSED("PROCESSED"),     // 已处理
-CLOSED("CLOSED")            // 已关闭
-```
+### 4.3 菜单权限判定
 
----
+原始前端路由模型只支持单个 `permission` 字符串，无法表达“任一权限可见”。本次将路由权限扩展为：
 
-## 5. 告警生命周期
+- `string`
+- `string[]`
 
-```
-触发条件匹配 → TRIGGERED
-    │
-    ▼ 运维确认
-CONFIRMED (记录 confirmed_by + confirmed_at)
-    │
-    ▼ 填写处理备注
-PROCESSED (记录 processed_by + processed_at + process_remark)
-    │
-    ▼ 关闭
-CLOSED
-```
+当路由配置为 `string[]` 时，前端按“任一权限满足即可”判定菜单是否可见、路径是否可访问、空间首页是否可落到该路由。
 
----
+## 5. 后端设计
 
-## 6. API 接口设计
+### 5.1 控制器权限调整
 
-### 6.1 告警规则
+规则接口维持原有权限模型：
 
-| 方法 | 路径 | 权限 | 说明 |
-|------|------|------|------|
-| POST | `/api/v1/alarm-rules` | `alarm:create` | 创建告警规则 |
-| POST | `/api/v1/alarm-rules/list` | `alarm:read` | 分页查询规则 |
-| GET | `/api/v1/alarm-rules/{id}` | `alarm:read` | 查看规则详情 |
-| PUT | `/api/v1/alarm-rules/{id}` | `alarm:update` | 更新规则 |
-| DELETE | `/api/v1/alarm-rules/{id}` | `alarm:delete` | 删除规则 |
+- 规则列表/详情仍需 `alarm:read`
 
-### 6.2 告警记录
+告警记录接口改为 OR 授权：
 
-| 方法 | 路径 | 权限 | 说明 |
-|------|------|------|------|
-| POST | `/api/v1/alarm-records/list` | `alarm:read` | 分页查询告警记录 |
-| GET | `/api/v1/alarm-records/{id}` | `alarm:read` | 查看告警详情 |
-| PUT | `/api/v1/alarm-records/{id}/confirm` | `alarm:confirm` | 确认告警 |
-| PUT | `/api/v1/alarm-records/{id}/process` | `alarm:process` | 处理告警 |
-| PUT | `/api/v1/alarm-records/{id}/close` | `alarm:process` | 关闭告警 |
+- `POST /api/v1/alarm-records/list`
+- `GET /api/v1/alarm-records/{id}`
 
----
+以上两个接口允许以下任一权限访问：
 
-## 7. 后端实现
+- `alarm:read`
+- `alarm:confirm`
+- `alarm:process`
 
-### 7.1 文件结构
+### 5.2 设计取舍
 
-```
-firefly-system/src/main/java/.../system/
-├── entity/
-│   ├── AlarmRule.java
-│   └── AlarmRecord.java
-├── dto/alarm/
-│   ├── AlarmRuleVO.java
-│   ├── AlarmRuleCreateDTO.java
-│   ├── AlarmRuleUpdateDTO.java
-│   ├── AlarmRuleQueryDTO.java
-│   ├── AlarmRecordVO.java
-│   ├── AlarmRecordQueryDTO.java
-│   └── AlarmProcessDTO.java
-├── convert/
-│   └── AlarmConvert.java
-├── mapper/
-│   ├── AlarmRuleMapper.java
-│   └── AlarmRecordMapper.java
-├── service/
-│   └── AlarmService.java
-└── controller/
-    └── AlarmController.java
-```
+- 没有新增 `alarm-rule:*`、`alarm-record:*` 两套全新权限，避免影响现有角色体系和初始化数据。
+- 通过 OR 授权满足处理角色读记录的需求，改动面最小，兼容现有权限模型。
 
----
+## 6. 关键流程
 
-## 8. 前端交互设计
+### 6.1 规则维护流程
 
-### 8.1 告警列表页
+1. 用户进入 `/alarm-rules`
+2. 前端校验 `alarm:read`
+3. 用户按 `alarm:create`、`alarm:update`、`alarm:delete` 执行规则维护动作
 
-- **Tab 切换**: 告警规则 / 告警记录
-- **告警记录搜索**: 级别筛选 + 状态筛选 + 时间范围
-- **表格列**: 告警标题、级别（色彩标签）、状态、设备、触发时间、操作
-- **操作**: 确认、处理（填备注）、关闭
-- **路由**: `/alarm`
+### 6.2 告警处理流程
 
----
+1. 用户进入 `/alarm-records`
+2. 前端校验是否具备 `alarm:read`、`alarm:confirm`、`alarm:process` 任一权限
+3. 后端对告警记录列表与详情采用同样的 OR 授权
+4. 用户按权限执行确认、处理、关闭动作
 
-## 9. 非功能性需求
+## 7. 风险与控制
 
-| 需求 | 指标 |
-|------|------|
-| **告警生成延迟** | P99 < 500ms（从条件匹配到记录写入） |
-| **告警查询** | 分页查询 P99 < 200ms |
-| **告警保留** | 默认保留 90 天，可按租户配置 |
+### 7.1 权限放宽风险
+
+风险：
+
+- 让 `alarm:confirm`、`alarm:process` 角色可读取告警记录，等于扩大了可见范围。
+
+控制：
+
+- 仅放宽到“告警记录读取”，不放宽“规则读取/修改”。
+- 保持确认、处理、关闭动作仍由原子权限控制。
+
+### 7.2 旧链接兼容风险
+
+风险：
+
+- 旧收藏或外部文档仍指向 `/alarm`。
+
+控制：
+
+- 前端保留兼容跳转，自动跳到 `/alarm-records`。
+
+## 8. 验证点
+
+1. 具备 `alarm:read` 的规则维护角色能看到“告警规则维护”菜单。
+2. 仅具备 `alarm:process` 的处理角色能看到“告警处理”菜单。
+3. 仅具备 `alarm:process` 的角色可打开告警记录列表与详情。
+4. 仅具备 `alarm:process` 的角色不能进入规则维护页。
+5. 旧 `/alarm` 路径访问后会跳转到 `/alarm-records`。

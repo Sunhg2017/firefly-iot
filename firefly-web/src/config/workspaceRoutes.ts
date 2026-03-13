@@ -14,7 +14,9 @@ const PLATFORM_GROUP_KEYS = new Set(['system-mgmt', 'security-audit']);
 const TENANT_GROUP_KEYS = new Set(['project-mgmt', 'device-mgmt', 'rule-alarm', 'data-insight', 'ops-tools']);
 const SHARED_PATHS = new Set(['/dashboard']);
 const PLATFORM_PATHS = new Set(['/monitor']);
-const ROUTE_PERMISSION_MAP = new Map<string, string>();
+type RoutePermission = RouteItem['permission'];
+
+const ROUTE_PERMISSION_MAP = new Map<string, RoutePermission>();
 
 for (const entry of routeConfigs) {
   if (isRouteGroup(entry)) {
@@ -104,10 +106,7 @@ export function collectWorkspacePaths(workspace: WorkspaceType): string[] {
   return [...new Set(paths)];
 }
 
-function hasRoutePermission(permission: string | undefined, permissions?: readonly string[] | null): boolean {
-  if (!permission) {
-    return true;
-  }
+function hasSinglePermission(permission: string, permissions?: readonly string[] | null): boolean {
   if (permissions === undefined) {
     return true;
   }
@@ -122,6 +121,15 @@ function hasRoutePermission(permission: string | undefined, permissions?: readon
 
   const resource = permission.split(':')[0];
   return grantedPermissions.includes(`${resource}:*`);
+}
+
+function hasRoutePermission(permission: RoutePermission, permissions?: readonly string[] | null): boolean {
+  if (!permission) {
+    return true;
+  }
+  return Array.isArray(permission)
+    ? permission.some((item) => hasSinglePermission(item, permissions))
+    : hasSinglePermission(permission, permissions);
 }
 
 function collectConfiguredPaths(

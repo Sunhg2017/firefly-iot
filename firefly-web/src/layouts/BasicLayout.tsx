@@ -29,10 +29,11 @@ import {
 
 type MenuItem = Required<MenuProps>['items'][number];
 type BreadcrumbNode = { title: string; path?: string };
+type RoutePermission = RouteItem['permission'];
 
 const { Header, Sider, Content } = Layout;
 
-const permissionMap = new Map<string, string>();
+const permissionMap = new Map<string, RoutePermission>();
 for (const entry of routeConfigs) {
   if (isRouteGroup(entry)) {
     for (const child of entry.children) {
@@ -55,7 +56,7 @@ function persistWorkspace(workspace: WorkspaceType) {
 const BasicLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout, hasPermission, menuConfig } = useAuthStore();
+  const { user, logout, hasPermission, hasAnyPermission, menuConfig } = useAuthStore();
   const [collapsed, setCollapsed] = useState(false);
   const [workspace, setWorkspace] = useState<WorkspaceType>(loadWorkspaceCache);
   const [menuOpenKeys, setMenuOpenKeys] = useState<string[]>([]);
@@ -79,17 +80,25 @@ const BasicLayout: React.FC = () => {
     return path.startsWith('/') ? path : `/${path}`;
   };
 
+  const hasRoutePermission = (permission?: RoutePermission): boolean => {
+    if (!permission) {
+      return true;
+    }
+    // Some menu entries are shared by multiple operational roles, so the route can accept any one permission.
+    return Array.isArray(permission)
+      ? hasAnyPermission(...permission)
+      : hasPermission(permission);
+  };
+
   const canAccessPath = (path: string | null): boolean => {
     const normalizedPath = normalizePath(path);
     if (!normalizedPath) return true;
     const perm = permissionMap.get(normalizedPath);
-    if (!perm) return true;
-    return hasPermission(perm);
+    return hasRoutePermission(perm);
   };
 
   const canAccess = (item: RouteItem): boolean => {
-    if (!item.permission) return true;
-    return hasPermission(item.permission);
+    return hasRoutePermission(item.permission);
   };
 
   const buildTenantMenu = (items: MenuConfigItem[]): MenuItem[] => {
