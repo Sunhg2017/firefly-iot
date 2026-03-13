@@ -265,6 +265,7 @@ firefly-common/src/main/java/.../common/enums/
 - **DeviceSecret 生成**: `ds_` + 32 位安全随机字符
 - **唯一性约束**: `(product_id, device_name)` 联合唯一
 - **逻辑删除**: `deleted_at` 字段，查询时过滤 `deleted_at IS NULL`
+- **删除实现约束**: 设备实体已启用 MyBatis-Plus `@TableLogic`，服务端删除必须走 `deleteById` 触发逻辑删除 SQL，避免手工更新 `deleted_at` 后与列表过滤口径不一致
 - **标签存储**: JSONB，作为 `String` 类型存储
 - **数据范围**: `listDevices()` 标注 `@DataScope`
 - **设备创建时**: 更新产品的 `device_count` 字段 (+1)

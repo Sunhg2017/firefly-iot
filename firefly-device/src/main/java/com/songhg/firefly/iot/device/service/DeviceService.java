@@ -30,7 +30,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -183,9 +182,12 @@ public class DeviceService {
     public void deleteDevice(Long id) {
         Device device = getActiveDevice(id);
         deviceLocatorService.deleteByDeviceId(device.getId());
-        device.setDeletedAt(LocalDateTime.now());
         device.setOnlineStatus(OnlineStatus.OFFLINE);
+
+        // Device uses MyBatis-Plus logical delete on deletedAt.
+        // Deleting through deleteById keeps logical-delete SQL and query filtering consistent.
         deviceMapper.updateById(device);
+        deviceMapper.deleteById(device.getId());
 
         Product product = productMapper.selectById(device.getProductId());
         if (product != null && product.getDeviceCount() != null && product.getDeviceCount() > 0) {
