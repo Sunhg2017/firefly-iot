@@ -79,12 +79,17 @@ public class DeviceShadowService {
     public DeviceShadowDTO updateReported(Long deviceId, Map<String, Object> reported) {
         String key = shadowKey(deviceId);
         Map<String, Object> current = getReported(key);
-        current.putAll(reported);
+        Map<String, Object> next = new LinkedHashMap<>(current);
+        next.putAll(reported);
 
-        current.entrySet().removeIf(e -> e.getValue() == null);
+        next.entrySet().removeIf(e -> e.getValue() == null);
+        // Repeated reports with the same effective shadow should not keep inflating the version.
+        if (next.equals(current)) {
+            return getShadow(deviceId);
+        }
 
         long version = incrementVersion(key);
-        redisTemplate.opsForHash().put(key, "reported", serialize(current));
+        redisTemplate.opsForHash().put(key, "reported", serialize(next));
         redisTemplate.opsForHash().put(key, "version", String.valueOf(version));
         redisTemplate.opsForHash().put(key, "updatedAt", LocalDateTime.now().toString());
 

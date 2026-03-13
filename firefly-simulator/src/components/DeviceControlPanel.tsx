@@ -101,6 +101,29 @@ export default function DeviceControlPanel() {
   const autoTimerRef = useRef<number | null>(null);
   const coapPollRef = useRef<number | null>(null);
 
+  function stopAutoReportForDevice(deviceId: string, options?: { silent?: boolean; reason?: string }) {
+    const current = useSimStore.getState().devices.find((item) => item.id === deviceId);
+    if (!current || !current.autoReport) {
+      if (selectedDeviceId === deviceId) {
+        autoTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (selectedDeviceId === deviceId && autoTimerRef.current) {
+      clearInterval(autoTimerRef.current);
+      autoTimerRef.current = null;
+    }
+    if (current.autoTimerId) {
+      clearInterval(current.autoTimerId);
+    }
+
+    updateDevice(deviceId, { autoReport: false, autoTimerId: null });
+    if (!options?.silent) {
+      addLog(deviceId, current.name, 'info', options?.reason || 'Auto report stopped');
+    }
+  }
+
   useEffect(() => {
     if (!device || device.protocol !== 'MQTT') {
       setMqttTopic('');
@@ -140,6 +163,7 @@ export default function DeviceControlPanel() {
     const unsubDc = window.electronAPI.onMqttDisconnected((id) => {
       const current = useSimStore.getState().devices.find((item) => item.id === id);
       if (!current) return;
+      stopAutoReportForDevice(id, { reason: 'Auto report stopped because device disconnected' });
       useSimStore.getState().updateDevice(id, { status: 'offline' });
       useSimStore.getState().addLog(id, current.name, 'info', 'MQTT disconnected');
     });
@@ -162,6 +186,7 @@ export default function DeviceControlPanel() {
     const unsubDc = window.electronAPI.onWsDisconnected((id, code, reason) => {
       const current = useSimStore.getState().devices.find((item) => item.id === id);
       if (!current) return;
+      stopAutoReportForDevice(id, { reason: 'Auto report stopped because device disconnected' });
       useSimStore.getState().updateDevice(id, { status: 'offline' });
       useSimStore.getState().addLog(id, current.name, 'info', `WebSocket disconnected (${code}${reason ? `, ${reason}` : ''})`);
     });
@@ -183,6 +208,7 @@ export default function DeviceControlPanel() {
     const unsubDc = window.electronAPI.onTcpDisconnected((id) => {
       const current = useSimStore.getState().devices.find((item) => item.id === id);
       if (!current) return;
+      stopAutoReportForDevice(id, { reason: 'Auto report stopped because device disconnected' });
       useSimStore.getState().updateDevice(id, { status: 'offline' });
       useSimStore.getState().addLog(id, current.name, 'info', 'TCP disconnected');
     });
@@ -499,7 +525,7 @@ export default function DeviceControlPanel() {
 
   const handleDisconnect = async () => {
     try {
-      if (device.autoReport) handleAutoToggle(false);
+      stopAutoReportForDevice(device.id, { silent: true });
       if (device.protocol === 'MQTT') await window.electronAPI.mqttDisconnect(device.id);
       if (device.protocol === 'WebSocket') await window.electronAPI.wsDisconnect(device.id);
       if (device.protocol === 'TCP') await window.electronAPI.tcpDisconnect(device.id);
@@ -526,6 +552,12 @@ export default function DeviceControlPanel() {
   };
 
   const sendData = async () => {
+    const latestDevice = useSimStore.getState().devices.find((item) => item.id === device.id);
+    if (!latestDevice || latestDevice.status !== 'online') {
+      stopAutoReportForDevice(device.id, { reason: 'Auto report stopped because device is offline' });
+      return;
+    }
+
     const payload = getPayload();
     if (!payload) return;
 
@@ -585,11 +617,7 @@ export default function DeviceControlPanel() {
       addLog(device.id, device.name, 'info', `Auto report started (${device.autoIntervalSec || 5}s)`);
       return;
     }
-    if (autoTimerRef.current) clearInterval(autoTimerRef.current);
-    if (device.autoTimerId) clearInterval(device.autoTimerId);
-    autoTimerRef.current = null;
-    updateDevice(device.id, { autoReport: false, autoTimerId: null });
-    addLog(device.id, device.name, 'info', 'Auto report stopped');
+    stopAutoReportForDevice(device.id);
   };
 
   return (
