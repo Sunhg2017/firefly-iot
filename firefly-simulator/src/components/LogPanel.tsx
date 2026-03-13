@@ -22,10 +22,10 @@ export default function LogPanel() {
     [logs, filterDevice, selectedDeviceId],
   );
 
-  // Auto-scroll to bottom when new logs arrive
+  // Logs are prepended to the list, so auto-follow must keep the viewport pinned to the top.
   useEffect(() => {
     if (autoScroll && listRef.current) {
-      listRef.current.scrollTop = listRef.current.scrollHeight;
+      listRef.current.scrollTop = 0;
     }
   }, [filtered.length, autoScroll]);
 
