@@ -1,6 +1,7 @@
 package com.songhg.firefly.iot.device.service;
 
 import com.songhg.firefly.iot.common.message.DeviceMessage;
+import com.songhg.firefly.iot.common.message.KafkaTopics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -114,8 +115,8 @@ public class MessageRouterService {
                     .payload(message.getPayload())
                     .timestamp(message.getTimestamp())
                     .build();
-            ruleMsg.setTopic(com.songhg.firefly.iot.common.message.KafkaTopics.RULE_ENGINE_INPUT);
-            messageProducer.publishUpstream(ruleMsg);
+            ruleMsg.setTopic(KafkaTopics.RULE_ENGINE_INPUT);
+            messageProducer.publishToTopic(KafkaTopics.RULE_ENGINE_INPUT, ruleMsg);
         } catch (Exception e) {
             log.error("Failed to forward message to rule engine: {}", e.getMessage());
         }

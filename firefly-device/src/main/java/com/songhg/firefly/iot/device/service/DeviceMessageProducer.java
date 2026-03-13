@@ -33,6 +33,21 @@ public class DeviceMessageProducer {
     }
 
     /**
+     * 发布内部转发消息到指定 topic。
+     * 这里不能复用 publishUpstream 的按消息类型路由，否则像 EVENT_REPORT 这样的消息
+     * 在转发给规则引擎时会被重新投回 device.event.report，造成消费者自循环。
+     */
+    public void publishToTopic(String topic, DeviceMessage message) {
+        if (message.getMessageId() == null) {
+            message.setMessageId(UUID.randomUUID().toString());
+        }
+        if (message.getTimestamp() == 0) {
+            message.setTimestamp(System.currentTimeMillis());
+        }
+        send(topic, String.valueOf(message.getDeviceId()), message);
+    }
+
+    /**
      * 发布下行消息（云端→设备）
      */
     public void publishDownstream(DeviceMessage message) {
