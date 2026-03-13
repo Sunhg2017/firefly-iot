@@ -28,6 +28,7 @@ import {
 } from '@ant-design/icons';
 import { alarmRecordApi, alarmRuleApi } from '../../services/api';
 import useAuthStore from '../../store/useAuthStore';
+import { ALARM_LEVEL_LABELS, ALARM_STATUS_LABELS, ALARM_TEXT } from './alarmText';
 
 const { TextArea } = Input;
 
@@ -61,59 +62,10 @@ interface AlarmRecordItem {
   createdAt: string;
 }
 
-const TEXT = {
-  ruleName: '\u89c4\u5219\u540d\u79f0',
-  level: '\u7ea7\u522b',
-  condition: '\u89e6\u53d1\u6761\u4ef6',
-  status: '\u72b6\u6001',
-  createdAt: '\u521b\u5efa\u65f6\u95f4',
-  action: '\u64cd\u4f5c',
-  description: '\u89c4\u5219\u8bf4\u660e',
-  levelPlaceholder: '\u544a\u8b66\u7ea7\u522b',
-  searchRule: '\u641c\u7d22\u89c4\u5219\u540d\u79f0',
-  searchRecord: '\u641c\u7d22\u544a\u8b66\u6807\u9898',
-  processStatus: '\u5904\u7406\u72b6\u6001',
-  triggerValue: '\u89e6\u53d1\u503c',
-  processRemark: '\u5904\u7406\u5907\u6ce8',
-  title: '\u544a\u8b66\u6807\u9898',
-  close: '\u5173\u95ed',
-  confirm: '\u786e\u8ba4',
-  process: '\u5904\u7406',
-  edit: '\u7f16\u8f91',
-  remove: '\u5220\u9664',
-  createRule: '\u65b0\u5efa\u89c4\u5219',
-  createRuleTitle: '\u65b0\u5efa\u544a\u8b66\u89c4\u5219',
-  editRuleTitle: '\u7f16\u8f91\u544a\u8b66\u89c4\u5219',
-  processTitle: '\u5904\u7406\u544a\u8b66',
-  totalRules: '\u89c4\u5219\u603b\u6570',
-  enabledRules: '\u5df2\u542f\u7528',
-  disabledRules: '\u5df2\u505c\u7528',
-  triggered: '\u5f85\u786e\u8ba4',
-  confirmed: '\u5df2\u786e\u8ba4',
-  processed: '\u5df2\u5904\u7406',
-  closed: '\u5df2\u5173\u95ed',
-  enabled: '\u542f\u7528',
-  disabled: '\u505c\u7528',
-  badge: '\u544a\u8b66\u5904\u7406',
-};
-
-const levelLabels: Record<string, string> = {
-  CRITICAL: '\u7d27\u6025',
-  WARNING: '\u544a\u8b66',
-  INFO: '\u901a\u77e5',
-};
-
 const levelColors: Record<string, string> = {
   CRITICAL: 'red',
   WARNING: 'orange',
   INFO: 'blue',
-};
-
-const statusLabels: Record<string, string> = {
-  TRIGGERED: TEXT.triggered,
-  CONFIRMED: TEXT.confirmed,
-  PROCESSED: TEXT.processed,
-  CLOSED: TEXT.closed,
 };
 
 const statusColors: Record<string, string> = {
@@ -188,7 +140,7 @@ export const AlarmRulesPanel: React.FC = () => {
       setData(page.records || []);
       setTotal(page.total || 0);
     } catch {
-      message.error('\u52a0\u8f7d\u544a\u8b66\u89c4\u5219\u5931\u8d25');
+      message.error(ALARM_TEXT.loadRuleError);
     } finally {
       setLoading(false);
     }
@@ -210,12 +162,12 @@ export const AlarmRulesPanel: React.FC = () => {
   const handleCreate = async (values: Record<string, unknown>) => {
     try {
       await alarmRuleApi.create(values);
-      message.success('\u544a\u8b66\u89c4\u5219\u521b\u5efa\u6210\u529f');
+      message.success(ALARM_TEXT.createRuleSuccess);
       setCreateOpen(false);
       createForm.resetFields();
       await fetchData();
     } catch {
-      message.error('\u521b\u5efa\u544a\u8b66\u89c4\u5219\u5931\u8d25');
+      message.error(ALARM_TEXT.createRuleError);
     }
   };
 
@@ -237,52 +189,56 @@ export const AlarmRulesPanel: React.FC = () => {
     }
     try {
       await alarmRuleApi.update(editingId, values);
-      message.success('\u544a\u8b66\u89c4\u5219\u66f4\u65b0\u6210\u529f');
+      message.success(ALARM_TEXT.updateRuleSuccess);
       setEditOpen(false);
       setEditingId(null);
       editForm.resetFields();
       await fetchData();
     } catch {
-      message.error('\u66f4\u65b0\u544a\u8b66\u89c4\u5219\u5931\u8d25');
+      message.error(ALARM_TEXT.updateRuleError);
     }
   };
 
   const handleDelete = (record: AlarmRuleRecord) => {
     Modal.confirm({
-      title: '\u786e\u8ba4\u5220\u9664\u544a\u8b66\u89c4\u5219',
-      content: `\u5220\u9664\u540e\u4e0d\u53ef\u6062\u590d\uff0c\u786e\u8ba4\u5220\u9664\u201c${record.name}\u201d\u5417\uff1f`,
+      title: ALARM_TEXT.deleteRuleTitle,
+      content: `${ALARM_TEXT.deleteRuleMessagePrefix}${record.name}${ALARM_TEXT.deleteRuleMessageSuffix}`,
       onOk: async () => {
         try {
           await alarmRuleApi.delete(record.id);
-          message.success('\u544a\u8b66\u89c4\u5219\u5df2\u5220\u9664');
+          message.success(ALARM_TEXT.deleteRuleSuccess);
           await fetchData();
         } catch {
-          message.error('\u5220\u9664\u544a\u8b66\u89c4\u5219\u5931\u8d25');
+          message.error(ALARM_TEXT.deleteRuleError);
         }
       },
     });
   };
 
   const columns: ColumnsType<AlarmRuleRecord> = [
-    { title: TEXT.ruleName, dataIndex: 'name', width: 220, ellipsis: true },
+    { title: ALARM_TEXT.ruleName, dataIndex: 'name', width: 220, ellipsis: true },
     {
-      title: TEXT.level,
+      title: ALARM_TEXT.level,
       dataIndex: 'level',
       width: 100,
-      render: (value: string) => <Tag color={levelColors[value]}>{levelLabels[value] || value}</Tag>,
+      render: (value: string) => (
+        <Tag color={levelColors[value]}>{ALARM_LEVEL_LABELS[value] || value}</Tag>
+      ),
     },
-    { title: TEXT.condition, dataIndex: 'conditionExpr', width: 320, ellipsis: true },
+    { title: ALARM_TEXT.condition, dataIndex: 'conditionExpr', width: 320, ellipsis: true },
     {
-      title: TEXT.status,
+      title: ALARM_TEXT.status,
       dataIndex: 'enabled',
       width: 100,
       render: (value: boolean) => (
-        <Tag color={value ? 'success' : 'default'}>{value ? TEXT.enabled : TEXT.disabled}</Tag>
+        <Tag color={value ? 'success' : 'default'}>
+          {value ? ALARM_TEXT.enabled : ALARM_TEXT.disabled}
+        </Tag>
       ),
     },
-    { title: TEXT.createdAt, dataIndex: 'createdAt', width: 180 },
+    { title: ALARM_TEXT.createdAt, dataIndex: 'createdAt', width: 180 },
     {
-      title: TEXT.action,
+      title: ALARM_TEXT.action,
       width: 180,
       fixed: 'right',
       render: (_: unknown, record: AlarmRuleRecord) => {
@@ -293,7 +249,7 @@ export const AlarmRulesPanel: React.FC = () => {
           <Space>
             {canUpdate && (
               <Button type="link" size="small" onClick={() => handleEdit(record)}>
-                {TEXT.edit}
+                {ALARM_TEXT.edit}
               </Button>
             )}
             {canDelete && (
@@ -304,7 +260,7 @@ export const AlarmRulesPanel: React.FC = () => {
                 icon={<DeleteOutlined />}
                 onClick={() => handleDelete(record)}
               >
-                {TEXT.remove}
+                {ALARM_TEXT.remove}
               </Button>
             )}
           </Space>
@@ -317,31 +273,31 @@ export const AlarmRulesPanel: React.FC = () => {
     <>
       <Form.Item
         name="name"
-        label={TEXT.ruleName}
-        rules={[{ required: true, message: '\u8bf7\u8f93\u5165\u89c4\u5219\u540d\u79f0' }]}
+        label={ALARM_TEXT.ruleName}
+        rules={[{ required: true, message: ALARM_TEXT.ruleNameRequired }]}
       >
-        <Input placeholder="\u4f8b\u5982\uff1a\u9ad8\u6e29\u544a\u8b66" maxLength={256} />
+        <Input placeholder={ALARM_TEXT.ruleNamePlaceholder} maxLength={256} />
       </Form.Item>
-      <Form.Item name="description" label={TEXT.description}>
-        <TextArea rows={2} placeholder="\u8865\u5145\u9002\u7528\u8303\u56f4\u3001\u89e6\u53d1\u80cc\u666f\u6216\u503c\u73ed\u8bf4\u660e" />
+      <Form.Item name="description" label={ALARM_TEXT.description}>
+        <TextArea rows={2} placeholder={ALARM_TEXT.descriptionPlaceholder} />
       </Form.Item>
       <Form.Item
         name="level"
-        label={TEXT.levelPlaceholder}
-        rules={[{ required: true, message: '\u8bf7\u9009\u62e9\u544a\u8b66\u7ea7\u522b' }]}
+        label={ALARM_TEXT.levelPlaceholder}
+        rules={[{ required: true, message: ALARM_TEXT.levelRequired }]}
       >
         <Select
           options={[
-            { value: 'CRITICAL', label: levelLabels.CRITICAL },
-            { value: 'WARNING', label: levelLabels.WARNING },
-            { value: 'INFO', label: levelLabels.INFO },
+            { value: 'CRITICAL', label: ALARM_LEVEL_LABELS.CRITICAL },
+            { value: 'WARNING', label: ALARM_LEVEL_LABELS.WARNING },
+            { value: 'INFO', label: ALARM_LEVEL_LABELS.INFO },
           ]}
         />
       </Form.Item>
       <Form.Item
         name="conditionExpr"
-        label={TEXT.condition}
-        rules={[{ required: true, message: '\u8bf7\u8f93\u5165\u89e6\u53d1\u6761\u4ef6\u8868\u8fbe\u5f0f' }]}
+        label={ALARM_TEXT.condition}
+        rules={[{ required: true, message: ALARM_TEXT.conditionRequired }]}
       >
         <TextArea
           rows={3}
@@ -357,7 +313,7 @@ export const AlarmRulesPanel: React.FC = () => {
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={8}>
           <MiniStat
-            title={TEXT.totalRules}
+            title={ALARM_TEXT.totalRules}
             value={ruleStats.total}
             icon={<SafetyCertificateOutlined />}
             color="#4f46e5"
@@ -366,7 +322,7 @@ export const AlarmRulesPanel: React.FC = () => {
         </Col>
         <Col xs={8}>
           <MiniStat
-            title={TEXT.enabledRules}
+            title={ALARM_TEXT.enabledRules}
             value={ruleStats.enabled}
             icon={<CheckCircleOutlined />}
             color="#10b981"
@@ -375,7 +331,7 @@ export const AlarmRulesPanel: React.FC = () => {
         </Col>
         <Col xs={8}>
           <MiniStat
-            title={TEXT.disabledRules}
+            title={ALARM_TEXT.disabledRules}
             value={ruleStats.disabled}
             icon={<CloseCircleOutlined />}
             color="#8c8c8c"
@@ -395,7 +351,7 @@ export const AlarmRulesPanel: React.FC = () => {
       >
         <Space wrap>
           <Input.Search
-            placeholder={TEXT.searchRule}
+            placeholder={ALARM_TEXT.searchRule}
             allowClear
             style={{ width: 220 }}
             onSearch={(value) => {
@@ -404,13 +360,13 @@ export const AlarmRulesPanel: React.FC = () => {
             }}
           />
           <Select
-            placeholder={TEXT.levelPlaceholder}
+            placeholder={ALARM_TEXT.levelPlaceholder}
             allowClear
             style={{ width: 140 }}
             options={[
-              { value: 'CRITICAL', label: levelLabels.CRITICAL },
-              { value: 'WARNING', label: levelLabels.WARNING },
-              { value: 'INFO', label: levelLabels.INFO },
+              { value: 'CRITICAL', label: ALARM_LEVEL_LABELS.CRITICAL },
+              { value: 'WARNING', label: ALARM_LEVEL_LABELS.WARNING },
+              { value: 'INFO', label: ALARM_LEVEL_LABELS.INFO },
             ]}
             onChange={(value) => {
               setFilterLevel(value);
@@ -419,7 +375,7 @@ export const AlarmRulesPanel: React.FC = () => {
           />
           {canCreate && (
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-              {TEXT.createRule}
+              {ALARM_TEXT.createRule}
             </Button>
           )}
         </Space>
@@ -437,14 +393,14 @@ export const AlarmRulesPanel: React.FC = () => {
             pageSize: params.pageSize,
             total,
             showSizeChanger: true,
-            showTotal: (count: number) => `\u5171 ${count} \u6761`,
+            showTotal: (count: number) => `\u5171 ${count} ${ALARM_TEXT.countSuffix}`,
             onChange: (page: number, size: number) => setParams({ pageNum: page, pageSize: size }),
           }}
         />
       </Card>
 
       <Modal
-        title={TEXT.createRuleTitle}
+        title={ALARM_TEXT.createRuleTitle}
         open={createOpen}
         onCancel={() => setCreateOpen(false)}
         onOk={() => createForm.submit()}
@@ -457,7 +413,7 @@ export const AlarmRulesPanel: React.FC = () => {
       </Modal>
 
       <Modal
-        title={TEXT.editRuleTitle}
+        title={ALARM_TEXT.editRuleTitle}
         open={editOpen}
         onCancel={() => {
           setEditOpen(false);
@@ -469,11 +425,11 @@ export const AlarmRulesPanel: React.FC = () => {
       >
         <Form form={editForm} layout="vertical" onFinish={handleUpdate}>
           {ruleFormFields}
-          <Form.Item name="enabled" label={TEXT.status}>
+          <Form.Item name="enabled" label={ALARM_TEXT.status}>
             <Select
               options={[
-                { value: true, label: TEXT.enabled },
-                { value: false, label: TEXT.disabled },
+                { value: true, label: ALARM_TEXT.enabled },
+                { value: false, label: ALARM_TEXT.disabled },
               ]}
             />
           </Form.Item>
@@ -512,7 +468,7 @@ export const AlarmRecordsPanel: React.FC = () => {
       setData(page.records || []);
       setTotal(page.total || 0);
     } catch {
-      message.error('\u52a0\u8f7d\u544a\u8b66\u8bb0\u5f55\u5931\u8d25');
+      message.error(ALARM_TEXT.loadRecordError);
     } finally {
       setLoading(false);
     }
@@ -535,10 +491,10 @@ export const AlarmRecordsPanel: React.FC = () => {
   const handleConfirm = async (id: number) => {
     try {
       await alarmRecordApi.confirm(id);
-      message.success('\u544a\u8b66\u5df2\u786e\u8ba4');
+      message.success(ALARM_TEXT.confirmSuccess);
       await fetchData();
     } catch {
-      message.error('\u786e\u8ba4\u544a\u8b66\u5931\u8d25');
+      message.error(ALARM_TEXT.confirmError);
     }
   };
 
@@ -553,57 +509,61 @@ export const AlarmRecordsPanel: React.FC = () => {
     }
     try {
       await alarmRecordApi.process(processingId, values);
-      message.success('\u544a\u8b66\u5df2\u5904\u7406');
+      message.success(ALARM_TEXT.processSuccess);
       setProcessOpen(false);
       setProcessingId(null);
       processForm.resetFields();
       await fetchData();
     } catch {
-      message.error('\u5904\u7406\u544a\u8b66\u5931\u8d25');
+      message.error(ALARM_TEXT.processError);
     }
   };
 
   const handleClose = async (id: number) => {
     try {
       await alarmRecordApi.close(id);
-      message.success('\u544a\u8b66\u5df2\u5173\u95ed');
+      message.success(ALARM_TEXT.closeSuccess);
       await fetchData();
     } catch {
-      message.error('\u5173\u95ed\u544a\u8b66\u5931\u8d25');
+      message.error(ALARM_TEXT.closeError);
     }
   };
 
   const columns: ColumnsType<AlarmRecordItem> = [
-    { title: TEXT.title, dataIndex: 'title', width: 240, ellipsis: true },
+    { title: ALARM_TEXT.title, dataIndex: 'title', width: 240, ellipsis: true },
     {
-      title: TEXT.level,
+      title: ALARM_TEXT.level,
       dataIndex: 'level',
       width: 100,
-      render: (value: string) => <Tag color={levelColors[value]}>{levelLabels[value] || value}</Tag>,
+      render: (value: string) => (
+        <Tag color={levelColors[value]}>{ALARM_LEVEL_LABELS[value] || value}</Tag>
+      ),
     },
     {
-      title: TEXT.status,
+      title: ALARM_TEXT.status,
       dataIndex: 'status',
       width: 100,
-      render: (value: string) => <Tag color={statusColors[value]}>{statusLabels[value] || value}</Tag>,
+      render: (value: string) => (
+        <Tag color={statusColors[value]}>{ALARM_STATUS_LABELS[value] || value}</Tag>
+      ),
     },
     {
-      title: TEXT.triggerValue,
+      title: ALARM_TEXT.triggerValue,
       dataIndex: 'triggerValue',
       width: 160,
       ellipsis: true,
       render: (value?: string) => value || '-',
     },
-    { title: '\u89e6\u53d1\u65f6\u95f4', dataIndex: 'createdAt', width: 180 },
+    { title: ALARM_TEXT.triggerTime, dataIndex: 'createdAt', width: 180 },
     {
-      title: TEXT.processRemark,
+      title: ALARM_TEXT.processRemark,
       dataIndex: 'processRemark',
       width: 220,
       ellipsis: true,
       render: (value?: string) => value || '-',
     },
     {
-      title: TEXT.action,
+      title: ALARM_TEXT.action,
       width: 260,
       fixed: 'right',
       render: (_: unknown, record: AlarmRecordItem) => {
@@ -617,7 +577,7 @@ export const AlarmRecordsPanel: React.FC = () => {
               icon={<CheckCircleOutlined />}
               onClick={() => handleConfirm(record.id)}
             >
-              {TEXT.confirm}
+              {ALARM_TEXT.confirm}
             </Button>,
           );
         }
@@ -630,7 +590,7 @@ export const AlarmRecordsPanel: React.FC = () => {
               icon={<ToolOutlined />}
               onClick={() => handleProcess(record.id)}
             >
-              {TEXT.process}
+              {ALARM_TEXT.process}
             </Button>,
           );
         }
@@ -643,7 +603,7 @@ export const AlarmRecordsPanel: React.FC = () => {
               icon={<CloseCircleOutlined />}
               onClick={() => handleClose(record.id)}
             >
-              {TEXT.close}
+              {ALARM_TEXT.close}
             </Button>,
           );
         }
@@ -658,7 +618,7 @@ export const AlarmRecordsPanel: React.FC = () => {
         {[
           {
             key: 'triggered',
-            title: TEXT.triggered,
+            title: ALARM_TEXT.triggered,
             value: recordStats.triggered,
             icon: <FireOutlined />,
             color: '#ef4444',
@@ -666,7 +626,7 @@ export const AlarmRecordsPanel: React.FC = () => {
           },
           {
             key: 'confirmed',
-            title: TEXT.confirmed,
+            title: ALARM_TEXT.confirmed,
             value: recordStats.confirmed,
             icon: <WarningOutlined />,
             color: '#f59e0b',
@@ -674,7 +634,7 @@ export const AlarmRecordsPanel: React.FC = () => {
           },
           {
             key: 'processed',
-            title: TEXT.processed,
+            title: ALARM_TEXT.processed,
             value: recordStats.processed,
             icon: <ToolOutlined />,
             color: '#3b82f6',
@@ -682,7 +642,7 @@ export const AlarmRecordsPanel: React.FC = () => {
           },
           {
             key: 'closed',
-            title: TEXT.closed,
+            title: ALARM_TEXT.closed,
             value: recordStats.closed,
             icon: <CheckCircleOutlined />,
             color: '#10b981',
@@ -706,7 +666,7 @@ export const AlarmRecordsPanel: React.FC = () => {
       >
         <Space wrap>
           <Input.Search
-            placeholder={TEXT.searchRecord}
+            placeholder={ALARM_TEXT.searchRecord}
             allowClear
             style={{ width: 220 }}
             onSearch={(value) => {
@@ -715,13 +675,13 @@ export const AlarmRecordsPanel: React.FC = () => {
             }}
           />
           <Select
-            placeholder={TEXT.levelPlaceholder}
+            placeholder={ALARM_TEXT.levelPlaceholder}
             allowClear
             style={{ width: 140 }}
             options={[
-              { value: 'CRITICAL', label: levelLabels.CRITICAL },
-              { value: 'WARNING', label: levelLabels.WARNING },
-              { value: 'INFO', label: levelLabels.INFO },
+              { value: 'CRITICAL', label: ALARM_LEVEL_LABELS.CRITICAL },
+              { value: 'WARNING', label: ALARM_LEVEL_LABELS.WARNING },
+              { value: 'INFO', label: ALARM_LEVEL_LABELS.INFO },
             ]}
             onChange={(value) => {
               setFilterLevel(value);
@@ -729,14 +689,14 @@ export const AlarmRecordsPanel: React.FC = () => {
             }}
           />
           <Select
-            placeholder={TEXT.processStatus}
+            placeholder={ALARM_TEXT.processStatus}
             allowClear
             style={{ width: 140 }}
             options={[
-              { value: 'TRIGGERED', label: TEXT.triggered },
-              { value: 'CONFIRMED', label: TEXT.confirmed },
-              { value: 'PROCESSED', label: TEXT.processed },
-              { value: 'CLOSED', label: TEXT.closed },
+              { value: 'TRIGGERED', label: ALARM_TEXT.triggered },
+              { value: 'CONFIRMED', label: ALARM_TEXT.confirmed },
+              { value: 'PROCESSED', label: ALARM_TEXT.processed },
+              { value: 'CLOSED', label: ALARM_TEXT.closed },
             ]}
             onChange={(value) => {
               setFilterStatus(value);
@@ -758,14 +718,14 @@ export const AlarmRecordsPanel: React.FC = () => {
             pageSize: params.pageSize,
             total,
             showSizeChanger: true,
-            showTotal: (count: number) => `\u5171 ${count} \u6761`,
+            showTotal: (count: number) => `\u5171 ${count} ${ALARM_TEXT.countSuffix}`,
             onChange: (page: number, size: number) => setParams({ pageNum: page, pageSize: size }),
           }}
         />
       </Card>
 
       <Modal
-        title={TEXT.processTitle}
+        title={ALARM_TEXT.processTitle}
         open={processOpen}
         onCancel={() => {
           setProcessOpen(false);
@@ -776,8 +736,8 @@ export const AlarmRecordsPanel: React.FC = () => {
         width={480}
       >
         <Form form={processForm} layout="vertical" onFinish={handleProcessSubmit}>
-          <Form.Item name="processRemark" label={TEXT.processRemark}>
-            <TextArea rows={3} placeholder="\u8bf7\u8f93\u5165\u5904\u7406\u8bf4\u660e\u3001\u5de5\u5355\u53f7\u6216\u503c\u73ed\u8bb0\u5f55" />
+          <Form.Item name="processRemark" label={ALARM_TEXT.processRemark}>
+            <TextArea rows={3} placeholder={ALARM_TEXT.processRemarkPlaceholder} />
           </Form.Item>
         </Form>
       </Modal>
@@ -788,6 +748,6 @@ export const AlarmRecordsPanel: React.FC = () => {
 export const AlarmPageBadge: React.FC = () => (
   <Badge dot offset={[6, 0]}>
     <AlertOutlined style={{ marginRight: 6 }} />
-    {TEXT.badge}
+    {ALARM_TEXT.badge}
   </Badge>
 );

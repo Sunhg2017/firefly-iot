@@ -37,6 +37,7 @@ import {
   ToolOutlined,
   ScheduleOutlined,
 } from '@ant-design/icons';
+import { ALARM_TEXT } from '../pages/alarm/alarmText';
 
 export interface RouteItem {
   path: string;
@@ -124,10 +125,10 @@ const routeConfigs: RouteEntry[] = [
     icon: <ControlOutlined />,
     children: [
       { path: '/rule-engine', label: '规则引擎', icon: <ThunderboltOutlined />, permission: 'rule:read' },
-      { path: '/alarm-rules', label: '告警规则维护', icon: <AlertOutlined />, permission: 'alarm:read' },
+      { path: '/alarm-rules', label: ALARM_TEXT.ruleMenu, icon: <AlertOutlined />, permission: 'alarm:read' },
       {
         path: '/alarm-records',
-        label: '告警处理',
+        label: ALARM_TEXT.recordMenu,
         icon: <ToolOutlined />,
         permission: ['alarm:read', 'alarm:confirm', 'alarm:process'],
       },
