@@ -1,4 +1,4 @@
-﻿export type AlarmConditionType = 'THRESHOLD' | 'COMPARE' | 'CONTINUOUS' | 'ACCUMULATE' | 'CUSTOM';
+export type AlarmConditionType = 'THRESHOLD' | 'COMPARE' | 'CONTINUOUS' | 'ACCUMULATE' | 'CUSTOM';
 export type AlarmAggregateType = 'LATEST' | 'AVG' | 'MAX' | 'MIN' | 'SUM' | 'COUNT';
 export type AlarmOperator = 'GT' | 'GTE' | 'LT' | 'LTE' | 'EQ' | 'NEQ';
 export type AlarmWindowUnit = 'MINUTES' | 'HOURS' | 'DAYS';
@@ -41,6 +41,10 @@ interface StructuredAlarmCondition {
 export interface AlarmConditionOption {
   value: string;
   label: string;
+}
+
+interface ParsedStructuredAlarmCondition extends StructuredAlarmCondition {
+  mode: 'STRUCTURED';
 }
 
 const CONDITION_TYPE_LABELS: Record<AlarmConditionType, string> = {
@@ -168,50 +172,56 @@ export const getAlarmConditionTypeLabel = (type?: AlarmConditionType): string =>
 export const getAlarmConditionTypeColor = (type?: AlarmConditionType): string =>
   (type && CONDITION_TYPE_COLORS[type]) || CONDITION_TYPE_COLORS.CUSTOM;
 
-export const parseAlarmConditionExpr = (conditionExpr?: string | null): AlarmConditionFormValues => {
+const parseStructuredCondition = (conditionExpr?: string | null): ParsedStructuredAlarmCondition | null => {
   const raw = typeof conditionExpr === 'string' ? conditionExpr.trim() : '';
   if (!raw) {
-    return { ...DEFAULT_ALARM_CONDITION_VALUES };
+    return null;
   }
 
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!isRecord(parsed) || parsed.mode !== 'STRUCTURED') {
-      return { ...DEFAULT_ALARM_CONDITION_VALUES, conditionType: 'CUSTOM', customExpr: raw };
+      return null;
     }
 
     const type = asString(parsed.type) as AlarmConditionType | undefined;
     if (!type || !(type in CONDITION_TYPE_LABELS)) {
-      return { ...DEFAULT_ALARM_CONDITION_VALUES, conditionType: 'CUSTOM', customExpr: raw };
+      return null;
     }
 
-    return {
-      ...DEFAULT_ALARM_CONDITION_VALUES,
-      conditionType: type,
-      metricKey: asString(parsed.metricKey) || '',
-      aggregateType:
-        (asString(parsed.aggregateType) as AlarmAggregateType | undefined) ||
-        DEFAULT_ALARM_CONDITION_VALUES.aggregateType,
-      operator:
-        (asString(parsed.operator) as AlarmOperator | undefined) || DEFAULT_ALARM_CONDITION_VALUES.operator,
-      threshold: asNumber(parsed.threshold) ?? DEFAULT_ALARM_CONDITION_VALUES.threshold,
-      windowSize: asNumber(parsed.windowSize) ?? DEFAULT_ALARM_CONDITION_VALUES.windowSize,
-      windowUnit:
-        (asString(parsed.windowUnit) as AlarmWindowUnit | undefined) || DEFAULT_ALARM_CONDITION_VALUES.windowUnit,
-      compareTarget:
-        (asString(parsed.compareTarget) as AlarmCompareTarget | undefined) ||
-        DEFAULT_ALARM_CONDITION_VALUES.compareTarget,
-      changeMode:
-        (asString(parsed.changeMode) as AlarmChangeMode | undefined) || DEFAULT_ALARM_CONDITION_VALUES.changeMode,
-      changeDirection:
-        (asString(parsed.changeDirection) as AlarmChangeDirection | undefined) ||
-        DEFAULT_ALARM_CONDITION_VALUES.changeDirection,
-      consecutiveCount: asNumber(parsed.consecutiveCount) ?? DEFAULT_ALARM_CONDITION_VALUES.consecutiveCount,
-      customExpr: asString(parsed.customExpr) || '',
-    };
+    return parsed as unknown as ParsedStructuredAlarmCondition;
   } catch {
-    return { ...DEFAULT_ALARM_CONDITION_VALUES, conditionType: 'CUSTOM', customExpr: raw };
+    return null;
   }
+};
+
+export const parseAlarmConditionExpr = (conditionExpr?: string | null): AlarmConditionFormValues => {
+  const parsed = parseStructuredCondition(conditionExpr);
+  if (!parsed) {
+    return { ...DEFAULT_ALARM_CONDITION_VALUES };
+  }
+
+  return {
+    ...DEFAULT_ALARM_CONDITION_VALUES,
+    conditionType: parsed.type,
+    metricKey: asString(parsed.metricKey) || '',
+    aggregateType:
+      (asString(parsed.aggregateType) as AlarmAggregateType | undefined) || DEFAULT_ALARM_CONDITION_VALUES.aggregateType,
+    operator: (asString(parsed.operator) as AlarmOperator | undefined) || DEFAULT_ALARM_CONDITION_VALUES.operator,
+    threshold: asNumber(parsed.threshold) ?? DEFAULT_ALARM_CONDITION_VALUES.threshold,
+    windowSize: asNumber(parsed.windowSize) ?? DEFAULT_ALARM_CONDITION_VALUES.windowSize,
+    windowUnit:
+      (asString(parsed.windowUnit) as AlarmWindowUnit | undefined) || DEFAULT_ALARM_CONDITION_VALUES.windowUnit,
+    compareTarget:
+      (asString(parsed.compareTarget) as AlarmCompareTarget | undefined) || DEFAULT_ALARM_CONDITION_VALUES.compareTarget,
+    changeMode:
+      (asString(parsed.changeMode) as AlarmChangeMode | undefined) || DEFAULT_ALARM_CONDITION_VALUES.changeMode,
+    changeDirection:
+      (asString(parsed.changeDirection) as AlarmChangeDirection | undefined) ||
+      DEFAULT_ALARM_CONDITION_VALUES.changeDirection,
+    consecutiveCount: asNumber(parsed.consecutiveCount) ?? DEFAULT_ALARM_CONDITION_VALUES.consecutiveCount,
+    customExpr: asString(parsed.customExpr) || '',
+  };
 };
 
 export const buildAlarmConditionExpr = (values: AlarmConditionFormValues): string => {
@@ -221,12 +231,19 @@ export const buildAlarmConditionExpr = (values: AlarmConditionFormValues): strin
     throw new Error('请选择触发条件类型');
   }
 
+  const payload: StructuredAlarmCondition = {
+    mode: 'STRUCTURED',
+    version: 1,
+    type,
+  };
+
   if (type === 'CUSTOM') {
     const customExpr = next.customExpr.trim();
     if (!customExpr) {
       throw new Error('请输入自定义表达式');
     }
-    return customExpr;
+    payload.customExpr = customExpr;
+    return JSON.stringify(payload);
   }
 
   const metricKey = next.metricKey.trim();
@@ -239,12 +256,7 @@ export const buildAlarmConditionExpr = (values: AlarmConditionFormValues): strin
     throw new Error('请填写合法的触发阈值');
   }
 
-  const payload: StructuredAlarmCondition = {
-    mode: 'STRUCTURED',
-    version: 1,
-    type,
-    metricKey,
-  };
+  payload.metricKey = metricKey;
 
   if (type === 'THRESHOLD') {
     payload.aggregateType = next.aggregateType;
@@ -309,7 +321,13 @@ export const describeAlarmConditionValues = (
 export const describeAlarmConditionExpr = (
   conditionExpr?: string | null,
   metricLabelMap?: Record<string, string>,
-): string => describeAlarmConditionValues(parseAlarmConditionExpr(conditionExpr), metricLabelMap);
+): string => {
+  const parsed = parseStructuredCondition(conditionExpr);
+  if (!parsed) {
+    return '无效规则配置';
+  }
+  return describeAlarmConditionValues(parseAlarmConditionExpr(conditionExpr), metricLabelMap);
+};
 
 export const getAlarmConditionTypeFromExpr = (conditionExpr?: string | null): AlarmConditionType =>
-  parseAlarmConditionExpr(conditionExpr).conditionType || 'CUSTOM';
+  parseStructuredCondition(conditionExpr)?.type || 'CUSTOM';

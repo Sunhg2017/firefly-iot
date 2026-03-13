@@ -223,7 +223,7 @@ public class AlarmService {
         try {
             JsonNode root = objectMapper.readTree(trimmed);
             if (!root.isObject() || !STRUCTURED_MODE.equals(root.path("mode").asText())) {
-                return trimmed;
+                throw new BizException(ResultCode.PARAM_ERROR, "告警规则必须使用结构化条件");
             }
 
             String type = requireText(root, "type", "结构化告警条件缺少触发类型");
@@ -263,7 +263,7 @@ public class AlarmService {
             requireText(root, "changeDirection", "同比/环比条件缺少变化方向");
             return objectMapper.writeValueAsString(root);
         } catch (JsonProcessingException exception) {
-            return trimmed;
+            throw new BizException(ResultCode.PARAM_ERROR, "告警规则必须使用结构化条件");
         }
     }
 

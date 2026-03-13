@@ -38,14 +38,17 @@
 
 ## 3. 总体方案
 
-### 3.1 数据兼容策略
+### 3.1 数据存储策略
 
 保持数据库列 `alarm_rules.condition_expr` 不变，继续使用字符串存储。
 
-- 旧规则：继续存纯文本表达式，例如 `payload.temperature > 50`
-- 新规则：将结构化条件序列化为 JSON 字符串写入 `conditionExpr`
+本次统一要求：
 
-这样可以避免数据库迁移，同时兼容已经存在的老规则。
+- 所有告警规则都必须写入结构化 JSON
+- 不再接受纯文本表达式
+- `CUSTOM` 类型也必须以结构化 JSON 存储，表达式内容放在 `customExpr`
+
+这样可以避免数据库迁移，同时让规则模型在前后端保持统一。
 
 ### 3.2 结构化条件模型
 
@@ -70,7 +73,7 @@
 
 其中：
 
-- `mode=STRUCTURED` 用于区分结构化规则和旧版纯文本规则
+- `mode=STRUCTURED` 表示这是结构化告警规则
 - `version=1` 预留后续协议演进能力
 - `type` 表示触发条件类别
 
@@ -123,8 +126,8 @@
 `AlarmService` 在创建和更新规则时增加 `normalizeConditionExpr`：
 
 1. 空字符串直接拒绝
-2. 非 JSON 内容按旧版纯文本规则保存
-3. `mode != STRUCTURED` 的 JSON 保持原样，视为兼容内容
+2. 非 JSON 内容直接拒绝
+3. `mode != STRUCTURED` 的 JSON 直接拒绝
 4. `mode = STRUCTURED` 时按类型校验必填字段
 5. 校验通过后用 Jackson 重新序列化，写入标准化 JSON
 
@@ -137,11 +140,12 @@
 - `ACCUMULATE` 必须包含 `aggregateType`、`operator`、`threshold`、`windowSize > 0`、`windowUnit`
 - `COMPARE` 必须包含 `aggregateType`、`operator`、`threshold`、`windowSize > 0`、`windowUnit`、`compareTarget`、`changeMode`、`changeDirection`
 
-### 5.3 兼容性说明
+### 5.3 一致性说明
 
 - 数据库结构无变化
-- 老的纯文本规则可继续编辑和保存
-- 老规则在前端会被识别为 `CUSTOM`
+- 前端只生成结构化 JSON
+- 后端只接受结构化 JSON
+- `CUSTOM` 类型仅表示“结构化规则中的自定义表达式”，不是纯文本直存
 
 ## 6. 关键流程
 
@@ -155,10 +159,10 @@
 6. 前端生成结构化 JSON 写入 `conditionExpr`
 7. 后端校验并规范化保存
 
-### 6.2 编辑老规则
+### 6.2 编辑规则
 
-1. 若 `conditionExpr` 是结构化 JSON，则反序列化到对应表单
-2. 若 `conditionExpr` 是普通文本，则回填到“自定义表达式”
+1. 读取 `conditionExpr`
+2. 反序列化结构化 JSON 到对应表单
 3. 用户修改后重新保存
 
 ## 7. 设计取舍
@@ -169,7 +173,7 @@
 
 ### 7.2 为什么仍保留自定义表达式
 
-部分存量规则和特殊场景仍需要自由表达能力，因此保留 `CUSTOM` 作为兜底能力。
+虽然不再兼容纯文本直存，但仍有部分复杂逻辑不适合拆成标准表单字段，因此保留 `CUSTOM` 作为结构化规则中的兜底类型。
 
 ### 7.3 为什么要明确执行边界
 
@@ -182,7 +186,7 @@
 
 ### 8.1 风险
 
-1. 现有下游若假定 `conditionExpr` 永远是纯文本，可能无法理解结构化 JSON。
+1. 下游如果还假定 `conditionExpr` 是纯文本，将无法正确消费新规则。
 2. 产品物模型为空时，维护人员仍需要手工补指标标识。
 3. 若后续新增更多触发类型，需要同步扩展前端表单和后端校验。
 
