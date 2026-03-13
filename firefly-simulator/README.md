@@ -53,6 +53,12 @@ npm run electron:build
 | 2. 属性上报 | `POST /api/v1/protocol/http/property/post` | Header: `X-Device-Token` |
 | 3. 事件上报 | `POST /api/v1/protocol/http/event/post` | Header: `X-Device-Token` |
 
+补充说明：
+
+- 模拟器连接前会先校验 `httpBaseUrl`、`productKey`、`deviceName`、`deviceSecret`，缺项时不会继续向服务端发起空认证请求。
+- HTTP 认证请求会同时携带 JSON Body 和同名 Query 参数，方便 connector 在不同取参口径下都能兼容。
+- 连接成功后，认证请求也会进入 HTTP 请求历史，便于排查“服务端未拿到认证参数”这类问题。
+
 ### MQTT 模式
 
 模拟器直连 `firefly-connector` 暴露的 MQTT 端口（默认 `mqtt://localhost:1883`），通过标准 MQTT 协议通信：

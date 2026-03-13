@@ -25,6 +25,7 @@ import {
 import { Protocol, SimDevice, useSimStore } from '../store';
 import AddDeviceModal from './AddDeviceModal';
 import { buildMqttServiceTopic, dynamicRegisterDevice, resolveMqttIdentity, validateMqttDevice } from '../utils/mqtt';
+import { getDeviceAccessMissingFields, getDeviceAccessValidationError } from '../utils/deviceAccess';
 
 const { Search } = Input;
 const { Paragraph, Text, Title } = Typography;
@@ -78,7 +79,11 @@ const OVERVIEW_META = [
 ] as const;
 
 function getDeviceSubtitle(device: SimDevice) {
-  if (device.productKey || device.deviceName) {
+  if (device.protocol === 'HTTP' || device.protocol === 'CoAP' || device.protocol === 'MQTT') {
+    const missing = getDeviceAccessMissingFields(device);
+    if (missing.length > 0) {
+      return `待补充 ${missing.join(' / ')}`;
+    }
     return `${device.productKey || '-'} / ${device.deviceName || '-'}`;
   }
   if (device.protocol === 'Video') {
@@ -345,6 +350,14 @@ export default function DeviceListPanel() {
     for (const device of connectable) {
       try {
         updateDevice(device.id, { status: 'connecting' });
+
+        const accessError = getDeviceAccessValidationError(device);
+        if (accessError) {
+          updateDevice(device.id, { status: 'error' });
+          addLog(device.id, device.name, 'warn', accessError);
+          fail += 1;
+          continue;
+        }
 
         if (device.protocol === 'HTTP') {
           const result = await window.electronAPI.httpAuth(device.httpBaseUrl, device.productKey, device.deviceName, device.deviceSecret);

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   Badge,
   Button,
   Card,
@@ -44,6 +45,7 @@ import {
   resolveMqttIdentity,
   validateMqttDevice,
 } from '../utils/mqtt';
+import { getDeviceAccessOverviewItems, getDeviceAccessValidationError } from '../utils/deviceAccess';
 
 const { Text, Title } = Typography;
 
@@ -66,6 +68,13 @@ const STATUS_TEXT = {
   online: 'Online',
   error: 'Error',
 } as const;
+
+function maskSecret(value?: string | null): string {
+  const text = (value ?? '').trim();
+  if (!text) return '未配置';
+  if (text.length <= 4) return '****';
+  return `${'*'.repeat(Math.max(4, text.length - 4))}${text.slice(-4)}`;
+}
 
 export default function DeviceControlPanel() {
   const { devices, selectedDeviceId, updateDevice, addLog, templates } = useSimStore();
@@ -294,6 +303,13 @@ export default function DeviceControlPanel() {
   const isOnline = device.status === 'online';
   const showGenericReport = device.protocol === 'HTTP' || device.protocol === 'CoAP' || device.protocol === 'MQTT';
   const mqttIdentity = device.protocol === 'MQTT' ? resolveMqttIdentity(device) : null;
+  const accessError = getDeviceAccessValidationError(device);
+  const accessItems = getDeviceAccessOverviewItems(device);
+  const authPayloadPreview = JSON.stringify({
+    productKey: device.productKey || '',
+    deviceName: device.deviceName || '',
+    deviceSecret: maskSecret(device.deviceSecret),
+  }, null, 2);
 
   const connectMqtt = async () => {
     const validationError = validateMqttDevice(device);
@@ -340,12 +356,30 @@ export default function DeviceControlPanel() {
   };
 
   const handleConnect = async () => {
+    if (accessError) {
+      updateDevice(device.id, { status: 'error' });
+      addLog(device.id, device.name, 'warn', accessError);
+      message.warning(accessError);
+      return;
+    }
+
     updateDevice(device.id, { status: 'connecting' });
     addLog(device.id, device.name, 'info', 'Connecting...');
 
     try {
       if (device.protocol === 'HTTP') {
+        const authUrl = `${device.httpBaseUrl}/api/v1/protocol/http/auth`;
         const result = await window.electronAPI.httpAuth(device.httpBaseUrl, device.productKey, device.deviceName, device.deviceSecret);
+        setHttpHistory((prev) => [...prev.slice(-99), {
+          method: 'POST',
+          url: authUrl,
+          reqBody: authPayloadPreview,
+          status: result._status || 0,
+          resBody: JSON.stringify(result, null, 2),
+          resHeaders: result._headers || {},
+          elapsed: result._elapsed || 0,
+          ts: Date.now(),
+        }]);
         if (result.success && result.data?.token) {
           updateDevice(device.id, { status: 'online', token: result.data.token });
           addLog(device.id, device.name, 'success', `HTTP auth succeeded: ${result.data.token.slice(0, 20)}...`);
@@ -586,73 +620,98 @@ export default function DeviceControlPanel() {
           border: '1px solid rgba(148,163,184,0.12)',
           background: 'linear-gradient(180deg, rgba(15,23,42,0.72) 0%, rgba(8,15,29,0.92) 100%)',
         }}
+        title={<Space><ApiOutlined />接入概览</Space>}
+        styles={{ header: { borderBottom: '1px solid rgba(148,163,184,0.08)' } }}
       >
-        {device.protocol === 'MQTT' && mqttIdentity ? (
-          <Space direction="vertical" size={2}>
-            <Text type="secondary">Broker: {device.mqttBrokerUrl}</Text>
-            <Text type="secondary">Auth: {device.mqttAuthMode === 'PRODUCT_SECRET' ? 'One Type One Secret' : 'One Device One Secret'}</Text>
-            <Text type="secondary">Client ID: {mqttIdentity.clientId || '-'}</Text>
-            <Text type="secondary">Username: {mqttIdentity.username || '-'}</Text>
-            <Text type="secondary">Product / Device: {mqttIdentity.productKey || '-'} / {mqttIdentity.deviceName || '-'}</Text>
-            {device.mqttAuthMode === 'PRODUCT_SECRET' && <Text type="secondary">Register API: {device.mqttRegisterBaseUrl}</Text>}
-          </Space>
-        ) : device.protocol === 'CoAP' ? (
-          <Space direction="vertical" size={2}>
-            <Text type="secondary">Bridge: {device.coapBaseUrl}</Text>
-            <Text type="secondary">Product / Device: {device.productKey} / {device.deviceName}</Text>
-            {device.token && <Text type="secondary">Token: {device.token.slice(0, 30)}...</Text>}
-          </Space>
-        ) : device.protocol === 'Video' ? (
-          <Space direction="vertical" size={2}>
-            <Text type="secondary">Media: {device.mediaBaseUrl}</Text>
-            <Text type="secondary">Mode: {device.streamMode === 'GB28181' ? `GB28181 (${device.gbDeviceId})` : 'RTSP Proxy'}</Text>
-            {device.videoDeviceId && <Text type="secondary">Platform Device ID: {device.videoDeviceId}</Text>}
-            {device.streamUrl && <Text type="secondary">Play URL: {device.streamUrl}</Text>}
-          </Space>
-        ) : device.protocol === 'SNMP' ? (
-          <Space direction="vertical" size={2}>
-            <Text type="secondary">Connector: {device.snmpConnectorUrl}</Text>
-            <Text type="secondary">Target: {device.snmpHost}:{device.snmpPort}</Text>
-          </Space>
-        ) : device.protocol === 'Modbus' ? (
-          <Space direction="vertical" size={2}>
-            <Text type="secondary">Connector: {device.modbusConnectorUrl}</Text>
-            <Text type="secondary">Target: {device.modbusHost}:{device.modbusPort}</Text>
-          </Space>
-        ) : device.protocol === 'WebSocket' ? (
-          <Space direction="vertical" size={2}>
-            <Text type="secondary">Endpoint: {device.wsEndpoint}</Text>
-            {device.wsDeviceId && <Text type="secondary">Device ID: {device.wsDeviceId}</Text>}
-          </Space>
-        ) : device.protocol === 'TCP' ? (
-          <Text type="secondary">TCP: {device.tcpHost}:{device.tcpPort}</Text>
-        ) : device.protocol === 'UDP' ? (
-          <Text type="secondary">UDP: {device.udpHost}:{device.udpPort}</Text>
-        ) : device.protocol === 'LoRaWAN' ? (
-          <Space direction="vertical" size={2}>
-            <Text type="secondary">DevEUI: {device.loraDevEui || '-'}</Text>
-            <Text type="secondary">Webhook: {device.loraWebhookUrl}</Text>
-          </Space>
-        ) : (
-          <Space direction="vertical" size={2}>
-            <Text type="secondary">Connector: {device.httpBaseUrl}</Text>
-            <Text type="secondary">Product / Device: {device.productKey} / {device.deviceName}</Text>
-            {device.token && <Text type="secondary">Token: {device.token.slice(0, 30)}...</Text>}
-          </Space>
-        )}
+        <Space direction="vertical" size={14} style={{ width: '100%' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+            {accessItems.map((item) => (
+              <div
+                key={item.label}
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: 16,
+                  border: `1px solid ${item.highlight ? 'rgba(99,102,241,0.32)' : 'rgba(148,163,184,0.12)'}`,
+                  background: item.highlight
+                    ? 'linear-gradient(135deg, rgba(79,70,229,0.20), rgba(15,23,42,0.88))'
+                    : 'linear-gradient(180deg, rgba(15,23,42,0.64) 0%, rgba(8,15,29,0.92) 100%)',
+                }}
+              >
+                <Text type="secondary" style={{ fontSize: 11 }}>{item.label}</Text>
+                <div style={{ marginTop: 6, color: '#f8fafc', fontSize: 13, wordBreak: 'break-all' }}>{item.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {device.protocol === 'MQTT' && mqttIdentity ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+              <div style={{ padding: '10px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.03)' }}>
+                <Text type="secondary" style={{ fontSize: 11 }}>Client ID</Text>
+                <div style={{ marginTop: 4, color: '#cbd5e1', wordBreak: 'break-all' }}>{mqttIdentity.clientId || '自动生成'}</div>
+              </div>
+              <div style={{ padding: '10px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.03)' }}>
+                <Text type="secondary" style={{ fontSize: 11 }}>Username</Text>
+                <div style={{ marginTop: 4, color: '#cbd5e1', wordBreak: 'break-all' }}>{mqttIdentity.username || '自动生成'}</div>
+              </div>
+            </div>
+          ) : null}
+
+          {device.token ? (
+            <Alert
+              type="success"
+              showIcon
+              message="当前设备已获取认证令牌"
+              description={`Token 片段：${device.token.slice(0, 30)}...`}
+            />
+          ) : null}
+
+          {accessError ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="接入参数还不完整"
+              description={`${accessError}。请先补齐后再发起连接，避免服务端收到空认证参数。`}
+            />
+          ) : null}
+        </Space>
       </Card>
 
       {showGenericReport && (
-        <Card title={<Space><CloudUploadOutlined />Data Report</Space>} size="small" style={{ marginBottom: 16 }}>
+        <Card
+          title={<Space><CloudUploadOutlined />Data Report</Space>}
+          size="small"
+          style={{
+            marginBottom: 16,
+            borderRadius: 22,
+            border: '1px solid rgba(148,163,184,0.12)',
+            background: 'linear-gradient(180deg, rgba(15,23,42,0.70) 0%, rgba(8,15,29,0.92) 100%)',
+          }}
+          styles={{ header: { borderBottom: '1px solid rgba(148,163,184,0.08)' } }}
+        >
           <Space direction="vertical" style={{ width: '100%' }} size={12}>
-            <Space>
-              <Text style={{ fontSize: 13 }}>Type:</Text>
-              <Radio.Group value={reportType} onChange={(event) => setReportType(event.target.value)} size="small">
-                <Radio.Button value="property">Property</Radio.Button>
-                <Radio.Button value="event">Event</Radio.Button>
-                {device.protocol === 'CoAP' && <Radio.Button value="ota">OTA</Radio.Button>}
-              </Radio.Group>
-            </Space>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+              <Space direction="vertical" size={4}>
+                <Text type="secondary" style={{ fontSize: 12 }}>上报类型</Text>
+                <Radio.Group value={reportType} onChange={(event) => setReportType(event.target.value)} size="small">
+                  <Radio.Button value="property">Property</Radio.Button>
+                  <Radio.Button value="event">Event</Radio.Button>
+                  {device.protocol === 'CoAP' && <Radio.Button value="ota">OTA</Radio.Button>}
+                </Radio.Group>
+              </Space>
+              <Space size={16} wrap>
+                <Text type="secondary">Sent: <Text strong style={{ color: '#52c41a' }}>{device.sentCount}</Text></Text>
+                <Text type="secondary">Errors: <Text strong style={{ color: '#ff4d4f' }}>{device.errorCount}</Text></Text>
+              </Space>
+            </div>
+
+            {device.protocol === 'HTTP' ? (
+              <Alert
+                type="info"
+                showIcon
+                message="HTTP 认证与上报已拆开展示"
+                description="先通过上方接入概览确认 ProductKey、DeviceName、DeviceSecret 是否齐全。连接成功后，再在这里发送属性或事件。"
+              />
+            ) : null}
 
             {device.protocol === 'MQTT' && (
               <div>
@@ -682,27 +741,21 @@ export default function DeviceControlPanel() {
             )}
 
             {selectedTplId && (
-              <div style={{ padding: 8, background: 'rgba(255,255,255,0.04)', borderRadius: 6, fontSize: 12 }}>
+              <div style={{ padding: 10, background: 'rgba(255,255,255,0.04)', borderRadius: 12, fontSize: 12 }}>
                 {templates.find((item) => item.id === selectedTplId)?.fields.map((field) => (
                   <Tag key={field.key} style={{ margin: 2 }}>{field.key} ({field.valueType})</Tag>
                 ))}
               </div>
             )}
 
-            <Space>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
               <Button type="primary" icon={<SendOutlined />} onClick={sendData} loading={sending} disabled={!isOnline}>Send</Button>
-              <Divider type="vertical" />
               <Space size={8}>
                 <Switch checked={device.autoReport} onChange={handleAutoToggle} disabled={!isOnline} checkedChildren={<PlayCircleOutlined />} unCheckedChildren={<PauseCircleOutlined />} />
                 <Text style={{ fontSize: 12 }}>Auto report</Text>
                 <InputNumber size="small" min={1} max={3600} value={device.autoIntervalSec} onChange={(value) => updateDevice(device.id, { autoIntervalSec: value || 5 })} disabled={device.autoReport} style={{ width: 90 }} addonAfter="sec" />
               </Space>
-            </Space>
-
-            <Space size={16}>
-              <Text type="secondary">Sent: <Text strong style={{ color: '#52c41a' }}>{device.sentCount}</Text></Text>
-              <Text type="secondary">Errors: <Text strong style={{ color: '#ff4d4f' }}>{device.errorCount}</Text></Text>
-            </Space>
+            </div>
           </Space>
         </Card>
       )}

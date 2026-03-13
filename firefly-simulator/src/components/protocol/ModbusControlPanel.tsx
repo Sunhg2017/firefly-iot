@@ -16,6 +16,8 @@ export default function ModbusControlPanel({ device }: Props) {
   const { addLog } = useSimStore();
   const [testing, setTesting] = useState(false);
 
+  if (device.protocol !== 'Modbus') return null;
+
   // Read state
   const [readFc, setReadFc] = useState<'FC01' | 'FC02' | 'FC03' | 'FC04'>('FC03');
   const [readAddr, setReadAddr] = useState(0);

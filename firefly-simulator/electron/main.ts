@@ -81,16 +81,20 @@ function httpRequest(
     const parsed = new URL(url);
     const lib = parsed.protocol === 'https:' ? https : http;
     const startTime = Date.now();
+    const normalizedHeaders: Record<string, string | number> = {
+      'Content-Type': 'application/json',
+      ...headers,
+    };
+    if (body) {
+      normalizedHeaders['Content-Length'] = Buffer.byteLength(body);
+    }
     const req = lib.request(
       {
         hostname: parsed.hostname,
         port: parsed.port,
         path: parsed.pathname + parsed.search,
         method,
-        headers: {
-          'Content-Type': 'application/json',
-          ...headers,
-        },
+        headers: normalizedHeaders,
       },
       (res) => {
         let data = '';
@@ -110,8 +114,11 @@ function httpRequest(
 
 ipcMain.handle('http:auth', async (_e, baseUrl: string, productKey: string, deviceName: string, deviceSecret: string) => {
   try {
-    const url = `${baseUrl}/api/v1/protocol/http/auth`;
-    const res = await httpRequest(url, 'POST', {}, JSON.stringify({ productKey, deviceName, deviceSecret }));
+    const authUrl = new URL(`${baseUrl}/api/v1/protocol/http/auth`);
+    authUrl.searchParams.set('productKey', productKey || '');
+    authUrl.searchParams.set('deviceName', deviceName || '');
+    authUrl.searchParams.set('deviceSecret', deviceSecret || '');
+    const res = await httpRequest(authUrl.toString(), 'POST', {}, JSON.stringify({ productKey, deviceName, deviceSecret }));
     return { success: true, ...JSON.parse(res.data), _status: res.status, _headers: res.headers, _elapsed: res.elapsed };
   } catch (err: any) {
     return { success: false, message: err.message };

@@ -36,10 +36,15 @@ public class HttpProtocolAdapter {
      */
     @Operation(summary = "设备认证并获取 Token")
     @PostMapping("/auth")
-    public R<Map<String, Object>> authenticate(@RequestBody Map<String, String> body) {
-        String productKey = body.get("productKey");
-        String deviceName = body.get("deviceName");
-        String deviceSecret = body.get("deviceSecret");
+    public R<Map<String, Object>> authenticate(@RequestBody(required = false) Map<String, String> body,
+                                               @RequestParam(required = false) String productKey,
+                                               @RequestParam(required = false) String deviceName,
+                                               @RequestParam(required = false) String deviceSecret) {
+        if (body != null) {
+            productKey = firstNonBlank(productKey, body.get("productKey"));
+            deviceName = firstNonBlank(deviceName, body.get("deviceName"));
+            deviceSecret = firstNonBlank(deviceSecret, body.get("deviceSecret"));
+        }
 
         DeviceAuthResult result = authService.authenticate(productKey, deviceName, deviceSecret);
         if (!result.isSuccess()) {
@@ -136,5 +141,14 @@ public class HttpProtocolAdapter {
             messageProducer.publishUpstream(message);
         }
         return R.ok();
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 }
