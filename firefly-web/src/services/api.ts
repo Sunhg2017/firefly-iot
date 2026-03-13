@@ -743,6 +743,20 @@ export const notificationChannelApi = {
   test: (id: number) => supportRequest.post(`/notifications/channels/${id}/test`),
 };
 
+export const tenantWebhookApi = {
+  list: (tenantId: number) => supportRequest.get(`/platform/tenants/${normalizeTenantId(tenantId)}/webhook-channels`),
+  create: (tenantId: number, data: Record<string, unknown>) =>
+    supportRequest.post(`/platform/tenants/${normalizeTenantId(tenantId)}/webhook-channels`, data),
+  update: (tenantId: number, id: number, data: Record<string, unknown>) =>
+    supportRequest.put(`/platform/tenants/${normalizeTenantId(tenantId)}/webhook-channels/${id}`, data),
+  delete: (tenantId: number, id: number) =>
+    supportRequest.delete(`/platform/tenants/${normalizeTenantId(tenantId)}/webhook-channels/${id}`),
+  toggle: (tenantId: number, id: number, enabled: boolean) =>
+    supportRequest.put(`/platform/tenants/${normalizeTenantId(tenantId)}/webhook-channels/${id}/toggle?enabled=${enabled}`),
+  test: (tenantId: number, id: number) =>
+    supportRequest.post(`/platform/tenants/${normalizeTenantId(tenantId)}/webhook-channels/${id}/test`),
+};
+
 export const notificationRecordApi = {
   list: (data: Record<string, unknown> = {}) => supportRequest.post('/notifications/records/list', data),
   get: (id: number) => supportRequest.get(`/notifications/records/${id}`),

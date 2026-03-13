@@ -28,6 +28,7 @@ public class NotificationChannelService {
 
     private static final Long PLATFORM_CHANNEL_TENANT_ID = 0L;
     private static final String PLATFORM_TENANT_CODE = "system-ops";
+    private static final String WEBHOOK_CHANNEL_TYPE = NotificationChannelType.WEBHOOK.code();
 
     private final NotificationChannelMapper channelMapper;
     private final ObjectMapper objectMapper;
@@ -36,6 +37,7 @@ public class NotificationChannelService {
         Long tenantId = resolveManagedTenantId();
         LambdaQueryWrapper<NotificationChannel> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(NotificationChannel::getTenantId, tenantId)
+                .ne(tenantId.equals(PLATFORM_CHANNEL_TENANT_ID), NotificationChannel::getType, WEBHOOK_CHANNEL_TYPE)
                 .orderByAsc(NotificationChannel::getType)
                 .orderByAsc(NotificationChannel::getName);
         return channelMapper.selectList(wrapper)
@@ -47,6 +49,9 @@ public class NotificationChannelService {
     public List<NotificationChannelVO> listByType(String type) {
         Long tenantId = resolveManagedTenantId();
         String normalizedType = NotificationChannelType.of(type).code();
+        if (tenantId.equals(PLATFORM_CHANNEL_TENANT_ID) && WEBHOOK_CHANNEL_TYPE.equals(normalizedType)) {
+            return List.of();
+        }
         LambdaQueryWrapper<NotificationChannel> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(NotificationChannel::getTenantId, tenantId)
                 .eq(NotificationChannel::getType, normalizedType)
@@ -75,6 +80,7 @@ public class NotificationChannelService {
     public NotificationChannelVO create(NotificationChannelCreateDTO dto) {
         Long tenantId = resolveManagedTenantId();
         NotificationChannelType channelType = NotificationChannelType.of(dto.getType());
+        assertPlatformChannelTypeAllowed(tenantId, channelType);
 
         NotificationChannel channel = new NotificationChannel();
         channel.setTenantId(tenantId);
@@ -99,6 +105,7 @@ public class NotificationChannelService {
         }
         if (dto.getType() != null) {
             channelType = NotificationChannelType.of(dto.getType());
+            assertPlatformChannelTypeAllowed(channel.getTenantId(), channelType);
             channel.setType(channelType.code());
         }
         if (dto.getConfig() != null) {
@@ -123,6 +130,79 @@ public class NotificationChannelService {
         channel.setEnabled(enabled);
         channel.setUpdatedAt(LocalDateTime.now());
         channelMapper.updateById(channel);
+    }
+
+    public List<NotificationChannelVO> listTenantWebhookChannels(Long tenantId) {
+        assertSystemOpsTenant();
+        validateTenantId(tenantId);
+        return channelMapper.selectList(new LambdaQueryWrapper<NotificationChannel>()
+                        .eq(NotificationChannel::getTenantId, tenantId)
+                        .eq(NotificationChannel::getType, WEBHOOK_CHANNEL_TYPE)
+                        .orderByAsc(NotificationChannel::getName)
+                        .orderByAsc(NotificationChannel::getId))
+                .stream()
+                .map(NotificationConvert.INSTANCE::toChannelVO)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public NotificationChannelVO createTenantWebhookChannel(Long tenantId, NotificationChannelCreateDTO dto) {
+        assertSystemOpsTenant();
+        validateTenantId(tenantId);
+        NotificationChannel channel = new NotificationChannel();
+        channel.setTenantId(tenantId);
+        channel.setName(dto.getName().trim());
+        channel.setType(WEBHOOK_CHANNEL_TYPE);
+        channel.setConfig(normalizeConfig(NotificationChannelType.WEBHOOK, dto.getConfig()));
+        channel.setEnabled(dto.getEnabled() != null ? dto.getEnabled() : true);
+        channel.setCreatedBy(AppContextHolder.getUserId());
+        channel.setCreatedAt(LocalDateTime.now());
+        channel.setUpdatedAt(LocalDateTime.now());
+        channelMapper.insert(channel);
+        return NotificationConvert.INSTANCE.toChannelVO(channel);
+    }
+
+    @Transactional
+    public NotificationChannelVO updateTenantWebhookChannel(Long tenantId, Long id, NotificationChannelCreateDTO dto) {
+        NotificationChannel channel = getTenantWebhookEntityById(tenantId, id);
+        if (dto.getName() != null && !dto.getName().isBlank()) {
+            channel.setName(dto.getName().trim());
+        }
+        if (dto.getConfig() != null) {
+            channel.setConfig(normalizeConfig(NotificationChannelType.WEBHOOK, dto.getConfig()));
+        }
+        if (dto.getEnabled() != null) {
+            channel.setEnabled(dto.getEnabled());
+        }
+        channel.setUpdatedAt(LocalDateTime.now());
+        channelMapper.updateById(channel);
+        return NotificationConvert.INSTANCE.toChannelVO(channel);
+    }
+
+    @Transactional
+    public void deleteTenantWebhookChannel(Long tenantId, Long id) {
+        channelMapper.deleteById(getTenantWebhookEntityById(tenantId, id).getId());
+    }
+
+    @Transactional
+    public void toggleTenantWebhookChannel(Long tenantId, Long id, boolean enabled) {
+        NotificationChannel channel = getTenantWebhookEntityById(tenantId, id);
+        channel.setEnabled(enabled);
+        channel.setUpdatedAt(LocalDateTime.now());
+        channelMapper.updateById(channel);
+    }
+
+    public NotificationChannel getTenantWebhookEntityById(Long tenantId, Long id) {
+        assertSystemOpsTenant();
+        validateTenantId(tenantId);
+        NotificationChannel channel = channelMapper.selectOne(new LambdaQueryWrapper<NotificationChannel>()
+                .eq(NotificationChannel::getTenantId, tenantId)
+                .eq(NotificationChannel::getId, id)
+                .eq(NotificationChannel::getType, WEBHOOK_CHANNEL_TYPE));
+        if (channel == null) {
+            throw new BizException(ResultCode.NOT_FOUND, "tenant webhook channel not found");
+        }
+        return channel;
     }
 
     private String normalizeConfig(NotificationChannelType channelType, String rawConfig) {
@@ -172,5 +252,23 @@ public class NotificationChannelService {
             return PLATFORM_CHANNEL_TENANT_ID;
         }
         return AppContextHolder.getTenantId();
+    }
+
+    private void assertPlatformChannelTypeAllowed(Long tenantId, NotificationChannelType channelType) {
+        if (tenantId.equals(PLATFORM_CHANNEL_TENANT_ID) && channelType == NotificationChannelType.WEBHOOK) {
+            throw new BizException(ResultCode.PARAM_ERROR, "platform default channels do not support WEBHOOK");
+        }
+    }
+
+    private void assertSystemOpsTenant() {
+        if (!PLATFORM_TENANT_CODE.equalsIgnoreCase(AppContextHolder.getTenantCode())) {
+            throw new BizException(ResultCode.PERMISSION_DENIED, "system operations tenant required");
+        }
+    }
+
+    private void validateTenantId(Long tenantId) {
+        if (tenantId == null || tenantId <= 0) {
+            throw new BizException(ResultCode.PARAM_ERROR, "tenantId is required");
+        }
     }
 }

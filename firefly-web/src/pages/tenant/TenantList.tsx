@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
 import { Suspense } from 'react';
 import {
+  ApiOutlined,
   AppstoreOutlined,
   BarChartOutlined,
   EditOutlined,
@@ -40,6 +41,7 @@ import PageHeader from '../../components/PageHeader';
 import { isRouteGroup } from '../../config/routes';
 import { filterWorkspaceRoutes } from '../../config/workspaceRoutes';
 import { tenantApi } from '../../services/api';
+import TenantWebhookDrawer from './TenantWebhookDrawer';
 
 const { RangePicker } = DatePicker;
 const TenantTrendChart = React.lazy(() => import('./TenantTrendChart'));
@@ -401,6 +403,7 @@ const TenantList: React.FC = () => {
   const [quotaOpen, setQuotaOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [spaceOpen, setSpaceOpen] = useState(false);
+  const [webhookOpen, setWebhookOpen] = useState(false);
   const [currentTenant, setCurrentTenant] = useState<TenantItem | null>(null);
 
   const [usageTenant, setUsageTenant] = useState<TenantItem | null>(null);
@@ -640,6 +643,11 @@ const TenantList: React.FC = () => {
     }
   };
 
+  const openWebhookDrawer = (record: TenantItem) => {
+    setCurrentTenant(record);
+    setWebhookOpen(true);
+  };
+
   const handleSaveSpaceMenus = async () => {
     if (!currentTenant) return;
 
@@ -705,6 +713,9 @@ const TenantList: React.FC = () => {
             <Button type="link" size="small" icon={<BarChartOutlined />} onClick={() => setUsageTenant(record)}>用量</Button>
             {!isSystemOpsTenant(record) && (
               <Button type="link" size="small" icon={<AppstoreOutlined />} onClick={() => void openSpaceModal(record)}>空间授权</Button>
+            )}
+            {!isSystemOpsTenant(record) && (
+              <Button type="link" size="small" icon={<ApiOutlined />} onClick={() => openWebhookDrawer(record)}>Webhook</Button>
             )}
             <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEditModal(record)}>编辑</Button>
             <Button type="link" size="small" icon={<SwapOutlined />} onClick={() => openPlanModal(record)}>套餐</Button>
@@ -1020,6 +1031,13 @@ const TenantList: React.FC = () => {
           </Row>
         </Form>
       </Drawer>
+
+      <TenantWebhookDrawer
+        open={webhookOpen}
+        tenantId={currentTenant?.id}
+        tenantName={currentTenant?.name}
+        onClose={() => setWebhookOpen(false)}
+      />
     </div>
   );
 };

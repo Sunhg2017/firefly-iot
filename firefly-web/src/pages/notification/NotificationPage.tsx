@@ -10,6 +10,8 @@ import {
   notificationChannelOptions,
 } from '../../constants/notification';
 
+const platformChannelOptions = notificationChannelOptions.filter((item) => item.value !== 'WEBHOOK');
+
 interface ChannelItem {
   id: number;
   name: string;
@@ -211,13 +213,13 @@ const NotificationPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader title="通知渠道" description="系统运维空间统一维护平台默认通知渠道，租户发送时会优先使用本租户渠道，缺省时回落到这里的默认配置。" />
+      <PageHeader title="通知渠道" description="系统运维空间统一维护平台默认通知渠道。Webhook 由租户管理列表单独维护；其他渠道在租户未单独配置时会回落到这里的默认配置。" />
       <Card bordered={false} style={{ borderRadius: 12, marginBottom: 16 }} title="平台默认通知渠道" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor(null)}>新建渠道</Button>}>
         <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={false} scroll={{ x: 900 }} />
         <Drawer title={record ? '编辑通知渠道' : '新建通知渠道'} open={open} onClose={() => setOpen(false)} width={640} destroyOnClose footer={<Space style={{ width: '100%', justifyContent: 'flex-end' }}><Button onClick={() => setOpen(false)}>取消</Button><Button type="primary" onClick={() => form.submit()}>{record ? '保存修改' : '创建渠道'}</Button></Space>}>
           <Form form={form} layout="vertical" onFinish={(values) => void save(values)}>
             <Form.Item name="name" label="渠道名称" rules={[{ required: true, message: '请输入渠道名称' }]}><Input placeholder="例如：平台默认告警短信" /></Form.Item>
-            <Form.Item name="type" label="渠道类型" rules={[{ required: true, message: '请选择渠道类型' }]}><Select options={notificationChannelOptions as unknown as { value: string; label: string }[]} /></Form.Item>
+            <Form.Item name="type" label="渠道类型" rules={[{ required: true, message: '请选择渠道类型' }]}><Select options={platformChannelOptions as unknown as { value: string; label: string }[]} /></Form.Item>
             <Form.Item name="enabled" label="启用状态" valuePropName="checked"><Switch /></Form.Item>
             {renderChannelFields(type)}
           </Form>

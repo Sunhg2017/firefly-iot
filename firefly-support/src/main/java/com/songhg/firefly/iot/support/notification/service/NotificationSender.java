@@ -71,6 +71,21 @@ public class NotificationSender {
     public String testChannel(Long channelId) {
         Long tenantId = resolveManagedTenantId(AppContextHolder.getTenantId(), AppContextHolder.getTenantCode());
         NotificationChannel channel = getChannel(tenantId, channelId);
+        return doTestChannel(channel);
+    }
+
+    public String testTenantWebhookChannel(Long tenantId, Long channelId) {
+        NotificationChannel channel = channelMapper.selectOne(new LambdaQueryWrapper<NotificationChannel>()
+                .eq(NotificationChannel::getTenantId, tenantId)
+                .eq(NotificationChannel::getId, channelId)
+                .eq(NotificationChannel::getType, NotificationChannelType.WEBHOOK.code()));
+        if (channel == null) {
+            throw new BizException(ResultCode.NOT_FOUND, "tenant webhook channel not found");
+        }
+        return doTestChannel(channel);
+    }
+
+    private String doTestChannel(NotificationChannel channel) {
         NotificationChannelType channelType = NotificationChannelType.of(channel.getType());
         JsonNode config = parseConfig(channel);
 

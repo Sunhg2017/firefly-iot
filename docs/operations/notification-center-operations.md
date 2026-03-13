@@ -18,6 +18,7 @@
 
 - 系统运维空间：`/notification`，维护平台默认通知渠道
 - 租户业务空间：`/notification-records`，查看通知发送记录
+- 系统运维空间 / 租户管理列表：按租户维护 `WEBHOOK` 渠道
 
 ## 2. 部署与依赖
 
@@ -38,6 +39,7 @@
 - `V7__extend_notification_channels.sql`
 - `V8__merge_notification_templates_into_message_templates.sql`
 - `V9__promote_platform_notification_channels.sql`
+- `V10__restore_webhook_channels_to_tenant_scope.sql`
 
 如果 `V8` 未执行，系统仍会残留历史 `notification_templates` 表。
 
@@ -106,6 +108,23 @@
 - `source`
 - `level`
 - `type`
+
+## 3.5 租户 Webhook
+
+租户 Webhook 由系统运维在租户管理列表中按租户单独维护，必填字段：
+
+- `url`
+
+建议配置：
+
+- `method`
+- `contentType`
+- `secret`
+
+说明：
+
+- Webhook 不参与平台默认渠道回落
+- 仅当租户明确配置了自己的 Webhook 渠道时，规则/通知才应选择该渠道
 
 ## 4. 监控建议
 
