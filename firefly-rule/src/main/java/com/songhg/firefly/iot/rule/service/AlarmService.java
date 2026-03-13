@@ -3,7 +3,9 @@ package com.songhg.firefly.iot.rule.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.AlarmStatus;
 import com.songhg.firefly.iot.common.exception.BizException;
@@ -27,14 +29,25 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Set;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AlarmService {
 
+    private static final String STRUCTURED_MODE = "STRUCTURED";
+    private static final Set<String> SUPPORTED_CONDITION_TYPES = Set.of(
+            "THRESHOLD",
+            "COMPARE",
+            "CONTINUOUS",
+            "ACCUMULATE",
+            "CUSTOM"
+    );
+
     private final AlarmRuleMapper alarmRuleMapper;
     private final AlarmRecordMapper alarmRecordMapper;
+    private final ObjectMapper objectMapper;
 
     // ==================== Alarm Rules ====================
 
@@ -42,6 +55,7 @@ public class AlarmService {
     public AlarmRuleVO createAlarmRule(AlarmRuleCreateDTO dto) {
         Long tenantId = AppContextHolder.getTenantId();
         Long userId = AppContextHolder.getUserId();
+        dto.setConditionExpr(normalizeConditionExpr(dto.getConditionExpr()));
 
         AlarmRule rule = AlarmConvert.INSTANCE.toRuleEntity(dto);
         rule.setTenantId(tenantId);
@@ -94,6 +108,9 @@ public class AlarmService {
         AlarmRule rule = alarmRuleMapper.selectById(id);
         if (rule == null) {
             throw new BizException(ResultCode.ALARM_RULE_NOT_FOUND);
+        }
+        if (dto.getConditionExpr() != null) {
+            dto.setConditionExpr(normalizeConditionExpr(dto.getConditionExpr()));
         }
         AlarmConvert.INSTANCE.updateRuleEntity(dto, rule);
         alarmRuleMapper.updateById(rule);
@@ -195,5 +212,82 @@ public class AlarmService {
         record.setStatus(AlarmStatus.CLOSED);
         alarmRecordMapper.updateById(record);
         log.info("Alarm record closed: id={}", id);
+    }
+
+    private String normalizeConditionExpr(String rawConditionExpr) {
+        if (rawConditionExpr == null || rawConditionExpr.isBlank()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "告警触发条件不能为空");
+        }
+
+        String trimmed = rawConditionExpr.trim();
+        try {
+            JsonNode root = objectMapper.readTree(trimmed);
+            if (!root.isObject() || !STRUCTURED_MODE.equals(root.path("mode").asText())) {
+                return trimmed;
+            }
+
+            String type = requireText(root, "type", "结构化告警条件缺少触发类型");
+            if (!SUPPORTED_CONDITION_TYPES.contains(type)) {
+                throw new BizException(ResultCode.PARAM_ERROR, "不支持的告警触发类型: " + type);
+            }
+
+            if ("CUSTOM".equals(type)) {
+                requireText(root, "customExpr", "自定义表达式不能为空");
+                return objectMapper.writeValueAsString(root);
+            }
+
+            requireText(root, "metricKey", "结构化告警条件缺少指标标识");
+            requireText(root, "operator", "结构化告警条件缺少比较符");
+            requireNumber(root, "threshold", "结构化告警条件缺少触发阈值");
+
+            if ("THRESHOLD".equals(type)) {
+                requireText(root, "aggregateType", "阈值触发条件缺少统计口径");
+                return objectMapper.writeValueAsString(root);
+            }
+
+            if ("CONTINUOUS".equals(type)) {
+                requirePositiveInteger(root, "consecutiveCount", "连续触发条件缺少连续次数");
+                return objectMapper.writeValueAsString(root);
+            }
+
+            requireText(root, "aggregateType", "聚合类告警条件缺少统计口径");
+            requirePositiveInteger(root, "windowSize", "聚合类告警条件缺少统计窗口");
+            requireText(root, "windowUnit", "聚合类告警条件缺少时间单位");
+
+            if ("ACCUMULATE".equals(type)) {
+                return objectMapper.writeValueAsString(root);
+            }
+
+            requireText(root, "compareTarget", "同比/环比条件缺少对标方式");
+            requireText(root, "changeMode", "同比/环比条件缺少变化口径");
+            requireText(root, "changeDirection", "同比/环比条件缺少变化方向");
+            return objectMapper.writeValueAsString(root);
+        } catch (JsonProcessingException exception) {
+            return trimmed;
+        }
+    }
+
+    private String requireText(JsonNode root, String fieldName, String errorMessage) {
+        String value = root.path(fieldName).asText("").trim();
+        if (value.isEmpty()) {
+            throw new BizException(ResultCode.PARAM_ERROR, errorMessage);
+        }
+        return value;
+    }
+
+    private double requireNumber(JsonNode root, String fieldName, String errorMessage) {
+        JsonNode value = root.get(fieldName);
+        if (value == null || !value.isNumber()) {
+            throw new BizException(ResultCode.PARAM_ERROR, errorMessage);
+        }
+        return value.asDouble();
+    }
+
+    private int requirePositiveInteger(JsonNode root, String fieldName, String errorMessage) {
+        JsonNode value = root.get(fieldName);
+        if (value == null || !value.canConvertToInt() || value.asInt() <= 0) {
+            throw new BizException(ResultCode.PARAM_ERROR, errorMessage);
+        }
+        return value.asInt();
     }
 }

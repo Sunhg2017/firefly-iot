@@ -1,161 +1,193 @@
-# Firefly IoT 告警管理详细设计
+﻿# Firefly IoT 告警管理详细设计
 
 ## 1. 背景
 
-告警模块原先将“告警规则维护”和“告警处理”放在同一个菜单、同一个页面 Tab 中。实际使用中，这两类能力面向的角色不同：
+现有告警能力已经拆分为“告警规则维护”和“告警处理”两个菜单，但规则维护页仍存在两个明显问题：
 
-- 规则维护人员更关注规则定义、级别和启停状态。
-- 值班/运维人员更关注已触发告警的确认、处理和关闭。
+1. 触发条件只有 `conditionExpr` 原始文本，维护人员需要手写表达式，门槛高且容易出错。
+2. 页面缺少项目、产品、设备、指标的联动选择，维护时需要记忆上下文，用户体验较差。
 
-继续共用一个入口会带来两个问题：
+同时，业务侧已经提出更复杂的规则需求，包括：
 
-- 菜单信息噪声大，处理人员进入后仍然看到规则维护入口。
-- 读取权限只绑定 `alarm:read`，导致仅具备 `alarm:confirm` 或 `alarm:process` 的处理角色无法直接访问告警记录。
+- 同比/环比
+- 连续触发
+- 连续累计/窗口聚合
+- 自定义表达式
 
 ## 2. 目标与范围
 
 ### 2.1 目标
 
-1. 将告警规则维护和告警处理拆分为两个独立菜单和独立页面。
-2. 保持旧 `'/alarm'` 路径可兼容访问，避免已有收藏链接失效。
-3. 保证规则维护权限和告警处理权限边界清晰。
-4. 让处理角色在只有处理类权限时，也能访问告警记录列表和详情。
+1. 告警规则维护页支持结构化触发条件配置。
+2. 支持至少 5 类触发方式：阈值、同比/环比、连续触发、累计聚合、自定义表达式。
+3. 尽量通过项目、产品、设备、物模型属性联动选择，减少手工输入。
+4. 保持数据库字段和接口兼容，不引入数据库迁移。
+5. 后端在保存时对结构化条件做规范化和校验，避免无效规则入库。
 
 ### 2.2 范围
 
-- 前端菜单、路由、页面拆分
-- 前端菜单权限判定能力增强
-- 后端告警记录读取权限调整
-- 模块文档更新
+- `firefly-web` 告警规则维护页重构
+- `firefly-rule` 告警规则创建/更新校验增强
+- 告警模块设计、运维、使用文档更新
 
 ### 2.3 非目标
 
-- 不新增新的告警领域模型
-- 不重构告警规则或告警记录表结构
-- 不调整告警确认、处理、关闭的业务状态机
+1. 本次不改造告警记录处理流程。
+2. 本次不新增数据库字段。
+3. 本次不在 `firefly-rule` 内新增实时执行引擎；当前交付聚焦“规则配置能力”和“保存校验能力”。
 
-## 3. 角色与权限模型
+## 3. 总体方案
 
-### 3.1 页面与角色映射
+### 3.1 数据兼容策略
 
-| 页面 | 路径 | 主要角色 | 菜单权限 |
-| --- | --- | --- | --- |
-| 告警规则维护 | `/alarm-rules` | 规则管理员、系统配置人员 | `alarm:read` |
-| 告警处理 | `/alarm-records` | 值班人员、运维处理人员 | `alarm:read` 或 `alarm:confirm` 或 `alarm:process` |
+保持数据库列 `alarm_rules.condition_expr` 不变，继续使用字符串存储。
 
-### 3.2 操作权限
+- 旧规则：继续存纯文本表达式，例如 `payload.temperature > 50`
+- 新规则：将结构化条件序列化为 JSON 字符串写入 `conditionExpr`
 
-| 操作 | 权限 |
-| --- | --- |
-| 查看规则列表/详情 | `alarm:read` |
-| 创建规则 | `alarm:create` |
-| 编辑规则 | `alarm:update` |
-| 删除规则 | `alarm:delete` |
-| 查看告警记录列表/详情 | `alarm:read` 或 `alarm:confirm` 或 `alarm:process` |
-| 确认告警 | `alarm:confirm` |
-| 处理/关闭告警 | `alarm:process` |
+这样可以避免数据库迁移，同时兼容已经存在的老规则。
+
+### 3.2 结构化条件模型
+
+前端新增统一的条件模型，核心字段如下：
+
+```json
+{
+  "mode": "STRUCTURED",
+  "version": 1,
+  "type": "COMPARE",
+  "metricKey": "temperature",
+  "aggregateType": "AVG",
+  "operator": "GT",
+  "threshold": 15,
+  "windowSize": 1,
+  "windowUnit": "HOURS",
+  "compareTarget": "PREVIOUS_PERIOD",
+  "changeMode": "PERCENT",
+  "changeDirection": "UP"
+}
+```
+
+其中：
+
+- `mode=STRUCTURED` 用于区分结构化规则和旧版纯文本规则
+- `version=1` 预留后续协议演进能力
+- `type` 表示触发条件类别
+
+### 3.3 支持的触发类型
+
+| 类型 | 说明 | 关键字段 |
+| --- | --- | --- |
+| `THRESHOLD` | 阈值触发 | `metricKey`、`aggregateType`、`operator`、`threshold` |
+| `COMPARE` | 同比/环比 | `metricKey`、`aggregateType`、`threshold`、`windowSize`、`compareTarget`、`changeMode`、`changeDirection` |
+| `CONTINUOUS` | 连续触发 | `metricKey`、`operator`、`threshold`、`consecutiveCount` |
+| `ACCUMULATE` | 累计聚合 | `metricKey`、`aggregateType`、`operator`、`threshold`、`windowSize`、`windowUnit` |
+| `CUSTOM` | 自定义表达式 | `customExpr` |
 
 ## 4. 前端设计
 
-### 4.1 路由与菜单
+### 4.1 页面结构
 
-告警菜单拆分为两个独立入口：
+规则维护页从“简单表单 + 原始表达式”调整为“分区式维护表单”：
 
-- `/alarm-rules` 对应“告警规则维护”
-- `/alarm-records` 对应“告警处理”
+1. 基本信息：规则名称、说明、告警级别
+2. 适用范围：项目、产品、设备
+3. 触发方式：触发类型、指标、各类型特有参数
+4. 规则预览：自动生成可读摘要
 
-同时保留旧路径：
+### 4.2 选择型交互
 
-- `/alarm` 重定向到 `/alarm-records`
+为遵守仓库交互规则，本次优先采用选择型控件：
 
-### 4.2 页面结构
+- 项目：`projectApi.list`
+- 产品：`productApi.list`
+- 设备：`deviceApi.list`
+- 指标：优先读取 `productApi.getThingModel(productId)` 中的 `properties`
 
-前端将原先单页 Tab 结构重组为三个文件：
+只有在产品物模型没有属性可选时，才回退为手工输入指标标识。
 
-- `AlarmPanels.tsx`
-  - 承载规则维护面板和告警处理面板的共享实现
-- `AlarmRulePage.tsx`
-  - 规则维护页面包装与页头说明
-- `AlarmRecordPage.tsx`
-  - 告警处理页面包装与页头说明
+### 4.3 列表展示优化
 
-为避免局部 TSX 文件因编辑器或终端编码差异引入中文乱码，告警页面的可见文案统一收敛到单独常量文件维护，再由菜单、页头和页面内容共享引用。
+告警规则列表不再直接展示 `conditionExpr` 原文，而是展示：
 
-### 4.3 菜单权限判定
+1. 适用范围标签：项目 / 产品 / 设备
+2. 触发方式标签：阈值触发、同比/环比等
+3. 条件摘要：根据结构化条件自动生成自然语言描述
 
-原始前端路由模型只支持单个 `permission` 字符串，无法表达“任一权限可见”。本次将路由权限扩展为：
-
-- `string`
-- `string[]`
-
-当路由配置为 `string[]` 时，前端按“任一权限满足即可”判定菜单是否可见、路径是否可访问、空间首页是否可落到该路由。
+这样维护人员无需阅读 JSON 或脚本表达式即可判断规则含义。
 
 ## 5. 后端设计
 
-### 5.1 控制器权限调整
+### 5.1 保存校验
 
-规则接口维持原有权限模型：
+`AlarmService` 在创建和更新规则时增加 `normalizeConditionExpr`：
 
-- 规则列表/详情仍需 `alarm:read`
+1. 空字符串直接拒绝
+2. 非 JSON 内容按旧版纯文本规则保存
+3. `mode != STRUCTURED` 的 JSON 保持原样，视为兼容内容
+4. `mode = STRUCTURED` 时按类型校验必填字段
+5. 校验通过后用 Jackson 重新序列化，写入标准化 JSON
 
-告警记录接口改为 OR 授权：
+### 5.2 校验规则
 
-- `POST /api/v1/alarm-records/list`
-- `GET /api/v1/alarm-records/{id}`
+- `CUSTOM` 必须包含 `customExpr`
+- 非 `CUSTOM` 必须包含 `metricKey`
+- `THRESHOLD` 必须包含 `aggregateType`、`operator`、`threshold`
+- `CONTINUOUS` 必须包含 `operator`、`threshold`、`consecutiveCount > 0`
+- `ACCUMULATE` 必须包含 `aggregateType`、`operator`、`threshold`、`windowSize > 0`、`windowUnit`
+- `COMPARE` 必须包含 `aggregateType`、`operator`、`threshold`、`windowSize > 0`、`windowUnit`、`compareTarget`、`changeMode`、`changeDirection`
 
-以上两个接口允许以下任一权限访问：
+### 5.3 兼容性说明
 
-- `alarm:read`
-- `alarm:confirm`
-- `alarm:process`
-
-### 5.2 设计取舍
-
-- 没有新增 `alarm-rule:*`、`alarm-record:*` 两套全新权限，避免影响现有角色体系和初始化数据。
-- 通过 OR 授权满足处理角色读记录的需求，改动面最小，兼容现有权限模型。
+- 数据库结构无变化
+- 老的纯文本规则可继续编辑和保存
+- 老规则在前端会被识别为 `CUSTOM`
 
 ## 6. 关键流程
 
-### 6.1 规则维护流程
+### 6.1 新建规则
 
-1. 用户进入 `/alarm-rules`
-2. 前端校验 `alarm:read`
-3. 用户按 `alarm:create`、`alarm:update`、`alarm:delete` 执行规则维护动作
+1. 用户进入“告警规则维护”
+2. 选择项目/产品/设备范围
+3. 选择触发方式
+4. 如果已选产品，则自动拉取产品物模型属性
+5. 填写阈值、窗口、连续次数等参数
+6. 前端生成结构化 JSON 写入 `conditionExpr`
+7. 后端校验并规范化保存
 
-### 6.2 告警处理流程
+### 6.2 编辑老规则
 
-1. 用户进入 `/alarm-records`
-2. 前端校验是否具备 `alarm:read`、`alarm:confirm`、`alarm:process` 任一权限
-3. 后端对告警记录列表与详情采用同样的 OR 授权
-4. 用户按权限执行确认、处理、关闭动作
+1. 若 `conditionExpr` 是结构化 JSON，则反序列化到对应表单
+2. 若 `conditionExpr` 是普通文本，则回填到“自定义表达式”
+3. 用户修改后重新保存
 
-## 7. 风险与控制
+## 7. 设计取舍
 
-### 7.1 权限放宽风险
+### 7.1 为什么不直接新增结构化字段
 
-风险：
+因为当前告警规则只在 CRUD 层使用 `conditionExpr`，新增数据库列会引入迁移、回填和接口兼容成本，收益不高。
 
-- 让 `alarm:confirm`、`alarm:process` 角色可读取告警记录，等于扩大了可见范围。
+### 7.2 为什么仍保留自定义表达式
 
-控制：
+部分存量规则和特殊场景仍需要自由表达能力，因此保留 `CUSTOM` 作为兜底能力。
 
-- 仅放宽到“告警记录读取”，不放宽“规则读取/修改”。
-- 保持确认、处理、关闭动作仍由原子权限控制。
+### 7.3 为什么要明确执行边界
 
-### 7.2 旧链接兼容风险
+当前仓库内 `conditionExpr` 主要用于规则维护与持久化，尚未在 `firefly-rule` 内看到对应的结构化执行引擎。也就是说：
 
-风险：
+- 本次已经支持规则“配置”和“保存校验”
+- 若后续采集链路或规则执行链路要真正消费这些结构化条件，需要按本文定义解析 `conditionExpr`
 
-- 旧收藏或外部文档仍指向 `/alarm`。
+## 8. 风险与后续
 
-控制：
+### 8.1 风险
 
-- 前端保留兼容跳转，自动跳到 `/alarm-records`。
+1. 现有下游若假定 `conditionExpr` 永远是纯文本，可能无法理解结构化 JSON。
+2. 产品物模型为空时，维护人员仍需要手工补指标标识。
+3. 若后续新增更多触发类型，需要同步扩展前端表单和后端校验。
 
-## 8. 验证点
+### 8.2 建议后续工作
 
-1. 具备 `alarm:read` 的规则维护角色能看到“告警规则维护”菜单。
-2. 仅具备 `alarm:process` 的处理角色能看到“告警处理”菜单。
-3. 仅具备 `alarm:process` 的角色可打开告警记录列表与详情。
-4. 仅具备 `alarm:process` 的角色不能进入规则维护页。
-5. 旧 `/alarm` 路径访问后会跳转到 `/alarm-records`。
+1. 在告警触发链路中统一解析 `STRUCTURED` 条件。
+2. 为结构化条件补充后端单元测试和接口契约测试。
+3. 在告警规则列表增加按项目/产品/触发类型筛选。

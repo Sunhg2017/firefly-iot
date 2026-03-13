@@ -26,9 +26,18 @@ import {
   ToolOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-import { alarmRecordApi, alarmRuleApi } from '../../services/api';
+import { alarmRecordApi, alarmRuleApi, deviceApi, productApi, projectApi } from '../../services/api';
 import useAuthStore from '../../store/useAuthStore';
 import { ALARM_LEVEL_LABELS, ALARM_STATUS_LABELS, ALARM_TEXT } from './alarmText';
+import AlarmRuleForm, { type AlarmMetricOption, type AlarmScopeOption } from './AlarmRuleForm';
+import {
+  DEFAULT_ALARM_CONDITION_VALUES,
+  buildAlarmConditionExpr,
+  describeAlarmConditionExpr,
+  getAlarmConditionTypeColor,
+  getAlarmConditionTypeLabel,
+  parseAlarmConditionExpr,
+} from './alarmCondition';
 
 const { TextArea } = Input;
 
@@ -36,12 +45,34 @@ interface AlarmRuleRecord {
   id: number;
   name: string;
   description?: string;
+  projectId?: number;
   productId?: number;
   deviceId?: number;
   level: string;
   conditionExpr: string;
   enabled: boolean;
   createdAt: string;
+}
+
+interface ProjectRecord {
+  id: number;
+  code?: string;
+  name?: string;
+}
+
+interface ProductRecord {
+  id: number;
+  projectId?: number;
+  name?: string;
+  productKey?: string;
+}
+
+interface DeviceRecord {
+  id: number;
+  projectId?: number;
+  productId?: number;
+  deviceName?: string;
+  nickname?: string;
 }
 
 interface AlarmRecordItem {
@@ -73,6 +104,60 @@ const statusColors: Record<string, string> = {
   CONFIRMED: 'warning',
   PROCESSED: 'processing',
   CLOSED: 'default',
+};
+
+const DEFAULT_RULE_FORM_VALUES = {
+  ...DEFAULT_ALARM_CONDITION_VALUES,
+  enabled: true,
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const buildProjectOption = (item: ProjectRecord): AlarmScopeOption => ({
+  value: item.id,
+  label: item.code ? `${item.code} / ${item.name || item.code}` : item.name || `${ALARM_TEXT.project} ${item.id}`,
+});
+
+const buildProductOption = (item: ProductRecord): AlarmScopeOption => ({
+  value: item.id,
+  label:
+    item.productKey ? `${item.name || item.productKey} (${item.productKey})` : item.name || `${ALARM_TEXT.product} ${item.id}`,
+  projectId: item.projectId,
+});
+
+const buildDeviceOption = (item: DeviceRecord): AlarmScopeOption => ({
+  value: item.id,
+  label:
+    item.nickname ? `${item.nickname} (${item.deviceName || item.id})` : item.deviceName || `${ALARM_TEXT.device} ${item.id}`,
+  projectId: item.projectId,
+  productId: item.productId,
+});
+
+const parseThingModelMetricOptions = (rawText: unknown): AlarmMetricOption[] => {
+  if (typeof rawText !== 'string' || !rawText.trim()) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(rawText) as { properties?: unknown[] };
+    const properties = Array.isArray(parsed.properties) ? parsed.properties : [];
+    return properties
+      .map((item) => {
+        if (!isRecord(item) || typeof item.identifier !== 'string' || !item.identifier.trim()) {
+          return null;
+        }
+        const identifier = item.identifier.trim();
+        const name = typeof item.name === 'string' ? item.name.trim() : '';
+        return {
+          value: identifier,
+          label: name ? `${name} (${identifier})` : identifier,
+        };
+      })
+      .filter((item): item is AlarmMetricOption => Boolean(item));
+  } catch {
+    return [];
+  }
 };
 
 const MiniStat: React.FC<{
@@ -123,10 +208,71 @@ export const AlarmRulesPanel: React.FC = () => {
   const [editForm] = Form.useForm();
   const [filterLevel, setFilterLevel] = useState<string | undefined>();
   const [keyword, setKeyword] = useState('');
+  const [projectOptions, setProjectOptions] = useState<AlarmScopeOption[]>([]);
+  const [productOptions, setProductOptions] = useState<AlarmScopeOption[]>([]);
+  const [deviceOptions, setDeviceOptions] = useState<AlarmScopeOption[]>([]);
+  const [metricOptionsMap, setMetricOptionsMap] = useState<Record<number, AlarmMetricOption[]>>({});
+  const [metricLoadingMap, setMetricLoadingMap] = useState<Record<number, boolean>>({});
 
   const canCreate = hasPermission('alarm:create');
   const canUpdate = hasPermission('alarm:update');
   const canDelete = hasPermission('alarm:delete');
+  const createProductId = Form.useWatch('productId', createForm) as number | undefined;
+  const editProductId = Form.useWatch('productId', editForm) as number | undefined;
+
+  const projectLabelMap = useMemo(
+    () => Object.fromEntries(projectOptions.map((item) => [String(item.value), item.label])),
+    [projectOptions],
+  );
+  const productLabelMap = useMemo(
+    () => Object.fromEntries(productOptions.map((item) => [String(item.value), item.label])),
+    [productOptions],
+  );
+  const deviceLabelMap = useMemo(
+    () => Object.fromEntries(deviceOptions.map((item) => [String(item.value), item.label])),
+    [deviceOptions],
+  );
+
+  const loadScopeOptions = async () => {
+    try {
+      const [projectRes, productRes, deviceRes] = await Promise.all([
+        projectApi.list({ pageNum: 1, pageSize: 500 }),
+        productApi.list({ pageNum: 1, pageSize: 500 }),
+        deviceApi.list({ pageNum: 1, pageSize: 500 }),
+      ]);
+
+      const projectRecords = (projectRes.data.data?.records || []) as ProjectRecord[];
+      const productRecords = (productRes.data.data?.records || []) as ProductRecord[];
+      const deviceRecords = (deviceRes.data.data?.records || []) as DeviceRecord[];
+
+      setProjectOptions(projectRecords.map(buildProjectOption));
+      setProductOptions(productRecords.map(buildProductOption));
+      setDeviceOptions(deviceRecords.map(buildDeviceOption));
+    } catch {
+      message.error(ALARM_TEXT.loadScopeError);
+    }
+  };
+
+  const ensureMetricOptions = async (productId?: number) => {
+    if (!productId || metricOptionsMap[productId] || metricLoadingMap[productId]) {
+      return;
+    }
+
+    setMetricLoadingMap((current) => ({ ...current, [productId]: true }));
+    try {
+      const res = await productApi.getThingModel(productId);
+      const nextOptions = parseThingModelMetricOptions(res.data.data);
+      setMetricOptionsMap((current) => ({ ...current, [productId]: nextOptions }));
+    } catch {
+      message.error(ALARM_TEXT.loadThingModelError);
+      setMetricOptionsMap((current) => ({ ...current, [productId]: [] }));
+    } finally {
+      setMetricLoadingMap((current) => ({ ...current, [productId]: false }));
+    }
+  };
+
+  const getMetricLabelMap = (productId?: number) =>
+    Object.fromEntries((productId ? metricOptionsMap[productId] || [] : []).map((item) => [item.value, item.label]));
 
   const fetchData = async () => {
     setLoading(true);
@@ -150,6 +296,30 @@ export const AlarmRulesPanel: React.FC = () => {
     void fetchData();
   }, [params.pageNum, params.pageSize, filterLevel, keyword]);
 
+  useEffect(() => {
+    void loadScopeOptions();
+  }, []);
+
+  useEffect(() => {
+    if (createOpen && createProductId) {
+      void ensureMetricOptions(createProductId);
+    }
+  }, [createOpen, createProductId]);
+
+  useEffect(() => {
+    if (editOpen && editProductId) {
+      void ensureMetricOptions(editProductId);
+    }
+  }, [editOpen, editProductId]);
+
+  useEffect(() => {
+    data.forEach((item) => {
+      if (item.productId) {
+        void ensureMetricOptions(item.productId);
+      }
+    });
+  }, [data]);
+
   const ruleStats = useMemo(
     () => ({
       total,
@@ -159,27 +329,47 @@ export const AlarmRulesPanel: React.FC = () => {
     [data, total],
   );
 
+  const buildRulePayload = (values: Record<string, unknown>) => ({
+    name: values.name,
+    description: values.description,
+    projectId: values.projectId,
+    productId: values.productId,
+    deviceId: values.deviceId,
+    level: values.level,
+    conditionExpr: buildAlarmConditionExpr(values),
+    enabled: values.enabled,
+  });
+
   const handleCreate = async (values: Record<string, unknown>) => {
     try {
-      await alarmRuleApi.create(values);
+      const { enabled: _enabled, ...payload } = buildRulePayload(values);
+      await alarmRuleApi.create(payload);
       message.success(ALARM_TEXT.createRuleSuccess);
       setCreateOpen(false);
       createForm.resetFields();
       await fetchData();
-    } catch {
-      message.error(ALARM_TEXT.createRuleError);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : ALARM_TEXT.createRuleError);
     }
   };
 
   const handleEdit = (record: AlarmRuleRecord) => {
     setEditingId(record.id);
+    const parsedCondition = parseAlarmConditionExpr(record.conditionExpr);
     editForm.setFieldsValue({
+      ...DEFAULT_RULE_FORM_VALUES,
       name: record.name,
       description: record.description,
+      projectId: record.projectId,
+      productId: record.productId,
+      deviceId: record.deviceId,
       level: record.level,
-      conditionExpr: record.conditionExpr,
+      ...parsedCondition,
       enabled: record.enabled,
     });
+    if (record.productId) {
+      void ensureMetricOptions(record.productId);
+    }
     setEditOpen(true);
   };
 
@@ -188,14 +378,14 @@ export const AlarmRulesPanel: React.FC = () => {
       return;
     }
     try {
-      await alarmRuleApi.update(editingId, values);
+      await alarmRuleApi.update(editingId, buildRulePayload(values));
       message.success(ALARM_TEXT.updateRuleSuccess);
       setEditOpen(false);
       setEditingId(null);
       editForm.resetFields();
       await fetchData();
-    } catch {
-      message.error(ALARM_TEXT.updateRuleError);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : ALARM_TEXT.updateRuleError);
     }
   };
 
@@ -215,8 +405,46 @@ export const AlarmRulesPanel: React.FC = () => {
     });
   };
 
+  const renderScope = (record: AlarmRuleRecord) => {
+    const tags = [
+      record.projectId ? projectLabelMap[String(record.projectId)] : '',
+      record.productId ? productLabelMap[String(record.productId)] : '',
+      record.deviceId ? deviceLabelMap[String(record.deviceId)] : '',
+    ].filter(Boolean);
+
+    if (tags.length === 0) {
+      return ALARM_TEXT.emptyScope;
+    }
+
+    return (
+      <Space size={[4, 4]} wrap>
+        {tags.map((item) => (
+          <Tag key={item} color="default">
+            {item}
+          </Tag>
+        ))}
+      </Space>
+    );
+  };
+
   const columns: ColumnsType<AlarmRuleRecord> = [
-    { title: ALARM_TEXT.ruleName, dataIndex: 'name', width: 220, ellipsis: true },
+    {
+      title: ALARM_TEXT.ruleName,
+      dataIndex: 'name',
+      width: 220,
+      ellipsis: true,
+      render: (value: string, record: AlarmRuleRecord) => (
+        <Space direction="vertical" size={2}>
+          <span>{value}</span>
+          <span style={{ color: '#8c8c8c', fontSize: 12 }}>{record.description || '-'}</span>
+        </Space>
+      ),
+    },
+    {
+      title: ALARM_TEXT.scope,
+      width: 280,
+      render: (_: unknown, record: AlarmRuleRecord) => renderScope(record),
+    },
     {
       title: ALARM_TEXT.level,
       dataIndex: 'level',
@@ -225,7 +453,26 @@ export const AlarmRulesPanel: React.FC = () => {
         <Tag color={levelColors[value]}>{ALARM_LEVEL_LABELS[value] || value}</Tag>
       ),
     },
-    { title: ALARM_TEXT.condition, dataIndex: 'conditionExpr', width: 320, ellipsis: true },
+    {
+      title: ALARM_TEXT.triggerType,
+      width: 120,
+      render: (_: unknown, record: AlarmRuleRecord) => {
+        const conditionType = parseAlarmConditionExpr(record.conditionExpr).conditionType;
+        return (
+          <Tag color={getAlarmConditionTypeColor(conditionType)}>
+            {getAlarmConditionTypeLabel(conditionType)}
+          </Tag>
+        );
+      },
+    },
+    {
+      title: ALARM_TEXT.condition,
+      dataIndex: 'conditionExpr',
+      width: 360,
+      ellipsis: true,
+      render: (value: string, record: AlarmRuleRecord) =>
+        describeAlarmConditionExpr(value, getMetricLabelMap(record.productId)),
+    },
     {
       title: ALARM_TEXT.status,
       dataIndex: 'enabled',
@@ -268,45 +515,6 @@ export const AlarmRulesPanel: React.FC = () => {
       },
     },
   ];
-
-  const ruleFormFields = (
-    <>
-      <Form.Item
-        name="name"
-        label={ALARM_TEXT.ruleName}
-        rules={[{ required: true, message: ALARM_TEXT.ruleNameRequired }]}
-      >
-        <Input placeholder={ALARM_TEXT.ruleNamePlaceholder} maxLength={256} />
-      </Form.Item>
-      <Form.Item name="description" label={ALARM_TEXT.description}>
-        <TextArea rows={2} placeholder={ALARM_TEXT.descriptionPlaceholder} />
-      </Form.Item>
-      <Form.Item
-        name="level"
-        label={ALARM_TEXT.levelPlaceholder}
-        rules={[{ required: true, message: ALARM_TEXT.levelRequired }]}
-      >
-        <Select
-          options={[
-            { value: 'CRITICAL', label: ALARM_LEVEL_LABELS.CRITICAL },
-            { value: 'WARNING', label: ALARM_LEVEL_LABELS.WARNING },
-            { value: 'INFO', label: ALARM_LEVEL_LABELS.INFO },
-          ]}
-        />
-      </Form.Item>
-      <Form.Item
-        name="conditionExpr"
-        label={ALARM_TEXT.condition}
-        rules={[{ required: true, message: ALARM_TEXT.conditionRequired }]}
-      >
-        <TextArea
-          rows={3}
-          placeholder="payload.temperature > 50"
-          style={{ fontFamily: 'monospace', fontSize: 13 }}
-        />
-      </Form.Item>
-    </>
-  );
 
   return (
     <>
@@ -374,7 +582,14 @@ export const AlarmRulesPanel: React.FC = () => {
             }}
           />
           {canCreate && (
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                createForm.setFieldsValue(DEFAULT_RULE_FORM_VALUES);
+                setCreateOpen(true);
+              }}
+            >
               {ALARM_TEXT.createRule}
             </Button>
           )}
@@ -382,12 +597,21 @@ export const AlarmRulesPanel: React.FC = () => {
       </Card>
 
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+        <div style={{ marginBottom: 16 }}>
+          <Space align="start" size={12}>
+            <AlertOutlined style={{ color: '#1677ff', fontSize: 18, marginTop: 4 }} />
+            <div>
+              <div style={{ fontWeight: 600 }}>{ALARM_TEXT.conditionTypeSummary}</div>
+              <div style={{ color: '#8c8c8c', fontSize: 13 }}>{ALARM_TEXT.conditionTypeDescription}</div>
+            </div>
+          </Space>
+        </div>
         <Table
           rowKey="id"
           columns={columns}
           dataSource={data}
           loading={loading}
-          scroll={{ x: 1100 }}
+          scroll={{ x: 1380 }}
           pagination={{
             current: params.pageNum,
             pageSize: params.pageSize,
@@ -405,10 +629,22 @@ export const AlarmRulesPanel: React.FC = () => {
         onCancel={() => setCreateOpen(false)}
         onOk={() => createForm.submit()}
         destroyOnClose
-        width={560}
+        width={920}
       >
-        <Form form={createForm} layout="vertical" onFinish={handleCreate}>
-          {ruleFormFields}
+        <Form
+          form={createForm}
+          layout="vertical"
+          onFinish={handleCreate}
+          initialValues={DEFAULT_RULE_FORM_VALUES}
+        >
+          <AlarmRuleForm
+            form={createForm}
+            projectOptions={projectOptions}
+            productOptions={productOptions}
+            deviceOptions={deviceOptions}
+            metricOptions={createProductId ? metricOptionsMap[createProductId] || [] : []}
+            metricLabelMap={getMetricLabelMap(createProductId)}
+          />
         </Form>
       </Modal>
 
@@ -421,18 +657,18 @@ export const AlarmRulesPanel: React.FC = () => {
         }}
         onOk={() => editForm.submit()}
         destroyOnClose
-        width={560}
+        width={920}
       >
         <Form form={editForm} layout="vertical" onFinish={handleUpdate}>
-          {ruleFormFields}
-          <Form.Item name="enabled" label={ALARM_TEXT.status}>
-            <Select
-              options={[
-                { value: true, label: ALARM_TEXT.enabled },
-                { value: false, label: ALARM_TEXT.disabled },
-              ]}
-            />
-          </Form.Item>
+          <AlarmRuleForm
+            form={editForm}
+            projectOptions={projectOptions}
+            productOptions={productOptions}
+            deviceOptions={deviceOptions}
+            metricOptions={editProductId ? metricOptionsMap[editProductId] || [] : []}
+            metricLabelMap={getMetricLabelMap(editProductId)}
+            showEnabled
+          />
         </Form>
       </Modal>
     </>
