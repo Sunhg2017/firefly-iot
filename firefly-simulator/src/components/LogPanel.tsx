@@ -22,12 +22,14 @@ export default function LogPanel() {
     [logs, filterDevice, selectedDeviceId],
   );
 
-  // Logs are prepended to the list, so auto-follow must keep the viewport pinned to the top.
+  const displayLogs = React.useMemo(() => filtered.slice().reverse(), [filtered]);
+
+  // Logs are stored newest-first, but the panel displays them oldest-first so the latest entry stays at the bottom.
   useEffect(() => {
     if (autoScroll && listRef.current) {
-      listRef.current.scrollTop = 0;
+      listRef.current.scrollTop = listRef.current.scrollHeight;
     }
-  }, [filtered.length, autoScroll]);
+  }, [displayLogs.length, autoScroll]);
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -43,7 +45,7 @@ export default function LogPanel() {
           <Tooltip title="导出日志">
             <Button type="text" size="small" icon={<DownloadOutlined />} onClick={async () => {
               if (filtered.length === 0) { message.info('无日志可导出'); return; }
-              const text = filtered.map((l) => `${l.time} [${l.level.toUpperCase()}] [${l.deviceName}] ${l.message}`).join('\n');
+              const text = displayLogs.map((l) => `${l.time} [${l.level.toUpperCase()}] [${l.deviceName}] ${l.message}`).join('\n');
               await window.electronAPI.fileExport(text, `sim-logs-${Date.now()}.txt`);
             }} disabled={filtered.length === 0} />
           </Tooltip>
@@ -54,7 +56,7 @@ export default function LogPanel() {
       </div>
       <div ref={listRef} style={{ flex: 1, overflow: 'auto', padding: '4px 16px', fontFamily: 'Consolas, monospace', fontSize: 12, lineHeight: 1.8 }}>
         {filtered.length === 0 && <Text type="secondary" style={{ fontSize: 12 }}>暂无日志...</Text>}
-        {filtered.map((log) => (
+        {displayLogs.map((log) => (
           <div key={log.id}>
             <Text style={{ color: '#595959' }}>{log.time}</Text>
             {' '}
