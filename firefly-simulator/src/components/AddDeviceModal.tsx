@@ -425,7 +425,21 @@ export default function AddDeviceModal({ open, onClose }: Props) {
           </Space>
         </Space>
       }
-      styles={{ body: { paddingBottom: 24 } }}
+      styles={{
+        header: {
+          borderBottom: '1px solid rgba(148,163,184,0.12)',
+          background: 'linear-gradient(180deg, rgba(15,23,42,0.94) 0%, rgba(8,15,29,0.98) 100%)',
+        },
+        body: {
+          paddingBottom: 24,
+          background: 'linear-gradient(180deg, rgba(11,18,32,0.98) 0%, rgba(15,23,42,0.96) 100%)',
+        },
+        footer: {
+          borderTop: '1px solid rgba(148,163,184,0.12)',
+          background: 'linear-gradient(180deg, rgba(8,15,29,0.98) 0%, rgba(4,8,17,1) 100%)',
+          padding: '16px 24px',
+        },
+      }}
     >
       {/* 抽屉关闭时表单会被销毁，这里保留一份快照状态，避免继续监听未挂载的 form 实例。 */}
       <Form
