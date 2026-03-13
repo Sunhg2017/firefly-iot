@@ -150,7 +150,6 @@ class ProtocolParserServiceTest {
         version.setVersionNo(2);
         version.setSnapshotJson(objectMapper.writeValueAsString(snapshot));
 
-        mockProduct(1001L, 88L);
         when(definitionMapper.selectById(10L)).thenReturn(definition);
         when(versionMapper.selectByDefinitionIdAndVersionNo(10L, 2)).thenReturn(version);
         when(versionMapper.selectMaxVersionNo(10L)).thenReturn(5);
