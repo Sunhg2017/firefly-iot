@@ -9,6 +9,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 @Tag(name = "设备消息", description = "设备上下行消息发送")
 @RestController
 @RequestMapping("/api/v1/device-messages")
@@ -35,7 +38,7 @@ public class DeviceMessageController {
     @Operation(summary = "设置设备属性")
     public R<Void> setProperty(
             @Parameter(description = "设备编号", required = true) @RequestParam Long deviceId,
-            @RequestBody java.util.Map<String, Object> properties) {
+            @RequestBody Map<String, Object> properties) {
         DeviceMessage message = DeviceMessage.builder()
                 .deviceId(deviceId)
                 .type(DeviceMessage.MessageType.PROPERTY_SET)
@@ -50,8 +53,8 @@ public class DeviceMessageController {
     public R<Void> invokeService(
             @Parameter(description = "设备编号", required = true) @RequestParam Long deviceId,
             @Parameter(description = "服务名称", required = true) @RequestParam String serviceName,
-            @RequestBody java.util.Map<String, Object> params) {
-        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            @RequestBody Map<String, Object> params) {
+        Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("serviceName", serviceName);
         payload.put("params", params);
         DeviceMessage message = DeviceMessage.builder()

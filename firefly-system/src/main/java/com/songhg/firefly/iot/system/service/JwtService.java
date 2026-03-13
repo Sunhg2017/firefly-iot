@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
 import java.util.Set;
@@ -68,7 +69,7 @@ public class JwtService {
     public Map<String, Object> getPublicKeyInfo() {
         return Map.of(
                 "algorithm", "RS256",
-                "publicKey", java.util.Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded())
+                "publicKey", Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded())
         );
     }
 

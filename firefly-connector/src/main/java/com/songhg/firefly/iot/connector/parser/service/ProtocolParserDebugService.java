@@ -18,6 +18,7 @@ import com.songhg.firefly.iot.connector.parser.model.ResolvedDeviceContext;
 import com.songhg.firefly.iot.connector.parser.support.PayloadCodec;
 import com.songhg.firefly.iot.plugin.protocol.ProtocolParserPlugin;
 import com.songhg.firefly.iot.plugin.protocol.ProtocolPluginMessage;
+import com.songhg.firefly.iot.plugin.protocol.ProtocolPluginParseContext;
 import com.songhg.firefly.iot.plugin.protocol.ProtocolPluginParseResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -97,7 +98,7 @@ public class ProtocolParserDebugService {
                 throw new IllegalArgumentException("Configured plugin is not available");
             }
             return convertPluginResult(plugin.parse(
-                    com.songhg.firefly.iot.plugin.protocol.ProtocolPluginParseContext.builder()
+                    ProtocolPluginParseContext.builder()
                             .protocol(parseContext.getProtocol())
                             .transport(parseContext.getTransport())
                             .topic(parseContext.getTopic())

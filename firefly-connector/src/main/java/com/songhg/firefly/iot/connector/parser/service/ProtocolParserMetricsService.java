@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -101,7 +102,7 @@ public class ProtocolParserMetricsService {
     }
 
     private Map<String, Long> sumMap(Map<String, LongAdder> source) {
-        return source.entrySet().stream().collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().sum()));
+        return source.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().sum()));
     }
 
     private void recordTimer(String meterName, String transport, String parserMode, long costMs) {

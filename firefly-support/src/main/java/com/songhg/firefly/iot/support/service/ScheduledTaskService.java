@@ -25,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -276,7 +277,7 @@ public class ScheduledTaskService {
             }
 
             logEntry.setEndTime(LocalDateTime.now());
-            logEntry.setDurationMs(java.time.Duration.between(logEntry.getStartTime(), logEntry.getEndTime()).toMillis());
+            logEntry.setDurationMs(Duration.between(logEntry.getStartTime(), logEntry.getEndTime()).toMillis());
             logEntry.setStatus("SUCCESS");
 
             task.setLastExecTime(logEntry.getStartTime());
@@ -285,7 +286,7 @@ public class ScheduledTaskService {
             taskMapper.updateById(task);
         } catch (Exception e) {
             logEntry.setEndTime(LocalDateTime.now());
-            logEntry.setDurationMs(java.time.Duration.between(logEntry.getStartTime(), logEntry.getEndTime()).toMillis());
+            logEntry.setDurationMs(Duration.between(logEntry.getStartTime(), logEntry.getEndTime()).toMillis());
             logEntry.setStatus("FAILED");
             String errorMsg = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
             logEntry.setErrorMessage(errorMsg);

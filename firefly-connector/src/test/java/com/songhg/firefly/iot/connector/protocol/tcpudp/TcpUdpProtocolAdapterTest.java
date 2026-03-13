@@ -18,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -121,7 +122,7 @@ class TcpUdpProtocolAdapterTest {
                 .deviceName("device-udp")
                 .type(DeviceMessage.MessageType.PROPERTY_REPORT)
                 .topic("/tcp/data")
-                .payload(java.util.Map.of("ok", true))
+                .payload(Map.of("ok", true))
                 .timestamp(System.currentTimeMillis())
                 .build();
 
@@ -158,7 +159,7 @@ class TcpUdpProtocolAdapterTest {
                 .deviceName("device-udp")
                 .type(DeviceMessage.MessageType.PROPERTY_REPORT)
                 .topic("/udp/data")
-                .payload(java.util.Map.of("ok", true))
+                .payload(Map.of("ok", true))
                 .timestamp(System.currentTimeMillis())
                 .build();
 

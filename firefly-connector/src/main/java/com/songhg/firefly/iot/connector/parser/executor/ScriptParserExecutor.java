@@ -18,7 +18,9 @@ import org.graalvm.polyglot.Source;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -356,7 +358,7 @@ public class ScriptParserExecutor {
         model.put("productId", context.getProductId());
         model.put("productKey", context.getProductKey());
         model.put("config", context.getConfig() == null ? Map.of() : context.getConfig());
-        model.put("payloadBytes", context.getPayload() == null ? java.util.List.of() : toByteList(context.getPayload()));
+        model.put("payloadBytes", context.getPayload() == null ? List.of() : toByteList(context.getPayload()));
         try {
             return objectMapper.writeValueAsString(model);
         } catch (JsonProcessingException ex) {
@@ -389,8 +391,8 @@ public class ScriptParserExecutor {
         }
     }
 
-    private java.util.List<Integer> toByteList(byte[] payload) {
-        java.util.List<Integer> list = new java.util.ArrayList<>(payload.length);
+    private List<Integer> toByteList(byte[] payload) {
+        List<Integer> list = new ArrayList<>(payload.length);
         for (byte value : payload) {
             list.add(value & 0xFF);
         }

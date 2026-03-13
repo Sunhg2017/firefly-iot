@@ -23,6 +23,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -128,7 +129,7 @@ public class EmbeddedMqttBroker {
                         .productKey(route.getProductKey())
                         .deviceId(route.getDeviceId())
                         .deviceName(route.getDeviceName())
-                        .headers(java.util.Map.of())
+                        .headers(Map.of())
                         .build()
         );
         if (encodeOutcome.isDrop()) {

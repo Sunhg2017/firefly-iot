@@ -1,5 +1,6 @@
 package com.songhg.firefly.iot.media.gb28181;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.songhg.firefly.iot.common.enums.VideoDeviceStatus;
 import com.songhg.firefly.iot.media.entity.VideoChannel;
@@ -17,6 +18,8 @@ import org.xml.sax.InputSource;
 import javax.sip.RequestEvent;
 import javax.sip.ResponseEvent;
 import javax.sip.ServerTransaction;
+import javax.sip.SipProvider;
+import javax.sip.header.ExpiresHeader;
 import javax.sip.header.FromHeader;
 import javax.sip.message.Request;
 import javax.sip.message.Response;
@@ -57,8 +60,7 @@ public class SipMessageHandler {
             }
 
             // 检查 Expires 头判断注册/注销
-            javax.sip.header.ExpiresHeader expiresHeader =
-                    (javax.sip.header.ExpiresHeader) request.getHeader(javax.sip.header.ExpiresHeader.NAME);
+            ExpiresHeader expiresHeader = (ExpiresHeader) request.getHeader(ExpiresHeader.NAME);
             boolean isRegister = expiresHeader == null || expiresHeader.getExpires() > 0;
 
             log.info("GB28181 REGISTER: deviceId={}, isRegister={}", deviceId, isRegister);
@@ -78,7 +80,7 @@ public class SipMessageHandler {
                         ? transaction.getDialog().createReliableProvisionalResponse(Response.OK)
                         : null;
                 if (response == null) {
-                    response = ((javax.sip.SipProvider) event.getSource())
+                    response = ((SipProvider) event.getSource())
                             .getNewServerTransaction(request) != null
                             ? null : null;
                 }
@@ -157,8 +159,7 @@ public class SipMessageHandler {
             if (channelId == null) continue;
 
             // 查找对应的 video_device
-            com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<VideoDevice> deviceWrapper =
-                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+            LambdaQueryWrapper<VideoDevice> deviceWrapper = new LambdaQueryWrapper<>();
             deviceWrapper.eq(VideoDevice::getGbDeviceId, deviceId);
             VideoDevice device = videoDeviceMapper.selectOne(deviceWrapper);
             if (device == null) {
@@ -167,8 +168,7 @@ public class SipMessageHandler {
             }
 
             // 更新或插入通道
-            com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<VideoChannel> channelWrapper =
-                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+            LambdaQueryWrapper<VideoChannel> channelWrapper = new LambdaQueryWrapper<>();
             channelWrapper.eq(VideoChannel::getVideoDeviceId, device.getId())
                     .eq(VideoChannel::getChannelId, channelId);
             VideoChannel channel = videoChannelMapper.selectOne(channelWrapper);

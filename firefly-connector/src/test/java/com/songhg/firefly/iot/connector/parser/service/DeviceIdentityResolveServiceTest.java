@@ -19,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -80,7 +81,7 @@ class DeviceIdentityResolveServiceTest {
         locatorResolveDTO.setProductId(1001L);
         locatorResolveDTO.setDeviceId(3003L);
         locatorResolveDTO.setDeviceName("meter-01");
-        when(deviceLocatorClient.resolveByLocator(org.mockito.ArgumentMatchers.any(DeviceLocatorResolveRequestDTO.class)))
+        when(deviceLocatorClient.resolveByLocator(any(DeviceLocatorResolveRequestDTO.class)))
                 .thenReturn(R.ok(locatorResolveDTO));
 
         ResolvedDeviceContext resolved = deviceIdentityResolveService.resolve(parseContext, null, identity);

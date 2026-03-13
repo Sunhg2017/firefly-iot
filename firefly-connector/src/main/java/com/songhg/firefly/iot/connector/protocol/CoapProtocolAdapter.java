@@ -1,5 +1,6 @@
 package com.songhg.firefly.iot.connector.protocol;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
 import com.songhg.firefly.iot.connector.parser.model.KnownDeviceContext;
 import com.songhg.firefly.iot.connector.parser.model.ProtocolParseOutcome;
@@ -37,6 +38,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CoapProtocolAdapter implements ProtocolAdapter {
 
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     private final DeviceAuthService authService;
     private final DeviceMessageProducer messageProducer;
     private final MessageCodec messageCodec;
@@ -59,8 +62,7 @@ public class CoapProtocolAdapter implements ProtocolAdapter {
     @SuppressWarnings("unchecked")
     public DeviceAuthResult authenticate(byte[] payload) {
         try {
-            com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
-            Map<String, String> body = om.readValue(payload, Map.class);
+            Map<String, String> body = objectMapper.readValue(payload, Map.class);
             String productKey = body.get("productKey");
             String deviceName = body.get("deviceName");
             String deviceSecret = body.get("deviceSecret");

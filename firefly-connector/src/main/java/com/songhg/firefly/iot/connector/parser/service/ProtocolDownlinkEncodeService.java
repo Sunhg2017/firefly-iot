@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -185,7 +186,7 @@ public class ProtocolDownlinkEncodeService {
     }
 
     private List<Integer> toByteList(byte[] payload) {
-        List<Integer> values = new java.util.ArrayList<>(payload.length);
+        List<Integer> values = new ArrayList<>(payload.length);
         for (byte value : payload) {
             values.add(value & 0xFF);
         }

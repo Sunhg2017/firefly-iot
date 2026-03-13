@@ -1,5 +1,6 @@
 package com.songhg.firefly.iot.gateway.filter;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.constant.AuthConstants;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -18,15 +19,19 @@ import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
+import java.security.MessageDigest;
 import java.security.PublicKey;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 
 @Slf4j
 @Component
 public class AuthGlobalFilter implements GlobalFilter, Ordered {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ReactiveStringRedisTemplate redisTemplate;
 
@@ -163,8 +168,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             }
             byte[] payloadBytes = Base64.getUrlDecoder().decode(parts[1]);
             @SuppressWarnings("unchecked")
-            Map<String, Object> payload = new com.fasterxml.jackson.databind.ObjectMapper()
-                    .readValue(payloadBytes, Map.class);
+            Map<String, Object> payload = objectMapper.readValue(payloadBytes, Map.class);
 
             String userId = stringify(payload.get("sub"));
             String tenantId = stringify(payload.get(AuthConstants.JWT_CLAIM_TENANT_ID));
@@ -212,9 +216,9 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
     private String sha256(String input) {
         try {
-            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
-            return java.util.HexFormat.of().formatHex(hash);
+            return HexFormat.of().formatHex(hash);
         } catch (Exception e) {
             return "";
         }

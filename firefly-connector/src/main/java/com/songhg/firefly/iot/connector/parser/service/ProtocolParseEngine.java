@@ -8,12 +8,14 @@ import com.songhg.firefly.iot.connector.parser.executor.ScriptParserExecutor;
 import com.songhg.firefly.iot.connector.parser.model.KnownDeviceContext;
 import com.songhg.firefly.iot.connector.parser.model.ParseContext;
 import com.songhg.firefly.iot.connector.parser.model.ParseExecutionResult;
+import com.songhg.firefly.iot.connector.parser.model.ParsedDeviceIdentity;
 import com.songhg.firefly.iot.connector.parser.model.ParsedMessage;
 import com.songhg.firefly.iot.connector.parser.model.ProtocolParseOutcome;
 import com.songhg.firefly.iot.connector.parser.model.ResolvedDeviceContext;
 import com.songhg.firefly.iot.connector.parser.support.PayloadCodec;
 import com.songhg.firefly.iot.plugin.protocol.ProtocolParserPlugin;
 import com.songhg.firefly.iot.plugin.protocol.ProtocolPluginMessage;
+import com.songhg.firefly.iot.plugin.protocol.ProtocolPluginParseContext;
 import com.songhg.firefly.iot.plugin.protocol.ProtocolPluginParseResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -190,8 +192,8 @@ public class ProtocolParseEngine {
         return null;
     }
 
-    private com.songhg.firefly.iot.plugin.protocol.ProtocolPluginParseContext toPluginContext(ParseContext parseContext) {
-        return com.songhg.firefly.iot.plugin.protocol.ProtocolPluginParseContext.builder()
+    private ProtocolPluginParseContext toPluginContext(ParseContext parseContext) {
+        return ProtocolPluginParseContext.builder()
                 .protocol(parseContext.getProtocol())
                 .transport(parseContext.getTransport())
                 .topic(parseContext.getTopic())
@@ -215,7 +217,7 @@ public class ProtocolParseEngine {
         result.setDrop(pluginResult.isDrop());
         result.setNeedMoreData(pluginResult.isNeedMoreData());
         if (pluginResult.getIdentity() != null) {
-            var identity = new com.songhg.firefly.iot.connector.parser.model.ParsedDeviceIdentity();
+            var identity = new ParsedDeviceIdentity();
             identity.setMode(pluginResult.getIdentity().getMode());
             identity.setProductKey(pluginResult.getIdentity().getProductKey());
             identity.setDeviceName(pluginResult.getIdentity().getDeviceName());

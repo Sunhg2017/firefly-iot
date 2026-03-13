@@ -1,5 +1,6 @@
 package com.songhg.firefly.iot.connector.parser.plugin;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.plugin.protocol.ProtocolParserPlugin;
 import com.songhg.firefly.iot.plugin.protocol.ProtocolPluginDeviceIdentity;
 import com.songhg.firefly.iot.plugin.protocol.ProtocolPluginEncodeContext;
@@ -14,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 
 public class DemoJsonBridgePlugin implements ProtocolParserPlugin {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     public String pluginId() {
@@ -97,7 +100,7 @@ public class DemoJsonBridgePlugin implements ProtocolParserPlugin {
     private Map<String, Object> parseSimpleJson(String text) {
         // Lightweight parser for the bundled demo plugin to avoid extra dependencies in the SPI example.
         try {
-            return new com.fasterxml.jackson.databind.ObjectMapper().readValue(text, LinkedHashMap.class);
+            return objectMapper.readValue(text, LinkedHashMap.class);
         } catch (Exception ex) {
             return Map.of();
         }
@@ -105,7 +108,7 @@ public class DemoJsonBridgePlugin implements ProtocolParserPlugin {
 
     private String toJson(Map<String, Object> value) {
         try {
-            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(value);
+            return objectMapper.writeValueAsString(value);
         } catch (Exception ex) {
             return "{}";
         }
