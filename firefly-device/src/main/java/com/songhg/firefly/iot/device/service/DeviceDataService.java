@@ -23,6 +23,7 @@ import com.songhg.firefly.iot.device.entity.DeviceTelemetry;
 import com.songhg.firefly.iot.device.mapper.DeviceEventMapper;
 import com.songhg.firefly.iot.device.mapper.DeviceMapper;
 import com.songhg.firefly.iot.device.mapper.DeviceTelemetryMapper;
+import com.songhg.firefly.iot.common.message.DeviceMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -107,6 +108,51 @@ public class DeviceDataService {
         return telemetryMapper.queryLatest(tenantId, deviceId);
     }
 
+    /**
+     * Kafka 上行消费场景没有 HTTP 请求上下文，不能依赖 AppContextHolder。
+     * 这里直接基于消息中的 tenantId/deviceId 做归属校验并落库，保证设备真实上报
+     * 的属性数据能够进入 telemetry 表，而不仅仅是更新影子。
+     */
+    @Transactional
+    public void writeTelemetryFromMessage(DeviceMessage message) {
+        if (message == null || message.getDeviceId() == null || message.getPayload() == null || message.getPayload().isEmpty()) {
+            return;
+        }
+
+        Device device = requireOwnedDevice(message.getTenantId(), message.getDeviceId());
+        LocalDateTime ts = resolveOccurredAt(message.getTimestamp());
+
+        List<DeviceTelemetry> records = new ArrayList<>();
+        for (Map.Entry<String, Object> entry : message.getPayload().entrySet()) {
+            DeviceTelemetry telemetry = new DeviceTelemetry();
+            telemetry.setTs(ts);
+            telemetry.setTenantId(device.getTenantId());
+            telemetry.setDeviceId(device.getId());
+            telemetry.setProductId(device.getProductId());
+            telemetry.setProperty(entry.getKey());
+
+            Object val = entry.getValue();
+            if (val instanceof Number number) {
+                telemetry.setValueNumber(number.doubleValue());
+            } else if (val instanceof Boolean boolValue) {
+                telemetry.setValueBool(boolValue);
+            } else if (val != null) {
+                telemetry.setValueString(val.toString());
+            }
+
+            try {
+                telemetry.setRawPayload(objectMapper.writeValueAsString(message.getPayload()));
+            } catch (Exception ignored) {
+            }
+            records.add(telemetry);
+        }
+
+        if (!records.isEmpty()) {
+            telemetryMapper.batchInsert(records);
+            log.debug("Telemetry written from Kafka message: deviceId={}, properties={}", device.getId(), records.size());
+        }
+    }
+
     // ==================== Device Events ====================
 
     @Transactional
@@ -135,6 +181,40 @@ public class DeviceDataService {
 
         eventMapper.insert(event);
         log.debug("Device event written: deviceId={}, type={}", deviceId, dto.getEventType());
+    }
+
+    /**
+     * 设备事件的异步消费写入。
+     * 事件 payload 目前允许多协议自由上报，因此这里按兼容方式提取 eventType / eventName / level，
+     * 提取不到时使用兜底值，避免因为某个协议 envelope 不完全一致而整条事件丢失。
+     */
+    @Transactional
+    public void writeEventFromMessage(DeviceMessage message) {
+        if (message == null || message.getDeviceId() == null) {
+            return;
+        }
+
+        Device device = requireOwnedDevice(message.getTenantId(), message.getDeviceId());
+        Map<String, Object> payload = message.getPayload();
+
+        DeviceEvent event = new DeviceEvent();
+        event.setTenantId(device.getTenantId());
+        event.setDeviceId(device.getId());
+        event.setProductId(device.getProductId());
+        event.setEventType(resolveEventType(payload));
+        event.setEventName(resolveString(payload, "eventName", "name", "title"));
+        event.setLevel(resolveEventLevel(payload));
+        event.setOccurredAt(resolveOccurredAt(message.getTimestamp()));
+
+        if (payload != null) {
+            try {
+                event.setPayload(objectMapper.writeValueAsString(payload));
+            } catch (Exception ignored) {
+            }
+        }
+
+        eventMapper.insert(event);
+        log.debug("Device event written from Kafka message: deviceId={}, type={}", device.getId(), event.getEventType());
     }
 
     public IPage<DeviceEventVO> listEvents(DeviceEventQueryDTO query) {
@@ -173,5 +253,57 @@ public class DeviceDataService {
         vo.setOccurredAt(e.getOccurredAt());
         vo.setCreatedAt(e.getCreatedAt());
         return vo;
+    }
+
+    private Device requireOwnedDevice(Long tenantId, Long deviceId) {
+        Device device = deviceMapper.selectByIdIgnoreTenant(deviceId);
+        if (device == null) {
+            throw new BizException(ResultCode.DEVICE_NOT_FOUND);
+        }
+        if (tenantId != null && device.getTenantId() != null && !tenantId.equals(device.getTenantId())) {
+            throw new BizException(ResultCode.DEVICE_NOT_FOUND);
+        }
+        return device;
+    }
+
+    private LocalDateTime resolveOccurredAt(long timestamp) {
+        if (timestamp <= 0) {
+            return LocalDateTime.now();
+        }
+        return LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneId.systemDefault());
+    }
+
+    private String resolveEventType(Map<String, Object> payload) {
+        String eventType = resolveString(payload, "eventType", "type", "identifier", "code");
+        return eventType != null ? eventType : "EVENT_REPORT";
+    }
+
+    private EventLevel resolveEventLevel(Map<String, Object> payload) {
+        String level = resolveString(payload, "level", "eventLevel", "severity");
+        if (level == null) {
+            return EventLevel.INFO;
+        }
+        try {
+            return EventLevel.valueOf(level.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            return EventLevel.INFO;
+        }
+    }
+
+    private String resolveString(Map<String, Object> payload, String... keys) {
+        if (payload == null || keys == null) {
+            return null;
+        }
+        for (String key : keys) {
+            Object value = payload.get(key);
+            if (value == null) {
+                continue;
+            }
+            String normalized = value.toString().trim();
+            if (!normalized.isEmpty()) {
+                return normalized;
+            }
+        }
+        return null;
     }
 }

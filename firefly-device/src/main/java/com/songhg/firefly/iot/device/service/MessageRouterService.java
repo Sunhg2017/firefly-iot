@@ -14,6 +14,7 @@ import java.util.Map;
 public class MessageRouterService {
 
     private final DeviceShadowService shadowService;
+    private final DeviceDataService deviceDataService;
     private final DeviceMessageProducer messageProducer;
 
     /**
@@ -26,7 +27,7 @@ public class MessageRouterService {
             return;
         }
 
-        log.info("Routing message: type={}, deviceId={}, messageId={}", message.getType(), message.getDeviceId(), message.getMessageId());
+        log.debug("Routing message: type={}, deviceId={}, messageId={}", message.getType(), message.getDeviceId(), message.getMessageId());
 
         switch (message.getType()) {
             case PROPERTY_REPORT -> handlePropertyReport(message);
@@ -47,10 +48,11 @@ public class MessageRouterService {
         Map<String, Object> payload = message.getPayload();
         if (payload != null && !payload.isEmpty()) {
             try {
+                deviceDataService.writeTelemetryFromMessage(message);
                 shadowService.updateReported(message.getDeviceId(), payload);
                 log.debug("Shadow reported updated for device {}", message.getDeviceId());
             } catch (Exception e) {
-                log.error("Failed to update shadow for device {}: {}", message.getDeviceId(), e.getMessage());
+                log.error("Failed to process property report for device {}: {}", message.getDeviceId(), e.getMessage());
             }
         }
         // 转发到规则引擎 topic
@@ -61,6 +63,11 @@ public class MessageRouterService {
      * 事件上报 → 转发规则引擎（可触发告警）
      */
     private void handleEventReport(DeviceMessage message) {
+        try {
+            deviceDataService.writeEventFromMessage(message);
+        } catch (Exception e) {
+            log.error("Failed to persist event report for device {}: {}", message.getDeviceId(), e.getMessage());
+        }
         forwardToRuleEngine(message);
     }
 

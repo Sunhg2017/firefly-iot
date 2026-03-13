@@ -15,8 +15,9 @@ import static org.mockito.Mockito.verify;
 class MessageRouterServiceTest {
 
     private final DeviceShadowService shadowService = mock(DeviceShadowService.class);
+    private final DeviceDataService deviceDataService = mock(DeviceDataService.class);
     private final DeviceMessageProducer messageProducer = mock(DeviceMessageProducer.class);
-    private final MessageRouterService routerService = new MessageRouterService(shadowService, messageProducer);
+    private final MessageRouterService routerService = new MessageRouterService(shadowService, deviceDataService, messageProducer);
 
     @Test
     void shouldForwardEventReportToRuleEngineTopic() {
@@ -33,8 +34,29 @@ class MessageRouterServiceTest {
 
         routerService.routeUpstream(message);
 
+        verify(deviceDataService).writeEventFromMessage(message);
         verify(messageProducer).publishToTopic(eq(KafkaTopics.RULE_ENGINE_INPUT), any(DeviceMessage.class));
         verify(messageProducer, never()).publishUpstream(any(DeviceMessage.class));
         verify(shadowService, never()).updateReported(any(), any());
+    }
+
+    @Test
+    void shouldPersistTelemetryAndUpdateShadowForPropertyReport() {
+        DeviceMessage message = DeviceMessage.builder()
+                .messageId("msg-2")
+                .tenantId(1L)
+                .productId(2L)
+                .deviceId(3L)
+                .deviceName("dev-001")
+                .type(DeviceMessage.MessageType.PROPERTY_REPORT)
+                .payload(Map.of("temperature", 26.5, "switch", true))
+                .timestamp(123456789L)
+                .build();
+
+        routerService.routeUpstream(message);
+
+        verify(deviceDataService).writeTelemetryFromMessage(message);
+        verify(shadowService).updateReported(eq(3L), eq(message.getPayload()));
+        verify(messageProducer).publishToTopic(eq(KafkaTopics.RULE_ENGINE_INPUT), any(DeviceMessage.class));
     }
 }
