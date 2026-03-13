@@ -237,7 +237,58 @@ export default function DeviceControlPanel() {
   }, []);
 
   if (!device) {
-    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}><Empty description="Select or add a simulated device" /></div>;
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+          padding: 32,
+        }}
+      >
+        <Card
+          style={{
+            width: 'min(560px, 100%)',
+            borderRadius: 28,
+            border: '1px solid rgba(148,163,184,0.14)',
+            background: 'linear-gradient(135deg, rgba(15,23,42,0.82) 0%, rgba(8,15,29,0.96) 100%)',
+            boxShadow: '0 18px 48px rgba(0,0,0,0.20)',
+          }}
+          styles={{ body: { padding: 28 } }}
+        >
+          <Space direction="vertical" size={18} style={{ width: '100%', textAlign: 'center' }}>
+            <div
+              style={{
+                width: 76,
+                height: 76,
+                borderRadius: 24,
+                margin: '0 auto',
+                background: 'linear-gradient(135deg, rgba(59,130,246,0.28), rgba(245,158,11,0.18))',
+                border: '1px solid rgba(147,197,253,0.22)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#bfdbfe',
+                fontSize: 28,
+                fontWeight: 700,
+              }}
+            >
+              IoT
+            </div>
+            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+              <Title level={3} style={{ margin: 0, color: '#f8fafc', fontFamily: 'Georgia, Times New Roman, serif' }}>
+                选择一台模拟设备开始控制
+              </Title>
+              <Text type="secondary" style={{ fontSize: 14 }}>
+                左侧设备管理器支持创建、筛选、复制和批量连接设备。选中设备后，这里会展示接入信息、发送面板和协议专属控制区。
+              </Text>
+            </Space>
+            <Empty description="当前还没有选中设备" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          </Space>
+        </Card>
+      </div>
+    );
   }
 
   const isOnline = device.status === 'online';
@@ -501,10 +552,22 @@ export default function DeviceControlPanel() {
   };
 
   return (
-    <div style={{ padding: 20, height: '100%', overflow: 'auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+    <div style={{ padding: 24, height: '100%', overflow: 'auto' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 18,
+          padding: '18px 20px',
+          borderRadius: 24,
+          border: '1px solid rgba(148,163,184,0.14)',
+          background: 'linear-gradient(135deg, rgba(30,41,59,0.88) 0%, rgba(8,15,29,0.96) 100%)',
+          boxShadow: '0 12px 30px rgba(0,0,0,0.16)',
+        }}
+      >
         <Space>
-          <Title level={4} style={{ margin: 0 }}>{device.name}</Title>
+          <Title level={4} style={{ margin: 0, color: '#f8fafc', fontFamily: 'Georgia, Times New Roman, serif' }}>{device.name}</Title>
           <Tag color={PROTOCOL_COLORS[device.protocol] || 'default'}>{device.protocol}</Tag>
           <Badge status={isOnline ? 'success' : device.status === 'connecting' ? 'processing' : device.status === 'error' ? 'error' : 'default'} text={STATUS_TEXT[device.status]} />
         </Space>
@@ -515,7 +578,15 @@ export default function DeviceControlPanel() {
         )}
       </div>
 
-      <Card size="small" style={{ marginBottom: 16 }}>
+      <Card
+        size="small"
+        style={{
+          marginBottom: 18,
+          borderRadius: 22,
+          border: '1px solid rgba(148,163,184,0.12)',
+          background: 'linear-gradient(180deg, rgba(15,23,42,0.72) 0%, rgba(8,15,29,0.92) 100%)',
+        }}
+      >
         {device.protocol === 'MQTT' && mqttIdentity ? (
           <Space direction="vertical" size={2}>
             <Text type="secondary">Broker: {device.mqttBrokerUrl}</Text>

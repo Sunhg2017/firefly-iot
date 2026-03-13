@@ -26,7 +26,8 @@ import { Protocol, SimDevice, useSimStore } from '../store';
 import AddDeviceModal from './AddDeviceModal';
 import { buildMqttServiceTopic, dynamicRegisterDevice, resolveMqttIdentity, validateMqttDevice } from '../utils/mqtt';
 
-const { Text, Title } = Typography;
+const { Search } = Input;
+const { Paragraph, Text, Title } = Typography;
 
 function parseCSV(content: string): Record<string, string>[] {
   const lines = content.trim().split(/\r?\n/).filter((line) => line.trim());
@@ -35,7 +36,9 @@ function parseCSV(content: string): Record<string, string>[] {
   return lines.slice(1).map((line) => {
     const cols = line.split(',').map((item) => item.trim());
     const row: Record<string, string> = {};
-    headers.forEach((header, index) => { row[header] = cols[index] || ''; });
+    headers.forEach((header, index) => {
+      row[header] = cols[index] || '';
+    });
     return row;
   });
 }
@@ -45,6 +48,13 @@ const STATUS_COLOR: Record<string, 'default' | 'processing' | 'success' | 'error
   connecting: 'processing',
   online: 'success',
   error: 'error',
+};
+
+const STATUS_META: Record<string, { label: string; accent: string }> = {
+  offline: { label: '离线', accent: '#64748b' },
+  connecting: { label: '连接中', accent: '#38bdf8' },
+  online: { label: '在线', accent: '#22c55e' },
+  error: { label: '异常', accent: '#f87171' },
 };
 
 const PROTOCOL_COLORS: Record<string, string> = {
@@ -59,6 +69,41 @@ const PROTOCOL_COLORS: Record<string, string> = {
   UDP: 'lime',
   LoRaWAN: 'gold',
 };
+
+const OVERVIEW_META = [
+  { key: 'total', title: '设备总数', color: '#f59e0b', background: 'linear-gradient(135deg, rgba(245,158,11,0.20), rgba(251,191,36,0.05))' },
+  { key: 'online', title: '在线设备', color: '#22c55e', background: 'linear-gradient(135deg, rgba(34,197,94,0.20), rgba(74,222,128,0.05))' },
+  { key: 'offline', title: '离线设备', color: '#64748b', background: 'linear-gradient(135deg, rgba(100,116,139,0.22), rgba(148,163,184,0.06))' },
+  { key: 'error', title: '异常设备', color: '#ef4444', background: 'linear-gradient(135deg, rgba(239,68,68,0.20), rgba(248,113,113,0.05))' },
+] as const;
+
+function getDeviceSubtitle(device: SimDevice) {
+  if (device.productKey || device.deviceName) {
+    return `${device.productKey || '-'} / ${device.deviceName || '-'}`;
+  }
+  if (device.protocol === 'Video') {
+    return device.streamMode === 'GB28181' ? device.gbDeviceId || '未设置国标设备 ID' : device.rtspUrl || '未设置 RTSP 地址';
+  }
+  if (device.protocol === 'SNMP') {
+    return `${device.snmpHost || '-'}:${device.snmpPort || '-'}`;
+  }
+  if (device.protocol === 'Modbus') {
+    return `${device.modbusHost || '-'}:${device.modbusPort || '-'}`;
+  }
+  if (device.protocol === 'WebSocket') {
+    return device.wsEndpoint || '未设置 WebSocket 地址';
+  }
+  if (device.protocol === 'TCP') {
+    return `${device.tcpHost || '-'}:${device.tcpPort || '-'}`;
+  }
+  if (device.protocol === 'UDP') {
+    return `${device.udpHost || '-'}:${device.udpPort || '-'}`;
+  }
+  if (device.protocol === 'LoRaWAN') {
+    return device.loraDevEui || '未设置 DevEUI';
+  }
+  return '等待配置接入参数';
+}
 
 export default function DeviceListPanel() {
   const { devices, selectedDeviceId, selectDevice, removeDevice, addLog } = useSimStore();
@@ -82,6 +127,16 @@ export default function DeviceListPanel() {
     }
     return list;
   }, [devices, filterProto, filterStatus, searchKey]);
+
+  const stats = useMemo(
+    () => ({
+      total: devices.length,
+      online: devices.filter((item) => item.status === 'online').length,
+      offline: devices.filter((item) => item.status === 'offline').length,
+      error: devices.filter((item) => item.status === 'error').length,
+    }),
+    [devices],
+  );
 
   const handleExport = async () => {
     if (devices.length === 0) {
@@ -110,51 +165,61 @@ export default function DeviceListPanel() {
       mqttWillPayload: device.mqttWillPayload,
       mqttWillQos: device.mqttWillQos,
       mqttWillRetain: device.mqttWillRetain,
-      ...(device.protocol === 'Video' ? {
-        mediaBaseUrl: device.mediaBaseUrl,
-        streamMode: device.streamMode,
-        gbDeviceId: device.gbDeviceId,
-        gbDomain: device.gbDomain,
-        rtspUrl: device.rtspUrl,
-        streamUrl: device.streamUrl,
-        sipServerIp: device.sipServerIp,
-        sipServerPort: device.sipServerPort,
-        sipServerId: device.sipServerId,
-        sipLocalPort: device.sipLocalPort,
-        sipKeepaliveInterval: device.sipKeepaliveInterval,
-        sipPassword: device.sipPassword,
-        sipTransport: device.sipTransport,
-        sipChannels: device.sipChannels,
-      } : {}),
-      ...(device.protocol === 'SNMP' ? {
-        snmpConnectorUrl: device.snmpConnectorUrl,
-        snmpHost: device.snmpHost,
-        snmpPort: device.snmpPort,
-        snmpVersion: device.snmpVersion,
-        snmpCommunity: device.snmpCommunity,
-      } : {}),
-      ...(device.protocol === 'Modbus' ? {
-        modbusConnectorUrl: device.modbusConnectorUrl,
-        modbusHost: device.modbusHost,
-        modbusPort: device.modbusPort,
-        modbusSlaveId: device.modbusSlaveId,
-        modbusMode: device.modbusMode,
-      } : {}),
-      ...(device.protocol === 'WebSocket' ? {
-        wsConnectorUrl: device.wsConnectorUrl,
-        wsEndpoint: device.wsEndpoint,
-        wsDeviceId: device.wsDeviceId,
-        wsProductId: device.wsProductId,
-        wsTenantId: device.wsTenantId,
-      } : {}),
+      ...(device.protocol === 'Video'
+        ? {
+            mediaBaseUrl: device.mediaBaseUrl,
+            streamMode: device.streamMode,
+            gbDeviceId: device.gbDeviceId,
+            gbDomain: device.gbDomain,
+            rtspUrl: device.rtspUrl,
+            streamUrl: device.streamUrl,
+            sipServerIp: device.sipServerIp,
+            sipServerPort: device.sipServerPort,
+            sipServerId: device.sipServerId,
+            sipLocalPort: device.sipLocalPort,
+            sipKeepaliveInterval: device.sipKeepaliveInterval,
+            sipPassword: device.sipPassword,
+            sipTransport: device.sipTransport,
+            sipChannels: device.sipChannels,
+          }
+        : {}),
+      ...(device.protocol === 'SNMP'
+        ? {
+            snmpConnectorUrl: device.snmpConnectorUrl,
+            snmpHost: device.snmpHost,
+            snmpPort: device.snmpPort,
+            snmpVersion: device.snmpVersion,
+            snmpCommunity: device.snmpCommunity,
+          }
+        : {}),
+      ...(device.protocol === 'Modbus'
+        ? {
+            modbusConnectorUrl: device.modbusConnectorUrl,
+            modbusHost: device.modbusHost,
+            modbusPort: device.modbusPort,
+            modbusSlaveId: device.modbusSlaveId,
+            modbusMode: device.modbusMode,
+          }
+        : {}),
+      ...(device.protocol === 'WebSocket'
+        ? {
+            wsConnectorUrl: device.wsConnectorUrl,
+            wsEndpoint: device.wsEndpoint,
+            wsDeviceId: device.wsDeviceId,
+            wsProductId: device.wsProductId,
+            wsTenantId: device.wsTenantId,
+          }
+        : {}),
       ...(device.protocol === 'TCP' ? { tcpHost: device.tcpHost, tcpPort: device.tcpPort } : {}),
       ...(device.protocol === 'UDP' ? { udpHost: device.udpHost, udpPort: device.udpPort } : {}),
-      ...(device.protocol === 'LoRaWAN' ? {
-        loraWebhookUrl: device.loraWebhookUrl,
-        loraDevEui: device.loraDevEui,
-        loraAppId: device.loraAppId,
-        loraFPort: device.loraFPort,
-      } : {}),
+      ...(device.protocol === 'LoRaWAN'
+        ? {
+            loraWebhookUrl: device.loraWebhookUrl,
+            loraDevEui: device.loraDevEui,
+            loraAppId: device.loraAppId,
+            loraFPort: device.loraFPort,
+          }
+        : {}),
     }));
 
     const result = await window.electronAPI.fileExport(JSON.stringify(exportData, null, 2), 'devices.json');
@@ -169,7 +234,9 @@ export default function DeviceListPanel() {
   const handleBatchImport = async () => {
     const result = await window.electronAPI.fileImport();
     if (!result.success) {
-      if (result.message !== 'canceled') message.error(`导入失败：${result.message}`);
+      if (result.message !== 'canceled') {
+        message.error(`导入失败：${result.message}`);
+      }
       return;
     }
 
@@ -181,6 +248,7 @@ export default function DeviceListPanel() {
       } else {
         rows = parseCSV(result.content || '');
       }
+
       if (rows.length === 0) {
         message.warning('导入文件里没有可识别的设备记录');
         return;
@@ -197,7 +265,7 @@ export default function DeviceListPanel() {
           productSecret: row.productSecret || '',
           deviceName: row.deviceName || '',
           deviceSecret: row.deviceSecret || '',
-          mqttAuthMode: (row.mqttAuthMode as any) || 'DEVICE_SECRET',
+          mqttAuthMode: (row.mqttAuthMode as never) || 'DEVICE_SECRET',
           mqttRegisterBaseUrl: row.mqttRegisterBaseUrl || 'http://localhost:9070',
           mqttBrokerUrl: row.mqttBrokerUrl || 'mqtt://localhost:1883',
           mqttClientId: row.mqttClientId || row.clientId || '',
@@ -213,7 +281,7 @@ export default function DeviceListPanel() {
           modbusHost: row.modbusHost || '',
           modbusPort: Number(row.modbusPort) || 502,
           modbusSlaveId: Number(row.modbusSlaveId) || 1,
-          modbusMode: (row.modbusMode as any) || 'TCP',
+          modbusMode: (row.modbusMode as never) || 'TCP',
           wsConnectorUrl: row.wsConnectorUrl || 'http://localhost:9070',
           wsEndpoint: row.wsEndpoint || 'ws://localhost:9070/ws/device',
           wsDeviceId: row.wsDeviceId || '',
@@ -228,7 +296,7 @@ export default function DeviceListPanel() {
           loraAppId: row.loraAppId || '',
           loraFPort: Number(row.loraFPort) || 1,
         });
-        count++;
+        count += 1;
       }
 
       addLog('system', 'System', 'success', `已从 ${result.filePath} 导入 ${count} 台模拟设备`);
@@ -252,15 +320,16 @@ export default function DeviceListPanel() {
   };
 
   const handleBatchConnect = async () => {
-    const connectable = devices.filter((device) =>
-      device.status === 'offline' &&
-      device.protocol !== 'Video' &&
-      device.protocol !== 'SNMP' &&
-      device.protocol !== 'Modbus' &&
-      device.protocol !== 'WebSocket' &&
-      device.protocol !== 'TCP' &&
-      device.protocol !== 'UDP' &&
-      device.protocol !== 'LoRaWAN',
+    const connectable = devices.filter(
+      (device) =>
+        device.status === 'offline' &&
+        device.protocol !== 'Video' &&
+        device.protocol !== 'SNMP' &&
+        device.protocol !== 'Modbus' &&
+        device.protocol !== 'WebSocket' &&
+        device.protocol !== 'TCP' &&
+        device.protocol !== 'UDP' &&
+        device.protocol !== 'LoRaWAN',
     );
     if (connectable.length === 0) {
       message.info('当前没有可批量连接的离线 HTTP / CoAP / MQTT 设备');
@@ -282,11 +351,11 @@ export default function DeviceListPanel() {
           if (result.success && result.data?.token) {
             updateDevice(device.id, { status: 'online', token: result.data.token });
             addLog(device.id, device.name, 'success', 'HTTP 批量连接成功');
-            ok++;
+            ok += 1;
           } else {
             updateDevice(device.id, { status: 'error' });
             addLog(device.id, device.name, 'error', `HTTP 批量连接失败：${result.message || result.msg || JSON.stringify(result)}`);
-            fail++;
+            fail += 1;
           }
           continue;
         }
@@ -300,11 +369,11 @@ export default function DeviceListPanel() {
           if (result.success && result.data?.token) {
             updateDevice(device.id, { status: 'online', token: result.data.token });
             addLog(device.id, device.name, 'success', 'CoAP 批量连接成功');
-            ok++;
+            ok += 1;
           } else {
             updateDevice(device.id, { status: 'error' });
             addLog(device.id, device.name, 'error', `CoAP 批量连接失败：${result.message || result.msg || JSON.stringify(result)}`);
-            fail++;
+            fail += 1;
           }
           continue;
         }
@@ -340,18 +409,20 @@ export default function DeviceListPanel() {
         if (result.success) {
           updateDevice(target.id, { status: 'online' });
           const serviceTopic = buildMqttServiceTopic(target);
-          if (serviceTopic) await window.electronAPI.mqttSubscribe(target.id, serviceTopic, 1);
+          if (serviceTopic) {
+            await window.electronAPI.mqttSubscribe(target.id, serviceTopic, 1);
+          }
           addLog(target.id, target.name, 'success', 'MQTT 批量连接成功');
-          ok++;
+          ok += 1;
         } else {
           updateDevice(target.id, { status: 'error' });
           addLog(target.id, target.name, 'error', `MQTT 批量连接失败：${result.message}`);
-          fail++;
+          fail += 1;
         }
       } catch (error: any) {
         updateDevice(device.id, { status: 'error' });
         addLog(device.id, device.name, 'error', `批量连接异常：${error?.message || 'unknown error'}`);
-        fail++;
+        fail += 1;
       }
     }
 
@@ -388,15 +459,19 @@ export default function DeviceListPanel() {
       mqttClientId: '',
       mqttUsername: '',
       mqttPassword: '',
-    } as any);
+    } as never);
     addLog('system', 'System', 'info', `已复制模拟设备：${device.name}`);
     message.success(`已复制 ${device.name}`);
   };
 
   useEffect(() => {
     const onAdd = () => setAddOpen(true);
-    const onBatchConnect = () => { void handleBatchConnect(); };
-    const onBatchDisconnect = () => { void handleBatchDisconnect(); };
+    const onBatchConnect = () => {
+      void handleBatchConnect();
+    };
+    const onBatchDisconnect = () => {
+      void handleBatchDisconnect();
+    };
     window.addEventListener('sim:add-device', onAdd);
     window.addEventListener('sim:batch-connect', onBatchConnect);
     window.addEventListener('sim:batch-disconnect', onBatchDisconnect);
@@ -407,130 +482,251 @@ export default function DeviceListPanel() {
     };
   }, [devices]);
 
-  const onlineCount = devices.filter((device) => device.status === 'online').length;
-  const offlineCount = devices.filter((device) => device.status === 'offline').length;
+  const quickStats = OVERVIEW_META.map((item) => ({
+    ...item,
+    value: stats[item.key],
+  }));
 
   return (
     <>
-      <div style={{ padding: '16px 12px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Title level={5} style={{ margin: 0, color: '#e0e0e0' }}>
-          模拟设备 <Text type="secondary" style={{ fontSize: 11 }}>({devices.length})</Text>
-        </Title>
-        <Space size={4}>
-          <Tooltip title="导入 JSON / CSV 模拟设备配置">
-            <Button size="small" icon={<ImportOutlined />} onClick={handleBatchImport} />
-          </Tooltip>
-          <Tooltip title="导出当前模拟设备配置">
-            <Button size="small" icon={<ExportOutlined />} onClick={handleExport} disabled={devices.length === 0} />
-          </Tooltip>
-          <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>新建</Button>
+      <div style={{ padding: 18, borderBottom: '1px solid rgba(148,163,184,0.12)' }}>
+        <Space direction="vertical" size={14} style={{ width: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <div>
+              <Title level={4} style={{ margin: 0, color: '#f8fafc', fontFamily: 'Georgia, Times New Roman, serif' }}>
+                设备管理器
+              </Title>
+              <Paragraph style={{ margin: '6px 0 0', color: '#94a3b8', fontSize: 12 }}>
+                用更清晰的目录视图管理模拟设备、连接状态和协议分布。
+              </Paragraph>
+            </div>
+            <Space size={6}>
+              <Tooltip title="导入 JSON / CSV 模拟设备配置">
+                <Button size="small" icon={<ImportOutlined />} onClick={handleBatchImport} />
+              </Tooltip>
+              <Tooltip title="导出当前模拟设备配置">
+                <Button size="small" icon={<ExportOutlined />} onClick={handleExport} disabled={devices.length === 0} />
+              </Tooltip>
+              <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
+                新建
+              </Button>
+            </Space>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+            {quickStats.map((item) => (
+              <div
+                key={item.key}
+                style={{
+                  padding: '12px 12px 10px',
+                  borderRadius: 18,
+                  border: '1px solid rgba(148,163,184,0.12)',
+                  background: item.background,
+                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
+                }}
+              >
+                <Text style={{ color: '#94a3b8', fontSize: 11 }}>{item.title}</Text>
+                <div style={{ marginTop: 8, fontSize: 20, fontWeight: 700, color: item.color }}>{item.value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{
+              padding: 12,
+              borderRadius: 18,
+              border: '1px solid rgba(148,163,184,0.12)',
+              background: 'linear-gradient(180deg, rgba(15,23,42,0.78) 0%, rgba(7,13,24,0.92) 100%)',
+            }}
+          >
+            <Space direction="vertical" size={10} style={{ width: '100%' }}>
+              <Search
+                placeholder="按名称 / ProductKey / DeviceName 搜索"
+                value={searchKey}
+                onChange={(event) => setSearchKey(event.target.value)}
+                allowClear
+              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Select
+                  size="small"
+                  value={filterProto}
+                  onChange={setFilterProto}
+                  style={{ flex: 1 }}
+                  options={[
+                    { label: '全部协议', value: 'all' },
+                    { label: 'HTTP', value: 'HTTP' },
+                    { label: 'MQTT', value: 'MQTT' },
+                    { label: 'CoAP', value: 'CoAP' },
+                    { label: 'Video', value: 'Video' },
+                    { label: 'SNMP', value: 'SNMP' },
+                    { label: 'Modbus', value: 'Modbus' },
+                    { label: 'WebSocket', value: 'WebSocket' },
+                    { label: 'TCP', value: 'TCP' },
+                    { label: 'UDP', value: 'UDP' },
+                    { label: 'LoRaWAN', value: 'LoRaWAN' },
+                  ]}
+                />
+                <Select
+                  size="small"
+                  value={filterStatus}
+                  onChange={setFilterStatus}
+                  style={{ flex: 1 }}
+                  options={[
+                    { label: '全部状态', value: 'all' },
+                    { label: '在线', value: 'online' },
+                    { label: '离线', value: 'offline' },
+                    { label: '异常', value: 'error' },
+                  ]}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<ApiOutlined />}
+                  onClick={handleBatchConnect}
+                  loading={batchConnecting}
+                  disabled={stats.offline === 0 || batchConnecting}
+                  style={{ color: '#4ade80', paddingInline: 4 }}
+                >
+                  全部连接
+                </Button>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<DisconnectOutlined />}
+                  onClick={handleBatchDisconnect}
+                  disabled={stats.online === 0}
+                  style={{ color: '#f87171', paddingInline: 4 }}
+                >
+                  全部断开
+                </Button>
+                {(filterProto !== 'all' || filterStatus !== 'all' || searchKey) ? (
+                  <Button
+                    size="small"
+                    type="link"
+                    style={{ padding: 0, color: '#cbd5e1' }}
+                    onClick={() => {
+                      setFilterProto('all');
+                      setFilterStatus('all');
+                      setSearchKey('');
+                    }}
+                  >
+                    重置筛选
+                  </Button>
+                ) : null}
+                <div style={{ flex: 1 }} />
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  当前可见 {filteredDevices.length} 台
+                </Text>
+              </div>
+            </Space>
+          </div>
         </Space>
       </div>
 
-      {devices.length > 0 && (
-        <div style={{ padding: '0 12px 6px', display: 'flex', gap: 4, alignItems: 'center' }}>
-          <Tooltip title={`连接离线 HTTP / CoAP / MQTT 设备（${offlineCount} 台）`}>
-            <Button size="small" type="text" icon={<ApiOutlined />} onClick={handleBatchConnect} loading={batchConnecting} disabled={offlineCount === 0 || batchConnecting} style={{ color: '#52c41a' }}>
-              全部连接
-            </Button>
-          </Tooltip>
-          <Tooltip title={`断开全部在线设备（${onlineCount} 台）`}>
-            <Button size="small" type="text" icon={<DisconnectOutlined />} onClick={handleBatchDisconnect} disabled={onlineCount === 0} style={{ color: '#ff4d4f' }}>
-              全部断开
-            </Button>
-          </Tooltip>
-          <div style={{ flex: 1 }} />
-          <Text type="secondary" style={{ fontSize: 10 }}>{onlineCount} 在线 / {offlineCount} 离线</Text>
-        </div>
-      )}
-
-      {devices.length > 0 && (
-        <div style={{ padding: '0 12px 6px' }}>
-          <Input size="small" placeholder="按名称 / ProductKey / DeviceName 搜索" value={searchKey} onChange={(event) => setSearchKey(event.target.value)} allowClear style={{ marginBottom: 4 }} />
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            <Select
-              size="small"
-              value={filterProto}
-              onChange={setFilterProto}
-              style={{ width: 110 }}
-              options={[
-                { label: '全部协议', value: 'all' },
-                { label: 'HTTP', value: 'HTTP' },
-                { label: 'MQTT', value: 'MQTT' },
-                { label: 'CoAP', value: 'CoAP' },
-                { label: 'Video', value: 'Video' },
-                { label: 'SNMP', value: 'SNMP' },
-                { label: 'Modbus', value: 'Modbus' },
-                { label: 'WebSocket', value: 'WebSocket' },
-                { label: 'TCP', value: 'TCP' },
-                { label: 'UDP', value: 'UDP' },
-                { label: 'LoRaWAN', value: 'LoRaWAN' },
-              ]}
-            />
-            <Select
-              size="small"
-              value={filterStatus}
-              onChange={setFilterStatus}
-              style={{ width: 110 }}
-              options={[
-                { label: '全部状态', value: 'all' },
-                { label: '在线', value: 'online' },
-                { label: '离线', value: 'offline' },
-                { label: '异常', value: 'error' },
-              ]}
-            />
-            {(filterProto !== 'all' || filterStatus !== 'all' || searchKey) && (
-              <Button size="small" type="link" style={{ padding: 0 }} onClick={() => { setFilterProto('all'); setFilterStatus('all'); setSearchKey(''); }}>
-                重置
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-
       <List
         dataSource={filteredDevices}
-        locale={{ emptyText: <Empty description={searchKey || filterProto !== 'all' || filterStatus !== 'all' ? '没有匹配的模拟设备' : '暂无模拟设备'} image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
-        style={{ padding: '0 8px', overflow: 'auto', flex: 1 }}
-        renderItem={(device) => (
-          <List.Item
-            onClick={() => selectDevice(device.id)}
-            style={{
-              cursor: 'pointer',
-              padding: '8px 12px',
-              borderRadius: 6,
-              marginBottom: 4,
-              background: selectedDeviceId === device.id ? 'rgba(79,70,229,0.15)' : 'transparent',
-              border: selectedDeviceId === device.id ? '1px solid rgba(79,70,229,0.3)' : '1px solid transparent',
-            }}
-            actions={[
-              <Tooltip key="clone" title="复制设备">
-                <Button type="text" size="small" icon={<CopyOutlined />} onClick={(event) => { event.stopPropagation(); handleClone(device); }} />
-              </Tooltip>,
-              <Popconfirm key="delete" title="确认删除当前模拟设备吗？" onConfirm={() => handleRemove(device)}>
-                <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={(event) => event.stopPropagation()} />
-              </Popconfirm>,
-            ]}
-          >
-            <List.Item.Meta
-              title={(
-                <Space size={6}>
-                  <Badge status={STATUS_COLOR[device.status]} />
-                  <Text style={{ fontSize: 13 }}>{device.name}</Text>
-                </Space>
-              )}
-              description={(
-                <Space size={4} wrap>
-                  <Tag color={PROTOCOL_COLORS[device.protocol] || 'default'} style={{ fontSize: 11 }}>{device.protocol}</Tag>
-                  {(device.productKey || device.deviceName) && (
-                    <Text type="secondary" style={{ fontSize: 11 }}>{device.productKey || '-'} / {device.deviceName || '-'}</Text>
-                  )}
-                  <Text type="secondary" style={{ fontSize: 11 }}>已发送 {device.sentCount}</Text>
-                </Space>
-              )}
-            />
-          </List.Item>
-        )}
+        locale={{
+          emptyText: (
+            <div style={{ padding: '40px 12px 24px' }}>
+              <Empty
+                description={searchKey || filterProto !== 'all' || filterStatus !== 'all' ? '没有匹配的模拟设备' : '先创建一个模拟设备开始联调'}
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
+            </div>
+          ),
+        }}
+        style={{ padding: '12px 12px 0', overflow: 'auto', flex: 1 }}
+        renderItem={(device) => {
+          const selected = selectedDeviceId === device.id;
+          const statusMeta = STATUS_META[device.status];
+          return (
+            <List.Item
+              key={device.id}
+              onClick={() => selectDevice(device.id)}
+              style={{
+                cursor: 'pointer',
+                padding: 0,
+                border: 'none',
+                marginBottom: 10,
+              }}
+            >
+              <div
+                style={{
+                  width: '100%',
+                  padding: '14px 14px 12px',
+                  borderRadius: 20,
+                  border: selected ? '1px solid rgba(96,165,250,0.45)' : '1px solid rgba(148,163,184,0.10)',
+                  background: selected
+                    ? 'linear-gradient(135deg, rgba(30,64,175,0.28), rgba(14,23,38,0.96))'
+                    : 'linear-gradient(180deg, rgba(15,23,42,0.74) 0%, rgba(8,15,29,0.92) 100%)',
+                  boxShadow: selected ? '0 12px 30px rgba(30,64,175,0.18)' : '0 8px 24px rgba(0,0,0,0.16)',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 14,
+                      background: `linear-gradient(135deg, ${statusMeta.accent}22 0%, rgba(255,255,255,0.04) 100%)`,
+                      border: `1px solid ${statusMeta.accent}33`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: statusMeta.accent,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {device.protocol.slice(0, 2)}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <Space size={8} wrap>
+                        <Space size={6}>
+                          <Badge status={STATUS_COLOR[device.status]} />
+                          <Text strong style={{ fontSize: 14, color: '#f8fafc' }}>
+                            {device.name}
+                          </Text>
+                        </Space>
+                        <Tag color={PROTOCOL_COLORS[device.protocol] || 'default'} style={{ margin: 0 }}>
+                          {device.protocol}
+                        </Tag>
+                        <Tag style={{ margin: 0, borderColor: `${statusMeta.accent}55`, color: statusMeta.accent, background: `${statusMeta.accent}12` }}>
+                          {statusMeta.label}
+                        </Tag>
+                      </Space>
+                      <Space size={2}>
+                        <Tooltip title="复制设备">
+                          <Button type="text" size="small" icon={<CopyOutlined />} onClick={(event) => { event.stopPropagation(); handleClone(device); }} />
+                        </Tooltip>
+                        <Popconfirm title="确认删除当前模拟设备吗？" onConfirm={() => handleRemove(device)}>
+                          <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={(event) => event.stopPropagation()} />
+                        </Popconfirm>
+                      </Space>
+                    </div>
+                    <Paragraph
+                      ellipsis={{ rows: 1 }}
+                      style={{ margin: '8px 0 10px', color: '#94a3b8', fontSize: 12 }}
+                    >
+                      {getDeviceSubtitle(device)}
+                    </Paragraph>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                      <Space size={12} wrap>
+                        <Text type="secondary" style={{ fontSize: 11 }}>已发送 {device.sentCount}</Text>
+                        <Text type="secondary" style={{ fontSize: 11 }}>错误 {device.errorCount}</Text>
+                        {device.autoReport ? <Tag color="processing" style={{ margin: 0 }}>自动上报中</Tag> : null}
+                      </Space>
+                      {selected ? <Text style={{ fontSize: 11, color: '#93c5fd' }}>当前选中</Text> : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </List.Item>
+          );
+        }}
       />
 
       <AddDeviceModal open={addOpen} onClose={() => setAddOpen(false)} />

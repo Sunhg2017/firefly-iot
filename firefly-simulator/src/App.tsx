@@ -66,11 +66,39 @@ export default function App() {
   }, []);
 
   return (
-    <Layout style={{ height: '100vh', background: '#141414' }}>
+    <Layout
+      style={{
+        height: '100vh',
+        padding: 16,
+        background:
+          'radial-gradient(circle at top left, rgba(251,191,36,0.14), transparent 24%), radial-gradient(circle at top right, rgba(59,130,246,0.16), transparent 28%), linear-gradient(180deg, #08111f 0%, #101826 52%, #0b1220 100%)',
+      }}
+    >
       {/* Left: Device List */}
-      <Sider width={280} style={{ background: '#1a1a2e', borderRight: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column' }}>
+      <Sider
+        width={344}
+        style={{
+          background: 'rgba(9, 14, 24, 0.72)',
+          border: '1px solid rgba(148, 163, 184, 0.16)',
+          borderRadius: 24,
+          backdropFilter: 'blur(18px)',
+          boxShadow: '0 18px 60px rgba(0, 0, 0, 0.30)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
         <DeviceListPanel />
-        <div style={{ padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center' }}>
+        <div
+          style={{
+            padding: '14px 16px 16px',
+            borderTop: '1px solid rgba(148,163,184,0.12)',
+            background: 'linear-gradient(180deg, rgba(15,23,42,0.82) 0%, rgba(8,15,29,0.94) 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
           <StressTestPanel />
           <ScenarioPanel />
           <TemplateEditorPanel />
@@ -78,14 +106,31 @@ export default function App() {
       </Sider>
 
       {/* Right: Control + Logs */}
-      <Layout>
-        <Content style={{ background: '#141414', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <Layout style={{ background: 'transparent', marginLeft: 16 }}>
+        <Content
+          style={{
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            borderRadius: 28,
+            background: 'rgba(9, 14, 24, 0.68)',
+            border: '1px solid rgba(148, 163, 184, 0.14)',
+            backdropFilter: 'blur(18px)',
+            boxShadow: '0 18px 60px rgba(0, 0, 0, 0.25)',
+          }}
+        >
           {/* Top: Device Control */}
           <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
             <DeviceControlPanel />
           </div>
           {/* Bottom: Logs */}
-          <div style={{ height: 240, borderTop: '1px solid rgba(255,255,255,0.06)', background: '#1a1a1a' }}>
+          <div
+            style={{
+              height: 260,
+              borderTop: '1px solid rgba(148,163,184,0.12)',
+              background: 'linear-gradient(180deg, rgba(8,15,29,0.82) 0%, rgba(4,8,17,0.94) 100%)',
+            }}
+          >
             <LogPanel />
           </div>
         </Content>
