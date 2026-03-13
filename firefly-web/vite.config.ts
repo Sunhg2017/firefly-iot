@@ -22,6 +22,7 @@ const VENDOR_CHUNK_GROUPS: Array<{ chunk: string; packages: string[] }> = [
   { chunk: 'charts-vendor', packages: ['@ant-design/charts', '@antv/'] },
   { chunk: 'xlsx-vendor', packages: ['xlsx', 'cfb', 'codepage', 'crc-32', 'ssf', 'wmf', 'word'] },
   { chunk: 'video-vendor', packages: ['flv.js'] },
+  { chunk: 'editor-vendor', packages: ['@monaco-editor/react', '@monaco-editor/loader'] },
   { chunk: 'app-vendor', packages: ['axios', 'dayjs', 'zustand'] },
 ];
 
@@ -46,6 +47,31 @@ function getPackageName(id: string): string | null {
 }
 
 function resolveVendorChunk(id: string): string | undefined {
+  const normalizedId = id.replace(/\\/g, '/');
+  if (normalizedId.includes('/node_modules/monaco-editor/')) {
+    if (normalizedId.includes('/esm/vs/language/json/')) {
+      return 'monaco-json-vendor';
+    }
+
+    if (normalizedId.includes('/esm/vs/basic-languages/')) {
+      return 'monaco-basic-vendor';
+    }
+
+    if (
+      normalizedId.includes('/esm/vs/base/')
+      || normalizedId.includes('/esm/vs/platform/')
+      || normalizedId.includes('/esm/vs/nls')
+    ) {
+      return 'monaco-base-vendor';
+    }
+
+    if (normalizedId.includes('/esm/vs/editor/')) {
+      return 'monaco-core-vendor';
+    }
+
+    return 'monaco-vendor';
+  }
+
   const packageName = getPackageName(id);
   if (!packageName) {
     return undefined;

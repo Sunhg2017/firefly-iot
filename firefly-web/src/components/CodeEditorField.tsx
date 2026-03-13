@@ -1,7 +1,8 @@
 import React from 'react';
 import Editor, { loader } from '@monaco-editor/react';
-import * as monaco from 'monaco-editor';
+import { configureMonacoEnvironment, monaco } from './monacoRuntime';
 
+configureMonacoEnvironment();
 loader.config({ monaco });
 
 type EditorLanguage = 'json' | 'javascript';
@@ -293,6 +294,7 @@ const ensureMonacoSetup = (instance: typeof monaco) => {
   }
 
   monacoInitialized = true;
+  configureMonacoEnvironment();
 
   instance.editor.defineTheme('firefly-light', {
     base: 'vs',
@@ -314,41 +316,9 @@ const ensureMonacoSetup = (instance: typeof monaco) => {
     schemas: JSON_SCHEMAS,
   });
 
-  const typescriptApi = (instance.languages as typeof instance.languages & {
-    typescript?: {
-      javascriptDefaults?: {
-        setCompilerOptions: (options: Record<string, unknown>) => void;
-        setEagerModelSync: (value: boolean) => void;
-        addExtraLib: (content: string, filePath?: string) => void;
-      };
-      ScriptTarget?: Record<string, unknown>;
-    };
-  }).typescript;
-
-  typescriptApi?.javascriptDefaults?.setCompilerOptions({
-    allowNonTsExtensions: true,
-    target: typescriptApi?.ScriptTarget?.ES2020,
-  });
-  typescriptApi?.javascriptDefaults?.setEagerModelSync(true);
-  typescriptApi?.javascriptDefaults?.addExtraLib(
-    `
-      declare interface ProtocolParserContext {
-        topic?: string;
-        payload?: Record<string, unknown>;
-        payloadText?: string;
-        payloadHex?: string;
-        headers?: Record<string, string>;
-        deviceName?: string;
-        timestamp?: number;
-        config?: Record<string, unknown>;
-      }
-    `,
-    'ts:protocol-parser-context.d.ts',
-  );
-
   // Attach lightweight business-aware completions so JSON and scripts are not just plain text.
   instance.languages.registerCompletionItemProvider('json', {
-    provideCompletionItems(model, position) {
+    provideCompletionItems(model: monaco.editor.ITextModel, position: monaco.Position) {
       const suggestions = JSON_SUGGESTIONS_BY_PATH[currentModelKey(model)] || [];
       return {
         suggestions: suggestions.map((item) => ({
@@ -360,7 +330,7 @@ const ensureMonacoSetup = (instance: typeof monaco) => {
   });
 
   instance.languages.registerCompletionItemProvider('javascript', {
-    provideCompletionItems(model, position) {
+    provideCompletionItems(model: monaco.editor.ITextModel, position: monaco.Position) {
       return {
         suggestions: JAVASCRIPT_SNIPPETS.map((item) => ({
           ...item,
@@ -401,7 +371,7 @@ const CodeEditorField: React.FC<CodeEditorFieldProps> = ({
         minimap: { enabled: false },
         scrollBeyondLastLine: false,
         wordWrap: 'on',
-        quickSuggestions: true,
+        quickSuggestions: { other: true, strings: true, comments: false },
         suggestOnTriggerCharacters: true,
         formatOnPaste: true,
         formatOnType: language === 'json',
@@ -410,6 +380,7 @@ const CodeEditorField: React.FC<CodeEditorFieldProps> = ({
         lineNumbersMinChars: 3,
         glyphMargin: false,
         folding: true,
+        wordBasedSuggestions: 'currentDocument',
       }}
     />
   </div>

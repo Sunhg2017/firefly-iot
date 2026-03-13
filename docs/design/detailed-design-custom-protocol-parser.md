@@ -347,6 +347,11 @@ This update aligns debug interaction with the repository rule that user-facing p
   - 拆帧配置补全 `delimiterHex`、`fixedLength`、`maxBufferedBytes`
   - 解析配置补全 `defaultTopic`、`tenantCode`、`productKey`
   - 发布配置补全 `deviceNames`、`percent`
+- 编辑器运行时仅装载协议解析页实际使用的能力：
+  - JSON schema / 校验 / 补全
+  - JavaScript 语法高亮
+  - 业务脚本片段补全
+- 不再把 Monaco 的全量语言能力打进单一页面 chunk，避免协议解析页首次进入时额外加载大量无关语言资源。
 - 脚本字段启用 JavaScript 高亮，并增加 `parse(ctx)`、`encode(ctx)` 代码片段和 `ctx` 上下文字段提示。
 
 ### 性能处理
