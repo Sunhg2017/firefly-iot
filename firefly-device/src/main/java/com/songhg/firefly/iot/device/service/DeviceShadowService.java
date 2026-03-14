@@ -139,6 +139,55 @@ public class DeviceShadowService {
         return getShadow(deviceId);
     }
 
+    /**
+     * Applies a property set reply in one shadow update:
+     * reported is refreshed with the acknowledged values, and desired entries
+     * that already converged to the same values are removed.
+     */
+    public DeviceShadowDTO applyPropertySetReply(Long deviceId, Map<String, Object> acknowledged) {
+        if (deviceId == null) {
+            DeviceShadowDTO dto = new DeviceShadowDTO();
+            dto.setDesired(Collections.emptyMap());
+            dto.setReported(Collections.emptyMap());
+            dto.setMetadata(Collections.emptyMap());
+            dto.setVersion(0L);
+            return dto;
+        }
+        if (acknowledged == null || acknowledged.isEmpty()) {
+            return getShadow(deviceId);
+        }
+
+        String key = shadowKey(deviceId);
+        Map<String, Object> currentDesired = getDesired(key);
+        Map<String, Object> currentReported = getReported(key);
+
+        Map<String, Object> nextDesired = new LinkedHashMap<>(currentDesired);
+        Map<String, Object> nextReported = new LinkedHashMap<>(currentReported);
+        nextReported.putAll(acknowledged);
+        nextReported.entrySet().removeIf(entry -> entry.getValue() == null);
+
+        for (Map.Entry<String, Object> entry : acknowledged.entrySet()) {
+            Object desiredValue = nextDesired.get(entry.getKey());
+            if (Objects.equals(desiredValue, entry.getValue())) {
+                nextDesired.remove(entry.getKey());
+            }
+        }
+
+        if (nextDesired.equals(currentDesired) && nextReported.equals(currentReported)) {
+            return getShadow(deviceId);
+        }
+
+        long version = incrementVersion(key);
+        redisTemplate.opsForHash().put(key, "desired", serialize(nextDesired));
+        redisTemplate.opsForHash().put(key, "reported", serialize(nextReported));
+        redisTemplate.opsForHash().put(key, "version", String.valueOf(version));
+        redisTemplate.opsForHash().put(key, "updatedAt", LocalDateTime.now().toString());
+        updateMetadata(key, acknowledged, "propertySetReply");
+
+        log.debug("Device shadow reconciled by property set reply: deviceId={}, version={}", deviceId, version);
+        return getShadow(deviceId);
+    }
+
     // ==================== Internal Helpers ====================
 
     private Map<String, Object> getDesired(String key) {

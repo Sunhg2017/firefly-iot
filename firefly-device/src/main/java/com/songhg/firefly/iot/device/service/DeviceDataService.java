@@ -197,24 +197,52 @@ public class DeviceDataService {
         Device device = requireOwnedDevice(message.getTenantId(), message.getDeviceId());
         Map<String, Object> payload = message.getPayload();
 
-        DeviceEvent event = new DeviceEvent();
-        event.setTenantId(device.getTenantId());
-        event.setDeviceId(device.getId());
-        event.setProductId(device.getProductId());
-        event.setEventType(resolveEventType(payload));
-        event.setEventName(resolveString(payload, "eventName", "name", "title"));
-        event.setLevel(resolveEventLevel(payload));
-        event.setOccurredAt(resolveOccurredAt(message.getTimestamp()));
-
-        if (payload != null) {
-            try {
-                event.setPayload(objectMapper.writeValueAsString(payload));
-            } catch (Exception ignored) {
-            }
-        }
-
+        DeviceEvent event = buildEvent(
+                device,
+                payload,
+                resolveEventType(payload),
+                resolveString(payload, "eventName", "name", "title"),
+                resolveEventLevel(payload),
+                resolveOccurredAt(message.getTimestamp())
+        );
         eventMapper.insert(event);
         log.debug("Device event written from Kafka message: deviceId={}, type={}", device.getId(), event.getEventType());
+    }
+
+    /**
+     * Persists non-business operational messages as device events so lifecycle,
+     * OTA progress and command replies are observable in the unified event log.
+     */
+    @Transactional
+    public void writeOperationalEventFromMessage(DeviceMessage message,
+                                                 String fallbackEventType,
+                                                 String fallbackEventName,
+                                                 EventLevel defaultLevel) {
+        if (message == null || message.getDeviceId() == null) {
+            return;
+        }
+
+        Device device = requireOwnedDevice(message.getTenantId(), message.getDeviceId());
+        Map<String, Object> payload = message.getPayload();
+        String eventType = resolveString(payload, "eventType", "type", "identifier", "code");
+        if (eventType == null) {
+            eventType = fallbackEventType;
+        }
+        String eventName = resolveString(payload, "eventName", "name", "title", "serviceName", "status");
+        if (eventName == null) {
+            eventName = fallbackEventName;
+        }
+
+        DeviceEvent event = buildEvent(
+                device,
+                payload,
+                eventType,
+                eventName,
+                resolveEventLevel(payload, defaultLevel),
+                resolveOccurredAt(message.getTimestamp())
+        );
+        eventMapper.insert(event);
+        log.debug("Operational device event written from Kafka message: deviceId={}, type={}", device.getId(), event.getEventType());
     }
 
     public IPage<DeviceEventVO> listEvents(DeviceEventQueryDTO query) {
@@ -279,15 +307,42 @@ public class DeviceDataService {
     }
 
     private EventLevel resolveEventLevel(Map<String, Object> payload) {
+        return resolveEventLevel(payload, EventLevel.INFO);
+    }
+
+    private EventLevel resolveEventLevel(Map<String, Object> payload, EventLevel defaultLevel) {
         String level = resolveString(payload, "level", "eventLevel", "severity");
         if (level == null) {
-            return EventLevel.INFO;
+            return defaultLevel;
         }
         try {
             return EventLevel.valueOf(level.trim().toUpperCase());
         } catch (IllegalArgumentException ex) {
-            return EventLevel.INFO;
+            return defaultLevel;
         }
+    }
+
+    private DeviceEvent buildEvent(Device device,
+                                   Map<String, Object> payload,
+                                   String eventType,
+                                   String eventName,
+                                   EventLevel level,
+                                   LocalDateTime occurredAt) {
+        DeviceEvent event = new DeviceEvent();
+        event.setTenantId(device.getTenantId());
+        event.setDeviceId(device.getId());
+        event.setProductId(device.getProductId());
+        event.setEventType(eventType);
+        event.setEventName(eventName);
+        event.setLevel(level);
+        event.setOccurredAt(occurredAt);
+        if (payload != null) {
+            try {
+                event.setPayload(objectMapper.writeValueAsString(payload));
+            } catch (Exception ignored) {
+            }
+        }
+        return event;
     }
 
     private String resolveString(Map<String, Object> payload, String... keys) {

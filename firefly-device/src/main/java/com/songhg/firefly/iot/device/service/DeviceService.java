@@ -31,6 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -221,6 +222,33 @@ public class DeviceService {
         }
         Long count = deviceMapper.countByProductIdIgnoreTenant(productId);
         return count == null ? 0L : count;
+    }
+
+    @Transactional
+    public void updateRuntimeConnectionState(Long tenantId, Long deviceId, OnlineStatus onlineStatus, LocalDateTime occurredAt) {
+        if (deviceId == null || onlineStatus == null) {
+            return;
+        }
+
+        Device device = deviceMapper.selectByIdIgnoreTenant(deviceId);
+        if (device == null || device.getDeletedAt() != null) {
+            log.warn("Skip runtime connection update because device does not exist: deviceId={}", deviceId);
+            return;
+        }
+        if (tenantId != null && device.getTenantId() != null && !tenantId.equals(device.getTenantId())) {
+            log.warn("Skip runtime connection update because tenant mismatch: deviceId={}, tenantId={}, actualTenantId={}",
+                    deviceId, tenantId, device.getTenantId());
+            return;
+        }
+
+        LocalDateTime changedAt = occurredAt != null ? occurredAt : LocalDateTime.now();
+        device.setOnlineStatus(onlineStatus);
+        if (onlineStatus == OnlineStatus.ONLINE) {
+            device.setLastOnlineAt(changedAt);
+        } else if (onlineStatus == OnlineStatus.OFFLINE) {
+            device.setLastOfflineAt(changedAt);
+        }
+        deviceMapper.updateById(device);
     }
 
     private Product getProductOrThrow(Long productId) {
