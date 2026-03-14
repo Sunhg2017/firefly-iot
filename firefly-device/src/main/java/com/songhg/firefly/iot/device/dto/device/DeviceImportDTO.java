@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * 设备异步导入请求DTO
  * <p>
@@ -34,5 +36,5 @@ public class DeviceImportDTO {
     private String description;
 
     @Schema(description = "统一标签，逗号分隔（可选）")
-    private String tags;
+    private List<Long> tagIds;
 }

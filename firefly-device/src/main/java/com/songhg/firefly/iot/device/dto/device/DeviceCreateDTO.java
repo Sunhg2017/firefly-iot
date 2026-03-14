@@ -7,6 +7,8 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * Device creation request.
  */
@@ -35,5 +37,5 @@ public class DeviceCreateDTO {
     private String description;
 
     @Schema(description = "标签，逗号分隔", example = "warehouse,floor-2")
-    private String tags;
+    private List<Long> tagIds;
 }

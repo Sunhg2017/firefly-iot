@@ -77,8 +77,7 @@ public class DeviceTagController {
     @Operation(summary = "查询标签绑定")
     public R<List<DeviceTagBindingVO>> listBindings(
             @Parameter(description = "标签编号", required = true) @PathVariable Long id) {
-        return R.ok(tagService.listBindings(id).stream()
-                .map(DeviceTagConvert.INSTANCE::toBindingVO).toList());
+        return R.ok(tagService.listBindings(id));
     }
 
     @Operation(summary = "查询设备的标签")

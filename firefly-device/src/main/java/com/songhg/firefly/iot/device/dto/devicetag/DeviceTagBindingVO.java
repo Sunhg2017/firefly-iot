@@ -21,6 +21,18 @@ public class DeviceTagBindingVO {
     @Schema(description = "Device ID")
     private Long deviceId;
 
+    @Schema(description = "Device name")
+    private String deviceName;
+
+    @Schema(description = "Device nickname")
+    private String nickname;
+
+    @Schema(description = "Product ID")
+    private Long productId;
+
+    @Schema(description = "Product name")
+    private String productName;
+
     @Schema(description = "Binding time")
     private LocalDateTime createdAt;
 }

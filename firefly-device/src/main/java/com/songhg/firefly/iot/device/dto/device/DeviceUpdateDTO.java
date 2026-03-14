@@ -3,6 +3,8 @@ package com.songhg.firefly.iot.device.dto.device;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * Device update request.
  */
@@ -20,7 +22,7 @@ public class DeviceUpdateDTO {
 
     /** Comma-separated tags */
     @Schema(description = "标签（逗号分隔）", example = "warehouse,floor-2")
-    private String tags;
+    private List<Long> tagIds;
 
     /** Optional project re-assignment */
     @Schema(description = "项目编号")

@@ -30,5 +30,5 @@ public class DeviceBatchCreateDTO {
     private String description;
 
     @Schema(description = "统一标签，逗号分隔")
-    private String tags;
+    private List<Long> tagIds;
 }

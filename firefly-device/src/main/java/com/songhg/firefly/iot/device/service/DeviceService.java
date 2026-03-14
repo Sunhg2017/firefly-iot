@@ -12,6 +12,7 @@ import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.mybatis.DataScope;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.device.convert.DeviceConvert;
+import com.songhg.firefly.iot.device.convert.DeviceTagConvert;
 import com.songhg.firefly.iot.device.dto.device.DeviceBatchCreateDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceBatchCreateItemDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceCreateDTO;
@@ -20,6 +21,7 @@ import com.songhg.firefly.iot.device.dto.device.DeviceQueryDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceTripleExportDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceUpdateDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceVO;
+import com.songhg.firefly.iot.device.dto.devicetag.DeviceTagVO;
 import com.songhg.firefly.iot.device.entity.Device;
 import com.songhg.firefly.iot.device.entity.Product;
 import com.songhg.firefly.iot.device.mapper.DeviceMapper;
@@ -47,12 +49,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class DeviceService {
 
+    private static final String CHARS = "abcdefghijklmnopqrstuvwxyz0123456789";
+    private static final SecureRandom RANDOM = new SecureRandom();
+
     private final DeviceMapper deviceMapper;
     private final ProductMapper productMapper;
     private final DeviceLocatorService deviceLocatorService;
-
-    private static final String CHARS = "abcdefghijklmnopqrstuvwxyz0123456789";
-    private static final SecureRandom RANDOM = new SecureRandom();
+    private final DeviceTagService deviceTagService;
 
     @Transactional
     public DeviceCredentialVO createDevice(DeviceCreateDTO dto) {
@@ -69,10 +72,10 @@ public class DeviceService {
                 dto.getProjectId(),
                 dto.getDeviceName(),
                 dto.getNickname(),
-                dto.getDescription(),
-                dto.getTags()
+                dto.getDescription()
         );
         deviceMapper.insert(device);
+        deviceTagService.syncDeviceTags(device.getId(), dto.getTagIds());
         increaseProductDeviceCount(product, 1);
 
         log.info("Device created: id={}, deviceName={}, productId={}", device.getId(), device.getDeviceName(), dto.getProductId());
@@ -88,7 +91,7 @@ public class DeviceService {
 
         List<DeviceBatchCreateItemDTO> items = dto.getDevices() == null ? Collections.emptyList() : dto.getDevices();
         if (items.isEmpty()) {
-            throw new BizException(ResultCode.BAD_REQUEST, "设备列表不能为空");
+            throw new BizException(ResultCode.BAD_REQUEST, "Device list cannot be empty");
         }
 
         List<String> deviceNames = items.stream()
@@ -106,10 +109,10 @@ public class DeviceService {
                     dto.getProjectId(),
                     item.getDeviceName(),
                     item.getNickname(),
-                    dto.getDescription(),
-                    dto.getTags()
+                    dto.getDescription()
             );
             deviceMapper.insert(device);
+            deviceTagService.syncDeviceTags(device.getId(), dto.getTagIds());
             result.add(toCredentialVO(device, product));
         }
 
@@ -120,14 +123,18 @@ public class DeviceService {
 
     public DeviceVO getDeviceById(Long id) {
         Device device = getActiveDevice(id);
-        return DeviceConvert.INSTANCE.toVO(device);
+        DeviceVO vo = DeviceConvert.INSTANCE.toVO(device);
+        attachDeviceTags(List.of(vo));
+        return vo;
     }
 
     @DataScope
     public IPage<DeviceVO> listDevices(DeviceQueryDTO query) {
         Page<Device> page = new Page<>(query.getPageNum(), query.getPageSize());
         IPage<Device> result = deviceMapper.selectPage(page, buildListWrapper(query));
-        return result.convert(DeviceConvert.INSTANCE::toVO);
+        IPage<DeviceVO> voPage = result.convert(DeviceConvert.INSTANCE::toVO);
+        attachDeviceTags(voPage.getRecords());
+        return voPage;
     }
 
     @DataScope
@@ -154,7 +161,11 @@ public class DeviceService {
         Device device = getActiveDevice(id);
         DeviceConvert.INSTANCE.updateEntity(dto, device);
         deviceMapper.updateById(device);
-        return DeviceConvert.INSTANCE.toVO(device);
+        deviceTagService.syncDeviceTags(device.getId(), dto.getTagIds());
+
+        DeviceVO vo = DeviceConvert.INSTANCE.toVO(device);
+        attachDeviceTags(List.of(vo));
+        return vo;
     }
 
     @Transactional
@@ -184,6 +195,7 @@ public class DeviceService {
     public void deleteDevice(Long id) {
         Device device = getActiveDevice(id);
         deviceLocatorService.deleteByDeviceId(device.getId());
+        deviceTagService.removeDeviceBindings(device.getId());
         device.setOnlineStatus(OnlineStatus.OFFLINE);
 
         // Device uses MyBatis-Plus logical delete on deletedAt.
@@ -261,7 +273,7 @@ public class DeviceService {
 
     private void validateManualRegistrationAllowed(Product product) {
         if (product.getDeviceAuthType() == DeviceAuthType.PRODUCT_SECRET) {
-            throw new BizException(ResultCode.BAD_REQUEST, "当前产品为一型一密，请通过产品接入工具中的动态注册创建设备");
+            throw new BizException(ResultCode.BAD_REQUEST, "Current product uses one-type-one-secret, please register devices through the product onboarding tool");
         }
     }
 
@@ -272,8 +284,7 @@ public class DeviceService {
             Long projectId,
             String deviceName,
             String nickname,
-            String description,
-            String tags
+            String description
     ) {
         Device device = new Device();
         device.setTenantId(tenantId);
@@ -282,7 +293,7 @@ public class DeviceService {
         device.setDeviceName(trimToNull(deviceName));
         device.setNickname(trimToNull(nickname));
         device.setDescription(trimToNull(description));
-        device.setTags(trimToNull(tags));
+        device.setTags("[]");
         device.setDeviceSecret(generateDeviceSecret());
         device.setStatus(DeviceStatus.INACTIVE);
         device.setOnlineStatus(OnlineStatus.UNKNOWN);
@@ -299,12 +310,12 @@ public class DeviceService {
                 .filter(item -> !item.isEmpty())
                 .toList();
         if (deviceNames.isEmpty()) {
-            throw new BizException(ResultCode.BAD_REQUEST, "设备名称不能为空");
+            throw new BizException(ResultCode.BAD_REQUEST, "Device name cannot be empty");
         }
 
         Set<String> requestDuplicates = collectDuplicateValues(deviceNames);
         if (!requestDuplicates.isEmpty()) {
-            throw new BizException(ResultCode.DEVICE_NAME_EXISTS, "请求中存在重复设备名称: " + String.join(", ", requestDuplicates));
+            throw new BizException(ResultCode.DEVICE_NAME_EXISTS, "Duplicate device names in request: " + String.join(", ", requestDuplicates));
         }
 
         List<Device> existingDevices = deviceMapper.selectList(new LambdaQueryWrapper<Device>()
@@ -316,7 +327,7 @@ public class DeviceService {
                     .map(Device::getDeviceName)
                     .filter(Objects::nonNull)
                     .collect(Collectors.toCollection(LinkedHashSet::new));
-            throw new BizException(ResultCode.DEVICE_NAME_EXISTS, "设备名称已存在: " + String.join(", ", existingNames));
+            throw new BizException(ResultCode.DEVICE_NAME_EXISTS, "Device name already exists: " + String.join(", ", existingNames));
         }
     }
 
@@ -398,6 +409,30 @@ public class DeviceService {
         vo.setNickname(device.getNickname());
         vo.setDeviceSecret(device.getDeviceSecret());
         return vo;
+    }
+
+    private void attachDeviceTags(List<DeviceVO> devices) {
+        if (devices == null || devices.isEmpty()) {
+            return;
+        }
+
+        Map<Long, List<DeviceTagVO>> deviceTagMap = deviceTagService.getDeviceTagMap(
+                        devices.stream().map(DeviceVO::getId).filter(Objects::nonNull).toList()
+                ).entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> entry.getValue().stream().map(DeviceTagConvert.INSTANCE::toVO).toList()
+                ));
+
+        devices.forEach(device -> {
+            List<DeviceTagVO> tagList = deviceTagMap.getOrDefault(device.getId(), List.of());
+            device.setTagList(tagList);
+            device.setTags(tagList.isEmpty()
+                    ? null
+                    : tagList.stream()
+                    .map(tag -> tag.getTagKey() + ":" + tag.getTagValue())
+                    .collect(Collectors.joining(", ")));
+        });
     }
 
     private Device getActiveDevice(Long id) {
