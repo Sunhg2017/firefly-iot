@@ -75,6 +75,7 @@ public class AuthService {
     private final StringRedisTemplate redisTemplate;
     private final EventPublisher eventPublisher;
     private final UserDomainService userDomainService;
+    private final WorkspaceMenuAccessService workspaceMenuAccessService;
 
     @Transactional
     public LoginResponse passwordLogin(LoginRequest req, String remoteIp, String userAgent) {
@@ -464,6 +465,7 @@ public class AuthService {
         userInfo.setTenantName(StringUtils.hasText(tenant.getDisplayName()) ? tenant.getDisplayName() : tenant.getName());
         userInfo.setRoles(roleCodes);
         userInfo.setPermissions(permissions);
+        userInfo.setAuthorizedMenuPaths(workspaceMenuAccessService.listCurrentUserAuthorizedMenuPaths());
 
         LoginResponse resp = new LoginResponse();
         resp.setAccessToken(accessToken);

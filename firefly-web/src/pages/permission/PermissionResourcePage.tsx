@@ -12,14 +12,13 @@ import {
   Statistic,
   Switch,
   Table,
-  Tabs,
   Tag,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import PageHeader from '../../components/PageHeader';
-import { permissionResourceApi, workspacePermissionCatalogApi } from '../../services/api';
+import { permissionResourceApi } from '../../services/api';
 
 interface ResourceItem {
   id: number;
@@ -35,34 +34,16 @@ interface ResourceItem {
   children?: ResourceItem[];
 }
 
-interface CatalogItem {
-  id: number;
-  workspaceScope: 'PLATFORM' | 'TENANT' | string;
-  moduleKey: string;
-  moduleLabel: string;
-  menuPath: string;
-  permissionCode: string;
-  permissionLabel: string;
-  moduleSortOrder: number;
-  permissionSortOrder: number;
-  roleCatalogVisible: boolean;
-}
-
 const typeLabels: Record<string, string> = {
   MENU: '菜单',
   BUTTON: '按钮',
-  API: 'API',
+  API: '接口',
 };
 
 const typeColors: Record<string, string> = {
   MENU: 'blue',
   BUTTON: 'green',
   API: 'orange',
-};
-
-const workspaceLabels: Record<string, string> = {
-  PLATFORM: '系统运维空间',
-  TENANT: '租户业务空间',
 };
 
 const getErrorMessage = (error: unknown, fallback: string) => {
@@ -73,20 +54,16 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 };
 
 const PermissionResourcePage: React.FC = () => {
-  const [resourceForm] = Form.useForm();
-  const [catalogForm] = Form.useForm();
-
-  const [resourceLoading, setResourceLoading] = useState(false);
-  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [form] = Form.useForm();
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [resourceTree, setResourceTree] = useState<ResourceItem[]>([]);
   const [resourceList, setResourceList] = useState<ResourceItem[]>([]);
-  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<ResourceItem | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const fetchResources = async () => {
-    setResourceLoading(true);
+    setLoading(true);
     try {
       const [treeRes, listRes] = await Promise.all([permissionResourceApi.tree(), permissionResourceApi.list()]);
       setResourceTree(treeRes.data?.data || []);
@@ -94,28 +71,15 @@ const PermissionResourcePage: React.FC = () => {
     } catch (error) {
       message.error(getErrorMessage(error, '加载权限资源失败'));
     } finally {
-      setResourceLoading(false);
-    }
-  };
-
-  const fetchCatalog = async (params?: { workspaceScope?: string; keyword?: string }) => {
-    setCatalogLoading(true);
-    try {
-      const res = await workspacePermissionCatalogApi.list(params);
-      setCatalogItems(res.data?.data || []);
-    } catch (error) {
-      message.error(getErrorMessage(error, '加载空间权限目录失败'));
-    } finally {
-      setCatalogLoading(false);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
     void fetchResources();
-    void fetchCatalog();
   }, []);
 
-  const resourceSummary = useMemo(
+  const stats = useMemo(
     () => ({
       total: resourceList.length,
       enabled: resourceList.filter((item) => item.enabled).length,
@@ -124,19 +88,20 @@ const PermissionResourcePage: React.FC = () => {
     [resourceList],
   );
 
-  const catalogSummary = useMemo(
-    () => ({
-      total: catalogItems.length,
-      platform: catalogItems.filter((item) => item.workspaceScope === 'PLATFORM').length,
-      tenant: catalogItems.filter((item) => item.workspaceScope === 'TENANT').length,
-    }),
-    [catalogItems],
+  const parentOptions = useMemo(
+    () => [
+      { value: 0, label: '顶级资源' },
+      ...resourceList
+        .filter((item) => item.type === 'MENU')
+        .map((item) => ({ value: item.id, label: `${item.name} (${item.code})` })),
+    ],
+    [resourceList],
   );
 
   const openCreateDrawer = (parentId?: number) => {
     setEditingRecord(null);
-    resourceForm.resetFields();
-    resourceForm.setFieldsValue({
+    form.resetFields();
+    form.setFieldsValue({
       parentId: parentId ?? 0,
       type: parentId ? 'BUTTON' : 'MENU',
       sortOrder: 0,
@@ -147,7 +112,7 @@ const PermissionResourcePage: React.FC = () => {
 
   const openEditDrawer = (record: ResourceItem) => {
     setEditingRecord(record);
-    resourceForm.setFieldsValue(record);
+    form.setFieldsValue(record);
     setDrawerOpen(true);
   };
 
@@ -157,13 +122,13 @@ const PermissionResourcePage: React.FC = () => {
       message.success('权限资源已删除');
       void fetchResources();
     } catch (error) {
-      message.error(getErrorMessage(error, '删除失败，请先清理子权限'));
+      message.error(getErrorMessage(error, '删除失败，请先清理下级权限资源'));
     }
   };
 
   const handleSave = async () => {
     try {
-      const values = await resourceForm.validateFields();
+      const values = await form.validateFields();
       setSaving(true);
       if (editingRecord) {
         await permissionResourceApi.update(editingRecord.id, values);
@@ -173,7 +138,7 @@ const PermissionResourcePage: React.FC = () => {
         message.success('权限资源已创建');
       }
       setDrawerOpen(false);
-      resourceForm.resetFields();
+      form.resetFields();
       void fetchResources();
     } catch (error) {
       if (typeof error === 'object' && error !== null && 'errorFields' in error) {
@@ -185,32 +150,9 @@ const PermissionResourcePage: React.FC = () => {
     }
   };
 
-  const handleCatalogSearch = async () => {
-    const values = await catalogForm.validateFields();
-    await fetchCatalog({
-      workspaceScope: values.workspaceScope || undefined,
-      keyword: values.keyword?.trim() || undefined,
-    });
-  };
-
-  const handleCatalogReset = () => {
-    catalogForm.resetFields();
-    void fetchCatalog();
-  };
-
-  const parentOptions = useMemo(
-    () => [
-      { value: 0, label: '顶级' },
-      ...resourceList
-        .filter((item) => item.type === 'MENU')
-        .map((item) => ({ value: item.id, label: `${item.name} (${item.code})` })),
-    ],
-    [resourceList],
-  );
-
-  const resourceColumns: ColumnsType<ResourceItem> = [
+  const columns: ColumnsType<ResourceItem> = [
     {
-      title: '权限名称',
+      title: '资源名称',
       dataIndex: 'name',
       width: 220,
     },
@@ -228,7 +170,7 @@ const PermissionResourcePage: React.FC = () => {
     {
       title: '路径',
       dataIndex: 'path',
-      width: 220,
+      width: 240,
       render: (value?: string) => value || '-',
     },
     {
@@ -249,12 +191,12 @@ const PermissionResourcePage: React.FC = () => {
       render: (_value, record) => (
         <Space size="small">
           <Button type="link" size="small" icon={<PlusOutlined />} onClick={() => openCreateDrawer(record.id)}>
-            子项
+            下级
           </Button>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEditDrawer(record)}>
             编辑
           </Button>
-          <Popconfirm title="确认删除该权限资源吗？" onConfirm={() => handleDelete(record.id)}>
+          <Popconfirm title="确认删除该权限资源？" onConfirm={() => void handleDelete(record.id)}>
             <Button type="link" size="small" danger icon={<DeleteOutlined />}>
               删除
             </Button>
@@ -264,157 +206,41 @@ const PermissionResourcePage: React.FC = () => {
     },
   ];
 
-  const catalogColumns: ColumnsType<CatalogItem> = [
-    {
-      title: '所属空间',
-      dataIndex: 'workspaceScope',
-      width: 140,
-      render: (value: string) => <Tag color={value === 'PLATFORM' ? 'gold' : 'blue'}>{workspaceLabels[value] || value}</Tag>,
-    },
-    {
-      title: '菜单模块',
-      dataIndex: 'moduleLabel',
-      width: 180,
-      render: (_value, record) => (
-        <Space direction="vertical" size={0}>
-          <span>{record.moduleLabel}</span>
-          <span style={{ color: '#94a3b8', fontSize: 12 }}>{record.moduleKey}</span>
-        </Space>
-      ),
-    },
-    {
-      title: '菜单路径',
-      dataIndex: 'menuPath',
-      width: 200,
-    },
-    {
-      title: '权限点',
-      dataIndex: 'permissionCode',
-      width: 220,
-      render: (_value, record) => (
-        <Space direction="vertical" size={0}>
-          <span>{record.permissionCode}</span>
-          <span style={{ color: '#94a3b8', fontSize: 12 }}>{record.permissionLabel}</span>
-        </Space>
-      ),
-    },
-    {
-      title: '角色目录',
-      dataIndex: 'roleCatalogVisible',
-      width: 120,
-      render: (value: boolean) => <Tag color={value ? 'success' : 'default'}>{value ? '展示' : '隐藏'}</Tag>,
-    },
-    {
-      title: '排序',
-      width: 120,
-      render: (_value, record) => `${record.moduleSortOrder}-${record.permissionSortOrder}`,
-    },
-  ];
-
   return (
     <div>
       <PageHeader
         title="权限资源"
-        description="运维空间统一维护权限资源，并通过空间权限目录台账追踪菜单、权限点与所属空间的对应关系。后续功能调整请同步补 SQL。"
-        extra={
+        description="在这里维护系统中的权限资源编码、资源层级和接口路径。菜单编排请前往“系统菜单权限管理”。"
+        extra={(
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreateDrawer()}>
             新建权限
           </Button>
-        }
+        )}
       />
 
-      <Tabs
-        defaultActiveKey="resources"
-        items={[
-          {
-            key: 'resources',
-            label: '权限资源管理',
-            children: (
-              <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                <Space size={16} wrap>
-                  <Card bordered={false} style={{ minWidth: 160 }}>
-                    <Statistic title="总资源数" value={resourceSummary.total} />
-                  </Card>
-                  <Card bordered={false} style={{ minWidth: 160 }}>
-                    <Statistic title="启用资源" value={resourceSummary.enabled} />
-                  </Card>
-                  <Card bordered={false} style={{ minWidth: 160 }}>
-                    <Statistic title="菜单资源" value={resourceSummary.menus} />
-                  </Card>
-                </Space>
-                <Card bordered={false}>
-                  <Table
-                    rowKey="id"
-                    columns={resourceColumns}
-                    dataSource={resourceTree}
-                    loading={resourceLoading}
-                    pagination={false}
-                    defaultExpandAllRows
-                    scroll={{ x: 1200 }}
-                  />
-                </Card>
-              </Space>
-            ),
-          },
-          {
-            key: 'catalog',
-            label: '空间权限目录',
-            children: (
-              <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                <Space size={16} wrap>
-                  <Card bordered={false} style={{ minWidth: 160 }}>
-                    <Statistic title="目录记录" value={catalogSummary.total} />
-                  </Card>
-                  <Card bordered={false} style={{ minWidth: 160 }}>
-                    <Statistic title="系统空间记录" value={catalogSummary.platform} />
-                  </Card>
-                  <Card bordered={false} style={{ minWidth: 160 }}>
-                    <Statistic title="租户空间记录" value={catalogSummary.tenant} />
-                  </Card>
-                </Space>
-                <Card
-                  bordered={false}
-                  title="目录筛选"
-                  extra={
-                    <Space>
-                      <Button onClick={handleCatalogReset}>重置</Button>
-                      <Button type="primary" onClick={() => void handleCatalogSearch()}>
-                        查询
-                      </Button>
-                    </Space>
-                  }
-                >
-                  <Form form={catalogForm} layout="inline">
-                    <Form.Item name="workspaceScope" label="所属空间">
-                      <Select
-                        style={{ width: 180 }}
-                        allowClear
-                        options={[
-                          { value: 'PLATFORM', label: '系统运维空间' },
-                          { value: 'TENANT', label: '租户业务空间' },
-                        ]}
-                      />
-                    </Form.Item>
-                    <Form.Item name="keyword" label="关键字">
-                      <Input style={{ width: 280 }} placeholder="模块名称、菜单路径、权限点" />
-                    </Form.Item>
-                  </Form>
-                </Card>
-                <Card bordered={false}>
-                  <Table
-                    rowKey="id"
-                    columns={catalogColumns}
-                    dataSource={catalogItems}
-                    loading={catalogLoading}
-                    pagination={{ pageSize: 20, showSizeChanger: true }}
-                    scroll={{ x: 1100 }}
-                  />
-                </Card>
-              </Space>
-            ),
-          },
-        ]}
-      />
+      <Space size={16} wrap style={{ marginBottom: 16 }}>
+        <Card bordered={false} style={{ minWidth: 160 }}>
+          <Statistic title="资源总数" value={stats.total} />
+        </Card>
+        <Card bordered={false} style={{ minWidth: 160 }}>
+          <Statistic title="启用资源" value={stats.enabled} />
+        </Card>
+        <Card bordered={false} style={{ minWidth: 160 }}>
+          <Statistic title="菜单资源" value={stats.menus} />
+        </Card>
+      </Space>
+
+      <Card bordered={false}>
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={resourceTree}
+          loading={loading}
+          pagination={false}
+          defaultExpandAllRows
+          scroll={{ x: 1200 }}
+        />
+      </Card>
 
       <Drawer
         title={editingRecord ? '编辑权限资源' : '新建权限资源'}
@@ -422,32 +248,40 @@ const PermissionResourcePage: React.FC = () => {
         width={520}
         onClose={() => setDrawerOpen(false)}
         destroyOnClose
-        extra={
+        extra={(
           <Space>
             <Button onClick={() => setDrawerOpen(false)}>取消</Button>
             <Button type="primary" loading={saving} onClick={() => void handleSave()}>
               保存
             </Button>
           </Space>
-        }
+        )}
       >
-        <Form form={resourceForm} layout="vertical">
-          <Form.Item name="parentId" label="上级权限" rules={[{ required: true, message: '请选择上级权限' }]}>
+        <Form form={form} layout="vertical">
+          <Form.Item name="parentId" label="父级资源" rules={[{ required: true, message: '请选择父级资源' }]}>
             <Select options={parentOptions} />
           </Form.Item>
-          <Form.Item name="code" label="权限编码" rules={[{ required: true, message: '请输入权限编码' }]}>
+          <Form.Item
+            name="code"
+            label="权限编码"
+            rules={[{ required: true, message: '请输入权限编码' }]}
+          >
             <Input placeholder="例如 device:read" disabled={!!editingRecord} />
           </Form.Item>
-          <Form.Item name="name" label="权限名称" rules={[{ required: true, message: '请输入权限名称' }]}>
+          <Form.Item
+            name="name"
+            label="资源名称"
+            rules={[{ required: true, message: '请输入资源名称' }]}
+          >
             <Input />
           </Form.Item>
           <Space size={16} align="start" style={{ display: 'flex' }}>
-            <Form.Item name="type" label="类型" rules={[{ required: true, message: '请选择类型' }]} style={{ minWidth: 160 }}>
+            <Form.Item name="type" label="资源类型" rules={[{ required: true, message: '请选择资源类型' }]} style={{ minWidth: 160 }}>
               <Select
                 options={[
                   { value: 'MENU', label: '菜单' },
                   { value: 'BUTTON', label: '按钮' },
-                  { value: 'API', label: 'API' },
+                  { value: 'API', label: '接口' },
                 ]}
               />
             </Form.Item>

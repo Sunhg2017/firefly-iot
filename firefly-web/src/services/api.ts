@@ -59,13 +59,7 @@ interface TenantQuotaPayload {
 }
 
 interface TenantSpaceMenuPayload {
-  parentMenuKey?: string;
-  menuKey: string;
-  label: string;
-  icon?: string;
-  routePath?: string;
-  sortOrder?: number;
-  visible?: boolean;
+  menuKeys: string[];
 }
 
 const TENANT_PLAN_VALUES = new Set<TenantPlan>(['FREE', 'STANDARD', 'ENTERPRISE']);
@@ -151,37 +145,26 @@ const normalizeOptionalBoundedString = (
   return trimmed;
 };
 
-const normalizeTenantSpaceMenuPayload = (items: TenantSpaceMenuPayload[]): TenantSpaceMenuPayload[] => {
-  if (!Array.isArray(items)) {
-    throw new Error('tenant space menus must be an array');
+const normalizeTenantSpaceMenuPayload = (payload: TenantSpaceMenuPayload): TenantSpaceMenuPayload => {
+  if (!payload || !Array.isArray(payload.menuKeys)) {
+    throw new Error('tenant space menu payload is invalid');
   }
 
-  return items.map((item, index) => {
-    const menuKey = trimOptionalString(item?.menuKey);
-    const label = trimOptionalString(item?.label);
-    const parentMenuKey = trimOptionalString(item?.parentMenuKey);
-    const sortOrder = item?.sortOrder;
+  const menuKeys = payload.menuKeys
+    .map((menuKey, index) => {
+      const normalized = trimOptionalString(menuKey);
+      if (!normalized) {
+        throw new Error(`tenant space menu key[${index}] is required`);
+      }
+      return normalized;
+    })
+    .filter((menuKey, index, array) => array.indexOf(menuKey) === index);
 
-    if (!menuKey) {
-      throw new Error(`tenant space menu[${index}].menuKey is required`);
-    }
-    if (!label) {
-      throw new Error(`tenant space menu[${index}].label is required`);
-    }
-    if (sortOrder !== undefined && (!Number.isInteger(sortOrder) || sortOrder < 0)) {
-      throw new Error(`tenant space menu[${index}].sortOrder is invalid`);
-    }
+  if (menuKeys.length === 0) {
+    throw new Error('tenant space menu keys are empty');
+  }
 
-    return {
-      parentMenuKey,
-      menuKey,
-      label,
-      icon: trimOptionalString(item?.icon),
-      routePath: trimOptionalString(item?.routePath),
-      sortOrder,
-      visible: item?.visible ?? true,
-    };
-  });
+  return { menuKeys };
 };
 
 const normalizeTenantListParams = (params: TenantListParams = {}): TenantListParams => {
@@ -367,8 +350,8 @@ export const tenantApi = {
   updateQuota: (id: number, data: Record<string, unknown>) =>
     request.put(`/platform/tenants/${normalizeTenantId(id)}/quota`, normalizeTenantQuotaPayload(data)),
   getSpaceMenus: (id: number) => request.get(`/platform/tenants/${normalizeTenantId(id)}/space-menus`),
-  updateSpaceMenus: (id: number, items: TenantSpaceMenuPayload[]) =>
-    request.put(`/platform/tenants/${normalizeTenantId(id)}/space-menus`, normalizeTenantSpaceMenuPayload(items)),
+  updateSpaceMenus: (id: number, payload: TenantSpaceMenuPayload) =>
+    request.put(`/platform/tenants/${normalizeTenantId(id)}/space-menus`, normalizeTenantSpaceMenuPayload(payload)),
   getUsage: (id: number) => request.get(`/platform/tenants/${normalizeTenantId(id)}/usage`),
   getUsageDaily: (id: number, startDate?: string, endDate?: string) =>
     request.get(`/platform/tenants/${normalizeTenantId(id)}/usage/daily`, {
@@ -508,9 +491,16 @@ export const permissionResourceApi = {
   assignRolePermissions: (roleId: number, permissions: string[]) => request.put(`/permission-resources/role/${roleId}`, { permissions }),
 };
 
-export const workspacePermissionCatalogApi = {
-  list: (params?: { workspaceScope?: string; keyword?: string }) =>
-    request.get('/workspace-permission-catalog', { params }),
+export const systemMenuPermissionApi = {
+  tree: (workspaceScope: 'PLATFORM' | 'TENANT') =>
+    request.get('/system-menu-permissions/tree', { params: { workspaceScope } }),
+  createMenu: (data: Record<string, unknown>) => request.post('/system-menu-permissions/menus', data),
+  updateMenu: (workspaceScope: 'PLATFORM' | 'TENANT', menuKey: string, data: Record<string, unknown>) =>
+    request.put(`/system-menu-permissions/menus/${menuKey}`, data, { params: { workspaceScope } }),
+  deleteMenu: (workspaceScope: 'PLATFORM' | 'TENANT', menuKey: string) =>
+    request.delete(`/system-menu-permissions/menus/${menuKey}`, { params: { workspaceScope } }),
+  replacePermissions: (menuKey: string, data: { workspaceScope: 'PLATFORM' | 'TENANT'; permissionCodes: string[] }) =>
+    request.put(`/system-menu-permissions/menus/${menuKey}/permissions`, data),
 };
 
 // ==================== System Monitor API ====================

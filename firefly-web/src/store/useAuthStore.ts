@@ -14,11 +14,13 @@ interface UserInfo {
   tenantName: string;
   roles: string[];
   permissions: string[];
+  authorizedMenuPaths: string[];
 }
 
-type UserPayload = Partial<Omit<UserInfo, 'roles' | 'permissions'>> & {
+type UserPayload = Partial<Omit<UserInfo, 'roles' | 'permissions' | 'authorizedMenuPaths'>> & {
   roles?: unknown[];
   permissions?: unknown[];
+  authorizedMenuPaths?: unknown[];
 };
 
 interface AuthState {
@@ -55,6 +57,8 @@ function normalizeUser(payload: UserPayload | UserInfo | null | undefined): User
 
   const permissions = (Array.isArray(raw.permissions) ? raw.permissions : [])
     .filter((perm): perm is string => typeof perm === 'string' && perm.length > 0);
+  const authorizedMenuPaths = (Array.isArray(raw.authorizedMenuPaths) ? raw.authorizedMenuPaths : [])
+    .filter((path): path is string => typeof path === 'string' && path.length > 0);
 
   return {
     id: typeof raw.id === 'number' ? raw.id : 0,
@@ -69,6 +73,7 @@ function normalizeUser(payload: UserPayload | UserInfo | null | undefined): User
     tenantName: typeof raw.tenantName === 'string' ? raw.tenantName : '',
     roles,
     permissions,
+    authorizedMenuPaths,
   };
 }
 

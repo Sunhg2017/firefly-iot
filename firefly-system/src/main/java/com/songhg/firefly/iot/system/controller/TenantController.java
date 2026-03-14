@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.songhg.firefly.iot.common.enums.TenantStatus;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresPermission;
-import com.songhg.firefly.iot.system.dto.menu.MenuConfigVO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantCreateDTO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantOverviewVO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantPlanUpdateDTO;
@@ -12,6 +11,7 @@ import com.songhg.firefly.iot.system.dto.tenant.TenantQuotaUpdateDTO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantQuotaVO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantQueryDTO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantSpaceMenuAssignDTO;
+import com.songhg.firefly.iot.system.dto.tenant.TenantSpaceMenuAuthorizationVO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantUpdateDTO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantUsageDailyVO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantUsageVO;
@@ -118,7 +118,7 @@ public class TenantController {
     @GetMapping("/{id}/space-menus")
     @RequiresPermission("tenant:manage")
     @Operation(summary = "Get tenant space menus")
-    public R<List<MenuConfigVO>> getTenantSpaceMenus(
+    public R<TenantSpaceMenuAuthorizationVO> getTenantSpaceMenus(
             @Parameter(description = "Tenant ID", required = true) @PathVariable Long id) {
         userDomainService.assertCurrentUserIsSystemOps();
         return R.ok(tenantService.getTenantSpaceMenus(id));
@@ -127,9 +127,9 @@ public class TenantController {
     @PutMapping("/{id}/space-menus")
     @RequiresPermission("tenant:manage")
     @Operation(summary = "Update tenant space menus")
-    public R<List<MenuConfigVO>> updateTenantSpaceMenus(
+    public R<TenantSpaceMenuAuthorizationVO> updateTenantSpaceMenus(
             @Parameter(description = "Tenant ID", required = true) @PathVariable Long id,
-            @Valid @RequestBody List<TenantSpaceMenuAssignDTO> items) {
+            @Valid @RequestBody TenantSpaceMenuAssignDTO items) {
         userDomainService.assertCurrentUserIsSystemOps();
         return R.ok(tenantService.updateTenantSpaceMenus(id, items));
     }

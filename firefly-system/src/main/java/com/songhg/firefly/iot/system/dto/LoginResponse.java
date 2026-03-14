@@ -70,5 +70,8 @@ public class LoginResponse {
 
         @Schema(description = "权限编码集合")
         private Set<String> permissions;
+
+        @Schema(description = "当前空间已授权菜单路由")
+        private Set<String> authorizedMenuPaths;
     }
 }

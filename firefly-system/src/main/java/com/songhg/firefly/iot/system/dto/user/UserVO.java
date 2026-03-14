@@ -7,6 +7,7 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 @Data
 @Schema(description = "用户视图对象")
@@ -47,6 +48,9 @@ public class UserVO {
 
     @Schema(description = "创建时间")
     private LocalDateTime createdAt;
+
+    @Schema(description = "当前空间已授权菜单路由")
+    private Set<String> authorizedMenuPaths;
 
     @Data
     @Schema(description = "用户角色视图对象")

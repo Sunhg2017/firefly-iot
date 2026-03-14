@@ -11,8 +11,9 @@ const ForbiddenPage: React.FC = () => {
     () => getWorkspaceHomePath(
       resolveWorkspaceByUserType(user?.userType),
       Array.isArray(user?.permissions) ? user.permissions : [],
+      Array.isArray(user?.authorizedMenuPaths) ? user.authorizedMenuPaths : [],
     ),
-    [user?.permissions, user?.userType],
+    [user?.authorizedMenuPaths, user?.permissions, user?.userType],
   );
   const canGoHome = homePath !== '/403';
 

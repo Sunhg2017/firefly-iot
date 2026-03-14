@@ -1,36 +1,16 @@
 package com.songhg.firefly.iot.system.dto.tenant;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import lombok.Data;
 
-/**
- * Tenant space menu assignment request.
- */
+import java.util.List;
+
 @Data
-@Schema(description = "Tenant space menu assignment request")
+@Schema(description = "租户空间菜单授权请求")
 public class TenantSpaceMenuAssignDTO {
 
-    @Schema(description = "Parent menu key")
-    private String parentMenuKey;
-
-    @Schema(description = "Menu key", example = "device-mgmt")
-    @NotBlank(message = "菜单标识不能为空")
-    private String menuKey;
-
-    @Schema(description = "Menu label", example = "设备中心")
-    @NotBlank(message = "菜单名称不能为空")
-    private String label;
-
-    @Schema(description = "Icon name")
-    private String icon;
-
-    @Schema(description = "Route path")
-    private String routePath;
-
-    @Schema(description = "Sort order")
-    private Integer sortOrder;
-
-    @Schema(description = "Visibility flag")
-    private Boolean visible;
+    @Schema(description = "已授权菜单键集合")
+    @NotEmpty(message = "请至少选择一个租户空间菜单")
+    private List<String> menuKeys;
 }

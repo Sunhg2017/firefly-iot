@@ -63,10 +63,11 @@ const LoginPage: React.FC = () => {
       const homePath = getWorkspaceHomePath(
         resolveWorkspaceByUserType(user?.userType),
         Array.isArray(user?.permissions) ? user.permissions : [],
+        Array.isArray(user?.authorizedMenuPaths) ? user.authorizedMenuPaths : [],
       );
       navigate(homePath, { replace: true });
     }
-  }, [isAuthenticated, navigate, user?.permissions, user?.userType]);
+  }, [isAuthenticated, navigate, user?.authorizedMenuPaths, user?.permissions, user?.userType]);
 
   const handlePasswordLogin = async (values: { username: string; password: string }) => {
     setLoading(true);
@@ -77,6 +78,7 @@ const LoginPage: React.FC = () => {
       const homePath = getWorkspaceHomePath(
         resolveWorkspaceByUserType(currentUser?.userType),
         Array.isArray(currentUser?.permissions) ? currentUser.permissions : [],
+        Array.isArray(currentUser?.authorizedMenuPaths) ? currentUser.authorizedMenuPaths : [],
       );
       navigate(homePath);
     } catch (err: unknown) {
@@ -96,6 +98,7 @@ const LoginPage: React.FC = () => {
       const homePath = getWorkspaceHomePath(
         resolveWorkspaceByUserType(currentUser?.userType),
         Array.isArray(currentUser?.permissions) ? currentUser.permissions : [],
+        Array.isArray(currentUser?.authorizedMenuPaths) ? currentUser.authorizedMenuPaths : [],
       );
       navigate(homePath);
     } catch (err: unknown) {

@@ -88,6 +88,23 @@ function hasSinglePermission(permission: string, permissions?: readonly string[]
   return granted.includes(`${resource}:*`);
 }
 
+function hasMenuPathAccess(pathname: string, authorizedMenuPaths?: readonly string[] | null): boolean {
+  if (authorizedMenuPaths === undefined || authorizedMenuPaths === null) {
+    return true;
+  }
+  const normalizedPath = normalizePath(pathname);
+  if (!normalizedPath) {
+    return false;
+  }
+  const allowedPaths = Array.isArray(authorizedMenuPaths)
+    ? authorizedMenuPaths.filter((item): item is string => typeof item === 'string' && item.length > 0)
+    : [];
+  if (allowedPaths.length === 0) {
+    return false;
+  }
+  return allowedPaths.includes(normalizedPath);
+}
+
 export function hasRoutePermission(permission?: RoutePermission, permissions?: readonly string[] | null): boolean {
   if (!permission) {
     return true;
@@ -134,7 +151,11 @@ export function resolveWorkspaceByUserType(userType?: string | null): WorkspaceT
   return userType === 'SYSTEM_OPS' ? 'platform' : 'tenant';
 }
 
-export function isWorkspacePathAllowed(pathname: string, permissions?: readonly string[] | null): boolean {
+export function isWorkspacePathAllowed(
+  pathname: string,
+  permissions?: readonly string[] | null,
+  authorizedMenuPaths?: readonly string[] | null,
+): boolean {
   const normalizedPath = normalizePath(pathname);
   if (!normalizedPath) {
     return false;
@@ -142,17 +163,19 @@ export function isWorkspacePathAllowed(pathname: string, permissions?: readonly 
   if (!ROUTE_SCOPE_MAP.has(normalizedPath)) {
     return false;
   }
-  return hasRoutePermission(ROUTE_PERMISSION_MAP.get(normalizedPath), permissions);
+  return hasRoutePermission(ROUTE_PERMISSION_MAP.get(normalizedPath), permissions)
+    && hasMenuPathAccess(normalizedPath, authorizedMenuPaths);
 }
 
 export function getWorkspaceHomePath(
   workspace: WorkspaceType,
   permissions?: readonly string[] | null,
+  authorizedMenuPaths?: readonly string[] | null,
 ): string {
   const candidates: string[] = [];
   walkRouteNodes(filterWorkspaceRoutes(workspace), (item) => {
     const path = normalizePath(item.path);
-    if (path && hasRoutePermission(item.permission, permissions)) {
+    if (path && hasRoutePermission(item.permission, permissions) && hasMenuPathAccess(path, authorizedMenuPaths)) {
       candidates.push(path);
     }
   });

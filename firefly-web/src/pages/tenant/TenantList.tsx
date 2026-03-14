@@ -38,8 +38,6 @@ import type { DataNode } from 'antd/es/tree';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs, { Dayjs } from 'dayjs';
 import PageHeader from '../../components/PageHeader';
-import { isRouteGroup, type RouteNode } from '../../config/routes';
-import { filterWorkspaceExclusiveRoutes } from '../../config/workspaceRoutes';
 import { tenantApi } from '../../services/api';
 import TenantWebhookDrawer from './TenantWebhookDrawer';
 
@@ -144,35 +142,20 @@ interface TenantUsageDaily {
 }
 
 interface TenantSpaceMenuItem {
-  id: number;
-  parentId: number;
   menuKey: string;
   label: string;
   icon?: string | null;
+  menuType?: 'GROUP' | 'PAGE' | string;
   routePath?: string | null;
   sortOrder?: number;
   visible?: boolean;
+  selected?: boolean;
   children?: TenantSpaceMenuItem[];
 }
 
-interface TenantSpaceRouteNode {
-  menuKey: string;
-  label: string;
-  icon?: string | null;
-  routePath?: string;
-  parentMenuKey?: string;
-  sortOrder: number;
-  children?: TenantSpaceRouteNode[];
-}
-
-interface TenantSpaceMenuSubmitPayload {
-  parentMenuKey?: string;
-  menuKey: string;
-  label: string;
-  icon?: string;
-  routePath?: string;
-  sortOrder: number;
-  visible: boolean;
+interface TenantSpaceAuthorization {
+  menuTree: TenantSpaceMenuItem[];
+  selectedMenuKeys: string[];
 }
 
 type TrendMetricKey =
@@ -268,52 +251,30 @@ const formatMetricValue = (value: number, metric: TrendMetricKey): string => {
   return metricMeta?.isByte ? formatBytes(value) : value.toLocaleString();
 };
 
-const guessIconName = (icon: React.ReactNode): string | null => {
-  if (!icon || typeof icon !== 'object') return null;
-  const element = icon as React.ReactElement;
-  if (element.type && typeof element.type === 'object' && 'displayName' in element.type) {
-    return (element.type as { displayName?: string }).displayName || null;
-  }
-  if (element.type && typeof element.type === 'function') {
-    return (element.type as { displayName?: string; name?: string }).displayName || element.type.name || null;
-  }
-  return null;
-};
+const buildTenantSpaceTreeData = (nodes: TenantSpaceMenuItem[]): DataNode[] =>
+  nodes.map((node) => ({
+    key: node.menuKey,
+    title: (
+      <Space direction="vertical" size={0}>
+        <span>{node.label}</span>
+        {node.routePath ? (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {node.routePath}
+          </Typography.Text>
+        ) : null}
+      </Space>
+    ),
+    disableCheckbox: node.menuType !== 'PAGE' || node.visible === false,
+    selectable: false,
+    children: Array.isArray(node.children) && node.children.length > 0 ? buildTenantSpaceTreeData(node.children) : undefined,
+  }));
 
-const buildTenantSpaceRouteNodes = (
-  nodes: RouteNode[],
-  parentMenuKey?: string,
-): TenantSpaceRouteNode[] =>
-  nodes.map((node, index) => {
-    if (isRouteGroup(node)) {
-      return {
-        menuKey: node.key,
-        label: node.label,
-        icon: guessIconName(node.icon),
-        parentMenuKey,
-        sortOrder: index,
-        children: buildTenantSpaceRouteNodes(node.children, node.key),
-      };
-    }
-
-    return {
-      menuKey: node.path,
-      label: node.label,
-      icon: guessIconName(node.icon),
-      routePath: node.path,
-      parentMenuKey,
-      sortOrder: index,
-    };
-  });
-
-const tenantSpaceRouteNodes: TenantSpaceRouteNode[] = buildTenantSpaceRouteNodes(filterWorkspaceExclusiveRoutes('tenant'));
-
-const collectTenantSpaceLeafPaths = (nodes: TenantSpaceRouteNode[]): string[] => {
-  const paths: string[] = [];
-  const walk = (items: TenantSpaceRouteNode[]) => {
+const collectGrantableMenuKeys = (nodes: TenantSpaceMenuItem[]): string[] => {
+  const keys: string[] = [];
+  const walk = (items: TenantSpaceMenuItem[]) => {
     items.forEach((item) => {
-      if (item.routePath) {
-        paths.push(item.routePath);
+      if (item.menuType === 'PAGE' && item.visible !== false) {
+        keys.push(item.menuKey);
       }
       if (Array.isArray(item.children) && item.children.length > 0) {
         walk(item.children);
@@ -321,80 +282,7 @@ const collectTenantSpaceLeafPaths = (nodes: TenantSpaceRouteNode[]): string[] =>
     });
   };
   walk(nodes);
-  return paths;
-};
-
-const tenantSpaceLeafKeySet = new Set(collectTenantSpaceLeafPaths(tenantSpaceRouteNodes));
-
-const allTenantSpaceKeys = Array.from(tenantSpaceLeafKeySet);
-
-const tenantSpaceTreeData: DataNode[] = tenantSpaceRouteNodes.map(function toTreeNode(node): DataNode {
-  if (node.routePath) {
-    return {
-      key: node.routePath,
-      title: node.label,
-      isLeaf: true,
-    };
-  }
-  return {
-    key: `group:${node.menuKey}`,
-    title: node.label,
-    selectable: false,
-    children: (node.children ?? []).map(toTreeNode),
-  };
-});
-
-const collectTenantSpaceCheckedKeys = (items: TenantSpaceMenuItem[]): string[] => {
-  const keys: string[] = [];
-  const walk = (nodes: TenantSpaceMenuItem[]) => {
-    nodes.forEach((node) => {
-      if (node.visible === false) {
-        return;
-      }
-      if (node.routePath) {
-        keys.push(node.routePath);
-      }
-      if (Array.isArray(node.children) && node.children.length > 0) {
-        walk(node.children);
-      }
-    });
-  };
-  walk(items);
-  return Array.from(new Set(keys.filter((key) => tenantSpaceLeafKeySet.has(key))));
-};
-
-const buildTenantSpacePayload = (checkedKeys: string[]): TenantSpaceMenuSubmitPayload[] => {
-  const selectedRoutePaths = new Set(checkedKeys.filter((key) => tenantSpaceLeafKeySet.has(key)));
-  const payload: TenantSpaceMenuSubmitPayload[] = [];
-
-  const hasSelectedDescendant = (node: TenantSpaceRouteNode): boolean => {
-    if (node.routePath) {
-      return selectedRoutePaths.has(node.routePath);
-    }
-    return (node.children ?? []).some((child) => hasSelectedDescendant(child));
-  };
-
-  const appendNode = (node: TenantSpaceRouteNode) => {
-    if (!hasSelectedDescendant(node)) {
-      return;
-    }
-    payload.push({
-      parentMenuKey: node.parentMenuKey,
-      menuKey: node.menuKey,
-      label: node.label,
-      icon: node.icon ?? undefined,
-      sortOrder: node.sortOrder,
-      visible: true,
-    });
-
-    (node.children ?? []).forEach((child) => appendNode(child));
-  };
-
-  tenantSpaceRouteNodes.forEach((node) => {
-    appendNode(node);
-  });
-
-  return payload;
+  return keys;
 };
 
 const isSystemOpsTenant = (tenant?: TenantItem | null): boolean => tenant?.code === 'system-ops';
@@ -434,7 +322,11 @@ const TenantList: React.FC = () => {
   const [usageDaily, setUsageDaily] = useState<TenantUsageDaily[]>([]);
   const [trendMetric, setTrendMetric] = useState<TrendMetricKey>('deviceCount');
   const [trendRange, setTrendRange] = useState<[Dayjs, Dayjs]>(defaultTrendRange);
+  const [spaceMenuTree, setSpaceMenuTree] = useState<TenantSpaceMenuItem[]>([]);
   const [checkedSpaceKeys, setCheckedSpaceKeys] = useState<string[]>([]);
+
+  const tenantSpaceTreeData = useMemo(() => buildTenantSpaceTreeData(spaceMenuTree), [spaceMenuTree]);
+  const allTenantSpaceKeys = useMemo(() => collectGrantableMenuKeys(spaceMenuTree), [spaceMenuTree]);
 
   const fetchTenants = async () => {
     setLoading(true);
@@ -654,10 +546,9 @@ const TenantList: React.FC = () => {
     setSpaceLoading(true);
     try {
       const res = await tenantApi.getSpaceMenus(record.id);
-      const items = (res.data?.data ?? []) as TenantSpaceMenuItem[];
-      setCheckedSpaceKeys(
-        items.length > 0 ? collectTenantSpaceCheckedKeys(items) : allTenantSpaceKeys,
-      );
+      const data = (res.data?.data ?? {}) as TenantSpaceAuthorization;
+      setSpaceMenuTree(data.menuTree ?? []);
+      setCheckedSpaceKeys(data.selectedMenuKeys ?? []);
       setSpaceOpen(true);
     } catch (error) {
       message.error(getErrorMessage(error, '加载租户空间授权失败'));
@@ -673,16 +564,14 @@ const TenantList: React.FC = () => {
 
   const handleSaveSpaceMenus = async () => {
     if (!currentTenant) return;
-
-    const payload = buildTenantSpacePayload(checkedSpaceKeys);
-    if (payload.length === 0) {
+    if (checkedSpaceKeys.length === 0) {
       message.warning('请至少选择一个租户空间功能');
       return;
     }
 
     try {
       setSpaceSubmitting(true);
-      await tenantApi.updateSpaceMenus(currentTenant.id, payload);
+      await tenantApi.updateSpaceMenus(currentTenant.id, { menuKeys: checkedSpaceKeys });
       message.success('租户空间授权已更新');
       setSpaceOpen(false);
     } catch (error) {
@@ -999,7 +888,7 @@ const TenantList: React.FC = () => {
                   const nextKeys = Array.isArray(checkedKeysValue)
                     ? (checkedKeysValue as string[])
                     : (checkedKeysValue.checked as string[]);
-                  setCheckedSpaceKeys(nextKeys.filter((key) => tenantSpaceLeafKeySet.has(key)));
+                  setCheckedSpaceKeys(nextKeys.filter((key) => allTenantSpaceKeys.includes(key)));
                 }}
               />
             </Card>

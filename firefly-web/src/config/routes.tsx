@@ -93,6 +93,13 @@ const routeConfigs: RouteEntry[] = [
       { path: '/user', label: '用户管理', icon: <TeamOutlined />, permission: 'user:read', workspace: 'platform' },
       { path: '/role', label: '角色管理', icon: <SafetyOutlined />, permission: 'role:read', workspace: 'platform' },
       { path: '/permission', label: '权限资源', icon: <KeyOutlined />, permission: 'permission:read', workspace: 'platform' },
+      {
+        path: '/system-menu-permission',
+        label: '系统菜单权限',
+        icon: <AppstoreOutlined />,
+        permission: 'workspace-menu:read',
+        workspace: 'platform',
+      },
       { path: '/dict', label: '数据字典', icon: <BookOutlined />, permission: 'dict:read', workspace: 'platform' },
     ],
   },

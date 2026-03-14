@@ -37,10 +37,14 @@ function persistWorkspace(workspace: WorkspaceType) {
   localStorage.setItem(WORKSPACE_STORAGE_KEY, workspace);
 }
 
-function buildMenuItems(nodes: RouteNode[], permissions: readonly string[]): MenuItem[] {
+function buildMenuItems(
+  nodes: RouteNode[],
+  permissions: readonly string[],
+  authorizedMenuPaths: readonly string[],
+): MenuItem[] {
   return nodes.flatMap((node) => {
     if (isRouteGroup(node)) {
-      const children = buildMenuItems(node.children, permissions);
+      const children = buildMenuItems(node.children, permissions, authorizedMenuPaths);
       if (children.length === 0) {
         return [];
       }
@@ -53,6 +57,9 @@ function buildMenuItems(nodes: RouteNode[], permissions: readonly string[]): Men
     }
 
     if (!hasRoutePermission(node.permission, permissions)) {
+      return [];
+    }
+    if (!authorizedMenuPaths.includes(node.path)) {
       return [];
     }
 
@@ -104,6 +111,10 @@ const BasicLayout: React.FC = () => {
     () => (Array.isArray(user?.permissions) ? user.permissions : []),
     [user?.permissions],
   );
+  const authorizedMenuPaths = useMemo(
+    () => (Array.isArray(user?.authorizedMenuPaths) ? user.authorizedMenuPaths : []),
+    [user?.authorizedMenuPaths],
+  );
   const enforcedWorkspace = useMemo(
     () => resolveWorkspaceByUserType(user?.userType),
     [user?.userType],
@@ -118,8 +129,8 @@ const BasicLayout: React.FC = () => {
     [workspace],
   );
   const menuItems = useMemo(
-    () => buildMenuItems(routeEntries, permissions),
-    [routeEntries, permissions],
+    () => buildMenuItems(routeEntries, permissions, authorizedMenuPaths),
+    [authorizedMenuPaths, routeEntries, permissions],
   );
 
   const openKeys = useMemo(
@@ -130,7 +141,9 @@ const BasicLayout: React.FC = () => {
   const breadcrumbItems = useMemo(() => {
     const items: BreadcrumbItem[] = [];
     if (hasRoutePermission('dashboard:read', permissions)) {
-      items.push({ title: '工作台', path: '/dashboard' });
+      if (authorizedMenuPaths.includes('/dashboard')) {
+        items.push({ title: '工作台', path: '/dashboard' });
+      }
     }
     if (location.pathname === '/dashboard') {
       return items;
@@ -140,14 +153,14 @@ const BasicLayout: React.FC = () => {
       items.push(...trail);
     }
     return items;
-  }, [permissions, routeEntries, location.pathname]);
+  }, [authorizedMenuPaths, permissions, routeEntries, location.pathname]);
 
   const currentPathAccessible = useMemo(() => {
     if (location.pathname === '/403') {
       return true;
     }
-    return isWorkspacePathAllowed(location.pathname, permissions);
-  }, [location.pathname, permissions]);
+    return isWorkspacePathAllowed(location.pathname, permissions, authorizedMenuPaths);
+  }, [authorizedMenuPaths, location.pathname, permissions]);
 
   useEffect(() => {
     setMenuOpenKeys(openKeys);
@@ -156,7 +169,7 @@ const BasicLayout: React.FC = () => {
   useEffect(() => {
     const routeWorkspace = resolveWorkspaceByPath(location.pathname);
     if (routeWorkspace && routeWorkspace !== enforcedWorkspace) {
-      navigate(getWorkspaceHomePath(enforcedWorkspace, permissions), { replace: true });
+      navigate(getWorkspaceHomePath(enforcedWorkspace, permissions, authorizedMenuPaths), { replace: true });
       return;
     }
 
@@ -164,7 +177,7 @@ const BasicLayout: React.FC = () => {
       setWorkspace(enforcedWorkspace);
       persistWorkspace(enforcedWorkspace);
     }
-  }, [location.pathname, workspace, enforcedWorkspace, navigate, permissions]);
+  }, [authorizedMenuPaths, location.pathname, workspace, enforcedWorkspace, navigate, permissions]);
 
   const handleMenuClick = ({ key }: { key: string }) => {
     navigate(key);

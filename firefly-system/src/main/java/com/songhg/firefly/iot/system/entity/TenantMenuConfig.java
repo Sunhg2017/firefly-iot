@@ -12,12 +12,6 @@ public class TenantMenuConfig extends TenantEntity {
 
     private static final long serialVersionUID = 1L;
 
-    private Long parentId;
     private String menuKey;
-    private String label;
-    private String icon;
-    private String routePath;
-    private Integer sortOrder;
-    private Boolean visible;
     private Long createdBy;
 }

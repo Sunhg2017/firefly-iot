@@ -29,7 +29,7 @@ import com.songhg.firefly.iot.system.entity.RolePermission;
 import com.songhg.firefly.iot.system.entity.User;
 import com.songhg.firefly.iot.system.entity.UserRole;
 import com.songhg.firefly.iot.system.convert.TenantConvert;
-import com.songhg.firefly.iot.system.dto.menu.MenuConfigVO;
+import com.songhg.firefly.iot.system.dto.tenant.TenantSpaceMenuAuthorizationVO;
 import com.songhg.firefly.iot.system.mapper.RoleMapper;
 import com.songhg.firefly.iot.system.mapper.RolePermissionMapper;
 import com.songhg.firefly.iot.system.mapper.TenantMapper;
@@ -106,6 +106,7 @@ public class TenantService {
         Long adminUserId = withTenantContext(tenant.getId(), () -> {
             TenantQuota quota = createQuotaForPlan(tenant.getId(), tenant.getPlan());
             tenantQuotaMapper.insert(quota);
+            tenantMenuConfigService.grantDefaultMenus(tenant.getId());
             return createTenantAdmin(tenant, dto.getAdminUser(), operatorId);
         });
         tenant.setAdminUserId(adminUserId);
@@ -494,22 +495,22 @@ public class TenantService {
         return vo;
     }
 
-    public List<MenuConfigVO> getTenantSpaceMenus(Long tenantId) {
+    public TenantSpaceMenuAuthorizationVO getTenantSpaceMenus(Long tenantId) {
         assertSystemOpsOperator();
         Tenant tenant = requireTenant(tenantId);
         ensureTenantSupportsSpaceAuthorization(tenant);
-        return tenantMenuConfigService.getMenuTree(tenantId);
+        return tenantMenuConfigService.getTenantSpaceAuthorization(tenantId);
     }
 
     @Transactional
-    public List<MenuConfigVO> updateTenantSpaceMenus(Long tenantId, List<TenantSpaceMenuAssignDTO> items) {
+    public TenantSpaceMenuAuthorizationVO updateTenantSpaceMenus(Long tenantId, TenantSpaceMenuAssignDTO items) {
         assertSystemOpsOperator();
         Tenant tenant = requireTenant(tenantId);
         ensureTenantSupportsSpaceAuthorization(tenant);
-        if (items == null || items.isEmpty()) {
+        if (items == null || items.getMenuKeys() == null || items.getMenuKeys().isEmpty()) {
             throw new BizException(ResultCode.PARAM_ERROR, "请至少选择一个租户空间功能");
         }
-        List<MenuConfigVO> menuTree = tenantMenuConfigService.replaceMenus(tenantId, items);
+        TenantSpaceMenuAuthorizationVO menuTree = tenantMenuConfigService.replaceMenus(tenantId, items.getMenuKeys());
         syncTenantRolePermissionsToAuthorizedScope(tenantId);
         return menuTree;
     }
@@ -623,7 +624,7 @@ public class TenantService {
         }
     }
 
-    private void syncTenantRolePermissionsToAuthorizedScope(Long tenantId) {
+    public void syncTenantRolePermissionsToAuthorizedScope(Long tenantId) {
         Set<String> allowedPermissions = workspacePermissionCatalogService.getTenantWorkspacePermissions(tenantId);
         List<Role> roles = roleMapper.selectList(new LambdaQueryWrapper<Role>()
                 .eq(Role::getTenantId, tenantId));
@@ -647,6 +648,69 @@ public class TenantService {
             Set<String> nextPermissions = Boolean.TRUE.equals(role.getSystemFlag())
                     ? new LinkedHashSet<>(allowedPermissions)
                     : workspacePermissionCatalogService.retainTenantAuthorizedPermissions(tenantId, currentPermissions);
+            if (currentPermissions.equals(nextPermissions)) {
+                continue;
+            }
+
+            rolePermissionMapper.delete(new LambdaQueryWrapper<RolePermission>()
+                    .eq(RolePermission::getRoleId, role.getId()));
+            for (String permission : nextPermissions) {
+                RolePermission rolePermission = new RolePermission();
+                rolePermission.setRoleId(role.getId());
+                rolePermission.setPermission(permission);
+                rolePermission.setCreatedAt(LocalDateTime.now());
+                rolePermissionMapper.insert(rolePermission);
+            }
+
+            for (UserRole userRole : userRolesByRoleId.getOrDefault(role.getId(), List.of())) {
+                permissionService.evictUserCache(userRole.getUserId());
+            }
+        }
+    }
+
+    public void syncAllTenantRolePermissionsToAuthorizedScope() {
+        Long platformTenantId = userDomainService.getPlatformTenantId();
+        List<Tenant> tenants = tenantMapper.selectList(new LambdaQueryWrapper<Tenant>()
+                .select(Tenant::getId)
+                .isNull(Tenant::getDeletedAt));
+        for (Tenant tenant : tenants) {
+            if (tenant == null || tenant.getId() == null || tenant.getId().equals(platformTenantId)) {
+                continue;
+            }
+            syncTenantRolePermissionsToAuthorizedScope(tenant.getId());
+        }
+    }
+
+    public void syncPlatformRolePermissionsToAuthorizedScope() {
+        Long platformTenantId = userDomainService.getPlatformTenantId();
+        Set<String> allowedPermissions = workspacePermissionCatalogService.getPlatformWorkspacePermissions();
+        List<Role> roles = roleMapper.selectList(new LambdaQueryWrapper<Role>()
+                .eq(Role::getTenantId, platformTenantId));
+        if (roles.isEmpty()) {
+            return;
+        }
+
+        Map<Long, List<UserRole>> userRolesByRoleId = userRoleMapper.selectList(new LambdaQueryWrapper<UserRole>()
+                        .in(UserRole::getRoleId, roles.stream().map(Role::getId).toList()))
+                .stream()
+                .collect(Collectors.groupingBy(UserRole::getRoleId));
+
+        for (Role role : roles) {
+            Set<String> currentPermissions = rolePermissionMapper.selectList(new LambdaQueryWrapper<RolePermission>()
+                            .eq(RolePermission::getRoleId, role.getId()))
+                    .stream()
+                    .map(RolePermission::getPermission)
+                    .filter(permission -> permission != null && !permission.isBlank())
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+
+            Set<String> nextPermissions = Boolean.TRUE.equals(role.getSystemFlag())
+                    ? new LinkedHashSet<>(allowedPermissions)
+                    : new LinkedHashSet<>(currentPermissions);
+            nextPermissions.retainAll(allowedPermissions);
+            if (Boolean.TRUE.equals(role.getSystemFlag())) {
+                nextPermissions = new LinkedHashSet<>(allowedPermissions);
+            }
+
             if (currentPermissions.equals(nextPermissions)) {
                 continue;
             }

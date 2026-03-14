@@ -45,6 +45,7 @@ public class UserService {
     private final RoleMapper roleMapper;
     private final PasswordEncoder passwordEncoder;
     private final UserDomainService userDomainService;
+    private final WorkspaceMenuAccessService workspaceMenuAccessService;
 
     @Transactional
     public UserVO createUser(UserCreateDTO dto) {
@@ -265,6 +266,7 @@ public class UserService {
         UserVO result = UserConvert.INSTANCE.toVO(user);
         result.setRoles(roles);
         result.setTenantSuperAdmin(userDomainService.isTenantSuperAdmin(user.getId(), user.getTenantId()));
+        result.setAuthorizedMenuPaths(workspaceMenuAccessService.listCurrentUserAuthorizedMenuPaths());
         return result;
     }
 

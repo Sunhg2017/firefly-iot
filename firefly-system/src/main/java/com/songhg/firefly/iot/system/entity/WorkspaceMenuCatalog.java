@@ -9,8 +9,8 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("workspace_menu_permission_catalog")
-public class WorkspaceMenuPermissionCatalog implements Serializable {
+@TableName("workspace_menu_catalog")
+public class WorkspaceMenuCatalog implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
@@ -18,9 +18,14 @@ public class WorkspaceMenuPermissionCatalog implements Serializable {
     private Long id;
     private String workspaceScope;
     private String menuKey;
-    private String permissionCode;
-    private String permissionLabel;
-    private Integer permissionSortOrder;
+    private String parentMenuKey;
+    private String label;
+    private String icon;
+    private String routePath;
+    private String menuType;
+    private Integer sortOrder;
+    private Boolean visible;
+    private Boolean roleCatalogVisible;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
