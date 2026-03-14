@@ -185,6 +185,7 @@ public class DeviceService {
         }
         device.setStatus(DeviceStatus.ACTIVE);
         deviceMapper.updateById(device);
+        deviceGroupService.rebuildDynamicGroupsForDevice(device.getId());
         log.info("Device enabled: id={}, deviceName={}", id, device.getDeviceName());
     }
 
@@ -197,6 +198,7 @@ public class DeviceService {
         device.setStatus(DeviceStatus.DISABLED);
         device.setOnlineStatus(OnlineStatus.OFFLINE);
         deviceMapper.updateById(device);
+        deviceGroupService.rebuildDynamicGroupsForDevice(device.getId());
         log.info("Device disabled: id={}, deviceName={}", id, device.getDeviceName());
     }
 
@@ -271,6 +273,7 @@ public class DeviceService {
             device.setLastOfflineAt(changedAt);
         }
         deviceMapper.updateById(device);
+        deviceGroupService.rebuildDynamicGroupsForDevice(device.getId());
     }
 
     private Product getProductOrThrow(Long productId) {

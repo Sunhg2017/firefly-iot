@@ -11,7 +11,7 @@ import PageHeader from '../../components/PageHeader';
 const { Search, TextArea } = Input;
 
 interface DeviceTagRecord { id: number; tagKey: string; tagValue: string; color?: string; }
-interface DeviceGroupRecord { id: number; name: string; }
+interface DeviceGroupRecord { id: number; name: string; type?: string; }
 interface DeviceRecord {
   id: number;
   productId: number;
@@ -136,7 +136,14 @@ const DeviceList: React.FC = () => {
     try { const res = await deviceTagApi.listAll(); setTags(res.data.data || []); } catch { setTags([]); }
   };
   const fetchGroups = async () => {
-    try { const res = await deviceGroupApi.listAll(); setGroups((res.data.data || []).map((item: DeviceGroupRecord) => ({ id: item.id, name: item.name }))); } catch { setGroups([]); }
+    try {
+      const res = await deviceGroupApi.listAll();
+      setGroups((res.data.data || [])
+        .filter((item: DeviceGroupRecord) => item.type !== 'DYNAMIC')
+        .map((item: DeviceGroupRecord) => ({ id: item.id, name: item.name, type: item.type })));
+    } catch {
+      setGroups([]);
+    }
   };
   const fetchData = async () => {
     setLoading(true);

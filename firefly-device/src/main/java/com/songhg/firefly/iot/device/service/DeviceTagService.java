@@ -45,6 +45,7 @@ public class DeviceTagService {
     private final DeviceTagMapper tagMapper;
     private final DeviceTagBindingMapper bindingMapper;
     private final DeviceMapper deviceMapper;
+    private final DeviceGroupService deviceGroupService;
 
     @Transactional
     public DeviceTag createTag(String tagKey, String tagValue, String color, String description) {
@@ -210,6 +211,7 @@ public class DeviceTagService {
 
         updateDeviceCount(tag.getId());
         refreshDeviceTagSnapshot(deviceId);
+        deviceGroupService.rebuildDynamicGroupsForDevice(deviceId);
     }
 
     @Transactional
@@ -221,6 +223,7 @@ public class DeviceTagService {
                 .eq(DeviceTagBinding::getDeviceId, deviceId));
         updateDeviceCount(tag.getId());
         refreshDeviceTagSnapshot(deviceId);
+        deviceGroupService.rebuildDynamicGroupsForDevice(deviceId);
     }
 
     @Transactional
@@ -252,6 +255,7 @@ public class DeviceTagService {
 
         updateDeviceCount(tag.getId());
         normalizedDeviceIds.forEach(this::refreshDeviceTagSnapshot);
+        normalizedDeviceIds.forEach(deviceGroupService::rebuildDynamicGroupsForDevice);
     }
 
     @Transactional
@@ -267,6 +271,7 @@ public class DeviceTagService {
                 .in(DeviceTagBinding::getDeviceId, normalizedDeviceIds));
         updateDeviceCount(tag.getId());
         normalizedDeviceIds.forEach(this::refreshDeviceTagSnapshot);
+        normalizedDeviceIds.forEach(deviceGroupService::rebuildDynamicGroupsForDevice);
     }
 
     @Transactional
@@ -305,6 +310,7 @@ public class DeviceTagService {
         affectedTagIds.addAll(addedTagIds);
         affectedTagIds.forEach(this::updateDeviceCount);
         refreshDeviceTagSnapshot(deviceId);
+        deviceGroupService.rebuildDynamicGroupsForDevice(deviceId);
     }
 
     @Transactional
@@ -322,6 +328,7 @@ public class DeviceTagService {
                 .distinct()
                 .forEach(this::updateDeviceCount);
         refreshDeviceTagSnapshot(deviceId);
+        deviceGroupService.rebuildDynamicGroupsForDevice(deviceId);
     }
 
     private void refreshDeviceTagSnapshot(Long deviceId) {

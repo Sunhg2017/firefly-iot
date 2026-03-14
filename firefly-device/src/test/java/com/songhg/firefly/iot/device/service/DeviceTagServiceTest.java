@@ -19,16 +19,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class DeviceTagServiceTest {
 
-    private final DeviceTagMapper tagMapper = org.mockito.Mockito.mock(DeviceTagMapper.class);
-    private final DeviceTagBindingMapper bindingMapper = org.mockito.Mockito.mock(DeviceTagBindingMapper.class);
-    private final DeviceMapper deviceMapper = org.mockito.Mockito.mock(DeviceMapper.class);
-    private final DeviceTagService service = new DeviceTagService(tagMapper, bindingMapper, deviceMapper);
+    private final DeviceTagMapper tagMapper = mock(DeviceTagMapper.class);
+    private final DeviceTagBindingMapper bindingMapper = mock(DeviceTagBindingMapper.class);
+    private final DeviceMapper deviceMapper = mock(DeviceMapper.class);
+    private final DeviceGroupService deviceGroupService = mock(DeviceGroupService.class);
+    private final DeviceTagService service = new DeviceTagService(tagMapper, bindingMapper, deviceMapper, deviceGroupService);
 
     @AfterEach
     void tearDown() {
@@ -36,7 +38,7 @@ class DeviceTagServiceTest {
     }
 
     @Test
-    void syncDeviceTagsShouldReplaceBindingsAndRefreshDeviceSnapshot() {
+    void syncDeviceTagsShouldReplaceBindingsRefreshSnapshotAndRebuildDynamicGroups() {
         AppContextHolder.setTenantId(1L);
 
         Device device = new Device();
@@ -66,12 +68,13 @@ class DeviceTagServiceTest {
 
         service.syncDeviceTags(10L, List.of(2L, 3L));
 
-        verify(bindingMapper, times(1)).delete(any());
+        verify(bindingMapper).delete(any());
         verify(bindingMapper, times(2)).insert(any(DeviceTagBinding.class));
 
         ArgumentCaptor<Device> deviceCaptor = ArgumentCaptor.forClass(Device.class);
         verify(deviceMapper).updateById(deviceCaptor.capture());
         assertEquals("[\"site:west\",\"level:critical\"]", deviceCaptor.getValue().getTags());
+        verify(deviceGroupService).rebuildDynamicGroupsForDevice(10L);
     }
 
     @Test

@@ -1,9 +1,13 @@
 package com.songhg.firefly.iot.device.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.enums.DeviceStatus;
+import com.songhg.firefly.iot.common.enums.OnlineStatus;
 import com.songhg.firefly.iot.device.entity.Device;
 import com.songhg.firefly.iot.device.entity.DeviceGroup;
 import com.songhg.firefly.iot.device.entity.DeviceGroupMember;
+import com.songhg.firefly.iot.device.entity.Product;
 import com.songhg.firefly.iot.device.mapper.DeviceGroupMapper;
 import com.songhg.firefly.iot.device.mapper.DeviceGroupMemberMapper;
 import com.songhg.firefly.iot.device.mapper.DeviceMapper;
@@ -18,17 +22,19 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class DeviceGroupServiceTest {
 
-    private final DeviceGroupMapper groupMapper = org.mockito.Mockito.mock(DeviceGroupMapper.class);
-    private final DeviceGroupMemberMapper memberMapper = org.mockito.Mockito.mock(DeviceGroupMemberMapper.class);
-    private final DeviceMapper deviceMapper = org.mockito.Mockito.mock(DeviceMapper.class);
-    private final ProductMapper productMapper = org.mockito.Mockito.mock(ProductMapper.class);
-    private final DeviceGroupService service = new DeviceGroupService(groupMapper, memberMapper, deviceMapper, productMapper);
+    private final DeviceGroupMapper groupMapper = mock(DeviceGroupMapper.class);
+    private final DeviceGroupMemberMapper memberMapper = mock(DeviceGroupMemberMapper.class);
+    private final DeviceMapper deviceMapper = mock(DeviceMapper.class);
+    private final ProductMapper productMapper = mock(ProductMapper.class);
+    private final DeviceGroupService service =
+            new DeviceGroupService(groupMapper, memberMapper, deviceMapper, productMapper, new ObjectMapper());
 
     @AfterEach
     void tearDown() {
@@ -36,16 +42,16 @@ class DeviceGroupServiceTest {
     }
 
     @Test
-    void syncDeviceGroupsShouldReplaceMembershipsAndRefreshCounts() {
+    void syncDeviceGroupsShouldReplaceStaticMembershipsAndRefreshCounts() {
         AppContextHolder.setTenantId(1L);
 
         Device device = new Device();
         device.setId(10L);
         device.setTenantId(1L);
 
-        DeviceGroup removedGroup = buildGroup(1L, "old-group");
-        DeviceGroup keptGroup = buildGroup(2L, "kept-group");
-        DeviceGroup addedGroup = buildGroup(3L, "new-group");
+        DeviceGroup removedGroup = buildGroup(1L, "old-group", "STATIC");
+        DeviceGroup keptGroup = buildGroup(2L, "kept-group", "STATIC");
+        DeviceGroup addedGroup = buildGroup(3L, "new-group", "STATIC");
 
         when(deviceMapper.selectByIdIgnoreTenant(10L)).thenReturn(device);
         when(groupMapper.selectBatchIds(List.of(2L, 3L))).thenReturn(List.of(keptGroup, addedGroup));
@@ -67,9 +73,9 @@ class DeviceGroupServiceTest {
 
         service.syncDeviceGroups(10L, List.of(2L, 3L));
 
-        verify(memberMapper, times(1)).delete(any());
+        verify(memberMapper).delete(any());
         ArgumentCaptor<DeviceGroupMember> memberCaptor = ArgumentCaptor.forClass(DeviceGroupMember.class);
-        verify(memberMapper, times(1)).insert(memberCaptor.capture());
+        verify(memberMapper).insert(memberCaptor.capture());
         assertEquals(3L, memberCaptor.getValue().getGroupId());
         assertEquals(10L, memberCaptor.getValue().getDeviceId());
 
@@ -83,13 +89,56 @@ class DeviceGroupServiceTest {
     }
 
     @Test
+    void rebuildDynamicGroupsForDeviceShouldTrackMembershipByRule() {
+        AppContextHolder.setTenantId(1L);
+
+        Device device = new Device();
+        device.setId(10L);
+        device.setTenantId(1L);
+        device.setProductId(100L);
+        device.setDeviceName("gateway-01");
+        device.setNickname("North Gateway");
+        device.setStatus(DeviceStatus.ACTIVE);
+        device.setOnlineStatus(OnlineStatus.ONLINE);
+        device.setTags("[\"region:north\",\"site:factory-a\"]");
+
+        DeviceGroup dynamicGroup = buildGroup(5L, "north-online", "DYNAMIC");
+        dynamicGroup.setDynamicRule("""
+                {"matchMode":"ALL","conditions":[
+                  {"field":"productKey","operator":"IN","values":["pk_gateway"]},
+                  {"field":"onlineStatus","operator":"EQ","value":"ONLINE"},
+                  {"field":"tag","operator":"HAS_TAG","tagKey":"region","tagValue":"north"}
+                ]}
+                """);
+
+        Product product = new Product();
+        product.setId(100L);
+        product.setProductKey("pk_gateway");
+
+        when(deviceMapper.selectByIdIgnoreTenant(10L)).thenReturn(device);
+        when(groupMapper.selectList(any())).thenReturn(List.of(dynamicGroup));
+        when(productMapper.selectBatchIds(List.of(100L))).thenReturn(List.of(product));
+        when(memberMapper.selectList(any())).thenReturn(List.of());
+        when(memberMapper.selectCount(any())).thenReturn(1L);
+        when(groupMapper.selectById(5L)).thenReturn(dynamicGroup);
+
+        service.rebuildDynamicGroupsForDevice(10L);
+
+        ArgumentCaptor<DeviceGroupMember> memberCaptor = ArgumentCaptor.forClass(DeviceGroupMember.class);
+        verify(memberMapper).insert(memberCaptor.capture());
+        assertEquals(5L, memberCaptor.getValue().getGroupId());
+        assertEquals(10L, memberCaptor.getValue().getDeviceId());
+        verify(groupMapper).updateById(any(DeviceGroup.class));
+    }
+
+    @Test
     void deleteGroupShouldDeleteChildrenAndMembersTogether() {
         AppContextHolder.setTenantId(1L);
 
-        DeviceGroup root = buildGroup(1L, "root");
-        DeviceGroup child = buildGroup(2L, "child");
+        DeviceGroup root = buildGroup(1L, "root", "STATIC");
+        DeviceGroup child = buildGroup(2L, "child", "DYNAMIC");
         child.setParentId(1L);
-        DeviceGroup grandChild = buildGroup(3L, "grand-child");
+        DeviceGroup grandChild = buildGroup(3L, "grand-child", "STATIC");
         grandChild.setParentId(2L);
 
         when(groupMapper.selectById(1L)).thenReturn(root);
@@ -102,18 +151,18 @@ class DeviceGroupServiceTest {
 
         service.deleteGroup(1L);
 
-        verify(memberMapper, times(1)).delete(any());
+        verify(memberMapper).delete(any());
         ArgumentCaptor<List<Long>> groupIdsCaptor = ArgumentCaptor.forClass(List.class);
         verify(groupMapper).deleteBatchIds(groupIdsCaptor.capture());
         assertEquals(List.of(3L, 2L, 1L), groupIdsCaptor.getValue());
     }
 
-    private DeviceGroup buildGroup(Long id, String name) {
+    private DeviceGroup buildGroup(Long id, String name, String type) {
         DeviceGroup group = new DeviceGroup();
         group.setId(id);
         group.setTenantId(1L);
         group.setName(name);
-        group.setType("STATIC");
+        group.setType(type);
         group.setDeviceCount(0);
         return group;
     }
