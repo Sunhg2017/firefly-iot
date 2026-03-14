@@ -24,6 +24,8 @@ public class DeviceUpdateDTO {
     @Schema(description = "标签（逗号分隔）", example = "warehouse,floor-2")
     private List<Long> tagIds;
 
+    private List<Long> groupIds;
+
     /** Optional project re-assignment */
     @Schema(description = "项目编号")
     private Long projectId;

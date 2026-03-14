@@ -23,6 +23,10 @@ public class DeviceQueryDTO extends PageQuery {
     @Schema(description = "产品编号筛选")
     private Long productId;
 
+    /** Filter by device group */
+    @Schema(description = "设备分组编号筛选")
+    private Long groupId;
+
     /** Filter by project */
     @Schema(description = "项目编号筛选")
     private Long projectId;

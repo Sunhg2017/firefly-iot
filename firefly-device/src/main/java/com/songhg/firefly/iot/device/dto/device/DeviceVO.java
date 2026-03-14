@@ -2,6 +2,7 @@ package com.songhg.firefly.iot.device.dto.device;
 
 import com.songhg.firefly.iot.common.enums.DeviceStatus;
 import com.songhg.firefly.iot.common.enums.OnlineStatus;
+import com.songhg.firefly.iot.device.dto.devicegroup.DeviceGroupVO;
 import com.songhg.firefly.iot.device.dto.devicetag.DeviceTagVO;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -51,6 +52,9 @@ public class DeviceVO {
 
     @Schema(description = "Structured device tags")
     private List<DeviceTagVO> tagList;
+
+    @Schema(description = "Structured device groups")
+    private List<DeviceGroupVO> groupList;
 
     @Schema(description = "Gateway device ID (for sub-devices)")
     private Long gatewayId;

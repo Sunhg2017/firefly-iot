@@ -128,6 +128,7 @@ public class DeviceImportService {
                     batchDTO.setDevices(batch);
                     batchDTO.setDescription(dto.getDescription());
                     batchDTO.setTagIds(dto.getTagIds());
+                    batchDTO.setGroupIds(dto.getGroupIds());
 
                     deviceService.batchCreateDevices(batchDTO);
                     successCount += batch.size();

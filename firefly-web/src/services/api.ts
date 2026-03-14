@@ -841,7 +841,7 @@ export const deviceApi = {
   get: (id: number) => deviceRequest.get(`/devices/${id}`),
   create: (data: Record<string, unknown>) => deviceRequest.post('/devices', data),
   batchCreate: (data: Record<string, unknown>) => deviceRequest.post('/devices/batch', data),
-  importDevices: (data: { productId: number; fileKey: string; fileFormat: string; projectId?: number; description?: string; tagIds?: number[] }) =>
+  importDevices: (data: { productId: number; fileKey: string; fileFormat: string; projectId?: number; description?: string; tagIds?: number[]; groupIds?: number[] }) =>
     deviceRequest.post('/devices/import', data),
   update: (id: number, data: Record<string, unknown>) => deviceRequest.put(`/devices/${id}`, data),
   enable: (id: number) => deviceRequest.put(`/devices/${id}/enable`),

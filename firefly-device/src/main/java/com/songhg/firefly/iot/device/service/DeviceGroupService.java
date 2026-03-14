@@ -14,9 +14,9 @@ import com.songhg.firefly.iot.device.entity.Device;
 import com.songhg.firefly.iot.device.entity.DeviceGroup;
 import com.songhg.firefly.iot.device.entity.DeviceGroupMember;
 import com.songhg.firefly.iot.device.entity.Product;
-import com.songhg.firefly.iot.device.mapper.DeviceMapper;
 import com.songhg.firefly.iot.device.mapper.DeviceGroupMapper;
 import com.songhg.firefly.iot.device.mapper.DeviceGroupMemberMapper;
+import com.songhg.firefly.iot.device.mapper.DeviceMapper;
 import com.songhg.firefly.iot.device.mapper.ProductMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,16 +25,22 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class DeviceGroupService {
+
+    private static final String GROUP_TYPE_STATIC = "STATIC";
 
     private final DeviceGroupMapper groupMapper;
     private final DeviceGroupMemberMapper memberMapper;
@@ -45,29 +51,29 @@ public class DeviceGroupService {
     public DeviceGroup createGroup(String name, String description, String type, String dynamicRule, Long parentId) {
         Long tenantId = AppContextHolder.getTenantId();
         Long userId = AppContextHolder.getUserId();
-        String normalizedType = normalizeGroupType(type);
         Long normalizedParentId = normalizeParentId(parentId);
         validateParentGroup(null, normalizedParentId, tenantId);
 
         DeviceGroup group = new DeviceGroup();
         group.setTenantId(tenantId);
-        group.setName(name);
-        group.setDescription(description);
-        group.setType(normalizedType);
-        group.setDynamicRule(normalizedType.equals("DYNAMIC") ? trimToNull(dynamicRule) : null);
+        group.setName(trimToNull(name));
+        group.setDescription(trimToNull(description));
+        group.setType(normalizeGroupType(type));
+        group.setDynamicRule(null);
         group.setParentId(normalizedParentId);
         group.setDeviceCount(0);
         group.setCreatedBy(userId);
         groupMapper.insert(group);
 
-        log.info("Device group created: id={}, name={}, type={}", group.getId(), name, group.getType());
+        log.info("Device group created: id={}, name={}", group.getId(), group.getName());
         return group;
     }
 
     public DeviceGroup getGroup(Long id) {
+        Long tenantId = AppContextHolder.getTenantId();
         DeviceGroup group = groupMapper.selectById(id);
-        if (group == null) {
-            throw new BizException(ResultCode.PARAM_ERROR, "分组不存在");
+        if (group == null || (tenantId != null && !tenantId.equals(group.getTenantId()))) {
+            throw new BizException(ResultCode.PARAM_ERROR, "Device group not found");
         }
         return group;
     }
@@ -77,10 +83,11 @@ public class DeviceGroupService {
         Page<DeviceGroup> page = new Page<>(query.getPageNum(), query.getPageSize());
         LambdaQueryWrapper<DeviceGroup> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(DeviceGroup::getTenantId, tenantId);
+        wrapper.eq(DeviceGroup::getType, GROUP_TYPE_STATIC);
         if (query.getKeyword() != null && !query.getKeyword().isBlank()) {
             wrapper.like(DeviceGroup::getName, query.getKeyword());
         }
-        wrapper.orderByDesc(DeviceGroup::getCreatedAt);
+        wrapper.orderByAsc(DeviceGroup::getParentId).orderByAsc(DeviceGroup::getName);
         return groupMapper.selectPage(page, wrapper);
     }
 
@@ -88,59 +95,58 @@ public class DeviceGroupService {
         Long tenantId = AppContextHolder.getTenantId();
         return groupMapper.selectList(new LambdaQueryWrapper<DeviceGroup>()
                 .eq(DeviceGroup::getTenantId, tenantId)
+                .eq(DeviceGroup::getType, GROUP_TYPE_STATIC)
+                .orderByAsc(DeviceGroup::getParentId)
                 .orderByAsc(DeviceGroup::getName));
     }
 
-    /**
-     * 构建分组树：parentId 为 null 或 0 的为根节点
-     */
     public List<DeviceGroupVO> getTree() {
-        List<DeviceGroup> all = listAll();
-        List<DeviceGroupVO> voList = all.stream()
+        List<DeviceGroupVO> voList = listAll().stream()
                 .map(DeviceGroupConvert.INSTANCE::toVO)
                 .toList();
-
         Map<Long, List<DeviceGroupVO>> childrenMap = voList.stream()
-                .filter(v -> v.getParentId() != null && v.getParentId() > 0)
-                .collect(Collectors.groupingBy(DeviceGroupVO::getParentId));
-
-        for (DeviceGroupVO vo : voList) {
-            vo.setChildren(childrenMap.getOrDefault(vo.getId(), new ArrayList<>()));
-        }
-
+                .filter(item -> item.getParentId() != null && item.getParentId() > 0)
+                .collect(Collectors.groupingBy(DeviceGroupVO::getParentId, LinkedHashMap::new, Collectors.toList()));
+        voList.forEach(item -> item.setChildren(childrenMap.getOrDefault(item.getId(), new ArrayList<>())));
         return voList.stream()
-                .filter(v -> v.getParentId() == null || v.getParentId() == 0)
+                .filter(item -> item.getParentId() == null || item.getParentId() <= 0)
                 .toList();
     }
 
     @Transactional
     public DeviceGroup updateGroup(Long id, String name, String description, String type, String dynamicRule, Long parentId) {
         DeviceGroup group = getGroup(id);
-        Long tenantId = AppContextHolder.getTenantId();
-        String normalizedType = normalizeGroupType(type != null ? type : group.getType());
         Long normalizedParentId = normalizeParentId(parentId);
-        validateParentGroup(id, normalizedParentId, tenantId);
+        validateParentGroup(id, normalizedParentId, AppContextHolder.getTenantId());
 
-        if (name != null) group.setName(name);
-        if (description != null) group.setDescription(description);
-        group.setType(normalizedType);
+        if (name != null) {
+            group.setName(trimToNull(name));
+        }
+        if (description != null) {
+            group.setDescription(trimToNull(description));
+        }
+        group.setType(normalizeGroupType(type != null ? type : group.getType()));
+        group.setDynamicRule(null);
         group.setParentId(normalizedParentId);
-        group.setDynamicRule(normalizedType.equals("DYNAMIC") ? trimToNull(dynamicRule) : null);
         groupMapper.updateById(group);
         return group;
     }
 
     @Transactional
     public void deleteGroup(Long id) {
+        DeviceGroup group = getGroup(id);
+        List<Long> groupIds = new ArrayList<>();
+        collectChildGroupIds(group.getId(), groupIds);
+        groupIds.add(group.getId());
+
         memberMapper.delete(new LambdaQueryWrapper<DeviceGroupMember>()
-                .eq(DeviceGroupMember::getGroupId, id));
-        groupMapper.deleteById(id);
-        log.info("Device group deleted: id={}", id);
+                .in(DeviceGroupMember::getGroupId, groupIds));
+        groupMapper.deleteBatchIds(groupIds);
+        log.info("Device groups deleted: ids={}", groupIds);
     }
 
-    // ==================== Members ====================
-
     public List<DeviceGroupMember> listMembers(Long groupId) {
+        getGroup(groupId);
         return memberMapper.selectList(new LambdaQueryWrapper<DeviceGroupMember>()
                 .eq(DeviceGroupMember::getGroupId, groupId)
                 .orderByDesc(DeviceGroupMember::getCreatedAt));
@@ -159,7 +165,6 @@ public class DeviceGroupService {
                 .distinct()
                 .toList();
 
-        // 成员列表补齐设备和产品业务字段，前端展示时不再依赖内部主键兜底。
         Map<Long, Device> deviceMap = deviceMapper.selectList(new LambdaQueryWrapper<Device>()
                         .eq(Device::getTenantId, tenantId)
                         .in(Device::getId, deviceIds)
@@ -194,14 +199,85 @@ public class DeviceGroupService {
         }).toList();
     }
 
+    public List<DeviceGroup> getDeviceGroups(Long deviceId) {
+        getDeviceOrThrow(deviceId);
+        List<DeviceGroupMember> members = memberMapper.selectList(new LambdaQueryWrapper<DeviceGroupMember>()
+                .eq(DeviceGroupMember::getDeviceId, deviceId)
+                .orderByAsc(DeviceGroupMember::getCreatedAt));
+        if (members.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, DeviceGroup> groupMap = groupMapper.selectBatchIds(
+                        members.stream().map(DeviceGroupMember::getGroupId).distinct().toList()
+                ).stream()
+                .filter(Objects::nonNull)
+                .filter(group -> GROUP_TYPE_STATIC.equalsIgnoreCase(group.getType()))
+                .collect(Collectors.toMap(DeviceGroup::getId, item -> item));
+
+        List<DeviceGroup> result = new ArrayList<>();
+        members.forEach(member -> {
+            DeviceGroup group = groupMap.get(member.getGroupId());
+            if (group != null) {
+                result.add(group);
+            }
+        });
+        return result;
+    }
+
+    public Map<Long, List<DeviceGroup>> getDeviceGroupMap(Collection<Long> deviceIds) {
+        List<Long> normalizedDeviceIds = normalizeIds(deviceIds);
+        if (normalizedDeviceIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        List<DeviceGroupMember> members = memberMapper.selectList(new LambdaQueryWrapper<DeviceGroupMember>()
+                .in(DeviceGroupMember::getDeviceId, normalizedDeviceIds)
+                .orderByAsc(DeviceGroupMember::getCreatedAt));
+        Map<Long, List<DeviceGroup>> result = normalizedDeviceIds.stream()
+                .collect(Collectors.toMap(id -> id, id -> new ArrayList<>(), (left, right) -> left, LinkedHashMap::new));
+        if (members.isEmpty()) {
+            return result;
+        }
+
+        Map<Long, DeviceGroup> groupMap = groupMapper.selectBatchIds(
+                        members.stream().map(DeviceGroupMember::getGroupId).distinct().toList()
+                ).stream()
+                .filter(Objects::nonNull)
+                .filter(group -> GROUP_TYPE_STATIC.equalsIgnoreCase(group.getType()))
+                .collect(Collectors.toMap(DeviceGroup::getId, item -> item));
+
+        members.forEach(member -> {
+            DeviceGroup group = groupMap.get(member.getGroupId());
+            if (group != null) {
+                result.computeIfAbsent(member.getDeviceId(), ignored -> new ArrayList<>()).add(group);
+            }
+        });
+        return result;
+    }
+
+    public List<Long> listDeviceIdsByGroup(Long groupId) {
+        assertStaticGroup(groupId);
+        return memberMapper.selectList(new LambdaQueryWrapper<DeviceGroupMember>()
+                        .eq(DeviceGroupMember::getGroupId, groupId)
+                        .orderByAsc(DeviceGroupMember::getCreatedAt))
+                .stream()
+                .map(DeviceGroupMember::getDeviceId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+    }
+
     @Transactional
     public void addDevice(Long groupId, Long deviceId) {
-        assertStaticGroupForManualMembership(groupId);
-        assertDeviceExists(deviceId);
+        assertStaticGroup(groupId);
+        getDeviceOrThrow(deviceId);
         Long exists = memberMapper.selectCount(new LambdaQueryWrapper<DeviceGroupMember>()
                 .eq(DeviceGroupMember::getGroupId, groupId)
                 .eq(DeviceGroupMember::getDeviceId, deviceId));
-        if (exists > 0) return;
+        if (exists != null && exists > 0) {
+            return;
+        }
 
         DeviceGroupMember member = new DeviceGroupMember();
         member.setGroupId(groupId);
@@ -213,7 +289,7 @@ public class DeviceGroupService {
 
     @Transactional
     public void removeDevice(Long groupId, Long deviceId) {
-        assertStaticGroupForManualMembership(groupId);
+        assertStaticGroup(groupId);
         memberMapper.delete(new LambdaQueryWrapper<DeviceGroupMember>()
                 .eq(DeviceGroupMember::getGroupId, groupId)
                 .eq(DeviceGroupMember::getDeviceId, deviceId));
@@ -222,38 +298,115 @@ public class DeviceGroupService {
 
     @Transactional
     public void batchAddDevices(Long groupId, List<Long> deviceIds) {
-        assertStaticGroupForManualMembership(groupId);
-        for (Long deviceId : deviceIds) {
-            addDevice(groupId, deviceId);
+        assertStaticGroup(groupId);
+        List<Long> normalizedDeviceIds = normalizeIds(deviceIds);
+        if (normalizedDeviceIds.isEmpty()) {
+            return;
         }
+
+        validateDevicesForCurrentTenant(normalizedDeviceIds);
+        Set<Long> existingIds = memberMapper.selectList(new LambdaQueryWrapper<DeviceGroupMember>()
+                        .eq(DeviceGroupMember::getGroupId, groupId)
+                        .in(DeviceGroupMember::getDeviceId, normalizedDeviceIds))
+                .stream()
+                .map(DeviceGroupMember::getDeviceId)
+                .collect(Collectors.toSet());
+
+        LocalDateTime now = LocalDateTime.now();
+        normalizedDeviceIds.stream()
+                .filter(deviceId -> !existingIds.contains(deviceId))
+                .forEach(deviceId -> {
+                    DeviceGroupMember member = new DeviceGroupMember();
+                    member.setGroupId(groupId);
+                    member.setDeviceId(deviceId);
+                    member.setCreatedAt(now);
+                    memberMapper.insert(member);
+                });
+        updateDeviceCount(groupId);
     }
 
     @Transactional
     public void batchRemoveDevices(Long groupId, List<Long> deviceIds) {
-        assertStaticGroupForManualMembership(groupId);
+        assertStaticGroup(groupId);
+        List<Long> normalizedDeviceIds = normalizeIds(deviceIds);
+        if (normalizedDeviceIds.isEmpty()) {
+            return;
+        }
         memberMapper.delete(new LambdaQueryWrapper<DeviceGroupMember>()
                 .eq(DeviceGroupMember::getGroupId, groupId)
-                .in(DeviceGroupMember::getDeviceId, deviceIds));
+                .in(DeviceGroupMember::getDeviceId, normalizedDeviceIds));
         updateDeviceCount(groupId);
     }
 
-    private void assertStaticGroupForManualMembership(Long groupId) {
+    @Transactional
+    public void syncDeviceGroups(Long deviceId, Collection<Long> groupIds) {
+        getDeviceOrThrow(deviceId);
+        List<Long> normalizedGroupIds = normalizeIds(groupIds);
+        validateGroupsForCurrentTenant(normalizedGroupIds);
+
+        List<DeviceGroupMember> existingMembers = memberMapper.selectList(new LambdaQueryWrapper<DeviceGroupMember>()
+                .eq(DeviceGroupMember::getDeviceId, deviceId));
+        Set<Long> existingGroupIds = existingMembers.stream()
+                .map(DeviceGroupMember::getGroupId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<Long> targetGroupIds = new LinkedHashSet<>(normalizedGroupIds);
+
+        Set<Long> removedGroupIds = new LinkedHashSet<>(existingGroupIds);
+        removedGroupIds.removeAll(targetGroupIds);
+        if (!removedGroupIds.isEmpty()) {
+            memberMapper.delete(new LambdaQueryWrapper<DeviceGroupMember>()
+                    .eq(DeviceGroupMember::getDeviceId, deviceId)
+                    .in(DeviceGroupMember::getGroupId, removedGroupIds));
+        }
+
+        Set<Long> addedGroupIds = new LinkedHashSet<>(targetGroupIds);
+        addedGroupIds.removeAll(existingGroupIds);
+        LocalDateTime now = LocalDateTime.now();
+        addedGroupIds.forEach(groupId -> {
+            DeviceGroupMember member = new DeviceGroupMember();
+            member.setGroupId(groupId);
+            member.setDeviceId(deviceId);
+            member.setCreatedAt(now);
+            memberMapper.insert(member);
+        });
+
+        Set<Long> affectedGroupIds = new LinkedHashSet<>(removedGroupIds);
+        affectedGroupIds.addAll(addedGroupIds);
+        affectedGroupIds.forEach(this::updateDeviceCount);
+    }
+
+    @Transactional
+    public void removeDeviceMemberships(Long deviceId) {
+        List<DeviceGroupMember> members = memberMapper.selectList(new LambdaQueryWrapper<DeviceGroupMember>()
+                .eq(DeviceGroupMember::getDeviceId, deviceId));
+        if (members.isEmpty()) {
+            return;
+        }
+        memberMapper.delete(new LambdaQueryWrapper<DeviceGroupMember>()
+                .eq(DeviceGroupMember::getDeviceId, deviceId));
+        members.stream()
+                .map(DeviceGroupMember::getGroupId)
+                .distinct()
+                .forEach(this::updateDeviceCount);
+    }
+
+    private void assertStaticGroup(Long groupId) {
         DeviceGroup group = getGroup(groupId);
-        if (!"STATIC".equalsIgnoreCase(group.getType())) {
-            throw new BizException(ResultCode.BAD_REQUEST, "动态分组仅维护规则，不支持手动添加或移除设备");
+        if (!GROUP_TYPE_STATIC.equalsIgnoreCase(group.getType())) {
+            throw new BizException(ResultCode.BAD_REQUEST, "Only static device groups are supported");
         }
     }
 
-    private void assertDeviceExists(Long deviceId) {
+    private Device getDeviceOrThrow(Long deviceId) {
         Long tenantId = AppContextHolder.getTenantId();
-        Device device = deviceMapper.selectOne(new LambdaQueryWrapper<Device>()
-                .eq(Device::getTenantId, tenantId)
-                .eq(Device::getId, deviceId)
-                .isNull(Device::getDeletedAt)
-                .last("limit 1"));
-        if (device == null) {
-            throw new BizException(ResultCode.DEVICE_NOT_FOUND, "设备不存在或已被删除");
+        Device device = deviceMapper.selectByIdIgnoreTenant(deviceId);
+        if (device == null || device.getDeletedAt() != null) {
+            throw new BizException(ResultCode.DEVICE_NOT_FOUND);
         }
+        if (tenantId != null && device.getTenantId() != null && !tenantId.equals(device.getTenantId())) {
+            throw new BizException(ResultCode.PARAM_ERROR, "Device does not belong to current tenant");
+        }
+        return device;
     }
 
     private void validateParentGroup(Long currentGroupId, Long parentId, Long tenantId) {
@@ -261,36 +414,76 @@ public class DeviceGroupService {
             return;
         }
         if (currentGroupId != null && currentGroupId.equals(parentId)) {
-            throw new BizException(ResultCode.BAD_REQUEST, "上级分组不能选择自身");
+            throw new BizException(ResultCode.BAD_REQUEST, "Parent group cannot be self");
         }
 
         DeviceGroup parent = groupMapper.selectById(parentId);
-        if (parent == null || !Objects.equals(parent.getTenantId(), tenantId)) {
-            throw new BizException(ResultCode.BAD_REQUEST, "上级分组不存在");
+        if (parent == null || !Objects.equals(parent.getTenantId(), tenantId) || !GROUP_TYPE_STATIC.equalsIgnoreCase(parent.getType())) {
+            throw new BizException(ResultCode.BAD_REQUEST, "Parent group does not exist");
         }
 
         if (currentGroupId == null) {
             return;
         }
 
-        // 沿父链向上回溯，避免把当前分组挂到自己的子孙节点下形成环。
         Long cursor = parent.getParentId();
         while (cursor != null && cursor > 0) {
             if (cursor.equals(currentGroupId)) {
-                throw new BizException(ResultCode.BAD_REQUEST, "上级分组不能选择当前分组的子孙节点");
+                throw new BizException(ResultCode.BAD_REQUEST, "Parent group cannot be descendant of current group");
             }
             DeviceGroup next = groupMapper.selectById(cursor);
             cursor = next == null ? null : next.getParentId();
         }
     }
 
+    private void validateGroupsForCurrentTenant(Collection<Long> groupIds) {
+        if (groupIds == null || groupIds.isEmpty()) {
+            return;
+        }
+        Long tenantId = AppContextHolder.getTenantId();
+        List<DeviceGroup> groups = groupMapper.selectBatchIds(groupIds);
+        if (groups.size() != groupIds.size()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "Some device groups do not exist");
+        }
+        boolean invalid = groups.stream().anyMatch(group ->
+                tenantId != null && (!tenantId.equals(group.getTenantId()) || !GROUP_TYPE_STATIC.equalsIgnoreCase(group.getType())));
+        if (invalid) {
+            throw new BizException(ResultCode.PARAM_ERROR, "Some device groups are unavailable");
+        }
+    }
+
+    private void validateDevicesForCurrentTenant(Collection<Long> deviceIds) {
+        if (deviceIds == null || deviceIds.isEmpty()) {
+            return;
+        }
+        Long tenantId = AppContextHolder.getTenantId();
+        List<Device> devices = deviceMapper.selectList(new LambdaQueryWrapper<Device>()
+                .eq(Device::getTenantId, tenantId)
+                .in(Device::getId, deviceIds)
+                .isNull(Device::getDeletedAt));
+        if (devices.size() != deviceIds.size()) {
+            throw new BizException(ResultCode.DEVICE_NOT_FOUND);
+        }
+    }
+
+    private void collectChildGroupIds(Long parentId, List<Long> collector) {
+        List<DeviceGroup> children = groupMapper.selectList(new LambdaQueryWrapper<DeviceGroup>()
+                .eq(DeviceGroup::getTenantId, AppContextHolder.getTenantId())
+                .eq(DeviceGroup::getParentId, parentId)
+                .eq(DeviceGroup::getType, GROUP_TYPE_STATIC));
+        children.forEach(child -> {
+            collectChildGroupIds(child.getId(), collector);
+            collector.add(child.getId());
+        });
+    }
+
     private String normalizeGroupType(String type) {
         if (type == null || type.isBlank()) {
-            return "STATIC";
+            return GROUP_TYPE_STATIC;
         }
         String normalized = type.trim().toUpperCase();
-        if (!"STATIC".equals(normalized) && !"DYNAMIC".equals(normalized)) {
-            throw new BizException(ResultCode.BAD_REQUEST, "分组类型仅支持 STATIC 或 DYNAMIC");
+        if (!GROUP_TYPE_STATIC.equals(normalized)) {
+            throw new BizException(ResultCode.BAD_REQUEST, "Only static device groups are currently enabled");
         }
         return normalized;
     }
@@ -312,8 +505,15 @@ public class DeviceGroupService {
                 .eq(DeviceGroupMember::getGroupId, groupId));
         DeviceGroup group = groupMapper.selectById(groupId);
         if (group != null) {
-            group.setDeviceCount(count.intValue());
+            group.setDeviceCount(count == null ? 0 : count.intValue());
             groupMapper.updateById(group);
         }
+    }
+
+    private List<Long> normalizeIds(Collection<Long> ids) {
+        if (ids == null) {
+            return List.of();
+        }
+        return ids.stream().filter(Objects::nonNull).distinct().toList();
     }
 }

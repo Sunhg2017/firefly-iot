@@ -37,4 +37,6 @@ public class DeviceImportDTO {
 
     @Schema(description = "统一标签，逗号分隔（可选）")
     private List<Long> tagIds;
+
+    private List<Long> groupIds;
 }

@@ -31,4 +31,6 @@ public class DeviceBatchCreateDTO {
 
     @Schema(description = "统一标签，逗号分隔")
     private List<Long> tagIds;
+
+    private List<Long> groupIds;
 }

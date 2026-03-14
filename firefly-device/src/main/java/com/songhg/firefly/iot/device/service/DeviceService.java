@@ -12,6 +12,7 @@ import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.mybatis.DataScope;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.device.convert.DeviceConvert;
+import com.songhg.firefly.iot.device.convert.DeviceGroupConvert;
 import com.songhg.firefly.iot.device.convert.DeviceTagConvert;
 import com.songhg.firefly.iot.device.dto.device.DeviceBatchCreateDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceBatchCreateItemDTO;
@@ -21,6 +22,7 @@ import com.songhg.firefly.iot.device.dto.device.DeviceQueryDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceTripleExportDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceUpdateDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceVO;
+import com.songhg.firefly.iot.device.dto.devicegroup.DeviceGroupVO;
 import com.songhg.firefly.iot.device.dto.devicetag.DeviceTagVO;
 import com.songhg.firefly.iot.device.entity.Device;
 import com.songhg.firefly.iot.device.entity.Product;
@@ -56,6 +58,7 @@ public class DeviceService {
     private final ProductMapper productMapper;
     private final DeviceLocatorService deviceLocatorService;
     private final DeviceTagService deviceTagService;
+    private final DeviceGroupService deviceGroupService;
 
     @Transactional
     public DeviceCredentialVO createDevice(DeviceCreateDTO dto) {
@@ -76,6 +79,7 @@ public class DeviceService {
         );
         deviceMapper.insert(device);
         deviceTagService.syncDeviceTags(device.getId(), dto.getTagIds());
+        deviceGroupService.syncDeviceGroups(device.getId(), dto.getGroupIds());
         increaseProductDeviceCount(product, 1);
 
         log.info("Device created: id={}, deviceName={}, productId={}", device.getId(), device.getDeviceName(), dto.getProductId());
@@ -113,6 +117,7 @@ public class DeviceService {
             );
             deviceMapper.insert(device);
             deviceTagService.syncDeviceTags(device.getId(), dto.getTagIds());
+            deviceGroupService.syncDeviceGroups(device.getId(), dto.getGroupIds());
             result.add(toCredentialVO(device, product));
         }
 
@@ -125,6 +130,7 @@ public class DeviceService {
         Device device = getActiveDevice(id);
         DeviceVO vo = DeviceConvert.INSTANCE.toVO(device);
         attachDeviceTags(List.of(vo));
+        attachDeviceGroups(List.of(vo));
         return vo;
     }
 
@@ -134,6 +140,7 @@ public class DeviceService {
         IPage<Device> result = deviceMapper.selectPage(page, buildListWrapper(query));
         IPage<DeviceVO> voPage = result.convert(DeviceConvert.INSTANCE::toVO);
         attachDeviceTags(voPage.getRecords());
+        attachDeviceGroups(voPage.getRecords());
         return voPage;
     }
 
@@ -162,9 +169,11 @@ public class DeviceService {
         DeviceConvert.INSTANCE.updateEntity(dto, device);
         deviceMapper.updateById(device);
         deviceTagService.syncDeviceTags(device.getId(), dto.getTagIds());
+        deviceGroupService.syncDeviceGroups(device.getId(), dto.getGroupIds());
 
         DeviceVO vo = DeviceConvert.INSTANCE.toVO(device);
         attachDeviceTags(List.of(vo));
+        attachDeviceGroups(List.of(vo));
         return vo;
     }
 
@@ -196,6 +205,7 @@ public class DeviceService {
         Device device = getActiveDevice(id);
         deviceLocatorService.deleteByDeviceId(device.getId());
         deviceTagService.removeDeviceBindings(device.getId());
+        deviceGroupService.removeDeviceMemberships(device.getId());
         device.setOnlineStatus(OnlineStatus.OFFLINE);
 
         // Device uses MyBatis-Plus logical delete on deletedAt.
@@ -360,6 +370,14 @@ public class DeviceService {
         if (query.getProductId() != null) {
             wrapper.eq(Device::getProductId, query.getProductId());
         }
+        if (query.getGroupId() != null) {
+            List<Long> deviceIds = deviceGroupService.listDeviceIdsByGroup(query.getGroupId());
+            if (deviceIds.isEmpty()) {
+                wrapper.isNull(Device::getId);
+            } else {
+                wrapper.in(Device::getId, deviceIds);
+            }
+        }
         if (query.getProjectId() != null) {
             wrapper.eq(Device::getProjectId, query.getProjectId());
         }
@@ -433,6 +451,22 @@ public class DeviceService {
                     .map(tag -> tag.getTagKey() + ":" + tag.getTagValue())
                     .collect(Collectors.joining(", ")));
         });
+    }
+
+    private void attachDeviceGroups(List<DeviceVO> devices) {
+        if (devices == null || devices.isEmpty()) {
+            return;
+        }
+
+        Map<Long, List<DeviceGroupVO>> deviceGroupMap = deviceGroupService.getDeviceGroupMap(
+                        devices.stream().map(DeviceVO::getId).filter(Objects::nonNull).toList()
+                ).entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> entry.getValue().stream().map(DeviceGroupConvert.INSTANCE::toVO).toList()
+                ));
+
+        devices.forEach(device -> device.setGroupList(deviceGroupMap.getOrDefault(device.getId(), List.of())));
     }
 
     private Device getActiveDevice(Long id) {
