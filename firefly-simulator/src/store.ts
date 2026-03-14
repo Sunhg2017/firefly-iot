@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 import dayjs from 'dayjs';
 
@@ -29,6 +29,7 @@ export interface SimDevice {
   nickname: string;
   protocol: Protocol;
   status: DeviceStatus;
+  restoreOnLaunch: boolean;
   // HTTP config
   httpBaseUrl: string;
   httpAuthMode: HttpAuthMode;
@@ -334,6 +335,24 @@ interface SimulatorState {
   removeTemplate: (id: string) => void;
 }
 
+const simulatorStateStorage = {
+  getItem: async (name: string) => {
+    const electronValue = await window.electronAPI?.simulatorStoreGetItem(name);
+    if (electronValue !== null && electronValue !== undefined) {
+      return electronValue;
+    }
+    return window.localStorage.getItem(name);
+  },
+  setItem: async (name: string, value: string) => {
+    await window.electronAPI?.simulatorStoreSetItem(name, value);
+    window.localStorage.setItem(name, value);
+  },
+  removeItem: async (name: string) => {
+    await window.electronAPI?.simulatorStoreRemoveItem(name);
+    window.localStorage.removeItem(name);
+  },
+};
+
 export const useSimStore = create<SimulatorState>()(
   persist(
     (set, get) => ({
@@ -350,6 +369,7 @@ export const useSimStore = create<SimulatorState>()(
       name: partial.name || `设备-${get().devices.length + 1}`,
       protocol: partial.protocol || 'HTTP',
       status: 'offline',
+      restoreOnLaunch: partial.restoreOnLaunch ?? false,
       httpBaseUrl: partial.httpBaseUrl || 'http://localhost:9070',
       httpAuthMode: partial.httpAuthMode || 'DEVICE_SECRET',
       httpRegisterBaseUrl: partial.httpRegisterBaseUrl || 'http://localhost:9070',
@@ -455,11 +475,12 @@ export const useSimStore = create<SimulatorState>()(
 }),
     {
       name: 'firefly-sim-store',
+      storage: createJSONStorage(() => simulatorStateStorage),
       partialize: (state) => ({
         devices: state.devices.map((d) => ({
           ...d,
           // Reset transient runtime fields
-          status: 'offline' as DeviceStatus,
+          status: d.restoreOnLaunch ? 'connecting' as DeviceStatus : 'offline' as DeviceStatus,
           token: '',
           autoReport: false,
           autoTimerId: null,

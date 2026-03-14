@@ -413,13 +413,13 @@ export default function DeviceControlPanel() {
         addLog(target.id, target.name, 'warn', `Subscribe failed: ${subResult.message}`);
       }
     }
-    updateDevice(target.id, { status: 'online' });
+    updateDevice(target.id, { status: 'online', restoreOnLaunch: true });
     addLog(target.id, target.name, 'success', `MQTT connected: ${target.mqttBrokerUrl}`);
   };
 
   const handleConnect = async () => {
     if (accessError) {
-      updateDevice(device.id, { status: 'error' });
+      updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
       addLog(device.id, device.name, 'warn', accessError);
       message.warning(accessError);
       return;
@@ -454,10 +454,10 @@ export default function DeviceControlPanel() {
           ts: Date.now(),
         }]);
         if (result.success && result.data?.token) {
-          updateDevice(device.id, { status: 'online', token: result.data.token });
+          updateDevice(device.id, { status: 'online', token: result.data.token, restoreOnLaunch: true });
           addLog(device.id, device.name, 'success', `HTTP auth succeeded: ${result.data.token.slice(0, 20)}...`);
         } else {
-          updateDevice(device.id, { status: 'error' });
+          updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
           addLog(device.id, device.name, 'error', `HTTP auth failed: ${result.message || result.msg || JSON.stringify(result)}`);
         }
         return;
@@ -470,10 +470,10 @@ export default function DeviceControlPanel() {
           deviceSecret: device.deviceSecret,
         });
         if (result.success && result.data?.token) {
-          updateDevice(device.id, { status: 'online', token: result.data.token });
+          updateDevice(device.id, { status: 'online', token: result.data.token, restoreOnLaunch: true });
           addLog(device.id, device.name, 'success', `CoAP auth succeeded: ${result.data.token.slice(0, 20)}...`);
         } else {
-          updateDevice(device.id, { status: 'error' });
+          updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
           addLog(device.id, device.name, 'error', `CoAP auth failed: ${result.message || result.msg || JSON.stringify(result)}`);
         }
         return;
@@ -483,7 +483,10 @@ export default function DeviceControlPanel() {
         const result = await window.electronAPI.snmpTest(device.snmpConnectorUrl, {
           host: device.snmpHost, port: device.snmpPort, version: device.snmpVersion, community: device.snmpCommunity,
         });
-        updateDevice(device.id, { status: result.success && result.data?.data === true ? 'online' : 'error' });
+        updateDevice(device.id, {
+          status: result.success && result.data?.data === true ? 'online' : 'error',
+          restoreOnLaunch: result.success && result.data?.data === true,
+        });
         addLog(device.id, device.name, result.success && result.data?.data === true ? 'success' : 'error', result.success && result.data?.data === true ? `SNMP ready: ${device.snmpHost}:${device.snmpPort}` : `SNMP failed: ${result.data?.message || result.message || 'target unavailable'}`);
         return;
       }
@@ -492,7 +495,10 @@ export default function DeviceControlPanel() {
         const result = await window.electronAPI.modbusTest(device.modbusConnectorUrl, {
           host: device.modbusHost, port: device.modbusPort, slaveId: device.modbusSlaveId, mode: device.modbusMode,
         });
-        updateDevice(device.id, { status: result.success && result.data?.data === true ? 'online' : 'error' });
+        updateDevice(device.id, {
+          status: result.success && result.data?.data === true ? 'online' : 'error',
+          restoreOnLaunch: result.success && result.data?.data === true,
+        });
         addLog(device.id, device.name, result.success && result.data?.data === true ? 'success' : 'error', result.success && result.data?.data === true ? `Modbus ready: ${device.modbusHost}:${device.modbusPort}` : `Modbus failed: ${result.data?.message || result.message || 'target unavailable'}`);
         return;
       }
@@ -502,10 +508,10 @@ export default function DeviceControlPanel() {
           deviceId: device.wsDeviceId, productId: device.wsProductId, tenantId: device.wsTenantId, deviceName: device.name,
         });
         if (result.success) {
-          updateDevice(device.id, { status: 'online' });
+          updateDevice(device.id, { status: 'online', restoreOnLaunch: true });
           addLog(device.id, device.name, 'success', `WebSocket connected: ${device.wsEndpoint}`);
         } else {
-          updateDevice(device.id, { status: 'error' });
+          updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
           addLog(device.id, device.name, 'error', `WebSocket failed: ${result.message}`);
         }
         return;
@@ -514,23 +520,23 @@ export default function DeviceControlPanel() {
       if (device.protocol === 'TCP') {
         const result = await window.electronAPI.tcpConnect(device.id, device.tcpHost, device.tcpPort);
         if (result.success) {
-          updateDevice(device.id, { status: 'online' });
+          updateDevice(device.id, { status: 'online', restoreOnLaunch: true });
           addLog(device.id, device.name, 'success', `TCP connected: ${device.tcpHost}:${device.tcpPort}`);
         } else {
-          updateDevice(device.id, { status: 'error' });
+          updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
           addLog(device.id, device.name, 'error', `TCP failed: ${result.message}`);
         }
         return;
       }
 
       if (device.protocol === 'UDP') {
-        updateDevice(device.id, { status: 'online' });
+        updateDevice(device.id, { status: 'online', restoreOnLaunch: true });
         addLog(device.id, device.name, 'success', `UDP ready: ${device.udpHost}:${device.udpPort}`);
         return;
       }
 
       if (device.protocol === 'LoRaWAN') {
-        updateDevice(device.id, { status: 'online' });
+        updateDevice(device.id, { status: 'online', restoreOnLaunch: true });
         addLog(device.id, device.name, 'success', `LoRaWAN ready: ${device.loraDevEui}`);
         return;
       }
@@ -546,10 +552,10 @@ export default function DeviceControlPanel() {
         }
         const result = await window.electronAPI.videoCreateDevice(device.mediaBaseUrl, dto);
         if (result.success && result.data?.data?.id) {
-          updateDevice(device.id, { status: 'online', videoDeviceId: result.data.data.id });
+          updateDevice(device.id, { status: 'online', videoDeviceId: result.data.data.id, restoreOnLaunch: false });
           addLog(device.id, device.name, 'success', `Video device created: ${result.data.data.id}`);
         } else {
-          updateDevice(device.id, { status: 'error' });
+          updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
           addLog(device.id, device.name, 'error', `Video failed: ${result.data?.msg || result.message || JSON.stringify(result.data)}`);
         }
         return;
@@ -557,7 +563,7 @@ export default function DeviceControlPanel() {
 
       await connectMqtt();
     } catch (error: any) {
-      updateDevice(device.id, { status: 'error' });
+      updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
       addLog(device.id, device.name, 'error', `Connect error: ${error?.message || 'unknown error'}`);
       message.error(`Connect failed: ${error?.message || 'unknown error'}`);
     }
@@ -570,10 +576,10 @@ export default function DeviceControlPanel() {
       if (device.protocol === 'WebSocket') await window.electronAPI.wsDisconnect(device.id);
       if (device.protocol === 'TCP') await window.electronAPI.tcpDisconnect(device.id);
       if (device.protocol === 'Video' && device.streamMode === 'GB28181') await window.electronAPI.sipStop(device.id);
-      updateDevice(device.id, { status: 'offline', token: '', videoDeviceId: null, streamUrl: '', sipRegistered: false });
+      updateDevice(device.id, { status: 'offline', token: '', videoDeviceId: null, streamUrl: '', sipRegistered: false, restoreOnLaunch: false });
       addLog(device.id, device.name, 'info', 'Disconnected');
     } catch (error: any) {
-      updateDevice(device.id, { status: 'offline' });
+      updateDevice(device.id, { status: 'offline', restoreOnLaunch: false });
       addLog(device.id, device.name, 'warn', `Disconnect warning: ${error?.message || 'unknown error'}`);
     }
   };

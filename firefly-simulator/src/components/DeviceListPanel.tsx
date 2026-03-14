@@ -387,7 +387,7 @@ export default function DeviceListPanel() {
 
         const accessError = getDeviceAccessValidationError(device);
         if (accessError) {
-          updateDevice(device.id, { status: 'error' });
+          updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
           addLog(device.id, device.name, 'warn', accessError);
           fail += 1;
           continue;
@@ -403,11 +403,11 @@ export default function DeviceListPanel() {
           }
           const result = await window.electronAPI.httpAuth(target.httpBaseUrl, target.productKey, target.deviceName, target.deviceSecret);
           if (result.success && result.data?.token) {
-            updateDevice(device.id, { status: 'online', token: result.data.token });
+            updateDevice(device.id, { status: 'online', token: result.data.token, restoreOnLaunch: true });
             addLog(device.id, device.name, 'success', 'HTTP 批量连接成功');
             ok += 1;
           } else {
-            updateDevice(device.id, { status: 'error' });
+            updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
             addLog(device.id, device.name, 'error', `HTTP 批量连接失败：${result.message || result.msg || JSON.stringify(result)}`);
             fail += 1;
           }
@@ -421,11 +421,11 @@ export default function DeviceListPanel() {
             deviceSecret: device.deviceSecret,
           });
           if (result.success && result.data?.token) {
-            updateDevice(device.id, { status: 'online', token: result.data.token });
+            updateDevice(device.id, { status: 'online', token: result.data.token, restoreOnLaunch: true });
             addLog(device.id, device.name, 'success', 'CoAP 批量连接成功');
             ok += 1;
           } else {
-            updateDevice(device.id, { status: 'error' });
+            updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
             addLog(device.id, device.name, 'error', `CoAP 批量连接失败：${result.message || result.msg || JSON.stringify(result)}`);
             fail += 1;
           }
@@ -461,7 +461,7 @@ export default function DeviceListPanel() {
           mqttOpts,
         );
         if (result.success) {
-          updateDevice(target.id, { status: 'online' });
+          updateDevice(target.id, { status: 'online', restoreOnLaunch: true });
           const serviceTopic = buildMqttServiceTopic(target);
           if (serviceTopic) {
             await window.electronAPI.mqttSubscribe(target.id, serviceTopic, 1);
@@ -469,12 +469,12 @@ export default function DeviceListPanel() {
           addLog(target.id, target.name, 'success', 'MQTT 批量连接成功');
           ok += 1;
         } else {
-          updateDevice(target.id, { status: 'error' });
+          updateDevice(target.id, { status: 'error', restoreOnLaunch: false });
           addLog(target.id, target.name, 'error', `MQTT 批量连接失败：${result.message}`);
           fail += 1;
         }
       } catch (error: any) {
-        updateDevice(device.id, { status: 'error' });
+        updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
         addLog(device.id, device.name, 'error', `批量连接异常：${error?.message || 'unknown error'}`);
         fail += 1;
       }
@@ -499,7 +499,7 @@ export default function DeviceListPanel() {
       if (device.protocol === 'WebSocket') await window.electronAPI.wsDisconnect(device.id);
       if (device.protocol === 'TCP') await window.electronAPI.tcpDisconnect(device.id);
       if (device.protocol === 'Video' && device.streamMode === 'GB28181') await window.electronAPI.sipStop(device.id);
-      updateDevice(device.id, { status: 'offline', autoReport: false, autoTimerId: null, token: '' });
+      updateDevice(device.id, { status: 'offline', autoReport: false, autoTimerId: null, token: '', restoreOnLaunch: false });
     }
     addLog('system', 'System', 'info', `已断开 ${onlineDevices.length} 台模拟设备`);
     message.success(`已断开 ${onlineDevices.length} 台模拟设备`);
@@ -515,6 +515,7 @@ export default function DeviceListPanel() {
       mqttUsername: '',
       mqttPassword: '',
       dynamicRegistered: false,
+      restoreOnLaunch: false,
     } as never);
     addLog('system', 'System', 'info', `已复制模拟设备：${device.name}`);
     message.success(`已复制 ${device.name}`);

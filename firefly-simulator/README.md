@@ -265,3 +265,10 @@ name,protocol,productKey,deviceName,deviceSecret,httpBaseUrl
 - **Vite 6** — 开发构建
 - **electron-builder** — 打包分发
 - **动态注册昵称与删除闭环** 鈥?一型一密设备支持显式维护 `Nickname`，首次注册后复用 `deviceSecret`，删除时可同步删除平台侧动态注册设备
+
+## Session Persistence
+
+- Device definitions are now persisted to an Electron user-data file, not only renderer localStorage.
+- Restorable protocols automatically reconnect after the simulator is reopened if they were online before shutdown.
+- Video devices are excluded from auto-restore to avoid duplicating server-side media resources.
+

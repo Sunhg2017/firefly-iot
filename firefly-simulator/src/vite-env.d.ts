@@ -1,6 +1,10 @@
 /// <reference types="vite/client" />
 
 interface ElectronAPI {
+  simulatorStoreGetItem: (name: string) => Promise<string | null>;
+  simulatorStoreSetItem: (name: string, value: string) => Promise<void>;
+  simulatorStoreRemoveItem: (name: string) => Promise<void>;
+
   httpAuth: (baseUrl: string, productKey: string, deviceName: string, deviceSecret: string) => Promise<any>;
   httpReportProperty: (baseUrl: string, token: string, properties: Record<string, any>) => Promise<any>;
   httpReportEvent: (baseUrl: string, token: string, event: Record<string, any>) => Promise<any>;

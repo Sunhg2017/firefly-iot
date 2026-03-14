@@ -22,6 +22,31 @@ const tcpClients = new Map<string, net.Socket>();
 // duplicate launches from stale scripts or manual `electron .` commands.
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
+function getSimulatorStoreFilePath() {
+  return path.join(app.getPath('userData'), 'simulator-store.json');
+}
+
+function readSimulatorStore(): Record<string, string> {
+  try {
+    const filePath = getSimulatorStoreFilePath();
+    if (!fs.existsSync(filePath)) {
+      return {};
+    }
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, string> : {};
+  } catch (error) {
+    console.warn('Failed to read simulator store:', error);
+    return {};
+  }
+}
+
+function writeSimulatorStore(nextStore: Record<string, string>) {
+  const filePath = getSimulatorStoreFilePath();
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(nextStore, null, 2), 'utf-8');
+}
+
 function createWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) {
@@ -93,6 +118,23 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});
+
+ipcMain.handle('simulator-store:get', async (_e, name: string) => {
+  const store = readSimulatorStore();
+  return store[name] ?? null;
+});
+
+ipcMain.handle('simulator-store:set', async (_e, name: string, value: string) => {
+  const store = readSimulatorStore();
+  store[name] = value;
+  writeSimulatorStore(store);
+});
+
+ipcMain.handle('simulator-store:remove', async (_e, name: string) => {
+  const store = readSimulatorStore();
+  delete store[name];
+  writeSimulatorStore(store);
 });
 
 // ============================================================

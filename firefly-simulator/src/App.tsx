@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Layout } from 'antd';
 import { useSimStore } from './store';
+import { restorePersistedConnections } from './utils/runtime';
 import {
   DeviceListPanel, DeviceControlPanel, LogPanel,
   StressTestPanel, ScenarioPanel, TemplateEditorPanel, StatusBar,
@@ -34,6 +35,22 @@ export default function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  useEffect(() => {
+    const restore = () => {
+      void restorePersistedConnections();
+    };
+
+    if (useSimStore.persist.hasHydrated()) {
+      restore();
+      return undefined;
+    }
+
+    const unsubscribe = useSimStore.persist.onFinishHydration(() => {
+      restore();
+    });
+    return unsubscribe;
   }, []);
 
   // Listen for MQTT events from main process

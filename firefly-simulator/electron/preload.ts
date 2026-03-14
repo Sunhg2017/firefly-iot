@@ -5,6 +5,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 // ============================================================
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  simulatorStoreGetItem: (name: string) => ipcRenderer.invoke('simulator-store:get', name),
+  simulatorStoreSetItem: (name: string, value: string) => ipcRenderer.invoke('simulator-store:set', name, value),
+  simulatorStoreRemoveItem: (name: string) => ipcRenderer.invoke('simulator-store:remove', name),
+
   // HTTP Protocol
   httpAuth: (baseUrl: string, productKey: string, deviceName: string, deviceSecret: string) =>
     ipcRenderer.invoke('http:auth', baseUrl, productKey, deviceName, deviceSecret),
