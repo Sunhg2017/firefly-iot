@@ -1,11 +1,14 @@
 package com.songhg.firefly.iot.system.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.system.entity.PermissionResource;
+import com.songhg.firefly.iot.system.entity.Role;
 import com.songhg.firefly.iot.system.entity.RolePermission;
 import com.songhg.firefly.iot.system.mapper.PermissionResourceMapper;
+import com.songhg.firefly.iot.system.mapper.RoleMapper;
 import com.songhg.firefly.iot.system.mapper.RolePermissionMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +26,8 @@ public class PermissionResourceService {
 
     private final PermissionResourceMapper resourceMapper;
     private final RolePermissionMapper rolePermissionMapper;
+    private final RoleMapper roleMapper;
+    private final WorkspacePermissionCatalogService workspacePermissionCatalogService;
 
     @Transactional
     public PermissionResource create(PermissionResource resource) {
@@ -123,6 +128,7 @@ public class PermissionResourceService {
      * 获取角色已分配的权限编码列表
      */
     public List<String> getRolePermissions(Long roleId) {
+        requireRoleInCurrentTenant(roleId);
         return rolePermissionMapper.selectList(new LambdaQueryWrapper<RolePermission>()
                 .eq(RolePermission::getRoleId, roleId))
                 .stream().map(RolePermission::getPermission).collect(Collectors.toList());
@@ -133,6 +139,8 @@ public class PermissionResourceService {
      */
     @Transactional
     public void assignRolePermissions(Long roleId, List<String> permissionCodes) {
+        requireRoleInCurrentTenant(roleId);
+        workspacePermissionCatalogService.validateAssignablePermissions(permissionCodes);
         rolePermissionMapper.delete(new LambdaQueryWrapper<RolePermission>()
                 .eq(RolePermission::getRoleId, roleId));
         if (permissionCodes != null) {
@@ -145,5 +153,16 @@ public class PermissionResourceService {
             }
         }
         log.info("Role permissions assigned: roleId={}, count={}", roleId, permissionCodes != null ? permissionCodes.size() : 0);
+    }
+
+    private void requireRoleInCurrentTenant(Long roleId) {
+        Role role = roleMapper.selectById(roleId);
+        if (role == null) {
+            throw new BizException(ResultCode.ROLE_NOT_FOUND);
+        }
+        Long tenantId = AppContextHolder.getTenantId();
+        if (tenantId == null || !tenantId.equals(role.getTenantId())) {
+            throw new BizException(ResultCode.PERMISSION_DENIED, "role does not belong to current tenant");
+        }
     }
 }

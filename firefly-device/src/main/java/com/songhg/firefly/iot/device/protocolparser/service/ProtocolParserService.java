@@ -452,10 +452,9 @@ public class ProtocolParserService {
                 return;
             }
             case DEVICE_LIST -> {
-                boolean hasDeviceIds = root.path("deviceIds").isArray() && root.path("deviceIds").size() > 0;
                 boolean hasDeviceNames = root.path("deviceNames").isArray() && root.path("deviceNames").size() > 0;
-                if (!hasDeviceIds && !hasDeviceNames) {
-                    throw new BizException(ResultCode.PARAM_ERROR, "DEVICE_LIST release mode requires deviceIds or deviceNames");
+                if (!hasDeviceNames) {
+                    throw new BizException(ResultCode.PARAM_ERROR, "DEVICE_LIST release mode requires deviceNames");
                 }
             }
             case HASH_PERCENT -> {

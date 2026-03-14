@@ -1,29 +1,28 @@
 import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Result, Button } from 'antd';
+import { Button, Result } from 'antd';
 import useAuthStore from '../store/useAuthStore';
 import { getWorkspaceHomePath, resolveWorkspaceByUserType } from '../config/workspaceRoutes';
 
 const ForbiddenPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, logout, menuConfig } = useAuthStore();
+  const { user, logout } = useAuthStore();
   const homePath = useMemo(
     () => getWorkspaceHomePath(
       resolveWorkspaceByUserType(user?.userType),
       Array.isArray(user?.permissions) ? user.permissions : [],
-      menuConfig,
     ),
-    [user?.permissions, user?.userType, menuConfig],
+    [user?.permissions, user?.userType],
   );
   const canGoHome = homePath !== '/403';
 
   return (
-    <div className="animate-fade-in" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '70vh' }}>
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '70vh' }}>
       <Result
         status="403"
         title="403"
-        subTitle="抱歉，您没有权限访问此页面。"
-        extra={
+        subTitle="抱歉，您没有权限访问当前页面。"
+        extra={(
           <Button
             type="primary"
             size="large"
@@ -35,11 +34,11 @@ const ForbiddenPage: React.FC = () => {
               await logout();
               navigate('/login', { replace: true });
             }}
-            style={{ borderRadius: 8 }}
+            style={{ borderRadius: 10 }}
           >
             {canGoHome ? '返回首页' : '退出登录'}
           </Button>
-        }
+        )}
       />
     </div>
   );

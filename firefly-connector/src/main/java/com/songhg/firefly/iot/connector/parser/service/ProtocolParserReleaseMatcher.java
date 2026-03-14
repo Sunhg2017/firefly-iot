@@ -45,13 +45,6 @@ public class ProtocolParserReleaseMatcher {
     }
 
     private boolean matchDeviceList(JsonNode root, Long deviceId, String deviceName) {
-        if (deviceId != null && root.path("deviceIds").isArray()) {
-            for (JsonNode item : root.path("deviceIds")) {
-                if (deviceId.equals(item.asLong())) {
-                    return true;
-                }
-            }
-        }
         if (deviceName != null && root.path("deviceNames").isArray()) {
             for (JsonNode item : root.path("deviceNames")) {
                 if (deviceName.equalsIgnoreCase(item.asText())) {

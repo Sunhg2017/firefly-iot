@@ -39,7 +39,7 @@ import type { ColumnsType } from 'antd/es/table';
 import dayjs, { Dayjs } from 'dayjs';
 import PageHeader from '../../components/PageHeader';
 import { isRouteGroup, type RouteNode } from '../../config/routes';
-import { filterWorkspaceRoutes } from '../../config/workspaceRoutes';
+import { filterWorkspaceExclusiveRoutes } from '../../config/workspaceRoutes';
 import { tenantApi } from '../../services/api';
 import TenantWebhookDrawer from './TenantWebhookDrawer';
 
@@ -306,7 +306,7 @@ const buildTenantSpaceRouteNodes = (
     };
   });
 
-const tenantSpaceRouteNodes: TenantSpaceRouteNode[] = buildTenantSpaceRouteNodes(filterWorkspaceRoutes('tenant'));
+const tenantSpaceRouteNodes: TenantSpaceRouteNode[] = buildTenantSpaceRouteNodes(filterWorkspaceExclusiveRoutes('tenant'));
 
 const collectTenantSpaceLeafPaths = (nodes: TenantSpaceRouteNode[]): string[] => {
   const paths: string[] = [];

@@ -215,7 +215,6 @@ Write-Host '[3/4] Run frontend API smoke set'
 $tests = @(
   @{ Name='users.me'; Method='GET'; Path='/SYSTEM/api/v1/users/me' },
   @{ Name='users.me.permissions'; Method='GET'; Path='/SYSTEM/api/v1/users/me/permissions' },
-  @{ Name='tenant.menu.tree'; Method='GET'; Path='/SYSTEM/api/v1/tenant/menu-configs/tree' },
   @{ Name='tenant.self.get'; Method='GET'; Path='/SYSTEM/api/v1/tenant' },
   @{ Name='tenant.self.quota'; Method='GET'; Path='/SYSTEM/api/v1/tenant/quota' },
   @{ Name='tenant.self.usage'; Method='GET'; Path='/SYSTEM/api/v1/tenant/usage' },
@@ -223,6 +222,8 @@ $tests = @(
   @{ Name='tenant.overview'; Method='GET'; Path='/SYSTEM/api/v1/platform/tenants/overview' },
   @{ Name='user.list'; Method='POST'; Path='/SYSTEM/api/v1/users/list'; Body=@{} },
   @{ Name='role.list'; Method='POST'; Path='/SYSTEM/api/v1/roles/list'; Body=@{} },
+  @{ Name='role.options'; Method='GET'; Path='/SYSTEM/api/v1/roles/options' },
+  @{ Name='role.permission.groups'; Method='GET'; Path='/SYSTEM/api/v1/roles/permission-groups' },
   @{ Name='permissions.all'; Method='GET'; Path='/SYSTEM/api/v1/permissions' },
   @{ Name='permissions.groups'; Method='GET'; Path='/SYSTEM/api/v1/permissions/groups' },
   @{ Name='operation.logs.list'; Method='POST'; Path='/SYSTEM/api/v1/operation-logs/list'; Body=@{} },

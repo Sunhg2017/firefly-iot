@@ -460,9 +460,6 @@ public class AuthService {
         userInfo.setTenantSuperAdmin(
                 user.getUserType() == UserType.TENANT_USER
                         && userDomainService.isTenantSuperAdmin(user.getId(), tenant.getId()));
-        userInfo.setWorkspaceMenuAdmin(
-                userDomainService.isPlatformSuperAdmin(user.getId())
-                        || userDomainService.isTenantSuperAdmin(user.getId(), tenant.getId()));
         userInfo.setTenantId(tenant.getId());
         userInfo.setTenantName(StringUtils.hasText(tenant.getDisplayName()) ? tenant.getDisplayName() : tenant.getName());
         userInfo.setRoles(roleCodes);

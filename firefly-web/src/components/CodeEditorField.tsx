@@ -128,11 +128,6 @@ const JSON_SCHEMAS = [
           description: 'Preferred business identifiers for DEVICE_LIST mode.',
           items: { type: 'string' },
         },
-        deviceIds: {
-          type: 'array',
-          description: 'Legacy internal identifiers kept only for compatibility.',
-          items: { type: 'number' },
-        },
       },
       additionalProperties: true,
     },

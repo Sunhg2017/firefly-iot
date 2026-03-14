@@ -2,7 +2,6 @@ package com.songhg.firefly.iot.system.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
-import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.UserType;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
@@ -69,9 +68,8 @@ public class UserDomainService {
         if (userId == null) {
             return false;
         }
-        Long platformTenantId = getPlatformTenantId();
-        Tenant tenant = tenantMapper.selectById(platformTenantId);
-        return tenant != null && userId.equals(tenant.getAdminUserId());
+        Tenant tenant = tenantMapper.selectById(getPlatformTenantId());
+        return tenant != null && tenant.getDeletedAt() == null && userId.equals(tenant.getAdminUserId());
     }
 
     public boolean isTenantSuperAdmin(Long userId, Long tenantId) {
@@ -97,24 +95,6 @@ public class UserDomainService {
     public void assertCurrentUserIsTenantSuperAdmin() {
         if (!isCurrentUserTenantSuperAdmin()) {
             throw new BizException(ResultCode.PERMISSION_DENIED, "tenant super admin required");
-        }
-    }
-
-    public boolean isCurrentUserWorkspaceMenuAdmin() {
-        User current = requireCurrentUser();
-        if (current.getUserType() == UserType.SYSTEM_OPS) {
-            return isPlatformSuperAdmin(current.getId());
-        }
-        Long tenantId = AppContextHolder.getTenantId();
-        if (tenantId == null) {
-            tenantId = current.getTenantId();
-        }
-        return isTenantSuperAdmin(current.getId(), tenantId);
-    }
-
-    public void assertCurrentUserCanManageWorkspaceMenus() {
-        if (!isCurrentUserWorkspaceMenuAdmin()) {
-            throw new BizException(ResultCode.PERMISSION_DENIED, "workspace menu admin required");
         }
     }
 }

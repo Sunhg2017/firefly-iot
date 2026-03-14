@@ -339,7 +339,7 @@ const Dashboard: React.FC = () => {
         <Col span={24}>
           <Card
             title="最近告警"
-            extra={<Typography.Link style={{ fontSize: 13 }} href="/alarm">查看全部</Typography.Link>}
+extra={<Typography.Link style={{ fontSize: 13 }} href="/alarm-records">查看全部</Typography.Link>}
             style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
             bodyStyle={{ padding: '0 16px 8px' }}
           >

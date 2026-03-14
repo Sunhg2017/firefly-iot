@@ -54,7 +54,7 @@ const IoTIllustration: React.FC = () => (
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const { login, isAuthenticated, user, menuConfig } = useAuthStore();
+  const { login, isAuthenticated, user } = useAuthStore();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('password');
 
@@ -63,11 +63,10 @@ const LoginPage: React.FC = () => {
       const homePath = getWorkspaceHomePath(
         resolveWorkspaceByUserType(user?.userType),
         Array.isArray(user?.permissions) ? user.permissions : [],
-        menuConfig,
       );
       navigate(homePath, { replace: true });
     }
-  }, [isAuthenticated, navigate, user?.permissions, user?.userType, menuConfig]);
+  }, [isAuthenticated, navigate, user?.permissions, user?.userType]);
 
   const handlePasswordLogin = async (values: { username: string; password: string }) => {
     setLoading(true);
@@ -78,7 +77,6 @@ const LoginPage: React.FC = () => {
       const homePath = getWorkspaceHomePath(
         resolveWorkspaceByUserType(currentUser?.userType),
         Array.isArray(currentUser?.permissions) ? currentUser.permissions : [],
-        useAuthStore.getState().menuConfig,
       );
       navigate(homePath);
     } catch (err: unknown) {
@@ -98,7 +96,6 @@ const LoginPage: React.FC = () => {
       const homePath = getWorkspaceHomePath(
         resolveWorkspaceByUserType(currentUser?.userType),
         Array.isArray(currentUser?.permissions) ? currentUser.permissions : [],
-        useAuthStore.getState().menuConfig,
       );
       navigate(homePath);
     } catch (err: unknown) {

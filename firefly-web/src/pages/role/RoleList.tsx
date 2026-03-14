@@ -1,151 +1,655 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Table, Button, Tag, Space, Card, message, Modal, Form, Input, Select, Row, Col } from 'antd';
-import { PlusOutlined, SafetyCertificateOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons';
-import { roleApi } from '../../services/api';
+import {
+  Alert,
+  Button,
+  Card,
+  Checkbox,
+  Col,
+  Divider,
+  Drawer,
+  Form,
+  Input,
+  Row,
+  Select,
+  Space,
+  Statistic,
+  Steps,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from 'antd';
+import {
+  CheckCircleOutlined,
+  LockOutlined,
+  PlusOutlined,
+  SafetyCertificateOutlined,
+} from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
-
+import { roleApi } from '../../services/api';
+import useAuthStore from '../../store/useAuthStore';
 
 interface RoleRecord {
   id: number;
   code: string;
   name: string;
-  type: string;
-  dataScope: string;
+  description?: string;
+  type: 'PRESET' | 'CUSTOM' | string;
+  dataScope: 'ALL' | 'PROJECT' | 'GROUP' | 'SELF' | 'CUSTOM' | string;
   systemFlag: boolean;
-  status: string;
-  createdAt: string;
+  status: 'ACTIVE' | 'DISABLED' | string;
+  permissions?: string[];
+  userCount?: number;
+  createdAt?: string;
 }
 
-const typeColors: Record<string, string> = { PRESET: 'blue', CUSTOM: 'green' };
-const scopeLabels: Record<string, string> = { ALL: '全部数据', PROJECT: '项目范围', GROUP: '分组范围', SELF: '仅自己', CUSTOM: '自定义' };
+interface PermissionOption {
+  code: string;
+  label: string;
+}
+
+interface PermissionGroup {
+  key: string;
+  label: string;
+  routePath?: string;
+  permissions: PermissionOption[];
+}
+
+interface QueryState {
+  pageNum: number;
+  pageSize: number;
+  keyword?: string;
+  status?: string;
+  type?: string;
+}
+
+interface RoleFormValues {
+  code?: string;
+  name?: string;
+  description?: string;
+  dataScope?: string;
+  permissions?: string[];
+}
+
+const roleTypeLabels: Record<string, string> = {
+  PRESET: '内置角色',
+  CUSTOM: '自定义角色',
+};
+
+const dataScopeLabels: Record<string, string> = {
+  ALL: '全部数据',
+  PROJECT: '项目范围',
+  GROUP: '分组范围',
+  SELF: '仅本人',
+  CUSTOM: '自定义范围',
+};
+
+const statusLabels: Record<string, string> = {
+  ACTIVE: '启用',
+  DISABLED: '停用',
+};
+
+const getErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+};
 
 const RoleList: React.FC = () => {
-  const [data, setData] = useState<RoleRecord[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [total, setTotal] = useState(0);
-  const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
-  const [modalOpen, setModalOpen] = useState(false);
-  const [form] = Form.useForm();
+  const currentUser = useAuthStore((state) => state.user);
+  const [queryForm] = Form.useForm();
+  const [form] = Form.useForm<RoleFormValues>();
 
-  const fetchData = async () => {
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [items, setItems] = useState<RoleRecord[]>([]);
+  const [permissionGroups, setPermissionGroups] = useState<PermissionGroup[]>([]);
+  const [editingRole, setEditingRole] = useState<RoleRecord | null>(null);
+  const [total, setTotal] = useState(0);
+  const [params, setParams] = useState<QueryState>({ pageNum: 1, pageSize: 20 });
+
+  const fetchRoles = async (nextParams = params) => {
     setLoading(true);
     try {
-      const res = await roleApi.list(params);
-      const page = res.data.data;
-      setData(page.records || []);
-      setTotal(page.total || 0);
-    } catch {
-      message.error('加载失败');
+      const res = await roleApi.list(nextParams as unknown as Record<string, unknown>);
+      const page = res.data?.data ?? {};
+      setItems(page.records ?? []);
+      setTotal(page.total ?? 0);
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载角色列表失败'));
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchData(); }, [params.pageNum, params.pageSize]);
-
-  const stats = useMemo(() => ({
-    preset: data.filter(d => d.type === 'PRESET').length,
-    custom: data.filter(d => d.type === 'CUSTOM').length,
-    system: data.filter(d => d.systemFlag).length,
-  }), [data]);
-
-  const handleCreate = async (values: Record<string, unknown>) => {
+  const fetchPermissionGroups = async () => {
     try {
-      await roleApi.create(values);
-      message.success('创建成功');
-      setModalOpen(false);
-      form.resetFields();
-      fetchData();
-    } catch {
-      message.error('创建失败');
+      const res = await roleApi.permissionGroups();
+      setPermissionGroups((res.data?.data ?? []) as PermissionGroup[]);
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载可分配权限失败'));
     }
   };
 
-  const handleDelete = async (id: number) => {
-    Modal.confirm({
-      title: '确认删除此角色？',
-      onOk: async () => {
-        await roleApi.delete(id);
-        message.success('删除成功');
-        fetchData();
-      },
+  useEffect(() => {
+    void fetchRoles();
+  }, [params.pageNum, params.pageSize]);
+
+  useEffect(() => {
+    void fetchPermissionGroups();
+  }, []);
+
+  const stats = useMemo(
+    () => ({
+      system: items.filter((item) => item.systemFlag).length,
+      custom: items.filter((item) => !item.systemFlag).length,
+      active: items.filter((item) => item.status === 'ACTIVE').length,
+    }),
+    [items],
+  );
+
+  const allPermissionCodes = useMemo(
+    () => permissionGroups.flatMap((group) => group.permissions.map((permission) => permission.code)),
+    [permissionGroups],
+  );
+
+  const selectedPermissionCount = Form.useWatch('permissions', form)?.length ?? 0;
+
+  const handleSearch = async () => {
+    const values = await queryForm.validateFields();
+    const nextParams: QueryState = {
+      ...params,
+      pageNum: 1,
+      keyword: values.keyword?.trim() || undefined,
+      status: values.status || undefined,
+      type: values.type || undefined,
+    };
+    setParams(nextParams);
+    void fetchRoles(nextParams);
+  };
+
+  const handleReset = () => {
+    queryForm.resetFields();
+    const nextParams: QueryState = { pageNum: 1, pageSize: params.pageSize };
+    setParams(nextParams);
+    void fetchRoles(nextParams);
+  };
+
+  const openCreateDrawer = () => {
+    setEditingRole(null);
+    setStepIndex(0);
+    form.resetFields();
+    form.setFieldsValue({
+      dataScope: 'PROJECT',
+      permissions: [],
     });
+    setDrawerOpen(true);
+  };
+
+  const openEditDrawer = async (record: RoleRecord) => {
+    try {
+      const res = await roleApi.get(record.id);
+      const detail = (res.data?.data ?? record) as RoleRecord;
+      setEditingRole(detail);
+      setStepIndex(0);
+      form.setFieldsValue({
+        code: detail.code,
+        name: detail.name,
+        description: detail.description,
+        dataScope: detail.dataScope,
+        permissions: detail.permissions ?? [],
+      });
+      setDrawerOpen(true);
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载角色详情失败'));
+    }
+  };
+
+  const handleDelete = async (record: RoleRecord) => {
+    try {
+      await roleApi.delete(record.id);
+      message.success('角色已删除');
+      void fetchRoles({ ...params, pageNum: 1 });
+    } catch (error) {
+      message.error(getErrorMessage(error, '删除角色失败'));
+    }
+  };
+
+  const handleNextStep = async () => {
+    if (stepIndex === 0) {
+      await form.validateFields(['code', 'name', 'dataScope']);
+      setStepIndex(1);
+      return;
+    }
+
+    if (stepIndex === 1) {
+      const permissions = form.getFieldValue('permissions') as string[] | undefined;
+      if (!Array.isArray(permissions) || permissions.length === 0) {
+        message.error('请至少选择一项权限');
+        return;
+      }
+      setStepIndex(2);
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      const values = await form.validateFields();
+      const payload = {
+        code: values.code?.trim(),
+        name: values.name?.trim(),
+        description: values.description?.trim() || undefined,
+        dataScope: values.dataScope,
+        permissions: values.permissions ?? [],
+      };
+
+      setSaving(true);
+      if (editingRole) {
+        await roleApi.update(editingRole.id, payload);
+        message.success('角色已更新');
+      } else {
+        await roleApi.create(payload);
+        message.success('角色已创建');
+      }
+      setDrawerOpen(false);
+      form.resetFields();
+      void fetchRoles({ ...params, pageNum: 1 });
+    } catch (error) {
+      if (typeof error === 'object' && error !== null && 'errorFields' in error) {
+        return;
+      }
+      message.error(getErrorMessage(error, '保存角色失败'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const columns: ColumnsType<RoleRecord> = [
-    { title: '角色代码', dataIndex: 'code', width: 140 },
-    { title: '角色名称', dataIndex: 'name', width: 160 },
-    { title: '类型', dataIndex: 'type', width: 100, render: (v: string) => <Tag color={typeColors[v]}>{v === 'PRESET' ? '预置' : '自定义'}</Tag> },
-    { title: '数据范围', dataIndex: 'dataScope', width: 120, render: (v: string) => scopeLabels[v] || v },
-    { title: '系统角色', dataIndex: 'systemFlag', width: 100, render: (v: boolean) => v ? <Tag color="red">是</Tag> : <Tag>否</Tag> },
-    { title: '创建时间', dataIndex: 'createdAt', width: 180 },
     {
-      title: '操作', width: 160, fixed: 'right',
-      render: (_, record) => (
+      title: '角色',
+      dataIndex: 'name',
+      width: 240,
+      render: (_value: string, record) => (
+        <Space direction="vertical" size={2}>
+          <Space wrap>
+            <Typography.Text strong>{record.name}</Typography.Text>
+            <Tag color={record.systemFlag ? 'gold' : 'blue'}>
+              {record.systemFlag ? '系统角色' : roleTypeLabels[record.type] || record.type}
+            </Tag>
+            <Tag color={record.status === 'ACTIVE' ? 'success' : 'default'}>
+              {statusLabels[record.status] || record.status}
+            </Tag>
+          </Space>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {record.code}
+          </Typography.Text>
+        </Space>
+      ),
+    },
+    {
+      title: '数据范围',
+      dataIndex: 'dataScope',
+      width: 140,
+      render: (value: string) => dataScopeLabels[value] || value,
+    },
+    {
+      title: '权限数',
+      dataIndex: 'permissions',
+      width: 120,
+      render: (value?: string[]) => value?.length ?? 0,
+    },
+    {
+      title: '成员数',
+      dataIndex: 'userCount',
+      width: 120,
+      render: (value?: number) => value ?? 0,
+    },
+    {
+      title: '说明',
+      dataIndex: 'description',
+      ellipsis: true,
+      render: (value?: string) => value || '-',
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      width: 180,
+      render: (value?: string) => value || '-',
+    },
+    {
+      title: '操作',
+      width: 180,
+      fixed: 'right',
+      render: (_value, record) => (
         <Space>
-          <Button type="link" size="small" onClick={() => message.info(`编辑 ${record.code}`)}>编辑</Button>
-          <Button type="link" size="small" danger disabled={record.systemFlag} onClick={() => handleDelete(record.id)}>删除</Button>
+          <Button type="link" size="small" disabled={record.systemFlag} onClick={() => void openEditDrawer(record)}>
+            编辑
+          </Button>
+          <Button type="link" size="small" danger disabled={record.systemFlag} onClick={() => void handleDelete(record)}>
+            删除
+          </Button>
         </Space>
       ),
     },
   ];
 
+  const stepItems = [
+    { title: '基本信息' },
+    { title: '权限配置' },
+    { title: '确认提交' },
+  ];
+
+  const summaryValues = form.getFieldsValue();
+
   return (
     <div>
       <PageHeader
-        title="角色权限"
-        description={`共 ${total} 个角色`}
-        extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>新建角色</Button>}
+        title="角色管理"
+        description={
+          currentUser?.userType === 'SYSTEM_OPS'
+            ? '系统运维空间下创建的角色只能分配系统运维功能权限。'
+            : '租户空间下创建的角色只能分配当前租户已授权的空间权限。'
+        }
+        extra={(
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreateDrawer}>
+            新建角色
+          </Button>
+        )}
       />
 
-      {/* Stat summary */}
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        {[
-          { title: '角色总数', value: total, icon: <SafetyCertificateOutlined />, color: '#4f46e5', bg: 'rgba(79,70,229,0.08)' },
-          { title: '预置角色', value: stats.preset, icon: <LockOutlined />, color: '#3b82f6', bg: 'rgba(59,130,246,0.08)' },
-          { title: '自定义角色', value: stats.custom, icon: <UnlockOutlined />, color: '#10b981', bg: 'rgba(16,185,129,0.08)' },
-        ].map((s, i) => (
-          <Col xs={8} key={i}>
-            <Card bodyStyle={{ padding: '14px 16px' }} style={{ borderRadius: 10, border: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: s.color }}>
-                  {s.icon}
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, color: '#8c8c8c' }}>{s.title}</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: '#1a1a2e' }}>{s.value}</div>
-                </div>
-              </div>
-            </Card>
-          </Col>
-        ))}
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message="授权规则"
+        description={
+          currentUser?.userType === 'SYSTEM_OPS'
+            ? '系统运维角色仅可授权系统运维空间能力；租户业务能力不会出现在这里。'
+            : '租户角色的可选权限由“租户管理 > 空间授权”决定，未授权的模块不会出现在这里。'
+        }
+      />
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} sm={8}>
+          <Card>
+            <Statistic title="角色总数" value={total} prefix={<SafetyCertificateOutlined />} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={8}>
+          <Card>
+            <Statistic title="系统角色" value={stats.system} prefix={<LockOutlined />} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={8}>
+          <Card>
+            <Statistic title="启用角色" value={stats.active} prefix={<CheckCircleOutlined />} />
+          </Card>
+        </Col>
       </Row>
 
-      {/* Table */}
-      <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} scroll={{ x: 1000 }}
-          pagination={{ current: params.pageNum, pageSize: params.pageSize, total, showSizeChanger: true,
-            showTotal: (t: number) => `共 ${t} 条`,
-            onChange: (page: number, size: number) => setParams({ ...params, pageNum: page, pageSize: size }) }} />
-      </Card>
-
-      <Modal title="新建角色" open={modalOpen} onCancel={() => setModalOpen(false)}
-        onOk={() => form.submit()} destroyOnClose width={600}>
-        <Form form={form} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="code" label="角色代码" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="name" label="角色名称" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="description" label="描述"><Input.TextArea rows={2} /></Form.Item>
-          <Form.Item name="dataScope" label="数据范围" initialValue="PROJECT">
-            <Select options={[
-              { value: 'ALL', label: '全部数据' },
-              { value: 'PROJECT', label: '项目范围' },
-              { value: 'GROUP', label: '分组范围' },
-              { value: 'SELF', label: '仅自己' },
-            ]} />
+      <Card style={{ marginBottom: 16 }}>
+        <Form form={queryForm} layout="inline" onFinish={() => void handleSearch()}>
+          <Form.Item name="keyword" label="关键字">
+            <Input allowClear placeholder="角色编码 / 角色名称" style={{ width: 240 }} />
+          </Form.Item>
+          <Form.Item name="type" label="角色类型">
+            <Select
+              allowClear
+              placeholder="全部类型"
+              style={{ width: 160 }}
+              options={Object.entries(roleTypeLabels).map(([value, label]) => ({ value, label }))}
+            />
+          </Form.Item>
+          <Form.Item name="status" label="状态">
+            <Select
+              allowClear
+              placeholder="全部状态"
+              style={{ width: 160 }}
+              options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))}
+            />
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit">查询</Button>
+              <Button onClick={handleReset}>重置</Button>
+            </Space>
           </Form.Item>
         </Form>
-      </Modal>
+      </Card>
+
+      <Card>
+        <Table<RoleRecord>
+          rowKey="id"
+          columns={columns}
+          dataSource={items}
+          loading={loading}
+          scroll={{ x: 1180 }}
+          pagination={{
+            current: params.pageNum,
+            pageSize: params.pageSize,
+            total,
+            showSizeChanger: true,
+            showTotal: (count) => `共 ${count} 条`,
+            onChange: (pageNum, pageSize) => {
+              setParams((prev) => ({ ...prev, pageNum, pageSize }));
+            },
+          }}
+        />
+      </Card>
+
+      <Drawer
+        destroyOnClose
+        title={editingRole ? `编辑角色 - ${editingRole.name}` : '新建角色'}
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        width={960}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={(
+          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+            <Button onClick={() => setDrawerOpen(false)}>取消</Button>
+            <Space>
+              {stepIndex > 0 && (
+                <Button onClick={() => setStepIndex((current) => current - 1)}>
+                  上一步
+                </Button>
+              )}
+              {stepIndex < stepItems.length - 1 ? (
+                <Button type="primary" onClick={() => void handleNextStep()}>
+                  下一步
+                </Button>
+              ) : (
+                <Button type="primary" loading={saving} onClick={() => void handleSave()}>
+                  保存角色
+                </Button>
+              )}
+            </Space>
+          </Space>
+        )}
+      >
+        <Steps current={stepIndex} items={stepItems} style={{ marginBottom: 24 }} />
+
+        <Form form={form} layout="vertical" preserve={false}>
+          {stepIndex === 0 && (
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  name="code"
+                  label="角色编码"
+                  rules={[
+                    { required: true, message: '请输入角色编码' },
+                    { max: 64, message: '角色编码长度不能超过 64 位' },
+                    { pattern: /^[A-Za-z0-9:_-]{2,64}$/, message: '角色编码仅支持字母、数字、冒号、中划线和下划线' },
+                  ]}
+                >
+                  <Input placeholder="例如 tenant_operator" disabled={!!editingRole} />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="name"
+                  label="角色名称"
+                  rules={[
+                    { required: true, message: '请输入角色名称' },
+                    { max: 128, message: '角色名称长度不能超过 128 位' },
+                  ]}
+                >
+                  <Input placeholder="例如 租户运维" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="dataScope"
+                  label="数据范围"
+                  rules={[{ required: true, message: '请选择数据范围' }]}
+                >
+                  <Select
+                    options={Object.entries(dataScopeLabels).map(([value, label]) => ({ value, label }))}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={24}>
+                <Form.Item name="description" label="角色说明">
+                  <Input.TextArea rows={4} placeholder="可选，用于说明该角色的职责边界" />
+                </Form.Item>
+              </Col>
+            </Row>
+          )}
+
+          {stepIndex === 1 && (
+            <Space direction="vertical" size={16} style={{ width: '100%' }}>
+              <Alert
+                type="info"
+                showIcon
+                message="权限选择"
+                description="模块过多时使用步骤式配置。每个模块只展示当前空间真实可分配的权限项，越权能力不会出现在这里。"
+              />
+
+              <Card
+                size="small"
+                title="快速操作"
+                extra={(
+                  <Space>
+                    <Typography.Text type="secondary">
+                      已选 {selectedPermissionCount} 项
+                    </Typography.Text>
+                    <Button size="small" onClick={() => form.setFieldValue('permissions', allPermissionCodes)}>
+                      全选
+                    </Button>
+                    <Button size="small" onClick={() => form.setFieldValue('permissions', [])}>
+                      清空
+                    </Button>
+                  </Space>
+                )}
+              >
+                <Typography.Text type="secondary">
+                  如果只想赋予查看权限，可以只勾选各模块中的“查看”类权限；需要完整运维能力时，再继续勾选编辑、删除、处理等权限。
+                </Typography.Text>
+              </Card>
+
+              <Form.Item name="permissions" noStyle>
+                <div>
+                  <Row gutter={[16, 16]}>
+                    {permissionGroups.map((group) => {
+                      const selectedPermissions = (form.getFieldValue('permissions') as string[] | undefined) ?? [];
+                      const groupCodes = group.permissions.map((permission) => permission.code);
+                      const checkedCount = groupCodes.filter((code) => selectedPermissions.includes(code)).length;
+                      const allChecked = checkedCount === groupCodes.length && groupCodes.length > 0;
+                      const partiallyChecked = checkedCount > 0 && checkedCount < groupCodes.length;
+
+                      return (
+                        <Col span={12} key={group.key}>
+                          <Card
+                            size="small"
+                            title={group.label}
+                            extra={(
+                              <Checkbox
+                                checked={allChecked}
+                                indeterminate={partiallyChecked}
+                                onChange={(event) => {
+                                  const nextSelected = new Set(selectedPermissions);
+                                  if (event.target.checked) {
+                                    groupCodes.forEach((code) => nextSelected.add(code));
+                                  } else {
+                                    groupCodes.forEach((code) => nextSelected.delete(code));
+                                  }
+                                  form.setFieldValue('permissions', [...nextSelected]);
+                                }}
+                              >
+                                全选
+                              </Checkbox>
+                            )}
+                          >
+                            {group.routePath && (
+                              <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+                                页面入口：{group.routePath}
+                              </Typography.Text>
+                            )}
+                            <Checkbox.Group
+                              style={{ width: '100%' }}
+                              value={selectedPermissions}
+                              onChange={(checkedValues) => form.setFieldValue('permissions', checkedValues)}
+                            >
+                              <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                                {group.permissions.map((permission) => (
+                                  <Checkbox key={permission.code} value={permission.code}>
+                                    {permission.label}
+                                  </Checkbox>
+                                ))}
+                              </Space>
+                            </Checkbox.Group>
+                          </Card>
+                        </Col>
+                      );
+                    })}
+                  </Row>
+                </div>
+              </Form.Item>
+            </Space>
+          )}
+
+          {stepIndex === 2 && (
+            <Space direction="vertical" size={16} style={{ width: '100%' }}>
+              <Card size="small" title="角色摘要">
+                <Row gutter={[16, 16]}>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">角色编码</Typography.Text>
+                    <div>{summaryValues.code || '-'}</div>
+                  </Col>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">角色名称</Typography.Text>
+                    <div>{summaryValues.name || '-'}</div>
+                  </Col>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">数据范围</Typography.Text>
+                    <div>{dataScopeLabels[summaryValues.dataScope || ''] || summaryValues.dataScope || '-'}</div>
+                  </Col>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">权限数量</Typography.Text>
+                    <div>{selectedPermissionCount}</div>
+                  </Col>
+                </Row>
+                <Divider />
+                <Typography.Text type="secondary">角色说明</Typography.Text>
+                <div>{summaryValues.description || '未填写'}</div>
+              </Card>
+
+              <Card size="small" title="已选权限">
+                <Space size={[8, 8]} wrap>
+                  {(summaryValues.permissions ?? []).map((permissionCode) => (
+                    <Tag key={permissionCode} color="blue">
+                      {permissionCode}
+                    </Tag>
+                  ))}
+                </Space>
+              </Card>
+            </Space>
+          )}
+        </Form>
+      </Drawer>
     </div>
   );
 };

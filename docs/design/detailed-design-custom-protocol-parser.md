@@ -245,7 +245,7 @@ This update aligns management, debug, and runtime behavior for custom protocol p
 - `BUILTIN` parser mode is explicitly rejected in management validation. Current supported modes are `SCRIPT` and `PLUGIN`.
 - Script parser execution now runs in a bounded executor with queue limits and timeout-triggered cancellation to prevent unbounded resource growth.
 
-### Compatibility Notes
+### Runtime Notes
 
 - Existing `SCRIPT` and `PLUGIN` published rules remain compatible.
 - Rules configured with `parserMode=BUILTIN` must be migrated to `SCRIPT` or `PLUGIN`.
@@ -266,8 +266,8 @@ This update aligns debug interaction with the repository rule that user-facing p
   - This keeps the user interaction on `productKey + deviceName`.
   - It also reduces accidental cross-product device selection.
 - Device service resolves selected `deviceName` back to internal device context before invoking connector encode debug.
-  - This keeps existing legacy release configs with `deviceIds` compatible.
-  - User-facing interaction still stays on business keys.
+  - Runtime execution still uses internal device context.
+  - User-facing interaction stays on business keys only.
 - Uplink debug identity output no longer returns `deviceId`.
   - Debug results only keep business-readable identity fields.
 
@@ -275,7 +275,7 @@ This update aligns debug interaction with the repository rule that user-facing p
 
 - The protocol parser page no longer advertises unsupported uplink debug behavior.
 - Downlink debug follows the same business-key-first design as rule editing and product selection.
-- Backward compatibility is preserved inside the service layer instead of exposing internal IDs to users.
+- Legacy `deviceIds` release config is no longer part of the supported model; stored rules should be cleaned and rewritten to `deviceNames`.
 
 ## 2026-03-13 协议解析抽屉分步化改造
 

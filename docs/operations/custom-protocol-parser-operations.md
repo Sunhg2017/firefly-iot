@@ -282,11 +282,11 @@ mvn -pl firefly-system -am -DskipTests compile
    - the selected debug product is correct
    - the device still belongs to that product
    - the device name has not been renamed
-3. For `DEVICE_LIST` release configs, prefer maintaining `deviceNames` in new and updated rules.
+3. For `DEVICE_LIST` release configs, only maintain `deviceNames`.
 
-### Compatibility Note
+### Cleanup Note
 
-- Legacy release configs that still contain `deviceIds` remain compatible during downlink debug because the device service resolves `deviceName` to internal device context before invoking connector encode debug.
+- If historical rule data still contains `deviceIds`, clean and rewrite it before continuing maintenance.
 
 ## 2026-03-13 协议解析抽屉运维更新
 

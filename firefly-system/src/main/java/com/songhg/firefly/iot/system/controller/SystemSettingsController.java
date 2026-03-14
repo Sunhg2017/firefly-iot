@@ -5,15 +5,17 @@ import com.songhg.firefly.iot.common.security.RequiresPermission;
 import com.songhg.firefly.iot.system.dto.system.SystemConfigUpdateDTO;
 import com.songhg.firefly.iot.system.dto.system.SystemConfigVO;
 import com.songhg.firefly.iot.system.service.SystemConfigService;
-import com.songhg.firefly.iot.system.dto.system.TenantAdminDefaultPermissionsUpdateDTO;
-import com.songhg.firefly.iot.system.dto.system.TenantAdminDefaultPermissionsVO;
-import com.songhg.firefly.iot.system.service.TenantAdminSettingsService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
@@ -25,11 +27,8 @@ import java.util.Map;
 public class SystemSettingsController {
 
     private final SystemConfigService systemConfigService;
-    private final TenantAdminSettingsService tenantAdminSettingsService;
 
-    // ==================== System Config ====================
-
-    @Operation(summary = "获取系统配置（按分组）")
+    @Operation(summary = "按分组获取系统配置")
     @GetMapping("/configs")
     @RequiresPermission("system:read")
     public R<Map<String, List<SystemConfigVO>>> listConfigs() {
@@ -38,8 +37,9 @@ public class SystemSettingsController {
 
     @GetMapping("/configs/group/{group}")
     @RequiresPermission("system:read")
-    @Operation(summary = "按分组获取配置")
-    public R<List<SystemConfigVO>> listByGroup(@Parameter(description = "配置分组", required = true) @PathVariable String group) {
+    @Operation(summary = "按分组获取系统配置")
+    public R<List<SystemConfigVO>> listByGroup(
+            @Parameter(description = "配置分组", required = true) @PathVariable String group) {
         return R.ok(systemConfigService.listByGroup(group));
     }
 
@@ -53,24 +53,9 @@ public class SystemSettingsController {
 
     @PutMapping("/configs/single")
     @RequiresPermission("system:update")
-    @Operation(summary = "更新单项配置")
+    @Operation(summary = "更新单个配置")
     public R<Void> updateConfig(@Valid @RequestBody SystemConfigUpdateDTO dto) {
         systemConfigService.updateConfig(dto);
         return R.ok();
-    }
-
-    @GetMapping("/tenant-admin/default-permissions")
-    @RequiresPermission("system:read")
-    @Operation(summary = "获取新租户管理员默认权限配置")
-    public R<TenantAdminDefaultPermissionsVO> getTenantAdminDefaultPermissions() {
-        return R.ok(tenantAdminSettingsService.getDefaultPermissionsSettings());
-    }
-
-    @PutMapping("/tenant-admin/default-permissions")
-    @RequiresPermission("system:update")
-    @Operation(summary = "更新新租户管理员默认权限配置")
-    public R<TenantAdminDefaultPermissionsVO> updateTenantAdminDefaultPermissions(
-            @Valid @RequestBody TenantAdminDefaultPermissionsUpdateDTO dto) {
-        return R.ok(tenantAdminSettingsService.updateDefaultPermissions(dto.getPermissions()));
     }
 }

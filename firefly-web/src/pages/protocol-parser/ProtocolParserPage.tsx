@@ -788,9 +788,8 @@ const formatReleaseSummary = (record: ProtocolParserRecord) => {
       return `${config.percent || 0}%`;
     }
     if (releaseMode === 'DEVICE_LIST') {
-      const deviceIds = Array.isArray(config.deviceIds) ? config.deviceIds.length : 0;
       const deviceNames = Array.isArray(config.deviceNames) ? config.deviceNames.length : 0;
-      return `${deviceIds + deviceNames} 个目标设备`;
+      return `${deviceNames} 个目标设备`;
     }
     return '全部设备';
   } catch {

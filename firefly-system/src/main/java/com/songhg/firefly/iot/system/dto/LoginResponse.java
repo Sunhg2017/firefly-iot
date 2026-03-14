@@ -6,9 +6,6 @@ import lombok.Data;
 
 import java.util.Set;
 
-/**
- * Login response.
- */
 @Data
 @Schema(description = "登录响应")
 public class LoginResponse {
@@ -34,12 +31,10 @@ public class LoginResponse {
     @Schema(description = "会话编号")
     private String sessionId;
 
-    /**
-     * Authenticated user info.
-     */
     @Data
     @Schema(description = "认证用户信息")
     public static class UserInfo {
+
         @Schema(description = "用户编号")
         private Long id;
 
@@ -58,14 +53,11 @@ public class LoginResponse {
         @Schema(description = "邮箱")
         private String email;
 
-        @Schema(description = "User type")
+        @Schema(description = "用户类型")
         private UserType userType;
 
-        @Schema(description = "鏄惁涓虹鎴疯秴绾х鐞嗗憳")
+        @Schema(description = "是否为租户管理员")
         private boolean tenantSuperAdmin;
-
-        @Schema(description = "鏄惁鍙互绠＄悊褰撳墠宸ヤ綔绌洪棿鑿滃崟")
-        private boolean workspaceMenuAdmin;
 
         @Schema(description = "租户编号")
         private Long tenantId;

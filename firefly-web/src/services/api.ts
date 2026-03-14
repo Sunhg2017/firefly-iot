@@ -415,6 +415,8 @@ export const userApi = {
 // ==================== Role API ====================
 export const roleApi = {
   list: (data: Record<string, unknown> = {}) => request.post('/roles/list', data),
+  options: () => request.get('/roles/options'),
+  permissionGroups: () => request.get('/roles/permission-groups'),
   get: (id: number) => request.get(`/roles/${id}`),
   create: (data: Record<string, unknown>) => request.post('/roles', data),
   update: (id: number, data: Record<string, unknown>) => request.put(`/roles/${id}`, data),
@@ -469,9 +471,6 @@ export const systemConfigApi = {
   listByGroup: (group: string) => request.get(`/settings/configs/group/${group}`),
   batchUpdate: (data: Record<string, unknown>[]) => request.put('/settings/configs', data),
   update: (data: Record<string, unknown>) => request.put('/settings/configs/single', data),
-  getTenantAdminDefaultPermissions: () => request.get('/settings/tenant-admin/default-permissions'),
-  updateTenantAdminDefaultPermissions: (permissions: string[]) =>
-    request.put('/settings/tenant-admin/default-permissions', { permissions }),
 };
 
 // ==================== Operation Log API ====================
@@ -980,16 +979,6 @@ export const deviceMessageApi = {
 };
 
 // ==================== Tenant Menu Config API ====================
-export const tenantMenuConfigApi = {
-  tree: () => request.get('/tenant/menu-configs/tree'),
-  list: () => request.get('/tenant/menu-configs'),
-  create: (data: Record<string, unknown>) => request.post('/tenant/menu-configs', data),
-  update: (id: number, data: Record<string, unknown>) => request.put(`/tenant/menu-configs/${id}`, data),
-  delete: (id: number) => request.delete(`/tenant/menu-configs/${id}`),
-  batchSort: (data: Record<string, unknown>[]) => request.put('/tenant/menu-configs/sort', data),
-  initDefaults: (data: Record<string, unknown>[]) => request.post('/tenant/menu-configs/init', data),
-};
-
 // ==================== In-App Message (站内信) API ====================
 export const inAppMessageApi = {
   list: (data: Record<string, unknown> = {}) => supportRequest.post('/in-app-messages/list', data),

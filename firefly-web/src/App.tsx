@@ -24,7 +24,6 @@ const SystemMonitorPage = React.lazy(() => import('./pages/monitor/SystemMonitor
 const PermissionResourcePage = React.lazy(() => import('./pages/permission/PermissionResourcePage'));
 const DictPage = React.lazy(() => import('./pages/dict/DictPage'));
 const RuleEngineList = React.lazy(() => import('./pages/rule-engine/RuleEngineList'));
-const AlarmList = React.lazy(() => import('./pages/alarm/AlarmList'));
 const AlarmRulePage = React.lazy(() => import('./pages/alarm/AlarmRulePage'));
 const AlarmRecordPage = React.lazy(() => import('./pages/alarm/AlarmRecordPage'));
 const AlarmRecipientGroupPage = React.lazy(() => import('./pages/alarm/AlarmRecipientGroupPage'));
@@ -42,7 +41,6 @@ const ApiKeyPage = React.lazy(() => import('./pages/api-key/ApiKeyPage'));
 const SecurityPage = React.lazy(() => import('./pages/security/SecurityPage'));
 const DeviceShadowPage = React.lazy(() => import('./pages/device-shadow/DeviceShadowPage'));
 const DeviceMessagePage = React.lazy(() => import('./pages/device-message/DeviceMessagePage'));
-const MenuConfigPage = React.lazy(() => import('./pages/menu-config/MenuConfigPage'));
 const ScheduledTaskPage = React.lazy(() => import('./pages/scheduled-task/ScheduledTaskPage'));
 const SnmpPage = React.lazy(() => import('./pages/snmp/SnmpPage'));
 const ModbusPage = React.lazy(() => import('./pages/modbus/ModbusPage'));
@@ -84,7 +82,6 @@ const App: React.FC = () => {
             <Route path="permission" element={<PermissionResourcePage />} />
             <Route path="dict" element={<DictPage />} />
             <Route path="rule-engine" element={<RuleEngineList />} />
-            <Route path="alarm" element={<AlarmList />} />
             <Route path="alarm-rules" element={<AlarmRulePage />} />
             <Route path="alarm-records" element={<AlarmRecordPage />} />
             <Route path="alarm-recipient-groups" element={<AlarmRecipientGroupPage />} />
@@ -102,7 +99,6 @@ const App: React.FC = () => {
             <Route path="security" element={<SecurityPage />} />
             <Route path="device-shadow" element={<DeviceShadowPage />} />
             <Route path="device-message" element={<DeviceMessagePage />} />
-            <Route path="menu-config" element={<MenuConfigPage />} />
             <Route path="scheduled-task" element={<ScheduledTaskPage />} />
             <Route path="snmp" element={<SnmpPage />} />
             <Route path="modbus" element={<ModbusPage />} />

@@ -549,8 +549,8 @@ function encode(ctx) {
 
 ### 灰度配置建议
 
-- `DEVICE_LIST` 新配置优先使用 `deviceNames`
-- 旧配置如果仍然包含 `deviceIds`，系统在下行调试时仍会兼容
+- `DEVICE_LIST` 只维护 `deviceNames`
+- 如果历史规则里还残留 `deviceIds`，请先清理旧数据再继续维护
 
 ### 为什么这样调整
 

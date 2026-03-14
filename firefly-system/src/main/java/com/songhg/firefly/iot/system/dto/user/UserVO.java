@@ -8,9 +8,6 @@ import lombok.Data;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * User view object.
- */
 @Data
 @Schema(description = "用户视图对象")
 public class UserVO {
@@ -33,14 +30,11 @@ public class UserVO {
     @Schema(description = "真实姓名")
     private String realName;
 
-    @Schema(description = "User type")
+    @Schema(description = "用户类型")
     private UserType userType;
 
-    @Schema(description = "鏄惁涓虹鎴疯秴绾х鐞嗗憳")
+    @Schema(description = "是否为租户管理员")
     private Boolean tenantSuperAdmin;
-
-    @Schema(description = "鏄惁鍙互绠＄悊褰撳墠宸ヤ綔绌洪棿鑿滃崟")
-    private Boolean workspaceMenuAdmin;
 
     @Schema(description = "状态")
     private UserStatus status;
@@ -54,12 +48,10 @@ public class UserVO {
     @Schema(description = "创建时间")
     private LocalDateTime createdAt;
 
-    /**
-     * User role view object.
-     */
     @Data
     @Schema(description = "用户角色视图对象")
     public static class UserRoleVO {
+
         @Schema(description = "角色编号")
         private Long roleId;
 

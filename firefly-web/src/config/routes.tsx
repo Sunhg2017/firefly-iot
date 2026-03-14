@@ -24,9 +24,9 @@ import {
   MessageOutlined,
   MonitorOutlined,
   ProjectOutlined,
-  ReconciliationOutlined,
   SafetyOutlined,
   ScheduleOutlined,
+  SecurityScanOutlined,
   SendOutlined,
   SettingOutlined,
   ShareAltOutlined,
@@ -39,137 +39,192 @@ import {
 } from '@ant-design/icons';
 import { ALARM_TEXT } from '../pages/alarm/alarmText';
 
+export type WorkspaceScope = 'platform' | 'tenant' | 'both';
+
 export interface RouteItem {
   path: string;
   label: string;
   icon: React.ReactNode;
   permission?: string | string[];
+  workspace: WorkspaceScope;
 }
 
 export interface RouteGroup {
   key: string;
   label: string;
   icon: React.ReactNode;
+  workspace: WorkspaceScope;
   children: RouteNode[];
 }
 
 export type RouteNode = RouteItem | RouteGroup;
 export type RouteEntry = RouteNode;
 
-export const DEVICE_PROTOCOL_GROUP_KEY = 'device-protocol-access';
+export const DEVICE_PROTOCOL_GROUP_KEY = 'tenant-device-protocol-access';
 
 export function isRouteGroup(entry: RouteEntry): entry is RouteGroup {
   return 'children' in entry;
 }
 
 const routeConfigs: RouteEntry[] = [
-  { path: '/dashboard', label: '工作台', icon: <DashboardOutlined />, permission: 'dashboard:read' },
   {
-    key: 'system-mgmt',
-    label: '系统管理',
+    path: '/dashboard',
+    label: '工作台',
+    icon: <DashboardOutlined />,
+    permission: 'dashboard:read',
+    workspace: 'both',
+  },
+
+  {
+    key: 'platform-tenant-space',
+    label: '租户与空间',
+    icon: <BankOutlined />,
+    workspace: 'platform',
+    children: [
+      { path: '/tenant', label: '租户管理', icon: <BankOutlined />, permission: 'tenant:read', workspace: 'platform' },
+    ],
+  },
+  {
+    key: 'platform-identity-access',
+    label: '用户与权限',
+    icon: <SafetyOutlined />,
+    workspace: 'platform',
+    children: [
+      { path: '/user', label: '用户管理', icon: <TeamOutlined />, permission: 'user:read', workspace: 'platform' },
+      { path: '/role', label: '角色管理', icon: <SafetyOutlined />, permission: 'role:read', workspace: 'platform' },
+      { path: '/permission', label: '权限资源', icon: <KeyOutlined />, permission: 'permission:read', workspace: 'platform' },
+      { path: '/dict', label: '数据字典', icon: <BookOutlined />, permission: 'dict:read', workspace: 'platform' },
+    ],
+  },
+  {
+    key: 'platform-system-ops',
+    label: '系统运维',
     icon: <SettingOutlined />,
+    workspace: 'platform',
     children: [
-      { path: '/tenant', label: '租户管理', icon: <BankOutlined />, permission: 'tenant:read' },
-      { path: '/user', label: '用户管理', icon: <TeamOutlined />, permission: 'user:read' },
-      { path: '/role', label: '角色权限', icon: <SafetyOutlined />, permission: 'role:read' },
-      { path: '/permission', label: '权限资源', icon: <KeyOutlined />, permission: 'permission:read' },
-      { path: '/dict', label: '数据字典', icon: <BookOutlined />, permission: 'dict:read' },
-      { path: '/settings', label: '系统设置', icon: <SettingOutlined />, permission: 'system:read' },
-      { path: '/notification', label: '通知渠道', icon: <BellOutlined />, permission: 'notification:read' },
-      { path: '/scheduled-task', label: '定时任务', icon: <ScheduleOutlined />, permission: 'system:read' },
-      { path: '/menu-config', label: '菜单配置', icon: <ReconciliationOutlined />, permission: 'system:update' },
+      { path: '/settings', label: '系统设置', icon: <SettingOutlined />, permission: 'system:read', workspace: 'platform' },
+      { path: '/notification', label: '通知渠道', icon: <BellOutlined />, permission: 'notification:read', workspace: 'platform' },
+      { path: '/scheduled-task', label: '定时任务', icon: <ScheduleOutlined />, permission: 'system:read', workspace: 'platform' },
+      { path: '/monitor', label: '系统监控', icon: <MonitorOutlined />, permission: 'monitor:read', workspace: 'platform' },
     ],
   },
   {
-    key: 'project-mgmt',
-    label: '项目管理',
+    key: 'platform-security-audit',
+    label: '安全审计',
+    icon: <SecurityScanOutlined />,
+    workspace: 'platform',
+    children: [
+      { path: '/security', label: '安全管理', icon: <LockOutlined />, permission: 'user:read', workspace: 'platform' },
+      { path: '/api-key', label: 'API Key', icon: <ApiOutlined />, permission: 'apikey:read', workspace: 'platform' },
+      { path: '/audit-log', label: '审计日志', icon: <FileSearchOutlined />, permission: 'audit:read', workspace: 'platform' },
+      { path: '/operation-log', label: '操作日志', icon: <FileTextOutlined />, permission: 'operation-log:read', workspace: 'platform' },
+    ],
+  },
+
+  {
+    key: 'tenant-identity-access',
+    label: '组织与权限',
+    icon: <TeamOutlined />,
+    workspace: 'tenant',
+    children: [
+      { path: '/user', label: '用户管理', icon: <TeamOutlined />, permission: 'user:read', workspace: 'tenant' },
+      { path: '/role', label: '角色管理', icon: <SafetyOutlined />, permission: 'role:read', workspace: 'tenant' },
+    ],
+  },
+  {
+    key: 'tenant-project-collaboration',
+    label: '项目协同',
     icon: <ProjectOutlined />,
+    workspace: 'tenant',
     children: [
-      { path: '/project', label: '项目列表', icon: <ProjectOutlined />, permission: 'project:read' },
-      { path: '/share', label: '跨租户共享', icon: <ShareAltOutlined />, permission: 'share:read' },
+      { path: '/project', label: '项目管理', icon: <ProjectOutlined />, permission: 'project:read', workspace: 'tenant' },
+      { path: '/share', label: '跨租户共享', icon: <ShareAltOutlined />, permission: 'share:read', workspace: 'tenant' },
     ],
   },
   {
-    key: 'device-mgmt',
-    label: '设备中心',
-    icon: <HddOutlined />,
+    key: 'tenant-device-access',
+    label: '设备接入',
+    icon: <ApiOutlined />,
+    workspace: 'tenant',
     children: [
-      { path: '/product', label: '产品接入', icon: <AppstoreOutlined />, permission: 'product:read' },
-      { path: '/protocol-parser', label: '协议解析', icon: <ApiOutlined />, permission: 'protocol-parser:read' },
-      { path: '/device', label: '设备管理', icon: <HddOutlined />, permission: 'device:read' },
-      { path: '/device-group', label: '设备分组', icon: <GroupOutlined />, permission: 'device-group:read' },
-      { path: '/device-tag', label: '设备标签', icon: <TagOutlined />, permission: 'device-tag:read' },
-      { path: '/geo-fence', label: '地理围栏', icon: <AimOutlined />, permission: 'geo-fence:read' },
-      { path: '/device-shadow', label: '设备影子', icon: <CloudSyncOutlined />, permission: 'device:read' },
-      { path: '/device-message', label: '设备消息', icon: <SendOutlined />, permission: 'device:read' },
+      { path: '/product', label: '产品与物模型', icon: <AppstoreOutlined />, permission: 'product:read', workspace: 'tenant' },
+      { path: '/protocol-parser', label: '协议解析', icon: <ApiOutlined />, permission: 'protocol-parser:read', workspace: 'tenant' },
       {
         key: DEVICE_PROTOCOL_GROUP_KEY,
         label: '协议接入',
         icon: <ApiOutlined />,
+        workspace: 'tenant',
         children: [
-          { path: '/snmp', label: 'SNMP 接入', icon: <ApiOutlined />, permission: 'device:read' },
-          { path: '/modbus', label: 'Modbus 接入', icon: <ApiOutlined />, permission: 'device:read' },
-          { path: '/websocket', label: 'WebSocket 接入', icon: <ApiOutlined />, permission: 'device:read' },
-          { path: '/tcp-udp', label: 'TCP/UDP 接入', icon: <ApiOutlined />, permission: 'device:read' },
-          { path: '/lorawan', label: 'LoRaWAN 接入', icon: <ApiOutlined />, permission: 'device:read' },
+          { path: '/snmp', label: 'SNMP 接入', icon: <ApiOutlined />, permission: 'device:read', workspace: 'tenant' },
+          { path: '/modbus', label: 'Modbus 接入', icon: <ApiOutlined />, permission: 'device:read', workspace: 'tenant' },
+          { path: '/websocket', label: 'WebSocket 接入', icon: <ApiOutlined />, permission: 'device:read', workspace: 'tenant' },
+          { path: '/tcp-udp', label: 'TCP/UDP 接入', icon: <ApiOutlined />, permission: 'device:read', workspace: 'tenant' },
+          { path: '/lorawan', label: 'LoRaWAN 接入', icon: <ApiOutlined />, permission: 'device:read', workspace: 'tenant' },
         ],
       },
     ],
   },
   {
-    key: 'rule-alarm',
-    label: '规则告警',
-    icon: <ControlOutlined />,
+    key: 'tenant-device-assets',
+    label: '设备资产',
+    icon: <HddOutlined />,
+    workspace: 'tenant',
     children: [
-      { path: '/rule-engine', label: '规则引擎', icon: <ThunderboltOutlined />, permission: 'rule:read' },
-      { path: '/alarm-rules', label: ALARM_TEXT.ruleMenu, icon: <AlertOutlined />, permission: 'alarm:read' },
+      { path: '/device', label: '设备管理', icon: <HddOutlined />, permission: 'device:read', workspace: 'tenant' },
+      { path: '/device-group', label: '设备分组', icon: <GroupOutlined />, permission: 'device-group:read', workspace: 'tenant' },
+      { path: '/device-tag', label: '设备标签', icon: <TagOutlined />, permission: 'device-tag:read', workspace: 'tenant' },
+      { path: '/geo-fence', label: '地理围栏', icon: <AimOutlined />, permission: 'geo-fence:read', workspace: 'tenant' },
+      { path: '/device-shadow', label: '设备影子', icon: <CloudSyncOutlined />, permission: 'device:read', workspace: 'tenant' },
+      { path: '/device-message', label: '设备消息', icon: <SendOutlined />, permission: 'device:read', workspace: 'tenant' },
+    ],
+  },
+  {
+    key: 'tenant-rule-alarm',
+    label: '规则与告警',
+    icon: <ControlOutlined />,
+    workspace: 'tenant',
+    children: [
+      { path: '/rule-engine', label: '规则引擎', icon: <ThunderboltOutlined />, permission: 'rule:read', workspace: 'tenant' },
+      { path: '/alarm-rules', label: ALARM_TEXT.ruleMenu, icon: <AlertOutlined />, permission: 'alarm:read', workspace: 'tenant' },
       {
         path: '/alarm-recipient-groups',
         label: ALARM_TEXT.recipientGroupMenu,
         icon: <TeamOutlined />,
-        permission: 'alarm:update',
+        permission: ['alarm:read', 'alarm:update'],
+        workspace: 'tenant',
       },
       {
         path: '/alarm-records',
         label: ALARM_TEXT.recordMenu,
         icon: <ToolOutlined />,
         permission: ['alarm:read', 'alarm:confirm', 'alarm:process'],
+        workspace: 'tenant',
       },
-      { path: '/notification-records', label: '通知记录', icon: <BellOutlined />, permission: 'notification:read' },
-      { path: '/message-template', label: '消息模板', icon: <MessageOutlined />, permission: 'message-template:read' },
+      { path: '/notification-records', label: '通知记录', icon: <BellOutlined />, permission: 'notification:read', workspace: 'tenant' },
+      { path: '/message-template', label: '消息模板', icon: <MessageOutlined />, permission: 'message-template:read', workspace: 'tenant' },
     ],
   },
   {
-    key: 'data-insight',
-    label: '数据洞察',
+    key: 'tenant-data-insight',
+    label: '数据与任务',
     icon: <DatabaseOutlined />,
+    workspace: 'tenant',
     children: [
-      { path: '/device-data', label: '设备数据', icon: <LineChartOutlined />, permission: 'data:read' },
-      { path: '/analysis', label: '数据分析', icon: <FundOutlined />, permission: 'analysis:read' },
-      { path: '/device-log', label: '设备日志', icon: <FileTextOutlined />, permission: 'device-log:read' },
-      { path: '/export', label: '异步任务', icon: <ExportOutlined />, permission: 'export:read' },
+      { path: '/device-data', label: '设备数据', icon: <LineChartOutlined />, permission: 'data:read', workspace: 'tenant' },
+      { path: '/analysis', label: '数据分析', icon: <FundOutlined />, permission: 'analysis:read', workspace: 'tenant' },
+      { path: '/device-log', label: '设备日志', icon: <FileTextOutlined />, permission: 'device-log:read', workspace: 'tenant' },
+      { path: '/export', label: '异步任务', icon: <ExportOutlined />, permission: 'export:read', workspace: 'tenant' },
     ],
   },
   {
-    key: 'ops-tools',
+    key: 'tenant-ops-tools',
     label: '运维工具',
     icon: <ToolOutlined />,
+    workspace: 'tenant',
     children: [
-      { path: '/firmware', label: '固件管理', icon: <UsbOutlined />, permission: 'firmware:read' },
-      { path: '/ota', label: 'OTA 升级', icon: <CloudUploadOutlined />, permission: 'ota:read' },
-      { path: '/video', label: '视频监控', icon: <VideoCameraOutlined />, permission: 'device:read' },
-      { path: '/monitor', label: '系统监控', icon: <MonitorOutlined />, permission: 'monitor:read' },
-    ],
-  },
-  {
-    key: 'security-audit',
-    label: '安全审计',
-    icon: <LockOutlined />,
-    children: [
-      { path: '/security', label: '安全管理', icon: <LockOutlined />, permission: 'user:read' },
-      { path: '/api-key', label: 'API Key', icon: <ApiOutlined />, permission: 'apikey:read' },
-      { path: '/audit-log', label: '审计日志', icon: <FileSearchOutlined />, permission: 'audit:read' },
-      { path: '/operation-log', label: '操作日志', icon: <ReconciliationOutlined />, permission: 'operation-log:read' },
+      { path: '/firmware', label: '固件管理', icon: <UsbOutlined />, permission: 'firmware:read', workspace: 'tenant' },
+      { path: '/ota', label: 'OTA 升级', icon: <CloudUploadOutlined />, permission: 'ota:read', workspace: 'tenant' },
+      { path: '/video', label: '视频监控', icon: <VideoCameraOutlined />, permission: 'video:read', workspace: 'tenant' },
     ],
   },
 ];

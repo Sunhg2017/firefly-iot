@@ -49,8 +49,10 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -72,9 +74,10 @@ public class TenantService {
     private final StringRedisTemplate redisTemplate;
     private final PasswordEncoder passwordEncoder;
     private final EventPublisher eventPublisher;
-    private final TenantAdminSettingsService tenantAdminSettingsService;
     private final UserDomainService userDomainService;
     private final TenantMenuConfigService tenantMenuConfigService;
+    private final PermissionService permissionService;
+    private final WorkspacePermissionCatalogService workspacePermissionCatalogService;
 
     @Transactional
     public TenantVO createTenant(TenantCreateDTO dto) {
@@ -506,13 +509,17 @@ public class TenantService {
         if (items == null || items.isEmpty()) {
             throw new BizException(ResultCode.PARAM_ERROR, "请至少选择一个租户空间功能");
         }
-        return tenantMenuConfigService.replaceMenus(tenantId, items);
+        List<MenuConfigVO> menuTree = tenantMenuConfigService.replaceMenus(tenantId, items);
+        syncTenantRolePermissionsToAuthorizedScope(tenantId);
+        return menuTree;
     }
 
     private Long createTenantAdmin(Tenant tenant, TenantCreateDTO.AdminUserDTO adminUser, Long operatorId) {
         Long tenantId = tenant.getId();
         Role adminRole = ensureTenantAdminRole(tenant);
-        syncTenantAdminPermissions(adminRole.getId(), tenantAdminSettingsService.getEffectiveDefaultPermissions());
+        syncTenantAdminPermissions(
+                adminRole.getId(),
+                new ArrayList<>(workspacePermissionCatalogService.getTenantWorkspacePermissions(tenantId)));
 
         Long existing = userMapper.selectCount(new LambdaQueryWrapper<User>()
                 .eq(User::getUsername, adminUser.getUsername())
@@ -613,6 +620,50 @@ public class TenantService {
             rolePermission.setPermission(permission);
             rolePermission.setCreatedAt(LocalDateTime.now());
             rolePermissionMapper.insert(rolePermission);
+        }
+    }
+
+    private void syncTenantRolePermissionsToAuthorizedScope(Long tenantId) {
+        Set<String> allowedPermissions = workspacePermissionCatalogService.getTenantWorkspacePermissions(tenantId);
+        List<Role> roles = roleMapper.selectList(new LambdaQueryWrapper<Role>()
+                .eq(Role::getTenantId, tenantId));
+        if (roles.isEmpty()) {
+            return;
+        }
+
+        Map<Long, List<UserRole>> userRolesByRoleId = userRoleMapper.selectList(new LambdaQueryWrapper<UserRole>()
+                        .in(UserRole::getRoleId, roles.stream().map(Role::getId).toList()))
+                .stream()
+                .collect(Collectors.groupingBy(UserRole::getRoleId));
+
+        for (Role role : roles) {
+            Set<String> currentPermissions = rolePermissionMapper.selectList(new LambdaQueryWrapper<RolePermission>()
+                            .eq(RolePermission::getRoleId, role.getId()))
+                    .stream()
+                    .map(RolePermission::getPermission)
+                    .filter(permission -> permission != null && !permission.isBlank())
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+
+            Set<String> nextPermissions = Boolean.TRUE.equals(role.getSystemFlag())
+                    ? new LinkedHashSet<>(allowedPermissions)
+                    : workspacePermissionCatalogService.retainTenantAuthorizedPermissions(tenantId, currentPermissions);
+            if (currentPermissions.equals(nextPermissions)) {
+                continue;
+            }
+
+            rolePermissionMapper.delete(new LambdaQueryWrapper<RolePermission>()
+                    .eq(RolePermission::getRoleId, role.getId()));
+            for (String permission : nextPermissions) {
+                RolePermission rolePermission = new RolePermission();
+                rolePermission.setRoleId(role.getId());
+                rolePermission.setPermission(permission);
+                rolePermission.setCreatedAt(LocalDateTime.now());
+                rolePermissionMapper.insert(rolePermission);
+            }
+
+            for (UserRole userRole : userRolesByRoleId.getOrDefault(role.getId(), List.of())) {
+                permissionService.evictUserCache(userRole.getUserId());
+            }
         }
     }
 
