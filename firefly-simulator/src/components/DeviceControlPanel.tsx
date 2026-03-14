@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -14,6 +14,7 @@ import {
   Switch,
   Tag,
   Typography,
+  Tooltip,
   message,
 } from 'antd';
 import {
@@ -22,6 +23,7 @@ import {
   DisconnectOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
+  ReloadOutlined,
   SendOutlined,
 } from '@ant-design/icons';
 import { generatePayload, useSimStore } from '../store';
@@ -83,9 +85,11 @@ export default function DeviceControlPanel() {
 
   const [sending, setSending] = useState(false);
   const [selectedTplId, setSelectedTplId] = useState('');
+  const [payloadMode, setPayloadMode] = useState<'template' | 'custom'>('template');
   const [customPayload, setCustomPayload] = useState('{\n  "temperature": 25.5,\n  "humidity": 60\n}');
   const [reportType, setReportType] = useState<'property' | 'event' | 'ota'>('property');
   const [mqttTopic, setMqttTopic] = useState('');
+  const [templatePreviewNonce, setTemplatePreviewNonce] = useState(0);
   const [sipMessages, setSipMessages] = useState<SipMsg[]>([]);
   const [httpHistory, setHttpHistory] = useState<HttpHistoryEntry[]>([]);
   const [coapShadowPolling, setCoapShadowPolling] = useState(false);
@@ -131,6 +135,42 @@ export default function DeviceControlPanel() {
     }
     setMqttTopic(buildMqttPublishTopic(device, reportType === 'event' ? 'event' : 'property'));
   }, [selectedDeviceId, device?.protocol, device?.productKey, device?.deviceName, reportType]);
+
+  const availableTemplates = useMemo(
+    () => templates.filter((item) => item.type === reportType),
+    [templates, reportType],
+  );
+
+  const activeTemplate = useMemo(
+    () => availableTemplates.find((item) => item.id === selectedTplId) || null,
+    [availableTemplates, selectedTplId],
+  );
+
+  const templatePreview = useMemo(() => {
+    if (!activeTemplate) return '';
+    return JSON.stringify(generatePayload(activeTemplate.fields), null, 2);
+  }, [activeTemplate, templatePreviewNonce]);
+
+  useEffect(() => {
+    if (payloadMode !== 'template') return;
+    if (activeTemplate) return;
+    if (availableTemplates.length > 0) {
+      setSelectedTplId(availableTemplates[0].id);
+      return;
+    }
+    setPayloadMode('custom');
+    setSelectedTplId('');
+  }, [payloadMode, activeTemplate, availableTemplates]);
+
+  useEffect(() => {
+    if (availableTemplates.length === 0 && payloadMode === 'template') {
+      setPayloadMode('custom');
+      return;
+    }
+    if (availableTemplates.length > 0 && payloadMode === 'custom' && !customPayload.trim()) {
+      setPayloadMode('template');
+    }
+  }, [availableTemplates, payloadMode, customPayload]);
 
   useEffect(() => () => {
     if (autoTimerRef.current) clearInterval(autoTimerRef.current);
@@ -539,9 +579,12 @@ export default function DeviceControlPanel() {
   };
 
   const getPayload = (): Record<string, any> | null => {
-    if (selectedTplId) {
-      const template = templates.find((item) => item.id === selectedTplId);
-      if (template) return generatePayload(template.fields);
+    if (payloadMode === 'template') {
+      if (!activeTemplate) {
+        message.warning('当前上报类型还没有可用的随机模板');
+        return null;
+      }
+      return generatePayload(activeTemplate.fields);
     }
     try {
       return JSON.parse(customPayload);
@@ -756,30 +799,85 @@ export default function DeviceControlPanel() {
             )}
 
             <div>
-              <Text type="secondary" style={{ fontSize: 12 }}>Payload Template</Text>
-              <Select
-                allowClear
-                size="small"
-                placeholder="Choose a template or use custom JSON"
-                value={selectedTplId || undefined}
-                onChange={(value) => setSelectedTplId(value || '')}
-                style={{ width: '100%', marginTop: 4 }}
-                options={templates.filter((item) => item.type === reportType).map((item) => ({ label: item.name, value: item.id }))}
-              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>数据源</Text>
+                <Radio.Group
+                  size="small"
+                  value={payloadMode}
+                  onChange={(event) => setPayloadMode(event.target.value)}
+                >
+                  <Radio.Button value="template" disabled={availableTemplates.length === 0}>随机模拟</Radio.Button>
+                  <Radio.Button value="custom">自定义 JSON</Radio.Button>
+                </Radio.Group>
+              </div>
             </div>
 
-            {!selectedTplId && (
+            {payloadMode === 'template' && (
+              <>
+                <div>
+                  <Text type="secondary" style={{ fontSize: 12 }}>随机模板</Text>
+                  <Select
+                    size="small"
+                    placeholder="选择一个随机模板"
+                    value={selectedTplId || undefined}
+                    onChange={(value) => setSelectedTplId(value)}
+                    style={{ width: '100%', marginTop: 4 }}
+                    options={availableTemplates.map((item) => ({ label: item.name, value: item.id }))}
+                  />
+                </div>
+
+                {activeTemplate ? (
+                  <>
+                    <Alert
+                      type="success"
+                      showIcon
+                      message="当前已启用随机模拟数据"
+                      description="每次点击发送或自动上报，都会基于模板重新生成一份随机 payload。"
+                    />
+
+                    <div style={{ padding: 12, background: 'rgba(255,255,255,0.04)', borderRadius: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 12 }}>
+                        <Space size={6}>
+                          <Text style={{ fontSize: 12, color: '#f8fafc' }}>模板字段</Text>
+                          {activeTemplate.fields.map((field) => (
+                            <Tag key={field.key} style={{ margin: 0 }}>{field.key} ({field.valueType})</Tag>
+                          ))}
+                        </Space>
+                        <Tooltip title="刷新一份新的随机样例">
+                          <Button
+                            size="small"
+                            type="text"
+                            icon={<ReloadOutlined />}
+                            onClick={() => setTemplatePreviewNonce((value) => value + 1)}
+                          >
+                            换一组
+                          </Button>
+                        </Tooltip>
+                      </div>
+                      <Text type="secondary" style={{ fontSize: 12 }}>随机样例预览</Text>
+                      <Input.TextArea
+                        rows={6}
+                        value={templatePreview}
+                        readOnly
+                        style={{ fontFamily: 'monospace', fontSize: 12, marginTop: 6 }}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message="当前上报类型还没有随机模板"
+                    description="可以先切到自定义 JSON，或在左下角“模板管理”中新增对应模板。"
+                  />
+                )}
+              </>
+            )}
+
+            {payloadMode === 'custom' && (
               <div>
                 <Text type="secondary" style={{ fontSize: 12 }}>Custom JSON</Text>
                 <Input.TextArea rows={5} value={customPayload} onChange={(event) => setCustomPayload(event.target.value)} style={{ fontFamily: 'monospace', fontSize: 12, marginTop: 4 }} />
-              </div>
-            )}
-
-            {selectedTplId && (
-              <div style={{ padding: 10, background: 'rgba(255,255,255,0.04)', borderRadius: 12, fontSize: 12 }}>
-                {templates.find((item) => item.id === selectedTplId)?.fields.map((field) => (
-                  <Tag key={field.key} style={{ margin: 2 }}>{field.key} ({field.valueType})</Tag>
-                ))}
               </div>
             )}
 
