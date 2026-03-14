@@ -59,6 +59,9 @@ interface ThingModelItem extends Record<string, unknown> {
   required?: boolean;
   type?: string;
   callType?: string;
+  system?: boolean;
+  readonly?: boolean;
+  lifecycle?: boolean;
   inputData?: ThingModelParameter[];
   outputData?: ThingModelParameter[];
 }
@@ -169,10 +172,48 @@ const SECTION_CONFIGS: ThingModelSection[] = [
   { key: 'services', title: '服务', emptyText: '暂无服务定义', itemLabel: '服务' },
 ];
 
+const BUILTIN_SERVICE_IDENTIFIERS = ['online', 'offline', 'heartbeat'] as const;
+
+const BUILTIN_SERVICE_ITEMS: ThingModelItem[] = [
+  {
+    identifier: 'online',
+    name: '上线',
+    description: '设备连接建立后上报在线状态',
+    callType: 'async',
+    system: true,
+    readonly: true,
+    lifecycle: true,
+    inputData: [],
+    outputData: [],
+  },
+  {
+    identifier: 'offline',
+    name: '离线',
+    description: '设备断开或超时后上报离线状态',
+    callType: 'async',
+    system: true,
+    readonly: true,
+    lifecycle: true,
+    inputData: [],
+    outputData: [],
+  },
+  {
+    identifier: 'heartbeat',
+    name: '心跳',
+    description: '设备周期性保活，维持在线状态',
+    callType: 'async',
+    system: true,
+    readonly: true,
+    lifecycle: true,
+    inputData: [],
+    outputData: [],
+  },
+];
+
 const DEFAULT_THING_MODEL: ThingModelRoot = {
   properties: [],
   events: [],
-  services: [],
+  services: BUILTIN_SERVICE_ITEMS.map((item) => ({ ...item })),
 };
 
 const DEFAULT_THING_MODEL_TEXT = JSON.stringify(DEFAULT_THING_MODEL, null, 2);
@@ -665,6 +706,19 @@ const coerceThingModelRoot = (value: Record<string, unknown>): ThingModelRoot =>
   services: Array.isArray(value.services) ? value.services.map(coerceThingModelItem) : [],
 });
 
+const isBuiltinServiceItem = (item: ThingModelItem | undefined) => {
+  const identifier = typeof item?.identifier === 'string' ? item.identifier.trim() : '';
+  return BUILTIN_SERVICE_IDENTIFIERS.includes(identifier as (typeof BUILTIN_SERVICE_IDENTIFIERS)[number]);
+};
+
+const ensureBuiltinServices = (root: ThingModelRoot): ThingModelRoot => ({
+  ...root,
+  services: [
+    ...BUILTIN_SERVICE_ITEMS.map((item) => ({ ...item })),
+    ...root.services.filter((item) => !isBuiltinServiceItem(item)),
+  ],
+});
+
 const parseThingModelText = (rawText: string): ThingModelParseResult => {
   if (!rawText.trim()) {
     return { root: DEFAULT_THING_MODEL, error: null };
@@ -680,7 +734,7 @@ const parseThingModelText = (rawText: string): ThingModelParseResult => {
     }
 
     return {
-      root: coerceThingModelRoot(parsed),
+      root: ensureBuiltinServices(coerceThingModelRoot(parsed)),
       error: null,
     };
   } catch (error) {
@@ -1309,9 +1363,13 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
   const isPublishedLockedItem = (section: SectionKey, index: number) =>
     Boolean(isPublished && index < baselineModel[section].length);
 
+  const isBuiltinServiceAt = (section: SectionKey, index: number) =>
+    section === 'services' && isBuiltinServiceItem(draftModel.services[index]);
+
   const syncDraftModel = (nextRoot: ThingModelRoot) => {
-    setDraftModel(nextRoot);
-    setRawThingModel(JSON.stringify(nextRoot, null, 2));
+    const normalizedRoot = ensureBuiltinServices(nextRoot);
+    setDraftModel(normalizedRoot);
+    setRawThingModel(JSON.stringify(normalizedRoot, null, 2));
     setJsonError(null);
   };
 
@@ -1604,6 +1662,11 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
   };
 
   const openItemEditor = (section: SectionKey, index?: number) => {
+    if (index !== undefined && isBuiltinServiceAt(section, index)) {
+      message.warning('系统固有服务不可编辑，请保留上线、离线、心跳三个生命周期服务');
+      return;
+    }
+
     if (index !== undefined && isPublishedLockedItem(section, index)) {
       message.warning('已发布产品的既有物模型项不允许修改，如需复用可通过“复制”新增一项');
       return;
@@ -1624,6 +1687,11 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
   };
 
   const handleDeleteItem = (section: SectionKey, index: number) => {
+    if (isBuiltinServiceAt(section, index)) {
+      message.warning('系统固有服务不可删除');
+      return;
+    }
+
     if (isPublishedLockedItem(section, index)) {
       message.warning('已发布产品的既有物模型项不允许删除');
       return;
@@ -1638,6 +1706,11 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
   };
 
   const handleDuplicateItem = (section: SectionKey, index: number) => {
+    if (isBuiltinServiceAt(section, index)) {
+      message.warning('系统固有服务不可复制');
+      return;
+    }
+
     const currentItem = draftModel[section][index];
     if (!currentItem) {
       return;
@@ -2130,12 +2203,13 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
               const outputCount = Array.isArray(item.outputData) ? item.outputData.length : 0;
               const inputCount = Array.isArray(item.inputData) ? item.inputData.length : 0;
               const isLocked = isPublishedLockedItem(section, index);
+              const isBuiltin = isBuiltinServiceAt(section, index);
               const isDragTarget = dragOverItem?.section === section && dragOverItem.index === index && draggingItem?.index !== index;
 
               return (
                 <div
                   key={`${section}-${item.identifier || item.name || index}`}
-                  draggable={!isPublished}
+                  draggable={!isPublished && !isBuiltin}
                   onDragStart={() => handleDragStart(section, index)}
                   onDragOver={(event) => handleDragOver(event, section, index)}
                   onDrop={() => handleDrop(section, index)}
@@ -2154,6 +2228,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
                         key="copy"
                         type="link"
                         icon={<CopyOutlined />}
+                        disabled={isBuiltin}
                         onClick={() => handleDuplicateItem(section, index)}
                       >
                         复制
@@ -2162,7 +2237,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
                         key="edit"
                         type="link"
                         icon={<EditOutlined />}
-                        disabled={isLocked}
+                        disabled={isLocked || isBuiltin}
                         onClick={() => openItemEditor(section, index)}
                       >
                         编辑
@@ -2172,10 +2247,10 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
                         title={`确认删除该${config.itemLabel}吗？`}
                         okText="删除"
                         cancelText="取消"
-                        disabled={isLocked}
+                        disabled={isLocked || isBuiltin}
                         onConfirm={() => handleDeleteItem(section, index)}
                       >
-                        <Button type="link" danger icon={<DeleteOutlined />} disabled={isLocked}>
+                        <Button type="link" danger icon={<DeleteOutlined />} disabled={isLocked || isBuiltin}>
                           删除
                         </Button>
                       </Popconfirm>,
@@ -2188,10 +2263,13 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
                             <Tag bordered={false} color="blue">
                               #{index + 1}
                             </Tag>
-                            {!isPublished ? (
+                            {!isPublished && !isBuiltin ? (
                               <Typography.Text type="secondary" style={{ cursor: 'grab' }}>
                                 <HolderOutlined /> 拖拽排序
                               </Typography.Text>
+                            ) : null}
+                            {isBuiltin ? (
+                              <Tag color="cyan">固有服务</Tag>
                             ) : null}
                             {isLocked ? (
                               <Tag color="gold">已发布锁定</Tag>
@@ -2219,6 +2297,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
                               <Tag>{item.callType || 'sync'}</Tag>
                               <Tag color="blue">输入 {inputCount}</Tag>
                               <Tag color="purple">输出 {outputCount}</Tag>
+                              {item.system ? <Tag color="cyan">system</Tag> : null}
                             </>
                           ) : null}
                         </Space>

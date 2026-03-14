@@ -10,7 +10,6 @@ import com.songhg.firefly.iot.api.dto.AsyncTaskCreateDTO;
 import com.songhg.firefly.iot.api.dto.AsyncTaskVO;
 import com.songhg.firefly.iot.common.context.AsyncContextHelper;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
-import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.result.ResultCode;
@@ -48,6 +47,7 @@ public class ThingModelImportService {
     private final FileClient fileClient;
     private final AsyncTaskClient asyncTaskClient;
     private final ObjectMapper objectMapper;
+    private final ThingModelBuiltinServiceSupport thingModelBuiltinServiceSupport;
 
     private static final int MAX_ERROR_MESSAGE_LENGTH = 500;
 
@@ -123,7 +123,7 @@ public class ThingModelImportService {
             asyncTaskClient.updateProgress(taskId, 70);
 
             // 更新物模型
-            product.setThingModel(objectMapper.writeValueAsString(thingModel));
+            product.setThingModel(objectMapper.writeValueAsString(thingModelBuiltinServiceSupport.ensureBuiltinServices(thingModel)));
             productMapper.updateById(product);
 
             asyncTaskClient.updateProgress(taskId, 90);
@@ -188,12 +188,9 @@ public class ThingModelImportService {
         // 解析当前物模型
         ObjectNode thingModel;
         if (currentThingModelJson != null && !currentThingModelJson.isBlank()) {
-            thingModel = (ObjectNode) objectMapper.readTree(currentThingModelJson);
+            thingModel = thingModelBuiltinServiceSupport.ensureBuiltinServices((ObjectNode) objectMapper.readTree(currentThingModelJson));
         } else {
-            thingModel = objectMapper.createObjectNode();
-            thingModel.set("properties", objectMapper.createArrayNode());
-            thingModel.set("events", objectMapper.createArrayNode());
-            thingModel.set("services", objectMapper.createArrayNode());
+            thingModel = thingModelBuiltinServiceSupport.createDefaultThingModel();
         }
 
         try (InputStream inputStream = conn.getInputStream();
@@ -234,7 +231,7 @@ public class ThingModelImportService {
             }
         }
 
-        return thingModel;
+        return thingModelBuiltinServiceSupport.ensureBuiltinServices(thingModel);
     }
 
     /**

@@ -10,7 +10,6 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.songhg.firefly.iot.api.client.FileClient;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
-import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DataFormat;
 import com.songhg.firefly.iot.common.enums.DeviceAuthType;
 import com.songhg.firefly.iot.common.enums.NodeType;
@@ -44,12 +43,12 @@ public class ProductService {
 
     private static final String CHARS = "abcdefghijklmnopqrstuvwxyz0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
-    private static final String DEFAULT_THING_MODEL = "{\"properties\":[],\"events\":[],\"services\":[]}";
     private static final long MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024;
 
     private final ProductMapper productMapper;
     private final FileClient fileClient;
     private final ObjectMapper objectMapper;
+    private final ThingModelBuiltinServiceSupport thingModelBuiltinServiceSupport;
 
     @Transactional
     public ProductVO createProduct(ProductCreateDTO dto) {
@@ -63,7 +62,7 @@ public class ProductService {
         product.setStatus(ProductStatus.DEVELOPMENT);
         product.setDeviceCount(0);
         product.setCreatedBy(userId);
-        product.setThingModel(DEFAULT_THING_MODEL);
+        product.setThingModel(writeThingModel(thingModelBuiltinServiceSupport.createDefaultThingModel()));
         if (product.getNodeType() == null) {
             product.setNodeType(NodeType.DEVICE);
         }
@@ -180,7 +179,7 @@ public class ProductService {
         if (product == null) {
             throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
         }
-        return product.getThingModel();
+        return writeThingModel(parseThingModel(product.getThingModel()));
     }
 
     public String getProductSecret(Long id) {
@@ -298,7 +297,7 @@ public class ProductService {
     private ObjectNode parseThingModel(String thingModelJson) {
         String source = thingModelJson;
         if (source == null || source.isBlank()) {
-            source = DEFAULT_THING_MODEL;
+            return thingModelBuiltinServiceSupport.createDefaultThingModel();
         }
 
         JsonNode parsed;
@@ -315,7 +314,7 @@ public class ProductService {
         ensureThingModelArray(root, "properties");
         ensureThingModelArray(root, "events");
         ensureThingModelArray(root, "services");
-        return root;
+        return thingModelBuiltinServiceSupport.ensureBuiltinServices(root);
     }
 
     private void ensureThingModelArray(ObjectNode root, String fieldName) {
