@@ -862,8 +862,8 @@ const ProductList: React.FC = () => {
   return (
     <div>
       <PageHeader
-        title="产品管理"
-        description="按产品目录维护接入模型、认证方式与协议能力，卡片视图更适合快速浏览，列表视图适合批量管理。"
+        title="产品接入"
+        description="按产品目录维护接入模型、认证方式与协议能力，并从统一入口继续设备接入、动态注册和协议联调。"
         extra={
           <Space>
             <Segmented

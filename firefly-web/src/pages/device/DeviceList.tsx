@@ -349,7 +349,7 @@ const DeviceList: React.FC = () => {
 
       <Modal title="新建设备" open={createOpen} width={620} destroyOnHidden onCancel={closeCreateModal} onOk={() => createForm.submit()}>
         <Form form={createForm} layout="vertical" onFinish={handleCreate}>
-          <Alert type="info" showIcon style={{ marginBottom: 16 }} message="这里只支持一机一密产品手动创建设备" description="一型一密产品请在产品接入工具中使用动态注册创建。" />
+          <Alert type="info" showIcon style={{ marginBottom: 16 }} message="这里只支持一机一密产品手动创建设备" description="一型一密产品请在“产品接入”页面的“设备接入”入口中使用动态注册创建。" />
           <Form.Item name="productId" label="所属产品" rules={[{ required: true, message: '请选择产品' }]}><Select options={manualProducts.map((item) => ({ value: item.id, label: `${item.name} (${item.productKey}) · ${DEVICE_AUTH_LABELS[item.deviceAuthType || 'DEVICE_SECRET'] || '一机一密'}` }))} /></Form.Item>
           <Form.Item name="deviceName" label="设备名称" rules={[{ required: true, message: '请输入设备名称' }, { pattern: DEVICE_NAME_PATTERN, message: DEVICE_NAME_RULE_MESSAGE }]}><Input maxLength={64} placeholder="例如：AA:BB:CC:DD:EE:FF / SN20240301001" /></Form.Item>
           <Form.Item name="nickname" label="设备别名"><Input maxLength={256} placeholder="便于识别的展示名称" /></Form.Item>
