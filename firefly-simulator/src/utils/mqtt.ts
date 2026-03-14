@@ -9,8 +9,7 @@ export interface MqttIdentity {
 }
 
 export interface DynamicRegisterResult {
-  deviceId?: number;
-  productId?: number;
+  productKey?: string;
   deviceName: string;
   deviceSecret: string;
 }
@@ -122,8 +121,7 @@ export async function dynamicRegisterDevice(device: DynamicRegisterSource, regis
   }
 
   return {
-    deviceId: typeof data.deviceId === 'number' ? data.deviceId : undefined,
-    productId: typeof data.productId === 'number' ? data.productId : undefined,
+    productKey: trim(data.productKey) || productKey,
     deviceName: trim(data.deviceName) || deviceName,
     deviceSecret,
   };

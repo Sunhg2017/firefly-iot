@@ -31,7 +31,6 @@ import {
   DeleteOutlined,
   EditOutlined,
   GatewayOutlined,
-  KeyOutlined,
   PictureOutlined,
   PlusOutlined,
   QuestionCircleOutlined,
@@ -626,7 +625,6 @@ const ProductList: React.FC = () => {
 
   const renderActionGroup = (record: ProductRecord, variant: 'card' | 'table') => {
     const isCard = variant === 'card';
-    const supportsProductSecret = record.deviceAuthType === 'PRODUCT_SECRET';
     const canViewProtocolParser = hasPermission('protocol-parser:read');
 
     return (
@@ -650,10 +648,10 @@ const ProductList: React.FC = () => {
         <Button
           type="link"
           size="small"
-          icon={<KeyOutlined />}
+          icon={<UsbOutlined />}
           onClick={() => openAccessDrawer(record, 'secret')}
         >
-          {supportsProductSecret ? '查看密钥' : '认证说明'}
+          设备接入
         </Button>
         {canViewProtocolParser ? (
           <Button
@@ -663,16 +661,6 @@ const ProductList: React.FC = () => {
             onClick={() => navigate(`/protocol-parser?productId=${record.id}`)}
           >
             协议解析
-          </Button>
-        ) : null}
-        {record.status === 'PUBLISHED' && supportsProductSecret ? (
-          <Button
-            type="link"
-            size="small"
-            icon={<UsbOutlined />}
-            onClick={() => openAccessDrawer(record, 'register')}
-          >
-            动态注册
           </Button>
         ) : null}
         {record.status === 'DEVELOPMENT' ? (
@@ -855,7 +843,7 @@ const ProductList: React.FC = () => {
         name="deviceAuthType"
         label="设备认证方式"
         rules={[{ required: true, message: '请选择设备认证方式' }]}
-        extra="一机一密由平台预先创建设备并分配 DeviceSecret；一型一密可通过 ProductSecret 动态注册设备。"
+        extra="一机一密需要先创建设备再接入；一型一密在产品发布后可从“设备接入”入口查看 ProductSecret 并调试动态注册。"
       >
         <Select options={DEVICE_AUTH_OPTIONS} />
       </Form.Item>
@@ -1290,6 +1278,12 @@ const ProductList: React.FC = () => {
             product={accessProduct}
             mode={accessMode}
             open
+            onOpenDeviceManager={() => navigate('/device')}
+            onOpenProtocolParser={
+              hasPermission('protocol-parser:read')
+                ? () => navigate(`/protocol-parser?productId=${accessProduct.id}`)
+                : undefined
+            }
             onClose={() => {
               setAccessProduct(null);
               setAccessMode(null);

@@ -33,8 +33,7 @@ public class DeviceRegisterController {
             return R.fail(400, result.getErrorCode());
         }
         return R.ok(Map.of(
-                "deviceId", result.getDeviceId(),
-                "productId", result.getProductId(),
+                "productKey", request.getProductKey(),
                 "deviceName", result.getDeviceName(),
                 "deviceSecret", result.getDeviceSecret()
         ));
