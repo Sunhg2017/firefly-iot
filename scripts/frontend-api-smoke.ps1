@@ -229,6 +229,7 @@ $tests = @(
   @{ Name='operation.logs.list'; Method='POST'; Path='/SYSTEM/api/v1/operation-logs/list'; Body=@{} },
   @{ Name='dict.types.list'; Method='POST'; Path='/SYSTEM/api/v1/dicts/types/list'; Body=@{} },
   @{ Name='permission.resources.tree'; Method='GET'; Path='/SYSTEM/api/v1/permission-resources/tree' },
+  @{ Name='workspace.permission.catalog'; Method='GET'; Path='/SYSTEM/api/v1/workspace-permission-catalog' },
   @{ Name='project.list'; Method='POST'; Path='/SYSTEM/api/v1/projects/list'; Body=@{} },
   @{ Name='login.logs.list'; Method='POST'; Path='/SYSTEM/api/v1/login-logs/list'; Body=@{} },
   @{ Name='apikey.list'; Method='POST'; Path='/SYSTEM/api/v1/api-keys/list'; Body=@{} },

@@ -508,6 +508,11 @@ export const permissionResourceApi = {
   assignRolePermissions: (roleId: number, permissions: string[]) => request.put(`/permission-resources/role/${roleId}`, { permissions }),
 };
 
+export const workspacePermissionCatalogApi = {
+  list: (params?: { workspaceScope?: string; keyword?: string }) =>
+    request.get('/workspace-permission-catalog', { params }),
+};
+
 // ==================== System Monitor API ====================
 export const monitorApi = {
   getAll: () => dataRequest.get('/monitor'),
