@@ -279,6 +279,31 @@ const BasicLayout: React.FC = () => {
 
   const normalizedMenuConfig = useMemo(() => normalizeTenantMenuConfig(menuConfig), [menuConfig]);
 
+  const hasConfiguredTenantPath = useMemo(() => {
+    const walk = (nodes: MenuConfigItem[]): boolean =>
+      nodes.some((node) => {
+        if (!node.visible) {
+          return false;
+        }
+
+        const normalizedPath = normalizePath(node.routePath);
+        if (normalizedPath && canAccessPath(normalizedPath)) {
+          return true;
+        }
+
+        return Array.isArray(node.children) && walk(node.children);
+      });
+
+    return Array.isArray(normalizedMenuConfig) && normalizedMenuConfig.length > 0
+      ? walk(normalizedMenuConfig)
+      : false;
+  }, [normalizedMenuConfig, userPermissions]);
+
+  const effectiveMenuConfig = useMemo(
+    () => (hasConfiguredTenantPath ? normalizedMenuConfig : null),
+    [hasConfiguredTenantPath, normalizedMenuConfig],
+  );
+
   const buildTenantMenu = (items: MenuConfigItem[]): MenuItem[] => {
     const buildNodes = (nodes: MenuConfigItem[]): MenuItem[] =>
       nodes.flatMap((node) => {
@@ -336,8 +361,8 @@ const BasicLayout: React.FC = () => {
   };
 
   const menuItems: MenuItem[] = useMemo(() => {
-    const items = normalizedMenuConfig && normalizedMenuConfig.length > 0
-      ? buildTenantMenu(normalizedMenuConfig)
+    const items = effectiveMenuConfig && effectiveMenuConfig.length > 0
+      ? buildTenantMenu(effectiveMenuConfig)
       : buildDefaultMenu(routeEntries);
 
     if (!canManageWorkspaceMenus || items.some((item) => (item as { key?: string })?.key === menuManageGroupKey)) {
@@ -359,7 +384,7 @@ const BasicLayout: React.FC = () => {
         ],
       },
     ];
-  }, [workspace, normalizedMenuConfig, routeEntries, canManageWorkspaceMenus, menuManageGroupIcon, menuManageGroupKey, menuManageGroupLabel, hasPermission]);
+  }, [workspace, effectiveMenuConfig, routeEntries, canManageWorkspaceMenus, menuManageGroupIcon, menuManageGroupKey, menuManageGroupLabel, hasPermission]);
 
   const currentPathAccessible = useMemo(
     () => {
@@ -373,12 +398,12 @@ const BasicLayout: React.FC = () => {
         return false;
       }
       const routeWorkspace = resolveWorkspaceByPath(location.pathname);
-      if (routeWorkspace === workspace && normalizedMenuConfig && normalizedMenuConfig.length > 0) {
-        return isConfiguredMenuPathAllowed(location.pathname, normalizedMenuConfig, userPermissions);
+      if (routeWorkspace === workspace && effectiveMenuConfig && effectiveMenuConfig.length > 0) {
+        return isConfiguredMenuPathAllowed(location.pathname, effectiveMenuConfig, userPermissions);
       }
       return true;
     },
-    [location.pathname, workspace, normalizedMenuConfig, userPermissions, user, hasPermission],
+    [location.pathname, workspace, effectiveMenuConfig, userPermissions, user, hasPermission],
   );
 
   const openKeys = useMemo(() => {
@@ -402,8 +427,8 @@ const BasicLayout: React.FC = () => {
       return null;
     };
 
-    if (normalizedMenuConfig && normalizedMenuConfig.length > 0) {
-      return findMenuTrail(normalizedMenuConfig) ?? [];
+    if (effectiveMenuConfig && effectiveMenuConfig.length > 0) {
+      return findMenuTrail(effectiveMenuConfig) ?? [];
     }
 
     const findRouteTrail = (nodes: RouteNode[], trail: string[] = []): string[] | null => {
@@ -423,7 +448,7 @@ const BasicLayout: React.FC = () => {
     };
 
     return findRouteTrail(routeEntries) ?? [];
-  }, [workspace, routeEntries, location.pathname, normalizedMenuConfig, canManageWorkspaceMenus, menuManageGroupKey]);
+  }, [workspace, routeEntries, location.pathname, effectiveMenuConfig, canManageWorkspaceMenus, menuManageGroupKey]);
 
   useEffect(() => {
     setMenuOpenKeys(openKeys);
@@ -487,8 +512,8 @@ const BasicLayout: React.FC = () => {
       return items;
     }
 
-    if (normalizedMenuConfig && normalizedMenuConfig.length > 0) {
-      const found = findBreadcrumbFromMenuConfig(normalizedMenuConfig);
+    if (effectiveMenuConfig && effectiveMenuConfig.length > 0) {
+      const found = findBreadcrumbFromMenuConfig(effectiveMenuConfig);
       if (found) {
         items.push(...found);
         return items;
@@ -502,7 +527,7 @@ const BasicLayout: React.FC = () => {
     }
 
     return items;
-  }, [workspace, routeEntries, location.pathname, normalizedMenuConfig, menuManageGroupLabel, user, hasPermission]);
+  }, [workspace, routeEntries, location.pathname, effectiveMenuConfig, menuManageGroupLabel, user, hasPermission]);
 
   useEffect(() => {
     const byPath = resolveWorkspaceByPath(location.pathname);
@@ -511,7 +536,7 @@ const BasicLayout: React.FC = () => {
         getWorkspaceHomePath(
           enforcedWorkspace,
           userPermissions,
-          enforcedWorkspace === 'tenant' ? normalizedMenuConfig : undefined,
+          enforcedWorkspace === 'tenant' ? effectiveMenuConfig : undefined,
         ),
         { replace: true },
       );
@@ -521,7 +546,7 @@ const BasicLayout: React.FC = () => {
       setWorkspace(enforcedWorkspace);
       persistWorkspace(enforcedWorkspace);
     }
-  }, [location.pathname, workspace, enforcedWorkspace, navigate, userPermissions, normalizedMenuConfig]);
+  }, [location.pathname, workspace, enforcedWorkspace, navigate, userPermissions, effectiveMenuConfig]);
 
   const handleMenuClick = (e: { key: string }) => {
     const path = normalizePath(e.key);

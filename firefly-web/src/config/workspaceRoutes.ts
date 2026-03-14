@@ -214,6 +214,22 @@ export function getWorkspaceHomePath(
   if (Array.isArray(menuConfig) && menuConfig.length > 0) {
     const configuredPaths = collectConfiguredPaths(menuConfig, permissions);
     if (configuredPaths.length === 0) {
+      if (workspace === 'tenant') {
+        const fallbackPaths = collectWorkspacePaths(workspace).filter((path) => path !== '/dashboard');
+        if (permissions === undefined) {
+          return preferTenantHomePath(fallbackPaths.length > 0 ? fallbackPaths : ['/dashboard']);
+        }
+
+        const accessiblePaths: string[] = [];
+        walkRouteNodes(filterWorkspaceRoutes(workspace), (item) => {
+          if (hasRoutePermission(item.permission, permissions)) {
+            accessiblePaths.push(item.path);
+          }
+        });
+
+        const uniqueFallbackPaths = [...new Set(accessiblePaths)].filter((path) => path !== '/dashboard');
+        return preferTenantHomePath(uniqueFallbackPaths.length > 0 ? uniqueFallbackPaths : ['/dashboard']);
+      }
       return '/403';
     }
     const nonDashboardPaths = configuredPaths.filter((path) => path !== '/dashboard');
