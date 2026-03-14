@@ -1,41 +1,41 @@
 import React from 'react';
 import {
-  DashboardOutlined,
-  TeamOutlined,
-  SafetyOutlined,
-  BankOutlined,
-  AppstoreOutlined,
-  HddOutlined,
-  ThunderboltOutlined,
   AlertOutlined,
-  CloudUploadOutlined,
-  LineChartOutlined,
-  VideoCameraOutlined,
-  FileSearchOutlined,
-  SettingOutlined,
-  BellOutlined,
-  ShareAltOutlined,
-  FundOutlined,
-  ProjectOutlined,
-  GroupOutlined,
-  TagOutlined,
   AimOutlined,
-  UsbOutlined,
+  ApiOutlined,
+  AppstoreOutlined,
+  BankOutlined,
+  BellOutlined,
+  BookOutlined,
+  CloudSyncOutlined,
+  CloudUploadOutlined,
+  ControlOutlined,
+  DashboardOutlined,
+  DatabaseOutlined,
   ExportOutlined,
+  FileSearchOutlined,
   FileTextOutlined,
+  FundOutlined,
+  GroupOutlined,
+  HddOutlined,
+  KeyOutlined,
+  LineChartOutlined,
+  LockOutlined,
   MessageOutlined,
   MonitorOutlined,
-  KeyOutlined,
-  BookOutlined,
+  ProjectOutlined,
   ReconciliationOutlined,
-  LockOutlined,
-  CloudSyncOutlined,
-  ApiOutlined,
-  SendOutlined,
-  ControlOutlined,
-  DatabaseOutlined,
-  ToolOutlined,
+  SafetyOutlined,
   ScheduleOutlined,
+  SendOutlined,
+  SettingOutlined,
+  ShareAltOutlined,
+  TagOutlined,
+  TeamOutlined,
+  ThunderboltOutlined,
+  ToolOutlined,
+  UsbOutlined,
+  VideoCameraOutlined,
 } from '@ant-design/icons';
 import { ALARM_TEXT } from '../pages/alarm/alarmText';
 
@@ -62,19 +62,8 @@ export function isRouteGroup(entry: RouteEntry): entry is RouteGroup {
   return 'children' in entry;
 }
 
-/**
- * 路由配置：分组+权限映射。
- *
- * permission 采用 "{resource}:read" 形式，表示至少需要该资源的读取权限才能看到菜单。
- * 没有 permission 的路由对所有已登录用户可见。
- * 分组中如果所有子项都无权限则整个分组隐藏。
- *
- * hasPermission 在 useAuthStore 中支持通配符匹配：
- *   user.permissions 包含 "device:read" 或 "device:*" 均可。
- */
 const routeConfigs: RouteEntry[] = [
   { path: '/dashboard', label: '工作台', icon: <DashboardOutlined />, permission: 'dashboard:read' },
-
   {
     key: 'system-mgmt',
     label: '系统管理',
@@ -91,7 +80,6 @@ const routeConfigs: RouteEntry[] = [
       { path: '/menu-config', label: '菜单配置', icon: <ReconciliationOutlined />, permission: 'system:update' },
     ],
   },
-
   {
     key: 'project-mgmt',
     label: '项目管理',
@@ -101,7 +89,6 @@ const routeConfigs: RouteEntry[] = [
       { path: '/share', label: '跨租户共享', icon: <ShareAltOutlined />, permission: 'share:read' },
     ],
   },
-
   {
     key: 'device-mgmt',
     label: '设备中心',
@@ -129,7 +116,6 @@ const routeConfigs: RouteEntry[] = [
       },
     ],
   },
-
   {
     key: 'rule-alarm',
     label: '规则告警',
@@ -153,7 +139,6 @@ const routeConfigs: RouteEntry[] = [
       { path: '/message-template', label: '消息模板', icon: <MessageOutlined />, permission: 'message-template:read' },
     ],
   },
-
   {
     key: 'data-insight',
     label: '数据洞察',
@@ -165,7 +150,6 @@ const routeConfigs: RouteEntry[] = [
       { path: '/export', label: '异步任务', icon: <ExportOutlined />, permission: 'export:read' },
     ],
   },
-
   {
     key: 'ops-tools',
     label: '运维工具',
@@ -177,7 +161,6 @@ const routeConfigs: RouteEntry[] = [
       { path: '/monitor', label: '系统监控', icon: <MonitorOutlined />, permission: 'monitor:read' },
     ],
   },
-
   {
     key: 'security-audit',
     label: '安全审计',

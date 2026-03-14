@@ -1,41 +1,42 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Card,
   Button,
-  Space,
-  message,
-  Table,
-  Tag,
-  Tabs,
-  Statistic,
-  Row,
+  Card,
   Col,
-  Popconfirm,
-  Input,
   Empty,
-  Tooltip,
-  InputNumber,
   Form,
+  Input,
+  InputNumber,
   Modal,
+  Popconfirm,
+  Row,
   Select,
+  Space,
+  Statistic,
+  Table,
+  Tabs,
+  Tag,
+  Tooltip,
+  Typography,
+  message,
 } from 'antd';
 import {
-  ReloadOutlined,
-  SendOutlined,
-  DisconnectOutlined,
-  WifiOutlined,
+  ApiOutlined,
   ClockCircleOutlined,
   CloudServerOutlined,
-  SwapOutlined,
-  ApiOutlined,
+  DisconnectOutlined,
   LinkOutlined,
+  ReloadOutlined,
+  SendOutlined,
+  SwapOutlined,
+  WifiOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { tcpUdpApi, productApi, deviceApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
+import ProtocolAccessGuide from '../../components/ProtocolAccessGuide';
+import { deviceApi, productApi, tcpUdpApi } from '../../services/api';
 import { formatDateTime } from '../../utils/datetime';
 
-// 产品和设备选项类型
 interface ProductOption {
   id: number;
   productKey: string;
@@ -45,6 +46,7 @@ interface ProductOption {
 interface DeviceOption {
   id: number;
   deviceName: string;
+  nickname?: string;
   productId: number;
 }
 
@@ -79,41 +81,24 @@ interface UdpPeer {
 }
 
 interface BindingFormValues {
-  productId?: number | null;
-  deviceId?: number | null;
-  deviceName?: string;
+  productId?: number;
+  deviceId?: number;
 }
 
 type BindingTarget =
-  | {
-      type: 'tcp';
-      sessionId: string;
-      remoteAddress: string;
-      binding?: TcpUdpBinding | null;
-    }
-  | {
-      type: 'udp';
-      address: string;
-      port: number;
-      binding?: TcpUdpBinding | null;
-    }
+  | { type: 'tcp'; sessionId: string; remoteAddress: string; binding?: TcpUdpBinding | null }
+  | { type: 'udp'; address: string; port: number; binding?: TcpUdpBinding | null }
   | null;
 
 const cardStyle: React.CSSProperties = {
-  borderRadius: 12,
+  borderRadius: 14,
   border: 'none',
-  boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-};
-
-const targetCardStyle: React.CSSProperties = {
-  marginBottom: 16,
-  padding: 12,
-  background: '#fafafa',
-  borderRadius: 8,
+  boxShadow: '0 1px 4px rgba(15, 23, 42, 0.06)',
 };
 
 const TcpUdpPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState('tcp');
+  const [bindingForm] = Form.useForm<BindingFormValues>();
 
   const [tcpSessions, setTcpSessions] = useState<TcpSession[]>([]);
   const [tcpLoading, setTcpLoading] = useState(false);
@@ -131,141 +116,131 @@ const TcpUdpPage: React.FC = () => {
   const [tcpSendLoading, setTcpSendLoading] = useState(false);
   const [tcpBroadcastMessage, setTcpBroadcastMessage] = useState('');
   const [tcpBroadcastLoading, setTcpBroadcastLoading] = useState(false);
+
   const [udpSendAddress, setUdpSendAddress] = useState('');
   const [udpSendPort, setUdpSendPort] = useState(8901);
   const [udpSendMessage, setUdpSendMessage] = useState('');
   const [udpSendLoading, setUdpSendLoading] = useState(false);
 
+  const [products, setProducts] = useState<ProductOption[]>([]);
+  const [devices, setDevices] = useState<DeviceOption[]>([]);
+  const [filteredDevices, setFilteredDevices] = useState<DeviceOption[]>([]);
   const [bindingTarget, setBindingTarget] = useState<BindingTarget>(null);
   const [bindingSubmitting, setBindingSubmitting] = useState(false);
-  const [bindingForm] = Form.useForm<BindingFormValues>();
 
-  // ==================== 产品/设备选项 ====================
-  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
-  const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
-  const [filteredDevices, setFilteredDevices] = useState<DeviceOption[]>([]);
-  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const productMap = useMemo(() => new Map(products.map((item) => [item.id, item])), [products]);
+  const deviceMap = useMemo(() => new Map(devices.map((item) => [item.id, item])), [devices]);
 
-  // 构建设备ID到设备对象的映射
-  const deviceMap = useMemo(() => {
-    const map: Record<number, DeviceOption> = {};
-    deviceOptions.forEach(d => { map[d.id] = d; });
-    return map;
-  }, [deviceOptions]);
-
-  // 加载产品列表
-  const fetchProducts = useCallback(async () => {
+  const fetchContextOptions = useCallback(async () => {
     try {
-      const res = await productApi.list({ pageSize: 500 });
-      const records = res.data.data?.records || [];
-      setProductOptions(records.map((p: ProductOption) => ({ id: p.id, productKey: p.productKey, name: p.name })));
-    } catch { /* ignore */ }
-  }, []);
+      const [productRes, deviceRes] = await Promise.all([
+        productApi.list({ pageNum: 1, pageSize: 500 }),
+        deviceApi.list({ pageNum: 1, pageSize: 500 }),
+      ]);
+      const productRecords = productRes.data?.data?.records ?? [];
+      const deviceRecords = deviceRes.data?.data?.records ?? [];
 
-  // 加载设备列表
-  const fetchDevices = useCallback(async () => {
-    try {
-      const res = await deviceApi.list({ pageSize: 500 });
-      const records = res.data.data?.records || [];
-      const devices = records.map((d: DeviceOption) => ({ id: d.id, deviceName: d.deviceName, productId: d.productId }));
-      setDeviceOptions(devices);
-      setFilteredDevices(devices);
-    } catch { /* ignore */ }
-  }, []);
+      const nextProducts = productRecords.map((item: ProductOption) => ({
+        id: item.id,
+        productKey: item.productKey,
+        name: item.name,
+      }));
+      const nextDevices = deviceRecords.map((item: DeviceOption) => ({
+        id: item.id,
+        deviceName: item.deviceName,
+        nickname: item.nickname,
+        productId: item.productId,
+      }));
 
-  // 产品选择变化时，联动筛选设备
-  const handleProductChange = (productId: number | null) => {
-    setSelectedProductId(productId);
-    bindingForm.setFieldValue('deviceId', undefined);
-    if (productId) {
-      setFilteredDevices(deviceOptions.filter(d => d.productId === productId));
-    } else {
-      setFilteredDevices(deviceOptions);
+      setProducts(nextProducts);
+      setDevices(nextDevices);
+      setFilteredDevices(nextDevices);
+    } catch {
+      setProducts([]);
+      setDevices([]);
+      setFilteredDevices([]);
     }
-  };
+  }, []);
 
-  const fetchTcp = async () => {
+  const fetchTcp = useCallback(async () => {
     setTcpLoading(true);
     try {
-      const [sessionResponse, countResponse] = await Promise.all([
+      const [sessionRes, countRes] = await Promise.all([
         tcpUdpApi.listTcpSessions(),
         tcpUdpApi.tcpSessionCount(),
       ]);
-      setTcpSessions(sessionResponse.data.data || []);
-      setTcpCount(countResponse.data.data || 0);
+      setTcpSessions(sessionRes.data?.data ?? []);
+      setTcpCount(countRes.data?.data ?? 0);
     } catch {
       setTcpSessions([]);
       setTcpCount(0);
     } finally {
       setTcpLoading(false);
     }
-  };
+  }, []);
 
-  const fetchUdp = async () => {
+  const fetchUdp = useCallback(async () => {
     setUdpLoading(true);
     try {
-      const [peerResponse, statsResponse] = await Promise.all([
+      const [peerRes, statsRes] = await Promise.all([
         tcpUdpApi.listUdpPeers(),
         tcpUdpApi.udpStats(),
       ]);
-      setUdpPeers(peerResponse.data.data || []);
-      setUdpStats(statsResponse.data.data || { peerCount: 0, totalReceived: 0 });
+      setUdpPeers(peerRes.data?.data ?? []);
+      setUdpStats(statsRes.data?.data ?? { peerCount: 0, totalReceived: 0 });
     } catch {
       setUdpPeers([]);
       setUdpStats({ peerCount: 0, totalReceived: 0 });
     } finally {
       setUdpLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
+    void fetchContextOptions();
     void fetchTcp();
     void fetchUdp();
-    void fetchProducts();
-    void fetchDevices();
-    const interval = window.setInterval(() => {
+    const timer = window.setInterval(() => {
       void fetchTcp();
       void fetchUdp();
     }, 10000);
-    return () => window.clearInterval(interval);
-  }, [fetchProducts, fetchDevices]);
+    return () => window.clearInterval(timer);
+  }, [fetchContextOptions, fetchTcp, fetchUdp]);
 
   useEffect(() => {
     if (!bindingTarget) {
       bindingForm.resetFields();
+      setFilteredDevices(devices);
       return;
     }
 
     bindingForm.setFieldsValue({
       productId: bindingTarget.binding?.productId ?? undefined,
       deviceId: bindingTarget.binding?.deviceId ?? undefined,
-      deviceName: bindingTarget.binding?.deviceName ?? undefined,
     });
-  }, [bindingForm, bindingTarget]);
 
-  const closeBindingModal = () => {
-    setBindingTarget(null);
-    setSelectedProductId(null);
-    setFilteredDevices(deviceOptions);
-    bindingForm.resetFields();
+    if (bindingTarget.binding?.productId) {
+      setFilteredDevices(devices.filter((item) => item.productId === bindingTarget.binding?.productId));
+    } else {
+      setFilteredDevices(devices);
+    }
+  }, [bindingTarget, bindingForm, devices]);
+
+  const formatDuration = (timestamp: number) => {
+    if (!timestamp) return '-';
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
   };
 
-  const openTcpBindingModal = (session: TcpSession) => {
-    setBindingTarget({
-      type: 'tcp',
-      sessionId: session.sessionId,
-      remoteAddress: session.remoteAddress,
-      binding: session.binding,
-    });
-  };
-
-  const openUdpBindingModal = (peer: UdpPeer) => {
-    setBindingTarget({
-      type: 'udp',
-      address: peer.address,
-      port: peer.port,
-      binding: peer.binding,
-    });
+  const handleProductChange = (productId?: number) => {
+    bindingForm.setFieldValue('deviceId', undefined);
+    if (productId) {
+      setFilteredDevices(devices.filter((item) => item.productId === productId));
+      return;
+    }
+    setFilteredDevices(devices);
   };
 
   const buildBindingPayload = (values: BindingFormValues) => {
@@ -274,47 +249,43 @@ const TcpUdpPage: React.FC = () => {
     };
 
     if (typeof values.deviceId === 'number') {
+      const device = deviceMap.get(values.deviceId);
       payload.deviceId = values.deviceId;
-      // 从选中的设备获取设备名称
-      const selectedDevice = deviceMap[values.deviceId];
-      if (selectedDevice) {
-        payload.deviceName = selectedDevice.deviceName;
-      }
+      payload.deviceName = device?.deviceName || undefined;
     }
-
     return payload;
   };
 
-  const handleBind = async (values: BindingFormValues) => {
+  const handleBind = async () => {
     if (!bindingTarget) {
       return;
     }
 
-    const target = bindingTarget;
-    const payload = buildBindingPayload(values);
-    const isTcpTarget = target.type === 'tcp';
-
-    setBindingSubmitting(true);
     try {
-      if (isTcpTarget) {
-        await tcpUdpApi.bindTcpSession(target.sessionId, payload);
+      const values = await bindingForm.validateFields();
+      const payload = buildBindingPayload(values);
+      setBindingSubmitting(true);
+
+      if (bindingTarget.type === 'tcp') {
+        await tcpUdpApi.bindTcpSession(bindingTarget.sessionId, payload);
+        message.success('TCP 会话绑定成功');
+        await fetchTcp();
       } else {
         await tcpUdpApi.bindUdpPeer({
           ...payload,
-          address: target.address,
-          port: target.port,
+          address: bindingTarget.address,
+          port: bindingTarget.port,
         });
-      }
-
-      message.success(isTcpTarget ? 'TCP 会话绑定成功' : 'UDP 端点绑定成功');
-      closeBindingModal();
-      if (isTcpTarget) {
-        await fetchTcp();
-      } else {
+        message.success('UDP 端点绑定成功');
         await fetchUdp();
       }
-    } catch {
-      message.error(isTcpTarget ? 'TCP 会话绑定失败' : 'UDP 端点绑定失败');
+
+      setBindingTarget(null);
+    } catch (error) {
+      if (typeof error === 'object' && error !== null && 'errorFields' in error) {
+        return;
+      }
+      message.error('绑定上下文失败');
     } finally {
       setBindingSubmitting(false);
     }
@@ -346,7 +317,7 @@ const TcpUdpPage: React.FC = () => {
       message.success('TCP 连接已断开');
       await fetchTcp();
     } catch {
-      message.error('TCP 断开失败');
+      message.error('断开 TCP 连接失败');
     }
   };
 
@@ -355,18 +326,13 @@ const TcpUdpPage: React.FC = () => {
       message.warning('请输入会话 ID 和消息内容');
       return;
     }
-
     setTcpSendLoading(true);
     try {
-      const response = await tcpUdpApi.sendTcp({
+      const res = await tcpUdpApi.sendTcp({
         sessionId: tcpSendSessionId.trim(),
         message: tcpSendMessage.trim(),
       });
-      if (response.data.data) {
-        message.success('TCP 消息发送成功');
-      } else {
-        message.warning('发送失败，会话可能已断开');
-      }
+      message[res.data?.data ? 'success' : 'warning'](res.data?.data ? 'TCP 消息发送成功' : 'TCP 消息发送失败');
     } catch {
       message.error('TCP 消息发送失败');
     } finally {
@@ -376,15 +342,14 @@ const TcpUdpPage: React.FC = () => {
 
   const handleBroadcastTcp = async () => {
     if (!tcpBroadcastMessage.trim()) {
-      message.warning('请输入广播消息内容');
+      message.warning('请输入广播消息');
       return;
     }
-
     setTcpBroadcastLoading(true);
     try {
-      const response = await tcpUdpApi.broadcastTcp({ message: tcpBroadcastMessage.trim() });
-      const result = response.data.data;
-      message.success(`TCP 广播完成：${result?.sent || 0}/${result?.total || 0} 个会话`);
+      const res = await tcpUdpApi.broadcastTcp({ message: tcpBroadcastMessage.trim() });
+      const result = res.data?.data ?? {};
+      message.success(`TCP 广播完成，成功送达 ${result.sent || 0} / ${result.total || 0} 个会话`);
     } catch {
       message.error('TCP 广播失败');
     } finally {
@@ -397,19 +362,14 @@ const TcpUdpPage: React.FC = () => {
       message.warning('请输入目标地址和消息内容');
       return;
     }
-
     setUdpSendLoading(true);
     try {
-      const response = await tcpUdpApi.sendUdp({
+      const res = await tcpUdpApi.sendUdp({
         address: udpSendAddress.trim(),
         port: udpSendPort,
         message: udpSendMessage.trim(),
       });
-      if (response.data.data) {
-        message.success('UDP 消息发送成功');
-      } else {
-        message.warning('UDP 消息发送失败');
-      }
+      message[res.data?.data ? 'success' : 'warning'](res.data?.data ? 'UDP 消息发送成功' : 'UDP 消息发送失败');
     } catch {
       message.error('UDP 消息发送失败');
     } finally {
@@ -417,70 +377,39 @@ const TcpUdpPage: React.FC = () => {
     }
   };
 
-  const formatTime = (timestamp: number) => {
-    if (!timestamp) {
-      return '-';
-    }
-    return formatDateTime(timestamp);
-  };
-
-  const formatDuration = (timestamp: number) => {
-    if (!timestamp) {
-      return '-';
-    }
-
-    const seconds = Math.floor((Date.now() - timestamp) / 1000);
-    if (seconds < 60) {
-      return `${seconds}s`;
-    }
-    if (seconds < 3600) {
-      return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-    }
-    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
-  };
-
   const renderBinding = (binding?: TcpUdpBinding | null) => {
     if (!binding?.productId) {
       return <Tag>未绑定</Tag>;
     }
 
-    const hasDeviceContext = binding.deviceId || binding.deviceName;
+    const product = productMap.get(binding.productId);
+    const device = binding.deviceId ? deviceMap.get(binding.deviceId) : undefined;
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <Space wrap size={[4, 4]}>
-          <Tag color="processing">产品 #{binding.productId}</Tag>
-          {binding.productKey ? <Tag color="blue">{binding.productKey}</Tag> : null}
-          {binding.tenantId ? <Tag>租户 #{binding.tenantId}</Tag> : null}
+      <Space direction="vertical" size={2}>
+        <Typography.Text strong>{product?.name || binding.productKey || `产品 ${binding.productId}`}</Typography.Text>
+        <Space size={6} wrap>
+          {product?.productKey || binding.productKey ? <Tag color="processing">{product?.productKey || binding.productKey}</Tag> : null}
+          {device?.nickname || binding.deviceName ? <Tag color="green">{device?.nickname || binding.deviceName}</Tag> : null}
+          {device?.deviceName ? <Tag>{device.deviceName}</Tag> : null}
         </Space>
-        <Space wrap size={[4, 4]}>
-          {binding.deviceId ? <Tag color="green">设备 #{binding.deviceId}</Tag> : null}
-          {binding.deviceName ? <Tag color="gold">{binding.deviceName}</Tag> : null}
-          {binding.bindTime ? (
-            <Tooltip title={formatTime(binding.bindTime)}>
-              <Tag>{formatDuration(binding.bindTime)}前绑定</Tag>
-            </Tooltip>
-          ) : null}
-        </Space>
-        {!hasDeviceContext ? (
-          <span style={{ color: '#999', fontSize: 12 }}>按产品上下文解析后续报文</span>
+        {binding.bindTime ? (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            绑定于 {formatDateTime(binding.bindTime)}
+          </Typography.Text>
         ) : null}
-      </div>
+      </Space>
     );
   };
-
-  const tcpBoundCount = tcpSessions.filter((session) => !!session.binding?.productId).length;
-  const udpBoundCount = udpPeers.filter((peer) => !!peer.binding?.productId).length;
 
   const tcpColumns: ColumnsType<TcpSession> = [
     {
       title: '会话 ID',
       dataIndex: 'sessionId',
-      width: 150,
-      ellipsis: true,
+      width: 180,
       render: (value: string) => (
         <Tooltip title={value}>
-          <code style={{ fontSize: 11 }}>{value}</code>
+          <code>{value}</code>
         </Tooltip>
       ),
     },
@@ -488,21 +417,19 @@ const TcpUdpPage: React.FC = () => {
       title: '远端地址',
       dataIndex: 'remoteAddress',
       width: 180,
-      ellipsis: true,
-      render: (value: string) => <code style={{ fontSize: 11 }}>{value}</code>,
+      render: (value: string) => <code>{value}</code>,
     },
     {
-      title: '绑定上下文',
-      dataIndex: 'binding',
-      width: 260,
-      render: (binding?: TcpUdpBinding | null) => renderBinding(binding),
+      title: '设备上下文',
+      width: 240,
+      render: (_value, record) => renderBinding(record.binding),
     },
     {
-      title: '连接时间',
+      title: '连接时长',
       dataIndex: 'connectTime',
       width: 120,
       render: (value: number) => (
-        <Tooltip title={formatTime(value)}>
+        <Tooltip title={formatDateTime(value)}>
           <Space size={4}>
             <ClockCircleOutlined />
             {formatDuration(value)}
@@ -514,27 +441,22 @@ const TcpUdpPage: React.FC = () => {
       title: '最后消息',
       dataIndex: 'lastMessageTime',
       width: 120,
-      render: (value: number) =>
-        value ? (
-          <Tooltip title={formatTime(value)}>{formatDuration(value)}前</Tooltip>
-        ) : (
-          '-'
-        ),
+      render: (value: number) => (value ? <Tooltip title={formatDateTime(value)}>{formatDuration(value)}前</Tooltip> : '-'),
     },
     {
-      title: '收/发',
-      width: 110,
-      render: (_: unknown, record: TcpSession) => (
+      title: '收 / 发',
+      width: 120,
+      render: (_value, record) => (
         <Space size={4}>
-          <Tag color="green">{record.receivedCount} 收</Tag>
-          <Tag color="blue">{record.sentCount} 发</Tag>
+          <Tag color="green">{record.receivedCount}</Tag>
+          <Tag color="blue">{record.sentCount}</Tag>
         </Space>
       ),
     },
     {
       title: '操作',
       width: 220,
-      render: (_: unknown, record: TcpSession) => (
+      render: (_value, record) => (
         <Space size={4} wrap>
           <Button
             type="link"
@@ -547,25 +469,21 @@ const TcpUdpPage: React.FC = () => {
           >
             发送
           </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<LinkOutlined />}
-            onClick={() => openTcpBindingModal(record)}
-          >
+          <Button type="link" size="small" icon={<LinkOutlined />} onClick={() => setBindingTarget({
+            type: 'tcp',
+            sessionId: record.sessionId,
+            remoteAddress: record.remoteAddress,
+            binding: record.binding,
+          })}>
             {record.binding?.productId ? '重绑' : '绑定'}
           </Button>
           {record.binding?.productId ? (
-            <Popconfirm title="确认解除此 TCP 会话绑定？" onConfirm={() => handleUnbindTcp(record.sessionId)}>
-              <Button type="link" size="small" danger>
-                解绑
-              </Button>
+            <Popconfirm title="确认解绑该 TCP 会话？" onConfirm={() => void handleUnbindTcp(record.sessionId)}>
+              <Button type="link" size="small" danger>解绑</Button>
             </Popconfirm>
           ) : null}
-          <Popconfirm title="确认断开此 TCP 连接？" onConfirm={() => handleDisconnectTcp(record.sessionId)}>
-            <Button type="link" size="small" danger icon={<DisconnectOutlined />}>
-              断开
-            </Button>
+          <Popconfirm title="确认断开该 TCP 连接？" onConfirm={() => void handleDisconnectTcp(record.sessionId)}>
+            <Button type="link" size="small" danger icon={<DisconnectOutlined />}>断开</Button>
           </Popconfirm>
         </Space>
       ),
@@ -576,39 +494,31 @@ const TcpUdpPage: React.FC = () => {
     {
       title: '地址',
       dataIndex: 'address',
-      width: 160,
-      render: (value: string) => <code style={{ fontSize: 11 }}>{value}</code>,
+      width: 180,
+      render: (value: string) => <code>{value}</code>,
     },
     {
       title: '端口',
       dataIndex: 'port',
-      width: 90,
+      width: 100,
       render: (value: number) => <Tag>{value}</Tag>,
     },
     {
-      title: '绑定上下文',
-      dataIndex: 'binding',
-      width: 260,
-      render: (binding?: TcpUdpBinding | null) => renderBinding(binding),
+      title: '设备上下文',
+      width: 240,
+      render: (_value, record) => renderBinding(record.binding),
     },
     {
       title: '首次发现',
       dataIndex: 'firstSeenTime',
       width: 120,
-      render: (value: number) => (
-        <Tooltip title={formatTime(value)}>{formatDuration(value)}前</Tooltip>
-      ),
+      render: (value: number) => <Tooltip title={formatDateTime(value)}>{formatDuration(value)}前</Tooltip>,
     },
     {
       title: '最后消息',
       dataIndex: 'lastMessageTime',
       width: 120,
-      render: (value: number) =>
-        value ? (
-          <Tooltip title={formatTime(value)}>{formatDuration(value)}前</Tooltip>
-        ) : (
-          '-'
-        ),
+      render: (value: number) => (value ? <Tooltip title={formatDateTime(value)}>{formatDuration(value)}前</Tooltip> : '-'),
     },
     {
       title: '接收数',
@@ -619,7 +529,7 @@ const TcpUdpPage: React.FC = () => {
     {
       title: '操作',
       width: 180,
-      render: (_: unknown, record: UdpPeer) => (
+      render: (_value, record) => (
         <Space size={4} wrap>
           <Button
             type="link"
@@ -633,19 +543,17 @@ const TcpUdpPage: React.FC = () => {
           >
             发送
           </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<LinkOutlined />}
-            onClick={() => openUdpBindingModal(record)}
-          >
+          <Button type="link" size="small" icon={<LinkOutlined />} onClick={() => setBindingTarget({
+            type: 'udp',
+            address: record.address,
+            port: record.port,
+            binding: record.binding,
+          })}>
             {record.binding?.productId ? '重绑' : '绑定'}
           </Button>
           {record.binding?.productId ? (
-            <Popconfirm title="确认解除此 UDP 端点绑定？" onConfirm={() => handleUnbindUdp(record.address, record.port)}>
-              <Button type="link" size="small" danger>
-                解绑
-              </Button>
+            <Popconfirm title="确认解绑该 UDP 端点？" onConfirm={() => void handleUnbindUdp(record.address, record.port)}>
+              <Button type="link" size="small" danger>解绑</Button>
             </Popconfirm>
           ) : null}
         </Space>
@@ -653,11 +561,20 @@ const TcpUdpPage: React.FC = () => {
     },
   ];
 
+  const tcpBoundCount = tcpSessions.filter((item) => item.binding?.productId).length;
+  const udpBoundCount = udpPeers.filter((item) => item.binding?.productId).length;
+
   return (
     <div>
       <PageHeader
         title="TCP/UDP 原始 Socket 接入"
-        description="TCP 长连接管理、UDP 报文收发、会话绑定与自定义协议调试。"
+        description="用于原始报文会话查看、设备上下文绑定和 Socket 消息调试。"
+      />
+
+      <ProtocolAccessGuide
+        title="先绑定产品和设备，再进入自定义协议解析"
+        description="TCP/UDP 原始连接本身没有业务语义，建议先把会话绑定到产品或设备，再由协议解析器消费后续报文，这样设备管理、规则引擎和告警通知才能共享上下文。"
+        tips={['适合自定义二进制协议', '支持 TCP 会话和 UDP 端点绑定', '绑定后可进入协议解析链路']}
       />
 
       <Tabs
@@ -668,217 +585,131 @@ const TcpUdpPage: React.FC = () => {
             key: 'tcp',
             label: 'TCP 会话',
             children: (
-              <div>
+              <>
                 <Row gutter={16} style={{ marginBottom: 16 }}>
-                  <Col span={6}>
-                    <Card style={cardStyle}>
-                      <Statistic
-                        title="TCP 在线连接"
-                        value={tcpCount}
-                        prefix={<WifiOutlined />}
-                        valueStyle={{ color: tcpCount > 0 ? '#52c41a' : undefined }}
-                      />
-                    </Card>
-                  </Col>
-                  <Col span={6}>
-                    <Card style={cardStyle}>
-                      <Statistic title="已绑定上下文" value={tcpBoundCount} prefix={<ApiOutlined />} />
-                    </Card>
-                  </Col>
-                  <Col span={6}>
-                    <Card style={cardStyle}>
-                      <Statistic
-                        title="TCP 端口"
-                        value={8900}
-                        prefix={<CloudServerOutlined />}
-                        valueStyle={{ fontSize: 18, fontFamily: 'monospace' }}
-                      />
-                    </Card>
-                  </Col>
-                  <Col span={6}>
-                    <Card style={cardStyle}>
-                      <Statistic title="帧解码" value="LINE (换行分隔)" valueStyle={{ fontSize: 14 }} />
-                    </Card>
-                  </Col>
+                  <Col xs={24} md={6}><Card style={cardStyle}><Statistic title="TCP 在线连接" value={tcpCount} prefix={<WifiOutlined />} /></Card></Col>
+                  <Col xs={24} md={6}><Card style={cardStyle}><Statistic title="已绑定上下文" value={tcpBoundCount} prefix={<ApiOutlined />} /></Card></Col>
+                  <Col xs={24} md={6}><Card style={cardStyle}><Statistic title="TCP 端口" value={8900} prefix={<CloudServerOutlined />} /></Card></Col>
+                  <Col xs={24} md={6}><Card style={cardStyle}><Statistic title="解码入口" value="协议解析" valueStyle={{ fontSize: 16 }} /></Card></Col>
                 </Row>
 
-                <Card
-                  style={cardStyle}
-                  extra={
-                    <Button icon={<ReloadOutlined />} onClick={() => void fetchTcp()} loading={tcpLoading}>
-                      刷新
-                    </Button>
-                  }
-                >
+                <Card style={cardStyle} extra={<Button icon={<ReloadOutlined />} onClick={() => void fetchTcp()} loading={tcpLoading}>刷新</Button>}>
                   {tcpSessions.length === 0 && !tcpLoading ? (
-                    <Empty description="暂无 TCP 连接" />
+                    <Empty description="暂无 TCP 会话" />
                   ) : (
-                    <Table
+                    <Table<TcpSession>
                       rowKey="sessionId"
                       columns={tcpColumns}
                       dataSource={tcpSessions}
                       loading={tcpLoading}
-                      size="small"
-                      scroll={{ x: 1180 }}
+                      scroll={{ x: 1240 }}
                       pagination={{ pageSize: 20, showSizeChanger: true }}
                     />
                   )}
                 </Card>
-              </div>
+              </>
             ),
           },
           {
             key: 'udp',
             label: 'UDP 端点',
             children: (
-              <div>
+              <>
                 <Row gutter={16} style={{ marginBottom: 16 }}>
-                  <Col span={6}>
-                    <Card style={cardStyle}>
-                      <Statistic title="UDP 已知端点" value={udpStats.peerCount} prefix={<SwapOutlined />} />
-                    </Card>
-                  </Col>
-                  <Col span={6}>
-                    <Card style={cardStyle}>
-                      <Statistic title="已绑定上下文" value={udpBoundCount} prefix={<ApiOutlined />} />
-                    </Card>
-                  </Col>
-                  <Col span={6}>
-                    <Card style={cardStyle}>
-                      <Statistic
-                        title="UDP 总接收"
-                        value={udpStats.totalReceived}
-                        prefix={<SendOutlined />}
-                        valueStyle={{ color: udpStats.totalReceived > 0 ? '#1677ff' : undefined }}
-                      />
-                    </Card>
-                  </Col>
-                  <Col span={6}>
-                    <Card style={cardStyle}>
-                      <Statistic
-                        title="UDP 端口"
-                        value={8901}
-                        prefix={<CloudServerOutlined />}
-                        valueStyle={{ fontSize: 18, fontFamily: 'monospace' }}
-                      />
-                    </Card>
-                  </Col>
+                  <Col xs={24} md={6}><Card style={cardStyle}><Statistic title="UDP 端点数" value={udpStats.peerCount} prefix={<SwapOutlined />} /></Card></Col>
+                  <Col xs={24} md={6}><Card style={cardStyle}><Statistic title="已绑定上下文" value={udpBoundCount} prefix={<ApiOutlined />} /></Card></Col>
+                  <Col xs={24} md={6}><Card style={cardStyle}><Statistic title="累计接收报文" value={udpStats.totalReceived} prefix={<SendOutlined />} /></Card></Col>
+                  <Col xs={24} md={6}><Card style={cardStyle}><Statistic title="UDP 端口" value={8901} prefix={<CloudServerOutlined />} /></Card></Col>
                 </Row>
 
-                <Card
-                  style={cardStyle}
-                  extra={
-                    <Button icon={<ReloadOutlined />} onClick={() => void fetchUdp()} loading={udpLoading}>
-                      刷新
-                    </Button>
-                  }
-                >
+                <Card style={cardStyle} extra={<Button icon={<ReloadOutlined />} onClick={() => void fetchUdp()} loading={udpLoading}>刷新</Button>}>
                   {udpPeers.length === 0 && !udpLoading ? (
                     <Empty description="暂无 UDP 端点" />
                   ) : (
-                    <Table
+                    <Table<UdpPeer>
                       rowKey={(record) => `${record.address}:${record.port}`}
                       columns={udpColumns}
                       dataSource={udpPeers}
                       loading={udpLoading}
-                      size="small"
-                      scroll={{ x: 1080 }}
+                      scroll={{ x: 1140 }}
                       pagination={{ pageSize: 20, showSizeChanger: true }}
                     />
                   )}
                 </Card>
-              </div>
+              </>
             ),
           },
           {
             key: 'tools',
-            label: '消息下发',
+            label: '消息调试',
             children: (
               <Row gutter={16}>
-                <Col span={8}>
-                  <Card title={<Space><SendOutlined /> TCP 发送</Space>} style={cardStyle}>
-                    <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                <Col xs={24} xl={8}>
+                  <Card title={<Space><SendOutlined />发送 TCP</Space>} style={cardStyle}>
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
                       <Input
-                        placeholder="TCP 会话 ID"
+                        addonBefore="Session"
                         value={tcpSendSessionId}
                         onChange={(event) => setTcpSendSessionId(event.target.value)}
-                        addonBefore="Session"
-                        style={{ fontFamily: 'monospace', fontSize: 12 }}
+                        placeholder="输入 TCP 会话 ID"
+                        style={{ fontFamily: 'monospace' }}
                       />
                       <Input.TextArea
-                        rows={5}
-                        placeholder='{"temperature": 25.5}'
+                        rows={6}
                         value={tcpSendMessage}
                         onChange={(event) => setTcpSendMessage(event.target.value)}
-                        style={{ fontFamily: 'monospace', fontSize: 12 }}
+                        placeholder='{"temperature":25.5}'
+                        style={{ fontFamily: 'monospace' }}
                       />
-                      <Button
-                        type="primary"
-                        icon={<SendOutlined />}
-                        onClick={handleSendTcp}
-                        loading={tcpSendLoading}
-                        disabled={!tcpSendSessionId.trim() || !tcpSendMessage.trim()}
-                      >
-                        发送 TCP
+                      <Button type="primary" icon={<SendOutlined />} loading={tcpSendLoading} onClick={() => void handleSendTcp()}>
+                        发送 TCP 消息
                       </Button>
                     </Space>
                   </Card>
                 </Col>
-                <Col span={8}>
-                  <Card title={<Space><WifiOutlined /> TCP 广播</Space>} style={cardStyle}>
-                    <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                <Col xs={24} xl={8}>
+                  <Card title={<Space><WifiOutlined />TCP 广播</Space>} style={cardStyle}>
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
                       <Input.TextArea
-                        rows={7}
-                        placeholder='{"cmd": "syncTime"}'
+                        rows={8}
                         value={tcpBroadcastMessage}
                         onChange={(event) => setTcpBroadcastMessage(event.target.value)}
-                        style={{ fontFamily: 'monospace', fontSize: 12 }}
+                        placeholder='{"cmd":"syncTime"}'
+                        style={{ fontFamily: 'monospace' }}
                       />
-                      <Button
-                        type="primary"
-                        icon={<SendOutlined />}
-                        onClick={handleBroadcastTcp}
-                        loading={tcpBroadcastLoading}
-                        disabled={!tcpBroadcastMessage.trim()}
-                      >
+                      <Button type="primary" icon={<SendOutlined />} loading={tcpBroadcastLoading} onClick={() => void handleBroadcastTcp()}>
                         广播到 {tcpCount} 个 TCP 会话
                       </Button>
                     </Space>
                   </Card>
                 </Col>
-                <Col span={8}>
-                  <Card title={<Space><SwapOutlined /> UDP 发送</Space>} style={cardStyle}>
-                    <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                <Col xs={24} xl={8}>
+                  <Card title={<Space><SwapOutlined />发送 UDP</Space>} style={cardStyle}>
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
                       <Input
-                        placeholder="目标地址"
+                        addonBefore="Address"
                         value={udpSendAddress}
                         onChange={(event) => setUdpSendAddress(event.target.value)}
-                        addonBefore="Address"
-                        style={{ fontFamily: 'monospace', fontSize: 12 }}
+                        placeholder="目标地址"
+                        style={{ fontFamily: 'monospace' }}
                       />
                       <InputNumber
                         min={1}
                         max={65535}
+                        style={{ width: '100%' }}
+                        addonBefore="Port"
                         value={udpSendPort}
                         onChange={(value) => setUdpSendPort(value || 8901)}
-                        addonBefore="Port"
-                        style={{ width: '100%' }}
                       />
                       <Input.TextArea
-                        rows={4}
-                        placeholder='{"temperature": 25.5}'
+                        rows={5}
                         value={udpSendMessage}
                         onChange={(event) => setUdpSendMessage(event.target.value)}
-                        style={{ fontFamily: 'monospace', fontSize: 12 }}
+                        placeholder='{"temperature":25.5}'
+                        style={{ fontFamily: 'monospace' }}
                       />
-                      <Button
-                        type="primary"
-                        icon={<SendOutlined />}
-                        onClick={handleSendUdp}
-                        loading={udpSendLoading}
-                        disabled={!udpSendAddress.trim() || !udpSendMessage.trim()}
-                      >
-                        发送 UDP
+                      <Button type="primary" icon={<SendOutlined />} loading={udpSendLoading} onClick={() => void handleSendUdp()}>
+                        发送 UDP 消息
                       </Button>
                     </Space>
                   </Card>
@@ -890,57 +721,63 @@ const TcpUdpPage: React.FC = () => {
       />
 
       <Modal
+        destroyOnClose
         title={bindingTarget?.type === 'tcp' ? '绑定 TCP 会话' : '绑定 UDP 端点'}
-        open={!!bindingTarget}
-        onCancel={closeBindingModal}
-        onOk={() => bindingForm.submit()}
+        open={Boolean(bindingTarget)}
+        onCancel={() => setBindingTarget(null)}
+        onOk={() => void handleBind()}
         confirmLoading={bindingSubmitting}
-        width={520}
       >
         {bindingTarget ? (
-          <div style={targetCardStyle}>
-            <div style={{ marginBottom: 8, color: '#666' }}>绑定目标</div>
-            <Space wrap size={[8, 8]}>
-              <Tag color="processing">{bindingTarget.type === 'tcp' ? 'TCP 会话' : 'UDP 端点'}</Tag>
-              {bindingTarget.type === 'tcp' ? (
-                <>
-                  <code style={{ fontSize: 12 }}>{bindingTarget.sessionId}</code>
-                  <Tag>{bindingTarget.remoteAddress}</Tag>
-                </>
-              ) : (
-                <code style={{ fontSize: 12 }}>
-                  {bindingTarget.address}:{bindingTarget.port}
-                </code>
-              )}
+          <Card size="small" style={{ marginBottom: 16 }}>
+            <Space direction="vertical" size={4}>
+              <Typography.Text type="secondary">当前目标</Typography.Text>
+              <Space wrap>
+                <Tag color="processing">{bindingTarget.type === 'tcp' ? 'TCP 会话' : 'UDP 端点'}</Tag>
+                {bindingTarget.type === 'tcp' ? (
+                  <>
+                    <code>{bindingTarget.sessionId}</code>
+                    <Tag>{bindingTarget.remoteAddress}</Tag>
+                  </>
+                ) : (
+                  <code>{bindingTarget.address}:{bindingTarget.port}</code>
+                )}
+              </Space>
             </Space>
-          </div>
+          </Card>
         ) : null}
 
-        <div style={{ color: '#666', marginBottom: 16 }}>
-          绑定后，后续报文会携带产品/设备上下文进入自定义协议解析链路。
-        </div>
+        <Typography.Paragraph type="secondary">
+          绑定后，后续原始报文会带上产品和设备上下文，便于协议解析、设备数据归集和告警处理统一使用。
+        </Typography.Paragraph>
 
-        <Form form={bindingForm} layout="vertical" onFinish={handleBind}>
+        <Form form={bindingForm} layout="vertical">
           <Form.Item
             name="productId"
-            label="所属产品"
+            label="关联产品"
             rules={[{ required: true, message: '请选择产品' }]}
           >
             <Select
-              placeholder="请选择产品"
               showSearch
               optionFilterProp="label"
-              options={productOptions.map(p => ({ value: p.id, label: `${p.name} (${p.productKey})` }))}
+              placeholder="请选择产品"
+              options={products.map((item) => ({
+                value: item.id,
+                label: `${item.name} (${item.productKey})`,
+              }))}
               onChange={handleProductChange}
             />
           </Form.Item>
           <Form.Item name="deviceId" label="关联设备">
             <Select
-              placeholder={selectedProductId ? '可选，选择设备' : '请先选择产品'}
               allowClear
               showSearch
               optionFilterProp="label"
-              options={filteredDevices.map(d => ({ value: d.id, label: d.deviceName }))}
+              placeholder="可选，绑定到具体设备"
+              options={filteredDevices.map((item) => ({
+                value: item.id,
+                label: item.nickname ? `${item.nickname} (${item.deviceName})` : item.deviceName,
+              }))}
             />
           </Form.Item>
         </Form>

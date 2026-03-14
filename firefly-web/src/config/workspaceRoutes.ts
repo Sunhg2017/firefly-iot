@@ -12,8 +12,11 @@ export const WORKSPACE_STORAGE_KEY = 'firefly_workspace';
 
 const PLATFORM_GROUP_KEYS = new Set(['system-mgmt', 'security-audit']);
 const TENANT_GROUP_KEYS = new Set(['project-mgmt', 'device-mgmt', 'rule-alarm', 'data-insight', 'ops-tools']);
-const SHARED_PATHS = new Set(['/dashboard']);
+const SHARED_PATHS = new Set(['/dashboard', '/user']);
 const PLATFORM_PATHS = new Set(['/monitor']);
+export const TENANT_USER_GROUP_KEY = 'tenant-user-space';
+export const TENANT_USER_GROUP_LABEL = '组织与用户';
+const USER_MANAGEMENT_PATH = '/user';
 type RoutePermission = RouteItem['permission'];
 
 const ROUTE_PERMISSION_MAP = new Map<string, RoutePermission>();
@@ -68,6 +71,20 @@ function filterRouteNodes(
     if (isRouteGroup(node)) {
       const children = filterRouteNodes(node.children, workspace, rootGroupKey ?? node.key);
       if (children.length === 0) {
+        continue;
+      }
+      if (workspace === 'tenant' && node.key === 'system-mgmt') {
+        const userChildren = children.filter(
+          (item): item is RouteItem => !isRouteGroup(item) && item.path === USER_MANAGEMENT_PATH,
+        );
+        if (userChildren.length > 0) {
+          filtered.push({
+            ...node,
+            key: TENANT_USER_GROUP_KEY,
+            label: TENANT_USER_GROUP_LABEL,
+            children: userChildren,
+          });
+        }
         continue;
       }
       filtered.push(children.length === node.children.length ? node : { ...node, children });
@@ -186,18 +203,26 @@ export function getWorkspaceHomePath(
   permissions?: readonly string[] | null,
   menuConfig?: readonly WorkspaceMenuConfigItem[] | null,
 ): string {
+  const preferTenantHomePath = (paths: string[]) => {
+    if (workspace !== 'tenant') {
+      return paths[0] || '/403';
+    }
+    const nonUserPaths = paths.filter((path) => path !== '/user');
+    return nonUserPaths[0] || paths[0] || '/403';
+  };
+
   if (Array.isArray(menuConfig) && menuConfig.length > 0) {
     const configuredPaths = collectConfiguredPaths(menuConfig, permissions);
     if (configuredPaths.length === 0) {
       return '/403';
     }
     const nonDashboardPaths = configuredPaths.filter((path) => path !== '/dashboard');
-    return nonDashboardPaths[0] || configuredPaths[0] || '/403';
+    return preferTenantHomePath(nonDashboardPaths.length > 0 ? nonDashboardPaths : configuredPaths);
   }
 
   if (permissions === undefined) {
     const candidates = collectWorkspacePaths(workspace).filter((path) => path !== '/dashboard');
-    return candidates[0] || '/dashboard';
+    return preferTenantHomePath(candidates.length > 0 ? candidates : ['/dashboard']);
   }
 
   const accessiblePaths: string[] = [];
@@ -213,5 +238,5 @@ export function getWorkspaceHomePath(
   }
 
   const nonDashboardPaths = uniquePaths.filter((path) => path !== '/dashboard');
-  return nonDashboardPaths[0] || uniquePaths[0] || '/403';
+  return preferTenantHomePath(nonDashboardPaths.length > 0 ? nonDashboardPaths : uniquePaths);
 }

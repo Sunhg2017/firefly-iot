@@ -29,6 +29,8 @@ import {
   isConfiguredMenuPathAllowed,
   resolveWorkspaceByUserType,
   resolveWorkspaceByPath,
+  TENANT_USER_GROUP_KEY,
+  TENANT_USER_GROUP_LABEL,
   type WorkspaceType,
   WORKSPACE_STORAGE_KEY,
 } from '../config/workspaceRoutes';
@@ -37,6 +39,7 @@ type MenuItem = Required<MenuProps>['items'][number];
 type BreadcrumbNode = { title: string; path?: string };
 type RoutePermission = RouteItem['permission'];
 const PROTOCOL_ROUTE_PATHS = new Set(['/snmp', '/modbus', '/websocket', '/tcp-udp', '/lorawan']);
+const USER_MANAGEMENT_PATH = '/user';
 const SYNTHETIC_ID_BASE = -1_000_000;
 
 const { Header, Sider, Content } = Layout;
@@ -234,7 +237,44 @@ const BasicLayout: React.FC = () => {
         })
         .sort((a, b) => a.sortOrder - b.sortOrder);
 
-    return walk(items);
+    const normalizedItems = walk(items);
+    const hasUserMenu = (nodes: MenuConfigItem[]): boolean =>
+      nodes.some((node) => {
+        if (normalizePath(node.routePath) === USER_MANAGEMENT_PATH) {
+          return true;
+        }
+        return Array.isArray(node.children) && hasUserMenu(node.children);
+      });
+
+    if (hasUserMenu(normalizedItems) || !canAccessPath(USER_MANAGEMENT_PATH)) {
+      return normalizedItems;
+    }
+
+    const userMeta = routePathMeta.get(USER_MANAGEMENT_PATH);
+    const syntheticGroupId = syntheticId--;
+    const syntheticUserGroup: MenuConfigItem = {
+      id: syntheticGroupId,
+      parentId: 0,
+      menuKey: TENANT_USER_GROUP_KEY,
+      label: TENANT_USER_GROUP_LABEL,
+      icon: 'TeamOutlined',
+      routePath: null,
+      sortOrder: 5,
+      visible: true,
+      children: [{
+        id: syntheticId--,
+        parentId: syntheticGroupId,
+        menuKey: USER_MANAGEMENT_PATH,
+        label: userMeta?.label || '用户管理',
+        icon: guessIconName(userMeta?.icon) || 'TeamOutlined',
+        routePath: USER_MANAGEMENT_PATH,
+        sortOrder: 0,
+        visible: true,
+        children: [],
+      }],
+    };
+
+    return [...normalizedItems, syntheticUserGroup].sort((a, b) => a.sortOrder - b.sortOrder);
   };
 
   const normalizedMenuConfig = useMemo(() => normalizeTenantMenuConfig(menuConfig), [menuConfig]);
