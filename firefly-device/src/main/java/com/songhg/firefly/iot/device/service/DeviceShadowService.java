@@ -9,7 +9,10 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -26,7 +29,7 @@ public class DeviceShadowService {
     }
 
     /**
-     * 获取完整影子文档
+     * 获取完整设备影子。
      */
     public DeviceShadowDTO getShadow(Long deviceId) {
         String key = shadowKey(deviceId);
@@ -52,15 +55,15 @@ public class DeviceShadowService {
     }
 
     /**
-     * 更新期望属性（desired）— 由云端下发
+     * 更新平台维护的 desired 期望值。
      */
     public DeviceShadowDTO updateDesired(Long deviceId, Map<String, Object> desired) {
         String key = shadowKey(deviceId);
         Map<String, Object> current = getDesired(key);
         current.putAll(desired);
 
-        // 移除 null 值的属性（表示删除）
-        current.entrySet().removeIf(e -> e.getValue() == null);
+        // null 表示删除该属性。
+        current.entrySet().removeIf(entry -> entry.getValue() == null);
 
         long version = incrementVersion(key);
         redisTemplate.opsForHash().put(key, "desired", serialize(current));
@@ -74,7 +77,8 @@ public class DeviceShadowService {
     }
 
     /**
-     * 更新上报属性（reported）— 由设备上报
+     * 更新设备上报的 reported 状态。
+     * 该方法只供设备消息链路内部调用，不向用户页面开放直接写入口。
      */
     public DeviceShadowDTO updateReported(Long deviceId, Map<String, Object> reported) {
         String key = shadowKey(deviceId);
@@ -82,8 +86,8 @@ public class DeviceShadowService {
         Map<String, Object> next = new LinkedHashMap<>(current);
         next.putAll(reported);
 
-        next.entrySet().removeIf(e -> e.getValue() == null);
-        // Repeated reports with the same effective shadow should not keep inflating the version.
+        next.entrySet().removeIf(entry -> entry.getValue() == null);
+        // Effective no-op reports should not keep increasing the shadow version.
         if (next.equals(current)) {
             return getShadow(deviceId);
         }
@@ -100,7 +104,7 @@ public class DeviceShadowService {
     }
 
     /**
-     * 获取影子差异（desired - reported）
+     * 获取影子差异（desired - reported）。
      */
     public Map<String, Object> getDelta(Long deviceId) {
         String key = shadowKey(deviceId);
@@ -120,7 +124,7 @@ public class DeviceShadowService {
     }
 
     /**
-     * 删除影子
+     * 删除设备影子。
      */
     public void deleteShadow(Long deviceId) {
         redisTemplate.delete(shadowKey(deviceId));
@@ -128,7 +132,7 @@ public class DeviceShadowService {
     }
 
     /**
-     * 清空期望属性
+     * 清空 desired 期望值。
      */
     public DeviceShadowDTO clearDesired(Long deviceId) {
         String key = shadowKey(deviceId);
@@ -188,8 +192,6 @@ public class DeviceShadowService {
         return getShadow(deviceId);
     }
 
-    // ==================== Internal Helpers ====================
-
     private Map<String, Object> getDesired(String key) {
         return deserializeMap(redisTemplate.opsForHash().get(key, "desired"));
     }
@@ -199,8 +201,8 @@ public class DeviceShadowService {
     }
 
     private long incrementVersion(String key) {
-        Long v = redisTemplate.opsForHash().increment(key, "version", 1);
-        return v != null ? v : 1;
+        Long version = redisTemplate.opsForHash().increment(key, "version", 1);
+        return version != null ? version : 1;
     }
 
     private void updateMetadata(String key, Map<String, Object> props, String source) {
@@ -226,10 +228,13 @@ public class DeviceShadowService {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> deserializeMap(Object json) {
-        if (json == null) return new LinkedHashMap<>();
+        if (json == null) {
+            return new LinkedHashMap<>();
+        }
         try {
             if (json instanceof String str) {
-                return objectMapper.readValue(str, new TypeReference<LinkedHashMap<String, Object>>() {});
+                return objectMapper.readValue(str, new TypeReference<LinkedHashMap<String, Object>>() {
+                });
             }
             return (Map<String, Object>) json;
         } catch (Exception e) {
@@ -239,7 +244,13 @@ public class DeviceShadowService {
     }
 
     private long parseLong(Object val) {
-        if (val == null) return 0;
-        try { return Long.parseLong(val.toString()); } catch (Exception e) { return 0; }
+        if (val == null) {
+            return 0;
+        }
+        try {
+            return Long.parseLong(val.toString());
+        } catch (Exception e) {
+            return 0;
+        }
     }
 }

@@ -1,52 +1,68 @@
 # 设备管理与设备影子界面优化设计说明
-> 模块: firefly-web
+> 模块: `firefly-web`
 > 日期: 2026-03-14
 > 状态: Done
 
 ## 1. 背景
 
-服务端设备管理与设备影子页面此前存在以下体验问题：
+设备管理页与设备影子页此前存在两类主要问题：
 
-- 设备管理页信息层级偏平，筛选、统计、表格之间缺少视觉分区。
-- 设备表格没有直接展示产品业务信息，用户需要额外联想 `productId` 对应的真实产品。
-- 设备影子独立页仍以“手输设备 ID + 原始文本框 JSON”形式工作，既不直观，也直接把内部主键暴露给用户。
-- 设备影子抽屉内容较粗糙，更多像调试面板，而不是正式管理界面。
+- 页面中文文案存在乱码，影响理解和使用。
+- 设备影子页虽然业务上只允许维护 `desired`，但 `reported`、`delta`、`metadata` 依旧使用与可编辑区域相同的编辑器视觉，容易让用户误以为也能修改。
 
-## 2. 设计目标
+此外，前端 API 与后端控制器仍保留了用户侧 `reported` 手工更新入口，这与设备影子的职责边界不一致。
 
-- 让设备管理页的统计、筛选、目录三层结构更清晰。
-- 在设备列表中优先展示产品名称与 `productKey`，减少用户记忆内部 ID 的负担。
-- 设备影子页改为“搜索选择设备”模式，减少手输和主键暴露。
-- 影子查看与维护统一使用结构化卡片和带高亮的 JSON 编辑器，提升可读性和可操作性。
+## 2. 目标
 
-## 3. 修复方案
+- 明确设备影子中哪些内容可编辑，哪些内容只读。
+- 将只读区域做成明显的“查看态”，避免误操作预期。
+- 修复设备影子页和抽屉中的中文乱码。
+- 收敛用户侧 `reported` 更新入口，保持前后端语义一致。
 
-### 3.1 设备管理页
+## 3. 设计方案
 
-- 概览卡片统一为浅色渐变卡面和较强的信息重心。
-- 筛选区增加“当前筛选”与“已选设备/在线离线数量”摘要，让用户更容易理解当前上下文。
-- 设备表格新增产品列，直接展示产品名称和 `productKey`。
-- 产品列前置到设备名称之后，方便按“设备是谁、属于哪个产品”连续阅读。
-- 设备名称列改为“昵称优先、设备名次级”的两层展示方式。
-- 设备目录卡片顶部增加场景化提示，明确影子、标识、密钥等操作入口。
+### 3.1 编辑权限边界
 
-### 3.2 设备影子独立页
+- `desired`
+  - 平台维护的期望状态。
+  - 允许用户在页面中编辑、保存、清空。
+- `reported`
+  - 设备运行时上报的实际状态。
+  - 页面只读，不允许人工修改。
+- `delta`
+  - 系统根据 `desired - reported` 自动计算出的差异。
+  - 页面只读。
+- `metadata`
+  - 系统维护的字段来源、更新时间等元数据。
+  - 页面只读。
 
-- 从输入 `deviceId` 改为可搜索选择设备，按设备名称/别名定位。
-- 查询后在页头展示设备状态、同步状态、最近更新时间。
-- 将影子核心信息拆分为版本、desired 数、reported 数、delta 数四张概览卡片。
-- Desired / Reported / Delta / Metadata 统一使用 Monaco JSON 编辑器或只读展示。
-- Desired 维护支持编辑、保存、取消、清空，且说明每个动作的业务含义。
+### 3.2 前端交互调整
 
-### 3.3 设备影子抽屉
+- `CodeEditorField` 增加只读态主题和只读标识：
+  - 浅色只读背景
+  - 右上角只读标签
+  - 关闭只读区域的补全与格式化触发
+- 设备影子独立页与抽屉增加统一的编辑说明：
+  - 明确“只有 Desired 可以编辑”
+  - 明确只读区域仅供查看和复制
+- `desired` 在未进入编辑状态时同样展示“查看态”，避免静态浏览时误认为可直接输入。
 
-- 抽屉改为概览区 + 双列 JSON 区的结构化布局。
-- 顶部直接展示同步状态和关键统计，不再依赖单纯 Tab 切换理解状态。
-- 抽屉标题与概览改为展示设备名称、设备编码和所属产品，避免对用户暴露数据库主键。
-- 与独立影子页统一 JSON 编辑器能力，减少交互割裂。
+### 3.3 接口语义收口
+
+- 删除前端 `deviceApi.updateReported(...)` 遗留方法。
+- 删除 `DeviceShadowController` 中用户侧 `PUT /devices/{deviceId}/shadow/reported` 接口。
+- `DeviceShadowService.updateReported(...)` 继续保留，作为设备消息链路内部能力，由消息路由等运行时服务调用。
 
 ## 4. 影响范围
 
-- `firefly-web/src/pages/device/DeviceList.tsx`
-- `firefly-web/src/pages/device/DeviceShadowDrawer.tsx`
+- `firefly-web/src/components/CodeEditorField.tsx`
 - `firefly-web/src/pages/device-shadow/DeviceShadowPage.tsx`
+- `firefly-web/src/pages/device/DeviceShadowDrawer.tsx`
+- `firefly-web/src/services/api.ts`
+- `firefly-device/src/main/java/com/songhg/firefly/iot/device/controller/DeviceShadowController.java`
+- `firefly-device/src/main/java/com/songhg/firefly/iot/device/service/DeviceShadowService.java`
+
+## 5. 设计取舍
+
+- 没有继续保留用户手工写 `reported` 的能力，因为这会破坏设备影子的职责边界，也会让页面语义变得混乱。
+- 没有把只读区域替换成普通文本框，而是继续保留 Monaco 编辑器，原因是用户仍然需要语法高亮、折叠和复制体验，只是视觉与能力上明确收口为只读。

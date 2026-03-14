@@ -18,6 +18,7 @@ import {
   ClearOutlined,
   DeleteOutlined,
   EditOutlined,
+  LockOutlined,
   ReloadOutlined,
   SaveOutlined,
 } from '@ant-design/icons';
@@ -56,6 +57,15 @@ const formatJson = (value: Record<string, unknown> | null | undefined) =>
 
 const countKeys = (value: Record<string, unknown> | null | undefined) =>
   value ? Object.keys(value).length : 0;
+
+const readOnlyTitle = (title: string) => (
+  <Space size={8}>
+    <span>{title}</span>
+    <Tag icon={<LockOutlined />} color="default" style={{ marginInlineEnd: 0 }}>
+      只读
+    </Tag>
+  </Space>
+);
 
 const DeviceShadowDrawer: React.FC<Props> = ({
   deviceId,
@@ -240,7 +250,7 @@ const DeviceShadowDrawer: React.FC<Props> = ({
     >
       {!shadow && !loading ? (
         <Card style={cardStyle} styles={{ body: { padding: 40 } }}>
-          <Empty description="当前设备还没有影子数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <Empty description="当前设备还没有影子数据。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         </Card>
       ) : null}
 
@@ -334,16 +344,23 @@ const DeviceShadowDrawer: React.FC<Props> = ({
                   type="warning"
                   showIcon
                   message="设备当前尚未完全同步 desired"
-                  description="可在下方查看 delta 差异项，判断设备还有哪些属性未追平期望状态。"
+                  description="可在下方查看 delta 差异项，判断设备还有哪些目标状态尚未追平。"
                 />
               ) : (
                 <Alert
                   type="success"
                   showIcon
                   message="当前设备影子已同步"
-                  description="desired 与 reported 没有差异，设备状态与平台期望一致。"
+                  description="desired 与 reported 没有差异，设备状态已经与平台期望一致。"
                 />
               )}
+
+              <Alert
+                type="info"
+                showIcon
+                message="编辑说明"
+                description="抽屉里只有 Desired 可以编辑。Reported、Delta、Metadata 都是设备或系统维护的数据，页面仅提供查看与复制。"
+              />
             </Space>
           </Card>
 
@@ -375,7 +392,7 @@ const DeviceShadowDrawer: React.FC<Props> = ({
                     )}
                     <Popconfirm
                       title="确认清空 desired？"
-                      description="清空后设备将不再存在待同步期望项。"
+                      description="清空后设备将不再存在待同步的目标状态。"
                       onConfirm={() => void handleClearDesired()}
                     >
                       <Button danger size="small" icon={<ClearOutlined />}>
@@ -389,7 +406,7 @@ const DeviceShadowDrawer: React.FC<Props> = ({
               >
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   <Paragraph style={{ margin: 0, color: '#64748b' }}>
-                    维护平台期望设备达到的目标状态。保存时会合并字段，值设为 `null` 可删除对应属性。
+                    维护平台期望设备达到的目标状态。保存时会合并字段，属性值设为 <code>null</code> 可删除对应属性。
                   </Paragraph>
                   <CodeEditorField
                     language="json"
@@ -397,6 +414,7 @@ const DeviceShadowDrawer: React.FC<Props> = ({
                     value={desiredJson}
                     onChange={setDesiredJson}
                     readOnly={!editingDesired}
+                    readOnlyLabel={editingDesired ? undefined : '查看态'}
                     height={320}
                   />
                 </Space>
@@ -404,14 +422,10 @@ const DeviceShadowDrawer: React.FC<Props> = ({
             </Col>
 
             <Col xs={24} xl={12}>
-              <Card
-                title="Reported / 上报属性"
-                style={cardStyle}
-                styles={{ body: { padding: 16 } }}
-              >
+              <Card title={readOnlyTitle('Reported / 上报属性')} style={cardStyle} styles={{ body: { padding: 16 } }}>
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   <Paragraph style={{ margin: 0, color: '#64748b' }}>
-                    设备当前已经确认并上报的状态，用于和 desired 做同步差异对比。
+                    设备当前已经确认并上报的状态，用于与 desired 做同步差异比对，不支持人工修改。
                   </Paragraph>
                   <CodeEditorField
                     language="json"
@@ -419,6 +433,7 @@ const DeviceShadowDrawer: React.FC<Props> = ({
                     value={formatJson(shadow.reported)}
                     onChange={() => undefined}
                     readOnly
+                    readOnlyLabel="只读"
                     height={320}
                   />
                 </Space>
@@ -431,7 +446,7 @@ const DeviceShadowDrawer: React.FC<Props> = ({
               <Card
                 title={
                   <Space size={8}>
-                    <span>Delta / 差异</span>
+                    {readOnlyTitle('Delta / 差异')}
                     <Tag color={deltaCount > 0 ? 'warning' : 'success'}>
                       {deltaCount > 0 ? `${deltaCount} 项待同步` : '已同步'}
                     </Tag>
@@ -440,31 +455,39 @@ const DeviceShadowDrawer: React.FC<Props> = ({
                 style={cardStyle}
                 styles={{ body: { padding: 16 } }}
               >
-                <CodeEditorField
-                  language="json"
-                  path={`file:///device-shadow/${deviceName || deviceId || 'unknown'}/delta.json`}
-                  value={formatJson(delta)}
-                  onChange={() => undefined}
-                  readOnly
-                  height={240}
-                />
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  <Paragraph style={{ margin: 0, color: '#64748b' }}>
+                    系统自动计算 desired 与 reported 的差异项，便于快速判断设备还有哪些属性未同步。
+                  </Paragraph>
+                  <CodeEditorField
+                    language="json"
+                    path={`file:///device-shadow/${deviceName || deviceId || 'unknown'}/delta.json`}
+                    value={formatJson(delta)}
+                    onChange={() => undefined}
+                    readOnly
+                    readOnlyLabel="只读"
+                    height={240}
+                  />
+                </Space>
               </Card>
             </Col>
 
             <Col xs={24} xl={12}>
-              <Card
-                title="Metadata / 元数据"
-                style={cardStyle}
-                styles={{ body: { padding: 16 } }}
-              >
-                <CodeEditorField
-                  language="json"
-                  path={`file:///device-shadow/${deviceName || deviceId || 'unknown'}/metadata.json`}
-                  value={formatJson(shadow.metadata)}
-                  onChange={() => undefined}
-                  readOnly
-                  height={240}
-                />
+              <Card title={readOnlyTitle('Metadata / 元数据')} style={cardStyle} styles={{ body: { padding: 16 } }}>
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  <Paragraph style={{ margin: 0, color: '#64748b' }}>
+                    字段来源和更新时间等元信息由系统自动维护，用于判断状态来自平台下发还是设备上报。
+                  </Paragraph>
+                  <CodeEditorField
+                    language="json"
+                    path={`file:///device-shadow/${deviceName || deviceId || 'unknown'}/metadata.json`}
+                    value={formatJson(shadow.metadata)}
+                    onChange={() => undefined}
+                    readOnly
+                    readOnlyLabel="只读"
+                    height={240}
+                  />
+                </Space>
               </Card>
             </Col>
           </Row>

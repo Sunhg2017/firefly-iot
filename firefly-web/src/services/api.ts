@@ -852,7 +852,6 @@ export const deviceApi = {
   // Shadow
   getShadow: (id: number) => deviceRequest.get(`/devices/${id}/shadow`),
   updateDesired: (id: number, data: Record<string, unknown>) => deviceRequest.put(`/devices/${id}/shadow/desired`, data),
-  updateReported: (id: number, data: Record<string, unknown>) => deviceRequest.put(`/devices/${id}/shadow/reported`, data),
   getDelta: (id: number) => deviceRequest.get(`/devices/${id}/shadow/delta`),
   deleteShadow: (id: number) => deviceRequest.delete(`/devices/${id}/shadow`),
   clearDesired: (id: number) => deviceRequest.delete(`/devices/${id}/shadow/desired`),

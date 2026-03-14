@@ -16,6 +16,7 @@ interface CodeEditorFieldProps {
   onChange?: (value: string) => void;
   height?: number;
   readOnly?: boolean;
+  readOnlyLabel?: string;
 }
 
 let monacoInitialized = false;
@@ -301,9 +302,25 @@ const ensureMonacoSetup = (instance: typeof monaco) => {
     inherit: true,
     rules: [],
     colors: {
+      'editor.background': '#ffffff',
+      'editorGutter.background': '#ffffff',
       'editor.lineHighlightBackground': '#f8fafc',
       'editorLineNumber.foreground': '#94a3b8',
       'editor.selectionBackground': '#dbeafe',
+    },
+  });
+
+  instance.editor.defineTheme('firefly-readonly', {
+    base: 'vs',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': '#f8fafc',
+      'editorGutter.background': '#f8fafc',
+      'editor.lineHighlightBackground': '#f8fafc',
+      'editorLineNumber.foreground': '#94a3b8',
+      'editor.selectionBackground': '#dbeafe',
+      'editorCursor.foreground': '#94a3b8',
     },
   });
 
@@ -348,14 +365,37 @@ const CodeEditorField: React.FC<CodeEditorFieldProps> = ({
   onChange,
   height = 240,
   readOnly = false,
+  readOnlyLabel,
 }) => (
   <div
     style={{
-      border: '1px solid #d9d9d9',
-      borderRadius: 8,
+      position: 'relative',
+      border: readOnly ? '1px solid #cbd5e1' : '1px solid #d9d9d9',
+      borderRadius: 12,
       overflow: 'hidden',
+      background: readOnly ? '#f8fafc' : '#ffffff',
+      boxShadow: readOnly ? 'inset 0 1px 0 rgba(255,255,255,0.9)' : 'none',
     }}
   >
+    {readOnlyLabel ? (
+      <div
+        style={{
+          position: 'absolute',
+          top: 10,
+          right: 10,
+          zIndex: 1,
+          padding: '2px 10px',
+          borderRadius: 999,
+          background: 'rgba(148,163,184,0.16)',
+          color: '#475569',
+          fontSize: 12,
+          fontWeight: 600,
+          pointerEvents: 'none',
+        }}
+      >
+        {readOnlyLabel}
+      </div>
+    ) : null}
     <Editor
       path={path}
       language={language}
@@ -363,24 +403,28 @@ const CodeEditorField: React.FC<CodeEditorFieldProps> = ({
       onMount={() => ensureMonacoSetup(monaco)}
       beforeMount={ensureMonacoSetup}
       onChange={(nextValue) => onChange?.(nextValue ?? '')}
-      theme="firefly-light"
+      theme={readOnly ? 'firefly-readonly' : 'firefly-light'}
       height={height}
       options={{
         automaticLayout: true,
         readOnly,
+        domReadOnly: readOnly,
         minimap: { enabled: false },
         scrollBeyondLastLine: false,
         wordWrap: 'on',
-        quickSuggestions: { other: true, strings: true, comments: false },
-        suggestOnTriggerCharacters: true,
-        formatOnPaste: true,
-        formatOnType: language === 'json',
+        quickSuggestions: readOnly ? false : { other: true, strings: true, comments: false },
+        suggestOnTriggerCharacters: !readOnly,
+        formatOnPaste: !readOnly,
+        formatOnType: !readOnly && language === 'json',
         tabSize: 2,
         padding: { top: 12, bottom: 12 },
         lineNumbersMinChars: 3,
         glyphMargin: false,
         folding: true,
         wordBasedSuggestions: 'currentDocument',
+        renderLineHighlight: readOnly ? 'none' : 'line',
+        occurrencesHighlight: readOnly ? 'off' : 'singleFile',
+        cursorStyle: readOnly ? 'line-thin' : 'line',
       }}
     />
   </div>
