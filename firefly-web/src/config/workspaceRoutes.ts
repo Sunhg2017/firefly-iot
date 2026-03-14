@@ -1,4 +1,4 @@
-import routeConfigs, { isRouteGroup, type RouteEntry, type RouteItem } from './routes';
+import routeConfigs, { isRouteGroup, type RouteEntry, type RouteItem, type RouteNode } from './routes';
 
 export type WorkspaceType = 'platform' | 'tenant';
 
@@ -18,17 +18,25 @@ type RoutePermission = RouteItem['permission'];
 
 const ROUTE_PERMISSION_MAP = new Map<string, RoutePermission>();
 
-for (const entry of routeConfigs) {
-  if (isRouteGroup(entry)) {
-    for (const child of entry.children) {
-      if (child.permission) {
-        ROUTE_PERMISSION_MAP.set(child.path, child.permission);
-      }
+const walkRouteNodes = (
+  nodes: RouteNode[],
+  visitor: (item: RouteItem, rootGroupKey?: string) => void,
+  rootGroupKey?: string,
+) => {
+  for (const node of nodes) {
+    if (isRouteGroup(node)) {
+      walkRouteNodes(node.children, visitor, rootGroupKey ?? node.key);
+      continue;
     }
-  } else if (entry.permission) {
-    ROUTE_PERMISSION_MAP.set(entry.path, entry.permission);
+    visitor(node, rootGroupKey);
   }
-}
+};
+
+walkRouteNodes(routeConfigs, (item) => {
+  if (item.permission) {
+    ROUTE_PERMISSION_MAP.set(item.path, item.permission);
+  }
+});
 
 type WorkspaceClass = WorkspaceType | 'shared';
 
@@ -50,59 +58,57 @@ function classifyRouteItem(item: RouteItem, groupKey?: string): WorkspaceClass {
   return 'tenant';
 }
 
-export function filterWorkspaceRoutes(workspace: WorkspaceType): RouteEntry[] {
-  const filtered: RouteEntry[] = [];
-  for (const entry of routeConfigs) {
-    if (isRouteGroup(entry)) {
-      const children = entry.children.filter((child) => {
-        const cls = classifyRouteItem(child, entry.key);
-        return cls === 'shared' || cls === workspace;
-      });
-      if (children.length === 0) continue;
-      filtered.push(children.length === entry.children.length ? entry : { ...entry, children });
+function filterRouteNodes(
+  nodes: RouteNode[],
+  workspace: WorkspaceType,
+  rootGroupKey?: string,
+): RouteNode[] {
+  const filtered: RouteNode[] = [];
+  for (const node of nodes) {
+    if (isRouteGroup(node)) {
+      const children = filterRouteNodes(node.children, workspace, rootGroupKey ?? node.key);
+      if (children.length === 0) {
+        continue;
+      }
+      filtered.push(children.length === node.children.length ? node : { ...node, children });
       continue;
     }
 
-    const cls = classifyRouteItem(entry);
+    const cls = classifyRouteItem(node, rootGroupKey);
     if (cls === 'shared' || cls === workspace) {
-      filtered.push(entry);
+      filtered.push(node);
     }
   }
   return filtered;
+}
+
+export function filterWorkspaceRoutes(workspace: WorkspaceType): RouteEntry[] {
+  return filterRouteNodes(routeConfigs, workspace);
 }
 
 export function resolveWorkspaceByPath(pathname: string): WorkspaceType | null {
   if (pathname === '/menu-config') {
     return null;
   }
-  for (const entry of routeConfigs) {
-    if (isRouteGroup(entry)) {
-      const child = entry.children.find((item) => item.path === pathname);
-      if (child) {
-        const cls = classifyRouteItem(child, entry.key);
-        return cls === 'shared' ? null : cls;
-      }
-      continue;
+  let resolved: WorkspaceType | null = null;
+  walkRouteNodes(routeConfigs, (item, rootGroupKey) => {
+    if (item.path !== pathname || resolved !== null) {
+      return;
     }
-    if (entry.path === pathname) {
-      const cls = classifyRouteItem(entry);
-      return cls === 'shared' ? null : cls;
-    }
+    const cls = classifyRouteItem(item, rootGroupKey);
+    resolved = cls === 'shared' ? null : cls;
+  });
+  if (resolved !== null) {
+    return resolved;
   }
   return null;
 }
 
 export function collectWorkspacePaths(workspace: WorkspaceType): string[] {
   const paths: string[] = [];
-  for (const entry of filterWorkspaceRoutes(workspace)) {
-    if (isRouteGroup(entry)) {
-      for (const child of entry.children) {
-        paths.push(child.path);
-      }
-    } else {
-      paths.push(entry.path);
-    }
-  }
+  walkRouteNodes(filterWorkspaceRoutes(workspace), (item) => {
+    paths.push(item.path);
+  });
   return [...new Set(paths)];
 }
 
@@ -195,20 +201,11 @@ export function getWorkspaceHomePath(
   }
 
   const accessiblePaths: string[] = [];
-  for (const entry of filterWorkspaceRoutes(workspace)) {
-    if (isRouteGroup(entry)) {
-      for (const child of entry.children) {
-        if (hasRoutePermission(child.permission, permissions)) {
-          accessiblePaths.push(child.path);
-        }
-      }
-      continue;
+  walkRouteNodes(filterWorkspaceRoutes(workspace), (item) => {
+    if (hasRoutePermission(item.permission, permissions)) {
+      accessiblePaths.push(item.path);
     }
-
-    if (hasRoutePermission(entry.permission, permissions)) {
-      accessiblePaths.push(entry.path);
-    }
-  }
+  });
 
   const uniquePaths = [...new Set(accessiblePaths)];
   if (uniquePaths.length === 0) {

@@ -3,7 +3,6 @@ package com.songhg.firefly.iot.system.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
-import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.system.convert.TenantMenuConfigConvert;
@@ -21,6 +20,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -216,10 +216,17 @@ public class TenantMenuConfigService {
 
         // 批量插入
         Long userId = AppContextHolder.getUserId();
+        Map<String, Long> insertedMenuIdMap = new HashMap<>();
         for (MenuConfigCreateDTO dto : defaults) {
             TenantMenuConfig entity = new TenantMenuConfig();
             entity.setTenantId(tenantId);
-            entity.setParentId(dto.getParentId() != null ? dto.getParentId() : 0L);
+            Long parentId = dto.getParentId();
+            if (parentId == null && dto.getParentMenuKey() != null) {
+                // Default menu initialization now supports nested groups, so child menus can
+                // reference the parent menu key before the parent database ID is known.
+                parentId = insertedMenuIdMap.get(dto.getParentMenuKey());
+            }
+            entity.setParentId(parentId != null ? parentId : 0L);
             entity.setMenuKey(dto.getMenuKey());
             entity.setLabel(dto.getLabel());
             entity.setIcon(dto.getIcon());
@@ -228,6 +235,7 @@ public class TenantMenuConfigService {
             entity.setVisible(dto.getVisible() != null ? dto.getVisible() : true);
             entity.setCreatedBy(userId);
             menuConfigMapper.insert(entity);
+            insertedMenuIdMap.put(entity.getMenuKey(), entity.getId());
         }
     }
 

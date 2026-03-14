@@ -14,6 +14,9 @@ public class MenuConfigCreateDTO {
     @Schema(description = "Parent menu ID")
     private Long parentId;
 
+    @Schema(description = "Parent menu key, used for default tree initialization")
+    private String parentMenuKey;
+
     @Schema(description = "Menu key identifier", example = "device-mgmt")
     @NotBlank(message = "菜单标识不能为空")
     private String menuKey;

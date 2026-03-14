@@ -50,10 +50,13 @@ export interface RouteGroup {
   key: string;
   label: string;
   icon: React.ReactNode;
-  children: RouteItem[];
+  children: RouteNode[];
 }
 
-export type RouteEntry = RouteItem | RouteGroup;
+export type RouteNode = RouteItem | RouteGroup;
+export type RouteEntry = RouteNode;
+
+export const DEVICE_PROTOCOL_GROUP_KEY = 'device-protocol-access';
 
 export function isRouteGroup(entry: RouteEntry): entry is RouteGroup {
   return 'children' in entry;
@@ -112,11 +115,18 @@ const routeConfigs: RouteEntry[] = [
       { path: '/geo-fence', label: '地理围栏', icon: <AimOutlined />, permission: 'geo-fence:read' },
       { path: '/device-shadow', label: '设备影子', icon: <CloudSyncOutlined />, permission: 'device:read' },
       { path: '/device-message', label: '设备消息', icon: <SendOutlined />, permission: 'device:read' },
-      { path: '/snmp', label: 'SNMP 接入', icon: <ApiOutlined />, permission: 'device:read' },
-      { path: '/modbus', label: 'Modbus 接入', icon: <ApiOutlined />, permission: 'device:read' },
-      { path: '/websocket', label: 'WebSocket 接入', icon: <ApiOutlined />, permission: 'device:read' },
-      { path: '/tcp-udp', label: 'TCP/UDP 接入', icon: <ApiOutlined />, permission: 'device:read' },
-      { path: '/lorawan', label: 'LoRaWAN 接入', icon: <ApiOutlined />, permission: 'device:read' },
+      {
+        key: DEVICE_PROTOCOL_GROUP_KEY,
+        label: '协议接入',
+        icon: <ApiOutlined />,
+        children: [
+          { path: '/snmp', label: 'SNMP 接入', icon: <ApiOutlined />, permission: 'device:read' },
+          { path: '/modbus', label: 'Modbus 接入', icon: <ApiOutlined />, permission: 'device:read' },
+          { path: '/websocket', label: 'WebSocket 接入', icon: <ApiOutlined />, permission: 'device:read' },
+          { path: '/tcp-udp', label: 'TCP/UDP 接入', icon: <ApiOutlined />, permission: 'device:read' },
+          { path: '/lorawan', label: 'LoRaWAN 接入', icon: <ApiOutlined />, permission: 'device:read' },
+        ],
+      },
     ],
   },
 

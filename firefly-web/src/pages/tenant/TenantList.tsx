@@ -38,7 +38,7 @@ import type { DataNode } from 'antd/es/tree';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs, { Dayjs } from 'dayjs';
 import PageHeader from '../../components/PageHeader';
-import { isRouteGroup } from '../../config/routes';
+import { isRouteGroup, type RouteNode } from '../../config/routes';
 import { filterWorkspaceRoutes } from '../../config/workspaceRoutes';
 import { tenantApi } from '../../services/api';
 import TenantWebhookDrawer from './TenantWebhookDrawer';
@@ -155,21 +155,14 @@ interface TenantSpaceMenuItem {
   children?: TenantSpaceMenuItem[];
 }
 
-interface TenantSpaceRouteLeaf {
+interface TenantSpaceRouteNode {
   menuKey: string;
   label: string;
   icon?: string | null;
-  routePath: string;
-  parentMenuKey: string;
+  routePath?: string;
+  parentMenuKey?: string;
   sortOrder: number;
-}
-
-interface TenantSpaceRouteGroup {
-  menuKey: string;
-  label: string;
-  icon?: string | null;
-  sortOrder: number;
-  children: TenantSpaceRouteLeaf[];
+  children?: TenantSpaceRouteNode[];
 }
 
 interface TenantSpaceMenuSubmitPayload {
@@ -287,39 +280,69 @@ const guessIconName = (icon: React.ReactNode): string | null => {
   return null;
 };
 
-const tenantSpaceRouteGroups: TenantSpaceRouteGroup[] = filterWorkspaceRoutes('tenant')
-  .filter((entry) => isRouteGroup(entry))
-  .map((entry, groupIndex) => ({
-    menuKey: entry.key,
-    label: entry.label,
-    icon: guessIconName(entry.icon),
-    sortOrder: groupIndex,
-    children: entry.children.map((child, childIndex) => ({
-      menuKey: child.path,
-      label: child.label,
-      icon: guessIconName(child.icon),
-      routePath: child.path,
-      parentMenuKey: entry.key,
-      sortOrder: childIndex,
-    })),
-  }));
+const buildTenantSpaceRouteNodes = (
+  nodes: RouteNode[],
+  parentMenuKey?: string,
+): TenantSpaceRouteNode[] =>
+  nodes.map((node, index) => {
+    if (isRouteGroup(node)) {
+      return {
+        menuKey: node.key,
+        label: node.label,
+        icon: guessIconName(node.icon),
+        parentMenuKey,
+        sortOrder: index,
+        children: buildTenantSpaceRouteNodes(node.children, node.key),
+      };
+    }
 
-const tenantSpaceLeafKeySet = new Set(
-  tenantSpaceRouteGroups.flatMap((group) => group.children.map((child) => child.routePath)),
-);
+    return {
+      menuKey: node.path,
+      label: node.label,
+      icon: guessIconName(node.icon),
+      routePath: node.path,
+      parentMenuKey,
+      sortOrder: index,
+    };
+  });
+
+const tenantSpaceRouteNodes: TenantSpaceRouteNode[] = buildTenantSpaceRouteNodes(filterWorkspaceRoutes('tenant'));
+
+const collectTenantSpaceLeafPaths = (nodes: TenantSpaceRouteNode[]): string[] => {
+  const paths: string[] = [];
+  const walk = (items: TenantSpaceRouteNode[]) => {
+    items.forEach((item) => {
+      if (item.routePath) {
+        paths.push(item.routePath);
+      }
+      if (Array.isArray(item.children) && item.children.length > 0) {
+        walk(item.children);
+      }
+    });
+  };
+  walk(nodes);
+  return paths;
+};
+
+const tenantSpaceLeafKeySet = new Set(collectTenantSpaceLeafPaths(tenantSpaceRouteNodes));
 
 const allTenantSpaceKeys = Array.from(tenantSpaceLeafKeySet);
 
-const tenantSpaceTreeData: DataNode[] = tenantSpaceRouteGroups.map((group) => ({
-  key: `group:${group.menuKey}`,
-  title: group.label,
-  selectable: false,
-  children: group.children.map((child) => ({
-    key: child.routePath,
-    title: child.label,
-    isLeaf: true,
-  })),
-}));
+const tenantSpaceTreeData: DataNode[] = tenantSpaceRouteNodes.map(function toTreeNode(node): DataNode {
+  if (node.routePath) {
+    return {
+      key: node.routePath,
+      title: node.label,
+      isLeaf: true,
+    };
+  }
+  return {
+    key: `group:${node.menuKey}`,
+    title: node.label,
+    selectable: false,
+    children: (node.children ?? []).map(toTreeNode),
+  };
+});
 
 const collectTenantSpaceCheckedKeys = (items: TenantSpaceMenuItem[]): string[] => {
   const keys: string[] = [];
@@ -344,31 +367,31 @@ const buildTenantSpacePayload = (checkedKeys: string[]): TenantSpaceMenuSubmitPa
   const selectedRoutePaths = new Set(checkedKeys.filter((key) => tenantSpaceLeafKeySet.has(key)));
   const payload: TenantSpaceMenuSubmitPayload[] = [];
 
-  tenantSpaceRouteGroups.forEach((group) => {
-    const selectedChildren = group.children.filter((child) => selectedRoutePaths.has(child.routePath));
-    if (selectedChildren.length === 0) {
+  const hasSelectedDescendant = (node: TenantSpaceRouteNode): boolean => {
+    if (node.routePath) {
+      return selectedRoutePaths.has(node.routePath);
+    }
+    return (node.children ?? []).some((child) => hasSelectedDescendant(child));
+  };
+
+  const appendNode = (node: TenantSpaceRouteNode) => {
+    if (!hasSelectedDescendant(node)) {
       return;
     }
-
     payload.push({
-      menuKey: group.menuKey,
-      label: group.label,
-      icon: group.icon ?? undefined,
-      sortOrder: group.sortOrder,
+      parentMenuKey: node.parentMenuKey,
+      menuKey: node.menuKey,
+      label: node.label,
+      icon: node.icon ?? undefined,
+      sortOrder: node.sortOrder,
       visible: true,
     });
 
-    selectedChildren.forEach((child) => {
-      payload.push({
-        parentMenuKey: child.parentMenuKey,
-        menuKey: child.menuKey,
-        label: child.label,
-        icon: child.icon ?? undefined,
-        routePath: child.routePath,
-        sortOrder: child.sortOrder,
-        visible: true,
-      });
-    });
+    (node.children ?? []).forEach((child) => appendNode(child));
+  };
+
+  tenantSpaceRouteNodes.forEach((node) => {
+    appendNode(node);
   });
 
   return payload;

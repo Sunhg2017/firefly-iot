@@ -15,7 +15,13 @@ import useAuthStore from '../store/useAuthStore';
 import type { MenuConfigItem } from '../store/useAuthStore';
 import NotificationDropdown from '../components/NotificationDropdown';
 import ExportCenterDropdown from '../components/ExportCenterDropdown';
-import routeConfigs, { isRouteGroup, type RouteEntry, type RouteItem } from '../config/routes';
+import routeConfigs, {
+  DEVICE_PROTOCOL_GROUP_KEY,
+  isRouteGroup,
+  type RouteEntry,
+  type RouteItem,
+  type RouteNode,
+} from '../config/routes';
 import { getIcon } from '../config/iconMap';
 import {
   filterWorkspaceRoutes,
@@ -30,18 +36,78 @@ import {
 type MenuItem = Required<MenuProps>['items'][number];
 type BreadcrumbNode = { title: string; path?: string };
 type RoutePermission = RouteItem['permission'];
+const PROTOCOL_ROUTE_PATHS = new Set(['/snmp', '/modbus', '/websocket', '/tcp-udp', '/lorawan']);
+const SYNTHETIC_ID_BASE = -1_000_000;
 
 const { Header, Sider, Content } = Layout;
 
 const permissionMap = new Map<string, RoutePermission>();
-for (const entry of routeConfigs) {
-  if (isRouteGroup(entry)) {
-    for (const child of entry.children) {
-      if (child.permission) permissionMap.set(child.path, child.permission);
+
+const routePathMeta = new Map<string, { label: string; icon: React.ReactNode }>();
+const routeGroupMeta = new Map<string, { label: string; icon: React.ReactNode }>();
+
+const walkRouteNodes = (
+  nodes: RouteNode[],
+  visitor: (node: RouteNode, ancestors: RouteEntry[]) => void,
+  ancestors: RouteEntry[] = [],
+) => {
+  for (const node of nodes) {
+    visitor(node, ancestors);
+    if (isRouteGroup(node)) {
+      walkRouteNodes(node.children, visitor, [...ancestors, node]);
     }
-  } else if (entry.permission) {
-    permissionMap.set(entry.path, entry.permission);
   }
+};
+
+walkRouteNodes(routeConfigs, (node) => {
+  if (isRouteGroup(node)) {
+    routeGroupMeta.set(node.key, { label: node.label, icon: node.icon });
+    return;
+  }
+  routePathMeta.set(node.path, { label: node.label, icon: node.icon });
+  if (node.permission) {
+    permissionMap.set(node.path, node.permission);
+  }
+});
+
+function normalizePath(path: string | null): string | null {
+  if (!path) return null;
+  return path.startsWith('/') ? path : `/${path}`;
+}
+
+function getCanonicalMenuLabel(menuKey: string, routePath: string | null, fallback: string): string {
+  const normalizedPath = normalizePath(routePath);
+  if (normalizedPath && routePathMeta.has(normalizedPath)) {
+    return routePathMeta.get(normalizedPath)!.label;
+  }
+  if (routeGroupMeta.has(menuKey)) {
+    return routeGroupMeta.get(menuKey)!.label;
+  }
+  if (menuKey === DEVICE_PROTOCOL_GROUP_KEY) {
+    return '协议接入';
+  }
+  return fallback;
+}
+
+function getCanonicalMenuIcon(menuKey: string, routePath: string | null, fallback: string | null) {
+  const normalizedPath = normalizePath(routePath);
+  if (normalizedPath && routePathMeta.has(normalizedPath)) {
+    const entry = routePathMeta.get(normalizedPath);
+    return guessIconName(entry?.icon) ?? fallback;
+  }
+  if (routeGroupMeta.has(menuKey)) {
+    const entry = routeGroupMeta.get(menuKey);
+    return guessIconName(entry?.icon) ?? fallback;
+  }
+  return fallback;
+}
+
+function guessIconName(icon: React.ReactNode): string | null {
+  if (!icon || typeof icon !== 'object' || !('type' in icon)) {
+    return null;
+  }
+  const iconType = (icon as { type?: { displayName?: string; name?: string } }).type;
+  return iconType?.displayName || iconType?.name || null;
 }
 
 function loadWorkspaceCache(): WorkspaceType {
@@ -75,11 +141,6 @@ const BasicLayout: React.FC = () => {
   const menuManageGroupLabel = workspace === 'platform' ? '空间管理' : '空间设置';
   const menuManageGroupIcon = workspace === 'platform' ? <SettingOutlined /> : <AppstoreOutlined />;
 
-  const normalizePath = (path: string | null): string | null => {
-    if (!path) return null;
-    return path.startsWith('/') ? path : `/${path}`;
-  };
-
   const hasRoutePermission = (permission?: RoutePermission): boolean => {
     if (!permission) {
       return true;
@@ -101,69 +162,142 @@ const BasicLayout: React.FC = () => {
     return hasRoutePermission(item.permission);
   };
 
-  const buildTenantMenu = (items: MenuConfigItem[]): MenuItem[] => {
-    const result: MenuItem[] = [];
-    for (const item of items) {
-      if (!item.visible) continue;
-      if (item.routePath && !canAccessPath(item.routePath)) continue;
-
-      if (item.children && item.children.length > 0) {
-        const visibleChildren = item.children.filter(
-          (child) => child.visible && canAccessPath(child.routePath),
-        );
-        if (visibleChildren.length === 0) continue;
-        result.push({
-          key: item.menuKey,
-          icon: getIcon(item.icon),
-          label: item.label,
-          children: visibleChildren.map((child) => ({
-            key: normalizePath(child.routePath) || child.menuKey,
-            icon: getIcon(child.icon),
-            label: child.label,
-          })),
-        });
-      } else {
-        result.push({
-          key: normalizePath(item.routePath) || item.menuKey,
-          icon: getIcon(item.icon),
-          label: item.label,
-        });
-      }
+  const normalizeTenantMenuConfig = (items: MenuConfigItem[] | null): MenuConfigItem[] | null => {
+    if (!Array.isArray(items) || items.length === 0) {
+      return items;
     }
-    return result;
+
+    let syntheticId = SYNTHETIC_ID_BASE;
+    const walk = (nodes: MenuConfigItem[]): MenuConfigItem[] =>
+      nodes
+        .map((node) => {
+          const normalizedPath = normalizePath(node.routePath);
+          const children = Array.isArray(node.children) ? walk(node.children) : [];
+          const normalizedNode: MenuConfigItem = {
+            ...node,
+            label: getCanonicalMenuLabel(node.menuKey, normalizedPath, node.label),
+            icon: getCanonicalMenuIcon(node.menuKey, normalizedPath, node.icon),
+            routePath: normalizedPath,
+            children,
+          };
+
+          if (node.menuKey !== 'device-mgmt') {
+            return normalizedNode;
+          }
+
+          const directChildren = [...children];
+          const existingProtocolGroup = directChildren.find((child) => child.menuKey === DEVICE_PROTOCOL_GROUP_KEY) || null;
+          const extractedProtocolChildren = directChildren.filter((child) => {
+            const childPath = normalizePath(child.routePath);
+            return !!childPath && PROTOCOL_ROUTE_PATHS.has(childPath);
+          });
+
+          if (extractedProtocolChildren.length === 0 && !existingProtocolGroup) {
+            return normalizedNode;
+          }
+
+          // Existing tenant menus may still store protocol entries flat under device-mgmt.
+          // We fold them into a synthetic protocol group so old menu config can render using the new hierarchy.
+          const remainingChildren = directChildren.filter((child) => {
+            const childPath = normalizePath(child.routePath);
+            return child.menuKey !== DEVICE_PROTOCOL_GROUP_KEY && !(childPath && PROTOCOL_ROUTE_PATHS.has(childPath));
+          });
+          const mergedProtocolChildren = [
+            ...(existingProtocolGroup?.children ?? []),
+            ...extractedProtocolChildren,
+          ].sort((a, b) => a.sortOrder - b.sortOrder);
+
+          const protocolGroup: MenuConfigItem = existingProtocolGroup
+            ? {
+                ...existingProtocolGroup,
+                label: getCanonicalMenuLabel(existingProtocolGroup.menuKey, null, existingProtocolGroup.label),
+                icon: getCanonicalMenuIcon(existingProtocolGroup.menuKey, null, existingProtocolGroup.icon),
+                routePath: null,
+                children: mergedProtocolChildren,
+              }
+            : {
+                id: syntheticId--,
+                parentId: normalizedNode.id,
+                menuKey: DEVICE_PROTOCOL_GROUP_KEY,
+                label: getCanonicalMenuLabel(DEVICE_PROTOCOL_GROUP_KEY, null, '协议接入'),
+                icon: getCanonicalMenuIcon(DEVICE_PROTOCOL_GROUP_KEY, null, 'ApiOutlined'),
+                routePath: null,
+                sortOrder: 98,
+                visible: true,
+                children: mergedProtocolChildren,
+              };
+
+          return {
+            ...normalizedNode,
+            children: [...remainingChildren, protocolGroup].sort((a, b) => a.sortOrder - b.sortOrder),
+          };
+        })
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+
+    return walk(items);
+  };
+
+  const normalizedMenuConfig = useMemo(() => normalizeTenantMenuConfig(menuConfig), [menuConfig]);
+
+  const buildTenantMenu = (items: MenuConfigItem[]): MenuItem[] => {
+    const buildNodes = (nodes: MenuConfigItem[]): MenuItem[] =>
+      nodes.flatMap((node) => {
+        if (!node.visible) {
+          return [];
+        }
+        const normalizedPath = normalizePath(node.routePath);
+        if (normalizedPath && !canAccessPath(normalizedPath)) {
+          return [];
+        }
+
+        const children = Array.isArray(node.children) ? buildNodes(node.children) : [];
+        if (!normalizedPath && children.length === 0) {
+          return [];
+        }
+
+        return [{
+          key: normalizedPath || node.menuKey,
+          icon: getIcon(node.icon),
+          label: node.label,
+          children: children.length > 0 ? children : undefined,
+        }];
+      });
+
+    return buildNodes(items);
   };
 
   const buildDefaultMenu = (entries: RouteEntry[]): MenuItem[] => {
-    const items: MenuItem[] = [];
-    for (const entry of entries) {
-      if (isRouteGroup(entry)) {
-        const visibleChildren = entry.children.filter(canAccess);
-        if (visibleChildren.length === 0) continue;
-        items.push({
-          key: entry.key,
-          icon: entry.icon,
-          label: entry.label,
-          children: visibleChildren.map((child) => ({
-            key: child.path,
-            icon: child.icon,
-            label: child.label,
-          })),
-        });
-      } else {
-        if (!canAccess(entry)) continue;
-        items.push({
-          key: entry.path,
-          icon: entry.icon,
-          label: entry.label,
-        });
-      }
-    }
-    return items;
+    const buildNodes = (nodes: RouteNode[]): MenuItem[] =>
+      nodes.flatMap((node) => {
+        if (isRouteGroup(node)) {
+          const children = buildNodes(node.children);
+          if (children.length === 0) {
+            return [];
+          }
+          return [{
+            key: node.key,
+            icon: node.icon,
+            label: node.label,
+            children,
+          }];
+        }
+
+        if (!canAccess(node)) {
+          return [];
+        }
+        return [{
+          key: node.path,
+          icon: node.icon,
+          label: node.label,
+        }];
+      });
+
+    return buildNodes(entries);
   };
 
   const menuItems: MenuItem[] = useMemo(() => {
-    const items = menuConfig && menuConfig.length > 0
-      ? buildTenantMenu(menuConfig)
+    const items = normalizedMenuConfig && normalizedMenuConfig.length > 0
+      ? buildTenantMenu(normalizedMenuConfig)
       : buildDefaultMenu(routeEntries);
 
     if (!canManageWorkspaceMenus || items.some((item) => (item as { key?: string })?.key === menuManageGroupKey)) {
@@ -185,7 +319,7 @@ const BasicLayout: React.FC = () => {
         ],
       },
     ];
-  }, [workspace, menuConfig, routeEntries, canManageWorkspaceMenus, menuManageGroupIcon, menuManageGroupKey, menuManageGroupLabel, hasPermission]);
+  }, [workspace, normalizedMenuConfig, routeEntries, canManageWorkspaceMenus, menuManageGroupIcon, menuManageGroupKey, menuManageGroupLabel, hasPermission]);
 
   const currentPathAccessible = useMemo(
     () => {
@@ -199,12 +333,12 @@ const BasicLayout: React.FC = () => {
         return false;
       }
       const routeWorkspace = resolveWorkspaceByPath(location.pathname);
-      if (routeWorkspace === workspace && menuConfig && menuConfig.length > 0) {
-        return isConfiguredMenuPathAllowed(location.pathname, menuConfig, userPermissions);
+      if (routeWorkspace === workspace && normalizedMenuConfig && normalizedMenuConfig.length > 0) {
+        return isConfiguredMenuPathAllowed(location.pathname, normalizedMenuConfig, userPermissions);
       }
       return true;
     },
-    [location.pathname, workspace, menuConfig, userPermissions, user, hasPermission],
+    [location.pathname, workspace, normalizedMenuConfig, userPermissions, user, hasPermission],
   );
 
   const openKeys = useMemo(() => {
@@ -212,26 +346,90 @@ const BasicLayout: React.FC = () => {
       return [menuManageGroupKey];
     }
 
-    if (menuConfig && menuConfig.length > 0) {
-      for (const item of menuConfig) {
-        if (item.children?.some((child) => normalizePath(child.routePath) === location.pathname)) {
-          return [item.menuKey];
+    const findMenuTrail = (nodes: MenuConfigItem[], trail: string[] = []): string[] | null => {
+      for (const node of nodes) {
+        const nextTrail = node.routePath ? trail : [...trail, node.menuKey];
+        if (normalizePath(node.routePath) === location.pathname) {
+          return nextTrail;
+        }
+        if (Array.isArray(node.children) && node.children.length > 0) {
+          const found = findMenuTrail(node.children, nextTrail);
+          if (found) {
+            return found;
+          }
         }
       }
-      return [];
+      return null;
+    };
+
+    if (normalizedMenuConfig && normalizedMenuConfig.length > 0) {
+      return findMenuTrail(normalizedMenuConfig) ?? [];
     }
 
-    for (const entry of routeEntries) {
-      if (isRouteGroup(entry) && entry.children.some((child) => child.path === location.pathname)) {
-        return [entry.key];
+    const findRouteTrail = (nodes: RouteNode[], trail: string[] = []): string[] | null => {
+      for (const node of nodes) {
+        if (isRouteGroup(node)) {
+          const found = findRouteTrail(node.children, [...trail, node.key]);
+          if (found) {
+            return found;
+          }
+          continue;
+        }
+        if (node.path === location.pathname) {
+          return trail;
+        }
       }
-    }
-    return [];
-  }, [workspace, routeEntries, location.pathname, menuConfig, canManageWorkspaceMenus, menuManageGroupKey]);
+      return null;
+    };
+
+    return findRouteTrail(routeEntries) ?? [];
+  }, [workspace, routeEntries, location.pathname, normalizedMenuConfig, canManageWorkspaceMenus, menuManageGroupKey]);
 
   useEffect(() => {
     setMenuOpenKeys(openKeys);
   }, [openKeys]);
+
+  const findBreadcrumbFromMenuConfig = (
+    nodes: MenuConfigItem[],
+    trail: BreadcrumbNode[] = [],
+  ): BreadcrumbNode[] | null => {
+    for (const node of nodes) {
+      const normalizedPath = normalizePath(node.routePath);
+      const nextTrail = normalizedPath
+        ? [...trail, { title: node.label }]
+        : [...trail, { title: node.label }];
+
+      if (normalizedPath === location.pathname) {
+        return nextTrail;
+      }
+      if (Array.isArray(node.children) && node.children.length > 0) {
+        const found = findBreadcrumbFromMenuConfig(node.children, nextTrail);
+        if (found) {
+          return found;
+        }
+      }
+    }
+    return null;
+  };
+
+  const findBreadcrumbFromRoutes = (
+    nodes: RouteNode[],
+    trail: BreadcrumbNode[] = [],
+  ): BreadcrumbNode[] | null => {
+    for (const node of nodes) {
+      if (isRouteGroup(node)) {
+        const found = findBreadcrumbFromRoutes(node.children, [...trail, { title: node.label }]);
+        if (found) {
+          return found;
+        }
+        continue;
+      }
+      if (node.path === location.pathname) {
+        return [...trail, { title: node.label }];
+      }
+    }
+    return null;
+  };
 
   const breadcrumbItems = useMemo<BreadcrumbNode[]>(() => {
     const items: BreadcrumbNode[] = [];
@@ -249,37 +447,22 @@ const BasicLayout: React.FC = () => {
       return items;
     }
 
-    if (menuConfig && menuConfig.length > 0) {
-      for (const item of menuConfig) {
-        if (normalizePath(item.routePath) === location.pathname) {
-          items.push({ title: item.label });
-          return items;
-        }
-        const child = item.children?.find((entry) => normalizePath(entry.routePath) === location.pathname);
-        if (child) {
-          items.push({ title: item.label, path: normalizePath(item.routePath) || undefined });
-          items.push({ title: child.label });
-          return items;
-        }
-      }
-    }
-
-    for (const entry of routeEntries) {
-      if (isRouteGroup(entry)) {
-        const child = entry.children.find((item) => item.path === location.pathname);
-        if (child) {
-          items.push({ title: entry.label });
-          items.push({ title: child.label });
-          return items;
-        }
-      } else if (entry.path === location.pathname) {
-        items.push({ title: entry.label });
+    if (normalizedMenuConfig && normalizedMenuConfig.length > 0) {
+      const found = findBreadcrumbFromMenuConfig(normalizedMenuConfig);
+      if (found) {
+        items.push(...found);
         return items;
       }
     }
 
+    const routeBreadcrumb = findBreadcrumbFromRoutes(routeEntries);
+    if (routeBreadcrumb) {
+      items.push(...routeBreadcrumb);
+      return items;
+    }
+
     return items;
-  }, [workspace, routeEntries, location.pathname, menuConfig, menuManageGroupLabel, user, hasPermission]);
+  }, [workspace, routeEntries, location.pathname, normalizedMenuConfig, menuManageGroupLabel, user, hasPermission]);
 
   useEffect(() => {
     const byPath = resolveWorkspaceByPath(location.pathname);
@@ -288,7 +471,7 @@ const BasicLayout: React.FC = () => {
         getWorkspaceHomePath(
           enforcedWorkspace,
           userPermissions,
-          enforcedWorkspace === 'tenant' ? menuConfig : undefined,
+          enforcedWorkspace === 'tenant' ? normalizedMenuConfig : undefined,
         ),
         { replace: true },
       );
@@ -298,7 +481,7 @@ const BasicLayout: React.FC = () => {
       setWorkspace(enforcedWorkspace);
       persistWorkspace(enforcedWorkspace);
     }
-  }, [location.pathname, workspace, enforcedWorkspace, navigate, userPermissions, menuConfig]);
+  }, [location.pathname, workspace, enforcedWorkspace, navigate, userPermissions, normalizedMenuConfig]);
 
   const handleMenuClick = (e: { key: string }) => {
     const path = normalizePath(e.key);

@@ -9,7 +9,7 @@ import {
 } from '@ant-design/icons';
 import { tenantMenuConfigApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
-import { isRouteGroup } from '../../config/routes';
+import { isRouteGroup, type RouteNode } from '../../config/routes';
 import { filterWorkspaceRoutes, resolveWorkspaceByUserType, type WorkspaceType } from '../../config/workspaceRoutes';
 import iconMap, { getIcon } from '../../config/iconMap';
 import type { DataNode } from 'antd/es/tree';
@@ -44,18 +44,22 @@ const MenuConfigPage: React.FC = () => {
   const workspace = resolveWorkspaceByUserType(user?.userType) as WorkspaceType;
   const workspaceLabel = workspace === 'platform' ? '系统运维空间' : '租户业务空间';
   const workspaceRouteConfigs = useMemo(() => filterWorkspaceRoutes(workspace), [workspace]);
-  const routePathOptions = useMemo(() => {
+  const flattenRouteOptions = (nodes: RouteNode[], parents: string[] = []): { label: string; value: string }[] => {
     const options: { label: string; value: string }[] = [];
-    for (const entry of workspaceRouteConfigs) {
-      if (isRouteGroup(entry)) {
-        for (const child of entry.children) {
-          options.push({ label: `${child.label} (${child.path})`, value: child.path });
-        }
-      } else {
-        options.push({ label: `${entry.label} (${entry.path})`, value: entry.path });
+    nodes.forEach((node) => {
+      if (isRouteGroup(node)) {
+        options.push(...flattenRouteOptions(node.children, [...parents, node.label]));
+        return;
       }
-    }
+      options.push({
+        label: `${[...parents, node.label].join(' / ')} (${node.path})`,
+        value: node.path,
+      });
+    });
     return options;
+  };
+  const routePathOptions = useMemo(() => {
+    return flattenRouteOptions(workspaceRouteConfigs);
   }, [workspaceRouteConfigs]);
 
   const fetchTree = useCallback(async () => {
@@ -180,33 +184,37 @@ const MenuConfigPage: React.FC = () => {
       onOk: async () => {
         try {
           const defaults: Record<string, unknown>[] = [];
-          let sortIdx = 0;
+          const appendDefaults = (nodes: RouteNode[], parentMenuKey?: string) => {
+            nodes.forEach((node, index) => {
+              if (isRouteGroup(node)) {
+                // Keep the default menu template aligned with the recursive route tree,
+                // otherwise re-initializing tenant menus would collapse nested groups.
+                defaults.push({
+                  menuKey: node.key,
+                  label: node.label,
+                  icon: guessIconName(node.icon),
+                  routePath: null,
+                  parentMenuKey,
+                  sortOrder: index,
+                  visible: true,
+                });
+                appendDefaults(node.children, node.key);
+                return;
+              }
 
-          for (const entry of workspaceRouteConfigs) {
-            if (isRouteGroup(entry)) {
-              const groupKey = entry.key;
-              // find icon component name from routeConfigs - use key as fallback
               defaults.push({
-                menuKey: groupKey,
-                label: entry.label,
-                icon: guessIconName(entry.icon),
-                routePath: null,
-                parentId: 0,
-                sortOrder: sortIdx++,
+                menuKey: node.path,
+                label: node.label,
+                icon: guessIconName(node.icon),
+                routePath: node.path,
+                parentMenuKey,
+                sortOrder: index,
                 visible: true,
               });
-            } else {
-              defaults.push({
-                menuKey: entry.path,
-                label: entry.label,
-                icon: guessIconName(entry.icon),
-                routePath: entry.path,
-                parentId: 0,
-                sortOrder: sortIdx++,
-                visible: true,
-              });
-            }
-          }
+            });
+          };
+
+          appendDefaults(workspaceRouteConfigs);
 
           await tenantMenuConfigApi.initDefaults(defaults);
           message.success('默认菜单已初始化，请刷新页面查看');
