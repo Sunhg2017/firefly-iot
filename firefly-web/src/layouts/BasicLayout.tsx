@@ -122,6 +122,19 @@ function persistWorkspace(workspace: WorkspaceType) {
   localStorage.setItem(WORKSPACE_STORAGE_KEY, workspace);
 }
 
+function hasMenuPath(items: MenuItem[], path: string): boolean {
+  return items.some((item) => {
+    if (!item || typeof item !== 'object') {
+      return false;
+    }
+    const menuItem = item as { key?: string; children?: MenuItem[] };
+    if (menuItem.key === path) {
+      return true;
+    }
+    return Array.isArray(menuItem.children) && hasMenuPath(menuItem.children, path);
+  });
+}
+
 const BasicLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -361,9 +374,29 @@ const BasicLayout: React.FC = () => {
   };
 
   const menuItems: MenuItem[] = useMemo(() => {
-    const items = effectiveMenuConfig && effectiveMenuConfig.length > 0
+    let items = effectiveMenuConfig && effectiveMenuConfig.length > 0
       ? buildTenantMenu(effectiveMenuConfig)
       : buildDefaultMenu(routeEntries);
+
+    if (
+      workspace === 'tenant'
+      && canAccessPath(USER_MANAGEMENT_PATH)
+      && !hasMenuPath(items, USER_MANAGEMENT_PATH)
+    ) {
+      items = [
+        ...items,
+        {
+          key: TENANT_USER_GROUP_KEY,
+          icon: getIcon('TeamOutlined'),
+          label: TENANT_USER_GROUP_LABEL,
+          children: [{
+            key: USER_MANAGEMENT_PATH,
+            icon: getIcon('TeamOutlined'),
+            label: routePathMeta.get(USER_MANAGEMENT_PATH)?.label || '用户管理',
+          }],
+        },
+      ];
+    }
 
     if (!canManageWorkspaceMenus || items.some((item) => (item as { key?: string })?.key === menuManageGroupKey)) {
       return items;
