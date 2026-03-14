@@ -18,8 +18,19 @@ const mqttClients = new Map<string, MqttClient>();
 const sipClients = new Map<string, Gb28181Client>();
 const wsClients = new Map<string, WebSocket>();
 const tcpClients = new Map<string, net.Socket>();
+// Dev mode is bootstrapped by vite-plugin-electron, so we guard against accidental
+// duplicate launches from stale scripts or manual `electron .` commands.
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.focus();
+    return mainWindow;
+  }
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
@@ -49,9 +60,26 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  return mainWindow;
 }
 
-app.whenReady().then(createWindow);
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.focus();
+      return;
+    }
+    createWindow();
+  });
+
+  app.whenReady().then(createWindow);
+}
 
 app.on('window-all-closed', () => {
   mqttClients.forEach((client) => client.end(true));
