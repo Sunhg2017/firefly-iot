@@ -39,6 +39,10 @@ spring:
 
 # 鍗忚閰嶇疆
 firefly:
+  http:
+    presence-timeout-seconds: 300
+    presence-sweep-interval-seconds: 30
+
   mqtt:
     enabled: true
     host: 0.0.0.0

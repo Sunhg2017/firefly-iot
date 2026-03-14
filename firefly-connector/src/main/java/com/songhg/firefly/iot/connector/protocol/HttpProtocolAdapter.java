@@ -30,6 +30,7 @@ public class HttpProtocolAdapter {
     private final DeviceMessageProducer messageProducer;
     private final MessageCodec messageCodec;
     private final ProtocolParseEngine protocolParseEngine;
+    private final HttpDeviceLifecycleService lifecycleService;
 
     /**
      * 设备认证 + 获取 Token
@@ -65,6 +66,7 @@ public class HttpProtocolAdapter {
         if (!auth.isSuccess()) {
             return R.fail(401, "UNAUTHORIZED");
         }
+        lifecycleService.markActive(auth, "property");
 
         DeviceMessage message = DeviceMessage.builder()
                 .tenantId(auth.getTenantId())
@@ -88,6 +90,7 @@ public class HttpProtocolAdapter {
         if (!auth.isSuccess()) {
             return R.fail(401, "UNAUTHORIZED");
         }
+        lifecycleService.markActive(auth, "event");
 
         DeviceMessage message = DeviceMessage.builder()
                 .tenantId(auth.getTenantId())
@@ -113,6 +116,7 @@ public class HttpProtocolAdapter {
         if (!auth.isSuccess()) {
             return R.fail(401, "UNAUTHORIZED");
         }
+        lifecycleService.markActive(auth, "data:" + action);
 
         String topic = "/sys/http/" + auth.getDeviceId() + "/thing/" + action;
         ProtocolParseOutcome parseOutcome = protocolParseEngine.parse(
@@ -142,6 +146,17 @@ public class HttpProtocolAdapter {
         if (message != null) {
             messageProducer.publishUpstream(message);
         }
+        return R.ok();
+    }
+
+    @Operation(summary = "HTTP 设备心跳")
+    @PostMapping("/heartbeat")
+    public R<Void> heartbeat(@RequestHeader("X-Device-Token") String token) {
+        DeviceAuthResult auth = authService.authenticateByToken(token);
+        if (!auth.isSuccess()) {
+            return R.fail(401, "UNAUTHORIZED");
+        }
+        lifecycleService.markActive(auth, "heartbeat");
         return R.ok();
     }
 

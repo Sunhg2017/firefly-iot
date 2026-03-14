@@ -28,6 +28,10 @@ logging:
     com.songhg.firefly: INFO
 
 firefly:
+  http:
+    presence-timeout-seconds: ${FIREFLY_HTTP_PRESENCE_TIMEOUT_SECONDS:300}
+    presence-sweep-interval-seconds: ${FIREFLY_HTTP_PRESENCE_SWEEP_INTERVAL_SECONDS:30}
+
   mqtt:
     enabled: ${FIREFLY_MQTT_ENABLED:true}
     host: ${FIREFLY_MQTT_HOST:0.0.0.0}
