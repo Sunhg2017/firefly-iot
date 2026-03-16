@@ -14,7 +14,7 @@ type RoutePermission = RouteItem['permission'];
 
 const SHARED_PATHS = new Set<string>();
 const ROUTE_PERMISSION_MAP = new Map<string, RoutePermission>();
-const ROUTE_SCOPE_MAP = new Map<string, WorkspaceScope>();
+const ROUTE_WORKSPACE_SET_MAP = new Map<string, Set<WorkspaceType>>();
 
 function normalizePath(path?: string | null): string | null {
   if (!path) {
@@ -33,13 +33,22 @@ function walkRouteNodes(nodes: RouteNode[], visitor: (item: RouteItem) => void) 
   }
 }
 
+function collectWorkspaces(scope: WorkspaceScope): WorkspaceType[] {
+  if (scope === 'both') {
+    return ['platform', 'tenant'];
+  }
+  return [scope];
+}
+
 walkRouteNodes(routeConfigs, (item) => {
   const path = normalizePath(item.path);
   if (!path) {
     return;
   }
   ROUTE_PERMISSION_MAP.set(path, item.permission);
-  ROUTE_SCOPE_MAP.set(path, item.workspace);
+  const workspaces = ROUTE_WORKSPACE_SET_MAP.get(path) ?? new Set<WorkspaceType>();
+  collectWorkspaces(item.workspace).forEach((workspace) => workspaces.add(workspace));
+  ROUTE_WORKSPACE_SET_MAP.set(path, workspaces);
   if (item.workspace === 'both') {
     SHARED_PATHS.add(path);
   }
@@ -137,14 +146,11 @@ export function isSharedWorkspacePath(pathname: string): boolean {
 }
 
 export function resolveWorkspaceByPath(pathname: string): WorkspaceType | null {
-  const scope = ROUTE_SCOPE_MAP.get(normalizePath(pathname) || '');
-  if (scope === 'platform') {
-    return 'platform';
+  const workspaces = ROUTE_WORKSPACE_SET_MAP.get(normalizePath(pathname) || '');
+  if (!workspaces || workspaces.size !== 1) {
+    return null;
   }
-  if (scope === 'tenant') {
-    return 'tenant';
-  }
-  return null;
+  return workspaces.has('platform') ? 'platform' : 'tenant';
 }
 
 export function resolveWorkspaceByUserType(userType?: string | null): WorkspaceType {
@@ -160,7 +166,7 @@ export function isWorkspacePathAllowed(
   if (!normalizedPath) {
     return false;
   }
-  if (!ROUTE_SCOPE_MAP.has(normalizedPath)) {
+  if (!ROUTE_WORKSPACE_SET_MAP.has(normalizedPath)) {
     return false;
   }
   return hasRoutePermission(ROUTE_PERMISSION_MAP.get(normalizedPath), permissions)
