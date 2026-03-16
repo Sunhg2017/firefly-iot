@@ -28,6 +28,16 @@ public class DataScopeContext {
     private List<Long> projectIds;
 
     /**
+     * 允许的产品 ID 列表
+     */
+    private List<Long> productIds;
+
+    /**
+     * 允许的设备 ID 列表
+     */
+    private List<Long> deviceIds;
+
+    /**
      * 允许的分组 ID 列表 (GROUP 范围使用)
      */
     private List<String> groupIds;
@@ -43,6 +53,16 @@ public class DataScopeContext {
      * 项目字段名，默认 "project_id"
      */
     private String projectColumn;
+
+    /**
+     * 产品字段名，默认 "product_id"
+     */
+    private String productColumn;
+
+    /**
+     * 设备字段名，默认 "device_id"
+     */
+    private String deviceColumn;
 
     /**
      * 分组字段名，默认 "group_id"

@@ -76,7 +76,7 @@ public class VideoService {
         return VideoConvert.INSTANCE.toDeviceVO(device);
     }
 
-    @DataScope
+    @DataScope(projectColumn = "", productColumn = "", deviceColumn = "device_id", groupColumn = "")
     public IPage<VideoDeviceVO> listDevices(VideoDeviceQueryDTO query) {
         Long tenantId = AppContextHolder.getTenantId();
         Page<VideoDevice> page = new Page<>(query.getPageNum(), query.getPageSize());

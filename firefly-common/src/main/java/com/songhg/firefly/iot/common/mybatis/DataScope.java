@@ -34,6 +34,16 @@ public @interface DataScope {
     String projectColumn() default "project_id";
 
     /**
+     * 产品字段名，默认 "product_id"。
+     */
+    String productColumn() default "product_id";
+
+    /**
+     * 设备字段名，默认 "device_id"。
+     */
+    String deviceColumn() default "device_id";
+
+    /**
      * 分组字段名，默认 "group_id"。GROUP 范围时使用。
      */
     String groupColumn() default "group_id";

@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
+import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
 import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
 import net.sf.jsqlparser.expression.operators.relational.EqualsTo;
@@ -25,6 +26,7 @@ import org.apache.ibatis.reflection.MetaObject;
 import org.apache.ibatis.reflection.SystemMetaObject;
 
 import java.sql.Connection;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -103,12 +105,19 @@ public class DataScopeInterceptor implements Interceptor {
         String alias = ctx.getTableAlias() != null && !ctx.getTableAlias().isBlank()
                 ? ctx.getTableAlias() + "." : "";
         String projectCol = ctx.getProjectColumn() != null ? ctx.getProjectColumn() : "project_id";
+        String productCol = ctx.getProductColumn() != null ? ctx.getProductColumn() : "product_id";
+        String deviceCol = ctx.getDeviceColumn() != null ? ctx.getDeviceColumn() : "device_id";
         String groupCol = ctx.getGroupColumn() != null ? ctx.getGroupColumn() : "group_id";
         String createdByCol = ctx.getCreatedByColumn() != null ? ctx.getCreatedByColumn() : "created_by";
 
         return switch (ctx.getScopeType()) {
-            case PROJECT, CUSTOM -> buildInExpression(alias + projectCol, ctx.getProjectIds());
-            case GROUP -> buildStringInExpression(alias + groupCol, ctx.getGroupIds());
+            case PROJECT, GROUP, CUSTOM -> buildScopedResourceExpression(
+                    alias,
+                    projectCol,
+                    productCol,
+                    deviceCol,
+                    groupCol,
+                    ctx);
             case SELF -> {
                 if (ctx.getUserId() == null) yield null;
                 EqualsTo eq = new EqualsTo();
@@ -120,8 +129,58 @@ public class DataScopeInterceptor implements Interceptor {
         };
     }
 
-    private Expression buildInExpression(String column, List<Long> ids) {
+    private Expression buildScopedResourceExpression(
+            String alias,
+            String projectCol,
+            String productCol,
+            String deviceCol,
+            String groupCol,
+            DataScopeContext ctx) {
+        List<Expression> expressions = new ArrayList<>();
+        Expression projectExpression = buildInExpression(qualifyColumn(alias, projectCol), ctx.getProjectIds(), false);
+        if (projectExpression != null) {
+            expressions.add(projectExpression);
+        }
+        Expression productExpression = buildInExpression(qualifyColumn(alias, productCol), ctx.getProductIds(), false);
+        if (productExpression != null) {
+            expressions.add(productExpression);
+        }
+        Expression deviceExpression = buildInExpression(qualifyColumn(alias, deviceCol), ctx.getDeviceIds(), false);
+        if (deviceExpression != null) {
+            expressions.add(deviceExpression);
+        }
+        Expression groupExpression = buildStringInExpression(qualifyColumn(alias, groupCol), ctx.getGroupIds(), false);
+        if (groupExpression != null) {
+            expressions.add(groupExpression);
+        }
+        if (expressions.isEmpty()) {
+            EqualsTo denyAll = new EqualsTo();
+            denyAll.setLeftExpression(new LongValue(1));
+            denyAll.setRightExpression(new LongValue(0));
+            return denyAll;
+        }
+        Expression merged = expressions.get(0);
+        for (int index = 1; index < expressions.size(); index++) {
+            merged = new OrExpression(merged, expressions.get(index));
+        }
+        return merged;
+    }
+
+    private String qualifyColumn(String alias, String column) {
+        if (column == null || column.isBlank()) {
+            return null;
+        }
+        return alias + column;
+    }
+
+    private Expression buildInExpression(String column, List<Long> ids, boolean emptyAsDenyAll) {
+        if (column == null || column.isBlank()) {
+            return null;
+        }
         if (ids == null || ids.isEmpty()) {
+            if (!emptyAsDenyAll) {
+                return null;
+            }
             InExpression in = new InExpression();
             in.setLeftExpression(new Column(column));
             in.setRightExpression(new ExpressionList(new LongValue(-1)));
@@ -136,8 +195,14 @@ public class DataScopeInterceptor implements Interceptor {
         return in;
     }
 
-    private Expression buildStringInExpression(String column, List<String> ids) {
+    private Expression buildStringInExpression(String column, List<String> ids, boolean emptyAsDenyAll) {
+        if (column == null || column.isBlank()) {
+            return null;
+        }
         if (ids == null || ids.isEmpty()) {
+            if (!emptyAsDenyAll) {
+                return null;
+            }
             InExpression in = new InExpression();
             in.setLeftExpression(new Column(column));
             in.setRightExpression(new ExpressionList(new StringValue("__NONE__")));

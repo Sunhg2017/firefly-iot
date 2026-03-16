@@ -74,7 +74,7 @@ public class OtaService {
         return OtaConvert.INSTANCE.toFirmwareVO(firmware);
     }
 
-    @DataScope
+    @DataScope(projectColumn = "", productColumn = "product_id", deviceColumn = "", groupColumn = "")
     public IPage<FirmwareVO> listFirmwares(FirmwareQueryDTO query) {
         Long tenantId = AppContextHolder.getTenantId();
         Page<Firmware> page = new Page<>(query.getPageNum(), query.getPageSize());
@@ -195,7 +195,7 @@ public class OtaService {
         return vo;
     }
 
-    @DataScope
+    @DataScope(projectColumn = "", productColumn = "product_id", deviceColumn = "", groupColumn = "")
     public IPage<OtaTaskVO> listOtaTasks(OtaTaskQueryDTO query) {
         Long tenantId = AppContextHolder.getTenantId();
         Page<OtaTask> page = new Page<>(query.getPageNum(), query.getPageSize());

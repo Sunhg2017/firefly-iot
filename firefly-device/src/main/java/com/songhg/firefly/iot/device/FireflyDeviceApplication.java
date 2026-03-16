@@ -13,7 +13,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @ComponentScan(basePackages = {"com.songhg.firefly.iot.device", "com.songhg.firefly.iot.common"})
 @MapperScan({
         "com.songhg.firefly.iot.device.mapper",
-        "com.songhg.firefly.iot.device.protocolparser.mapper"
+        "com.songhg.firefly.iot.device.protocolparser.mapper",
+        "com.songhg.firefly.iot.common.mybatis.scope"
 })
 public class FireflyDeviceApplication {
 

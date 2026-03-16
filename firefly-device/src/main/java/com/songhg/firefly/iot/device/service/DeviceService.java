@@ -134,7 +134,7 @@ public class DeviceService {
         return vo;
     }
 
-    @DataScope
+    @DataScope(projectColumn = "project_id", productColumn = "", deviceColumn = "id", groupColumn = "")
     public IPage<DeviceVO> listDevices(DeviceQueryDTO query) {
         Page<Device> page = new Page<>(query.getPageNum(), query.getPageSize());
         IPage<Device> result = deviceMapper.selectPage(page, buildListWrapper(query));
@@ -144,7 +144,7 @@ public class DeviceService {
         return voPage;
     }
 
-    @DataScope
+    @DataScope(projectColumn = "project_id", productColumn = "", deviceColumn = "id", groupColumn = "")
     public List<DeviceCredentialVO> exportDeviceTriples(DeviceTripleExportDTO dto) {
         DeviceTripleExportDTO exportQuery = dto == null ? new DeviceTripleExportDTO() : dto;
         LambdaQueryWrapper<Device> wrapper = buildExportWrapper(exportQuery);

@@ -9,7 +9,10 @@ import org.springframework.context.annotation.ComponentScan;
 @SpringBootApplication
 @EnableFeignClients(basePackages = "com.songhg.firefly.iot.api.client")
 @ComponentScan(basePackages = {"com.songhg.firefly.iot.media", "com.songhg.firefly.iot.common"})
-@MapperScan("com.songhg.firefly.iot.media.mapper")
+@MapperScan({
+        "com.songhg.firefly.iot.media.mapper",
+        "com.songhg.firefly.iot.common.mybatis.scope"
+})
 public class FireflyMediaApplication {
 
     public static void main(String[] args) {

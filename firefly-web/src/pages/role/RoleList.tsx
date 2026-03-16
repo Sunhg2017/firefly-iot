@@ -27,8 +27,13 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
-import { roleApi } from '../../services/api';
+import { deviceGroupApi, projectApi, roleApi } from '../../services/api';
 import useAuthStore from '../../store/useAuthStore';
+
+interface RoleDataScopeConfig {
+  projectIds?: number[];
+  groupIds?: string[];
+}
 
 interface RoleRecord {
   id: number;
@@ -37,6 +42,7 @@ interface RoleRecord {
   description?: string;
   type: 'PRESET' | 'CUSTOM' | string;
   dataScope: 'ALL' | 'PROJECT' | 'GROUP' | 'SELF' | 'CUSTOM' | string;
+  dataScopeConfig?: RoleDataScopeConfig;
   systemFlag: boolean;
   status: 'ACTIVE' | 'DISABLED' | string;
   permissions?: string[];
@@ -56,6 +62,18 @@ interface PermissionGroup {
   permissions: PermissionOption[];
 }
 
+interface ProjectOption {
+  id: number;
+  code: string;
+  name: string;
+}
+
+interface DeviceGroupOption {
+  id: number;
+  name: string;
+  parentId?: number | null;
+}
+
 interface QueryState {
   pageNum: number;
   pageSize: number;
@@ -69,6 +87,7 @@ interface RoleFormValues {
   name?: string;
   description?: string;
   dataScope?: string;
+  dataScopeConfig?: RoleDataScopeConfig;
   permissions?: string[];
 }
 
@@ -108,6 +127,9 @@ const RoleList: React.FC = () => {
   const [stepIndex, setStepIndex] = useState(0);
   const [items, setItems] = useState<RoleRecord[]>([]);
   const [permissionGroups, setPermissionGroups] = useState<PermissionGroup[]>([]);
+  const [projectOptions, setProjectOptions] = useState<ProjectOption[]>([]);
+  const [groupOptions, setGroupOptions] = useState<DeviceGroupOption[]>([]);
+  const [scopeOptionsLoading, setScopeOptionsLoading] = useState(false);
   const [editingRole, setEditingRole] = useState<RoleRecord | null>(null);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState<QueryState>({ pageNum: 1, pageSize: 20 });
@@ -135,12 +157,29 @@ const RoleList: React.FC = () => {
     }
   };
 
+  const fetchScopeOptions = async () => {
+    setScopeOptionsLoading(true);
+    try {
+      const [projectRes, groupRes] = await Promise.all([
+        projectApi.list({ pageNum: 1, pageSize: 500 }),
+        deviceGroupApi.listAll(),
+      ]);
+      setProjectOptions((projectRes.data?.data?.records ?? []) as ProjectOption[]);
+      setGroupOptions((groupRes.data?.data ?? []) as DeviceGroupOption[]);
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载数据范围选项失败'));
+    } finally {
+      setScopeOptionsLoading(false);
+    }
+  };
+
   useEffect(() => {
     void fetchRoles();
   }, [params.pageNum, params.pageSize]);
 
   useEffect(() => {
     void fetchPermissionGroups();
+    void fetchScopeOptions();
   }, []);
 
   const stats = useMemo(
@@ -158,6 +197,78 @@ const RoleList: React.FC = () => {
   );
 
   const selectedPermissionCount = Form.useWatch('permissions', form)?.length ?? 0;
+  const selectedDataScope = Form.useWatch('dataScope', form);
+
+  const projectLabelMap = useMemo(
+    () => new Map(projectOptions.map((item) => [item.id, `${item.name}${item.code ? ` (${item.code})` : ''}`])),
+    [projectOptions],
+  );
+
+  const groupSelectOptions = useMemo(() => {
+    const byId = new Map(groupOptions.map((item) => [item.id, item]));
+    const buildLabel = (groupId: number): string => {
+      const labels: string[] = [];
+      let current = byId.get(groupId);
+      let depth = 0;
+      while (current && depth < 10) {
+        labels.unshift(current.name);
+        current = current.parentId ? byId.get(current.parentId) : undefined;
+        depth += 1;
+      }
+      return labels.join(' / ');
+    };
+    return groupOptions.map((item) => ({
+      value: String(item.id),
+      label: buildLabel(item.id),
+    }));
+  }, [groupOptions]);
+
+  const groupLabelMap = useMemo(
+    () => new Map(groupSelectOptions.map((item) => [item.value, String(item.label)])),
+    [groupSelectOptions],
+  );
+
+  const summarizeScopeTargets = (config?: RoleDataScopeConfig): string[] => {
+    if (!config) {
+      return [];
+    }
+    const projectLabels = (config.projectIds ?? [])
+      .map((projectId) => projectLabelMap.get(projectId))
+      .filter((item): item is string => Boolean(item))
+      .map((label) => `项目: ${label}`);
+    const groupLabels = (config.groupIds ?? [])
+      .map((groupId) => groupLabelMap.get(groupId))
+      .filter((item): item is string => Boolean(item))
+      .map((label) => `分组: ${label}`);
+    return [...projectLabels, ...groupLabels];
+  };
+
+  const validateDataScopeConfig = async () => {
+    const scope = form.getFieldValue('dataScope') as string | undefined;
+    const config = (form.getFieldValue('dataScopeConfig') ?? {}) as RoleDataScopeConfig;
+    const projectIds = config.projectIds ?? [];
+    const groupIds = config.groupIds ?? [];
+    form.setFields([
+      { name: ['dataScopeConfig', 'projectIds'], errors: [] },
+      { name: ['dataScopeConfig', 'groupIds'], errors: [] },
+    ]);
+
+    if (scope === 'PROJECT' && projectIds.length === 0) {
+      form.setFields([{ name: ['dataScopeConfig', 'projectIds'], errors: ['请选择至少一个项目'] }]);
+      throw new Error('project-scope-required');
+    }
+    if (scope === 'GROUP' && groupIds.length === 0) {
+      form.setFields([{ name: ['dataScopeConfig', 'groupIds'], errors: ['请选择至少一个分组'] }]);
+      throw new Error('group-scope-required');
+    }
+    if (scope === 'CUSTOM' && projectIds.length === 0 && groupIds.length === 0) {
+      form.setFields([
+        { name: ['dataScopeConfig', 'projectIds'], errors: ['请至少选择一个项目或分组'] },
+        { name: ['dataScopeConfig', 'groupIds'], errors: ['请至少选择一个项目或分组'] },
+      ]);
+      throw new Error('custom-scope-required');
+    }
+  };
 
   const handleSearch = async () => {
     const values = await queryForm.validateFields();
@@ -185,6 +296,7 @@ const RoleList: React.FC = () => {
     form.resetFields();
     form.setFieldsValue({
       dataScope: 'PROJECT',
+      dataScopeConfig: { projectIds: [], groupIds: [] },
       permissions: [],
     });
     setDrawerOpen(true);
@@ -201,6 +313,10 @@ const RoleList: React.FC = () => {
         name: detail.name,
         description: detail.description,
         dataScope: detail.dataScope,
+        dataScopeConfig: {
+          projectIds: detail.dataScopeConfig?.projectIds ?? [],
+          groupIds: detail.dataScopeConfig?.groupIds ?? [],
+        },
         permissions: detail.permissions ?? [],
       });
       setDrawerOpen(true);
@@ -219,9 +335,22 @@ const RoleList: React.FC = () => {
     }
   };
 
+  const handleDataScopeChange = (scope: string) => {
+    const currentConfig = (form.getFieldValue('dataScopeConfig') ?? {}) as RoleDataScopeConfig;
+    if (scope === 'ALL' || scope === 'SELF') {
+      form.setFieldValue('dataScopeConfig', undefined);
+      return;
+    }
+    form.setFieldValue('dataScopeConfig', {
+      projectIds: currentConfig.projectIds ?? [],
+      groupIds: currentConfig.groupIds ?? [],
+    });
+  };
+
   const handleNextStep = async () => {
     if (stepIndex === 0) {
       await form.validateFields(['code', 'name', 'dataScope']);
+      await validateDataScopeConfig();
       setStepIndex(1);
       return;
     }
@@ -239,11 +368,18 @@ const RoleList: React.FC = () => {
   const handleSave = async () => {
     try {
       const values = await form.validateFields();
+      await validateDataScopeConfig();
       const payload = {
         code: values.code?.trim(),
         name: values.name?.trim(),
         description: values.description?.trim() || undefined,
         dataScope: values.dataScope,
+        dataScopeConfig: values.dataScope === 'ALL' || values.dataScope === 'SELF'
+          ? undefined
+          : {
+              projectIds: values.dataScopeConfig?.projectIds ?? [],
+              groupIds: (values.dataScopeConfig?.groupIds ?? []).map((groupId) => String(groupId)),
+            },
         permissions: values.permissions ?? [],
       };
 
@@ -260,6 +396,9 @@ const RoleList: React.FC = () => {
       void fetchRoles({ ...params, pageNum: 1 });
     } catch (error) {
       if (typeof error === 'object' && error !== null && 'errorFields' in error) {
+        return;
+      }
+      if (error instanceof Error && error.message.endsWith('-required')) {
         return;
       }
       message.error(getErrorMessage(error, '保存角色失败'));
@@ -293,8 +432,20 @@ const RoleList: React.FC = () => {
     {
       title: '数据范围',
       dataIndex: 'dataScope',
-      width: 140,
-      render: (value: string) => dataScopeLabels[value] || value,
+      width: 160,
+      render: (_value: string, record) => {
+        const details = summarizeScopeTargets(record.dataScopeConfig);
+        return (
+          <Space direction="vertical" size={4}>
+            <span>{dataScopeLabels[record.dataScope] || record.dataScope}</span>
+            {details.length > 0 ? (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {details.slice(0, 2).join('；')}
+              </Typography.Text>
+            ) : null}
+          </Space>
+        );
+      },
     },
     {
       title: '权限数',
@@ -344,6 +495,7 @@ const RoleList: React.FC = () => {
   ];
 
   const summaryValues = form.getFieldsValue();
+  const summaryScopeTargets = summarizeScopeTargets(summaryValues.dataScopeConfig);
 
   return (
     <div>
@@ -507,10 +659,50 @@ const RoleList: React.FC = () => {
                   rules={[{ required: true, message: '请选择数据范围' }]}
                 >
                   <Select
+                    onChange={handleDataScopeChange}
                     options={Object.entries(dataScopeLabels).map(([value, label]) => ({ value, label }))}
                   />
                 </Form.Item>
               </Col>
+              {(selectedDataScope === 'PROJECT' || selectedDataScope === 'CUSTOM') && (
+                <Col span={24}>
+                  <Form.Item name={['dataScopeConfig', 'projectIds']} label="项目范围">
+                    <Select
+                      mode="multiple"
+                      allowClear
+                      loading={scopeOptionsLoading}
+                      placeholder={selectedDataScope === 'PROJECT' ? '请选择允许访问的项目' : '可选，不选则仅按分组控制'}
+                      options={projectOptions.map((item) => ({
+                        value: item.id,
+                        label: `${item.name}${item.code ? ` (${item.code})` : ''}`,
+                      }))}
+                    />
+                  </Form.Item>
+                </Col>
+              )}
+              {(selectedDataScope === 'GROUP' || selectedDataScope === 'CUSTOM') && (
+                <Col span={24}>
+                  <Form.Item name={['dataScopeConfig', 'groupIds']} label="分组范围">
+                    <Select
+                      mode="multiple"
+                      allowClear
+                      loading={scopeOptionsLoading}
+                      placeholder={selectedDataScope === 'GROUP' ? '请选择允许访问的设备分组' : '可选，不选则仅按项目控制'}
+                      options={groupSelectOptions}
+                    />
+                  </Form.Item>
+                </Col>
+              )}
+              {selectedDataScope === 'CUSTOM' && (
+                <Col span={24}>
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="自定义范围"
+                    description="自定义范围会合并项目和设备分组，统一收口为该角色在设备、产品、告警、规则、OTA、视频等模块中的可见范围。"
+                  />
+                </Col>
+              )}
               <Col span={24}>
                 <Form.Item name="description" label="角色说明">
                   <Input.TextArea rows={4} placeholder="可选，用于说明该角色的职责边界" />
@@ -632,6 +824,17 @@ const RoleList: React.FC = () => {
                     <div>{selectedPermissionCount}</div>
                   </Col>
                 </Row>
+                {summaryScopeTargets.length > 0 && (
+                  <>
+                    <Divider />
+                    <Typography.Text type="secondary">范围明细</Typography.Text>
+                    <Space size={[8, 8]} wrap style={{ display: 'flex', marginTop: 8 }}>
+                      {summaryScopeTargets.map((item) => (
+                        <Tag key={item}>{item}</Tag>
+                      ))}
+                    </Space>
+                  </>
+                )}
                 <Divider />
                 <Typography.Text type="secondary">角色说明</Typography.Text>
                 <div>{summaryValues.description || '未填写'}</div>
@@ -639,7 +842,7 @@ const RoleList: React.FC = () => {
 
               <Card size="small" title="已选权限">
                 <Space size={[8, 8]} wrap>
-                  {(summaryValues.permissions ?? []).map((permissionCode) => (
+                  {(summaryValues.permissions ?? []).map((permissionCode: string) => (
                     <Tag key={permissionCode} color="blue">
                       {permissionCode}
                     </Tag>

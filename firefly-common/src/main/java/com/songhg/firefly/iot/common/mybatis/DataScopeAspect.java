@@ -54,11 +54,13 @@ public class DataScopeAspect {
         if (ctx != null) {
             ctx.setTableAlias(annotation.tableAlias());
             ctx.setProjectColumn(annotation.projectColumn());
+            ctx.setProductColumn(annotation.productColumn());
+            ctx.setDeviceColumn(annotation.deviceColumn());
             ctx.setGroupColumn(annotation.groupColumn());
             ctx.setCreatedByColumn(annotation.createdByColumn());
             DataScopeContextHolder.set(ctx);
-            log.debug("DataScope set: userId={}, scope={}, projectIds={}",
-                    appCtx.getUserId(), ctx.getScopeType(), ctx.getProjectIds());
+            log.debug("DataScope set: userId={}, scope={}, projectIds={}, productIds={}, deviceIds={}",
+                    appCtx.getUserId(), ctx.getScopeType(), ctx.getProjectIds(), ctx.getProductIds(), ctx.getDeviceIds());
         }
     }
 }

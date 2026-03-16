@@ -11,6 +11,7 @@ import com.songhg.firefly.iot.common.enums.DataScopeType;
 import com.songhg.firefly.iot.common.enums.RoleStatus;
 import com.songhg.firefly.iot.common.enums.RoleType;
 import com.songhg.firefly.iot.common.exception.BizException;
+import com.songhg.firefly.iot.common.mybatis.DataScopeConfig;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.system.convert.UserConvert;
 import com.songhg.firefly.iot.system.dto.role.RoleCreateDTO;
@@ -43,6 +44,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -87,6 +89,7 @@ public class RoleService {
         if (role.getDataScope() == null) {
             role.setDataScope(DataScopeType.PROJECT);
         }
+        role.setDataScopeConfig(normalizeDataScopeConfig(role.getDataScope(), role.getDataScopeConfig()));
         roleMapper.insert(role);
 
         Set<String> normalizedPermissions = normalizeAndValidatePermissions(dto.getPermissions());
@@ -134,6 +137,7 @@ public class RoleService {
             throw new BizException(ResultCode.ROLE_IS_SYSTEM);
         }
         RoleConvert.INSTANCE.updateEntity(dto, role);
+        role.setDataScopeConfig(normalizeDataScopeConfig(role.getDataScope(), role.getDataScopeConfig()));
         roleMapper.updateById(role);
 
         Set<String> permissions = getRolePermissionSet(role.getId());
@@ -247,6 +251,58 @@ public class RoleService {
         Set<String> normalized = workspacePermissionCatalogService.normalizePermissions(permissions);
         workspacePermissionCatalogService.validateAssignablePermissions(normalized);
         return normalized;
+    }
+
+    /**
+     * Role data scope is now driven entirely by role-level project/group selections.
+     * Empty scoped configs would create users that can log in but see no deterministic data set,
+     * so we block them at save time instead of keeping a dead configuration option around.
+     */
+    private DataScopeConfig normalizeDataScopeConfig(DataScopeType scopeType, DataScopeConfig config) {
+        DataScopeType effectiveScope = scopeType == null ? DataScopeType.PROJECT : scopeType;
+        if (effectiveScope == DataScopeType.ALL || effectiveScope == DataScopeType.SELF) {
+            return null;
+        }
+
+        DataScopeConfig normalized = new DataScopeConfig();
+        List<Long> projectIds = config == null ? List.of() : normalizeProjectIds(config.getProjectIds());
+        List<String> groupIds = config == null ? List.of() : normalizeGroupIds(config.getGroupIds());
+        normalized.setProjectIds(projectIds);
+        normalized.setGroupIds(groupIds);
+
+        if (effectiveScope == DataScopeType.PROJECT && projectIds.isEmpty()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "PROJECT 数据范围至少选择一个项目");
+        }
+        if (effectiveScope == DataScopeType.GROUP && groupIds.isEmpty()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "GROUP 数据范围至少选择一个分组");
+        }
+        if (effectiveScope == DataScopeType.CUSTOM && projectIds.isEmpty() && groupIds.isEmpty()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "CUSTOM 数据范围至少选择一个项目或分组");
+        }
+        return normalized;
+    }
+
+    private List<Long> normalizeProjectIds(List<Long> projectIds) {
+        if (projectIds == null || projectIds.isEmpty()) {
+            return List.of();
+        }
+        return projectIds.stream()
+                .filter(Objects::nonNull)
+                .filter(id -> id > 0)
+                .distinct()
+                .toList();
+    }
+
+    private List<String> normalizeGroupIds(List<String> groupIds) {
+        if (groupIds == null || groupIds.isEmpty()) {
+            return List.of();
+        }
+        return groupIds.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(item -> !item.isEmpty())
+                .distinct()
+                .toList();
     }
 
     private Role requireRoleInCurrentTenant(Long roleId) {

@@ -11,7 +11,11 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 @EnableFeignClients(basePackages = "com.songhg.firefly.iot.api.client")
 @ComponentScan(basePackages = {"com.songhg.firefly.iot.system", "com.songhg.firefly.iot.common"})
-@MapperScan({"com.songhg.firefly.iot.system.mapper", "com.songhg.firefly.iot.system.auth.mapper"})
+@MapperScan({
+        "com.songhg.firefly.iot.system.mapper",
+        "com.songhg.firefly.iot.system.auth.mapper",
+        "com.songhg.firefly.iot.common.mybatis.scope"
+})
 public class FireflySystemApplication {
 
     public static void main(String[] args) {

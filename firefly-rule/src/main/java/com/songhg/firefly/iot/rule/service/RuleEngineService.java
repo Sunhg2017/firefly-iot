@@ -68,7 +68,7 @@ public class RuleEngineService {
         return buildVO(requireOwnedRule(id));
     }
 
-    @DataScope
+    @DataScope(projectColumn = "project_id", productColumn = "", deviceColumn = "", groupColumn = "")
     public IPage<RuleEngineVO> listRules(RuleEngineQueryDTO query) {
         Long tenantId = AppContextHolder.getTenantId();
         Page<RuleEngine> page = new Page<>(query.getPageNum(), query.getPageSize());

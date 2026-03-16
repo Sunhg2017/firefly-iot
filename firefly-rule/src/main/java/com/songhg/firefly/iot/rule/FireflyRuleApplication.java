@@ -11,7 +11,10 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 @EnableFeignClients(basePackages = "com.songhg.firefly.iot.api.client")
 @ComponentScan(basePackages = {"com.songhg.firefly.iot.rule", "com.songhg.firefly.iot.common"})
-@MapperScan("com.songhg.firefly.iot.rule.mapper")
+@MapperScan({
+        "com.songhg.firefly.iot.rule.mapper",
+        "com.songhg.firefly.iot.common.mybatis.scope"
+})
 public class FireflyRuleApplication {
 
     public static void main(String[] args) {

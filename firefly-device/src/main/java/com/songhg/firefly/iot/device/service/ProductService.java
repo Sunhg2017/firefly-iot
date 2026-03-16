@@ -84,7 +84,7 @@ public class ProductService {
         return ProductConvert.INSTANCE.toVO(product);
     }
 
-    @DataScope
+    @DataScope(projectColumn = "project_id", productColumn = "id", deviceColumn = "", groupColumn = "")
     public IPage<ProductVO> listProducts(ProductQueryDTO query) {
         Long tenantId = AppContextHolder.getTenantId();
         Page<Product> page = new Page<>(query.getPageNum(), query.getPageSize());

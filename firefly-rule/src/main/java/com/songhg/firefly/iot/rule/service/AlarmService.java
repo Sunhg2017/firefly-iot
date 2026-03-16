@@ -97,7 +97,7 @@ public class AlarmService {
         return AlarmConvert.INSTANCE.toRuleVO(rule);
     }
 
-    @DataScope
+    @DataScope(projectColumn = "project_id", productColumn = "product_id", deviceColumn = "device_id", groupColumn = "")
     public IPage<AlarmRuleVO> listAlarmRules(AlarmRuleQueryDTO query) {
         Long tenantId = AppContextHolder.getTenantId();
         Page<AlarmRule> page = new Page<>(query.getPageNum(), query.getPageSize());
@@ -161,7 +161,7 @@ public class AlarmService {
         log.info("Alarm rule deleted: id={}, name={}", id, rule.getName());
     }
 
-    @DataScope
+    @DataScope(projectColumn = "project_id", productColumn = "product_id", deviceColumn = "device_id", groupColumn = "")
     public IPage<AlarmRecordVO> listAlarmRecords(AlarmRecordQueryDTO query) {
         Long tenantId = AppContextHolder.getTenantId();
         Page<AlarmRecord> page = new Page<>(query.getPageNum(), query.getPageSize());

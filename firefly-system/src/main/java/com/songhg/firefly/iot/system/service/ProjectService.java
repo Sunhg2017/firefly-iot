@@ -68,7 +68,7 @@ public class ProjectService {
         return ProjectConvert.INSTANCE.toVO(project);
     }
 
-    @DataScope
+    @DataScope(projectColumn = "id", productColumn = "", deviceColumn = "", groupColumn = "")
     public IPage<ProjectVO> listProjects(ProjectQueryDTO query) {
         Long tenantId = AppContextHolder.getTenantId();
         Page<Project> page = new Page<>(query.getPageNum(), query.getPageSize());
