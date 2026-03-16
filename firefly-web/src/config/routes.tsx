@@ -239,4 +239,36 @@ const routeConfigs: RouteEntry[] = [
   },
 ];
 
+function normalizeRoutePath(path: string): string {
+  return path.startsWith('/') ? path : `/${path}`;
+}
+
+export function flattenRouteItems(nodes: RouteNode[] = routeConfigs): RouteItem[] {
+  const items: RouteItem[] = [];
+  const walk = (entries: RouteNode[]) => {
+    entries.forEach((entry) => {
+      if (isRouteGroup(entry)) {
+        walk(entry.children);
+        return;
+      }
+      items.push(entry);
+    });
+  };
+  walk(nodes);
+  return items;
+}
+
+const routeItemMap = new Map<string, RouteItem>();
+flattenRouteItems().forEach((item) => {
+  routeItemMap.set(normalizeRoutePath(item.path), item);
+});
+
+export function getRouteItemByPath(pathname: string): RouteItem | null {
+  return routeItemMap.get(normalizeRoutePath(pathname)) ?? null;
+}
+
+export function isRoutePathRegistered(pathname: string): boolean {
+  return routeItemMap.has(normalizeRoutePath(pathname));
+}
+
 export default routeConfigs;

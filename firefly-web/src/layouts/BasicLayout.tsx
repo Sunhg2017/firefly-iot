@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Avatar, Breadcrumb, Dropdown, Layout, Menu, Space, Spin, Tag } from 'antd';
-import type { MenuProps } from 'antd';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Navigate, useLocation, useNavigate, useOutlet } from 'react-router-dom';
+import { Avatar, Breadcrumb, Dropdown, Layout, Menu, Space, Spin, Tabs, Tag } from 'antd';
+import type { MenuProps, TabsProps } from 'antd';
 import {
   LogoutOutlined,
   MenuFoldOutlined,
@@ -13,6 +13,7 @@ import ExportCenterDropdown from '../components/ExportCenterDropdown';
 import useAuthStore from '../store/useAuthStore';
 import { workspaceMenuCustomizationApi } from '../services/api';
 import { getIcon } from '../config/iconMap';
+import { getRouteItemByPath, isRoutePathRegistered } from '../config/routes';
 import {
   getWorkspaceHomePath,
   isWorkspacePathAllowed,
@@ -36,6 +37,7 @@ interface WorkspaceMenuNode {
 
 const { Header, Sider, Content } = Layout;
 const MENU_TREE_REFRESH_EVENT = 'firefly:menu-tree-refresh';
+const PAGE_TAB_EXCLUDED_PATHS = new Set(['/403']);
 
 function loadWorkspaceCache(): WorkspaceType {
   const cached = localStorage.getItem(WORKSPACE_STORAGE_KEY);
@@ -107,9 +109,33 @@ function findBreadcrumbTrail(
   return null;
 }
 
+function findMenuNodeByPath(nodes: WorkspaceMenuNode[], pathname: string): WorkspaceMenuNode | null {
+  for (const node of nodes) {
+    if (node.routePath === pathname) {
+      return node;
+    }
+    const children = node.children ?? [];
+    if (children.length > 0) {
+      const found = findMenuNodeByPath(children, pathname);
+      if (found) {
+        return found;
+      }
+    }
+  }
+  return null;
+}
+
+function arePathListsEqual(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => value === right[index]);
+}
+
 const BasicLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const outlet = useOutlet();
   const { user, logout } = useAuthStore();
   const authorizedMenuPaths = useMemo(
     () => (Array.isArray(user?.authorizedMenuPaths) ? user.authorizedMenuPaths : []),
@@ -129,6 +155,8 @@ const BasicLayout: React.FC = () => {
   const [menuOpenKeys, setMenuOpenKeys] = useState<string[]>([]);
   const [menuTree, setMenuTree] = useState<WorkspaceMenuNode[]>([]);
   const [menuTreeLoading, setMenuTreeLoading] = useState(false);
+  const [openedTabs, setOpenedTabs] = useState<string[]>([]);
+  const [cachedPages, setCachedPages] = useState<Record<string, React.ReactNode>>({});
 
   const menuItems = useMemo(() => buildMenuItems(menuTree), [menuTree]);
   const openKeys = useMemo(
@@ -146,6 +174,52 @@ const BasicLayout: React.FC = () => {
     }
     return isWorkspacePathAllowed(location.pathname, permissions, authorizedMenuPaths);
   }, [authorizedMenuPaths, location.pathname, permissions]);
+
+  const isPageTabRoute = useCallback((pathname: string) => (
+    isRoutePathRegistered(pathname) && !PAGE_TAB_EXCLUDED_PATHS.has(pathname)
+  ), []);
+
+  const isTabPathAccessible = useCallback((pathname: string) => (
+    isPageTabRoute(pathname) && isWorkspacePathAllowed(pathname, permissions, authorizedMenuPaths)
+  ), [authorizedMenuPaths, isPageTabRoute, permissions]);
+
+  const resolveTabMeta = useCallback((pathname: string) => {
+    const menuNode = findMenuNodeByPath(menuTree, pathname);
+    if (menuNode) {
+      return {
+        label: menuNode.label,
+        icon: getIcon(menuNode.icon),
+      };
+    }
+
+    const routeItem = getRouteItemByPath(pathname);
+    return {
+      label: routeItem?.label ?? pathname,
+      icon: routeItem?.icon,
+    };
+  }, [menuTree]);
+
+  const renderedKeepAlivePaths = useMemo(() => {
+    const visiblePaths = openedTabs.filter((path) => cachedPages[path] || path === location.pathname);
+    if (currentPathAccessible && isPageTabRoute(location.pathname) && !visiblePaths.includes(location.pathname)) {
+      return [...visiblePaths, location.pathname];
+    }
+    return visiblePaths;
+  }, [cachedPages, currentPathAccessible, isPageTabRoute, location.pathname, openedTabs]);
+
+  const tabItems = useMemo<TabsProps['items']>(() => openedTabs.map((path) => {
+    const meta = resolveTabMeta(path);
+    return {
+      key: path,
+      closable: path !== '/dashboard',
+      label: (
+        <span className="page-tab-label">
+          {meta.icon ? <span className="page-tab-label__icon">{meta.icon}</span> : null}
+          <span className="page-tab-label__text">{meta.label}</span>
+        </span>
+      ),
+    };
+  }), [openedTabs, resolveTabMeta]);
 
   useEffect(() => {
     setMenuOpenKeys(openKeys);
@@ -198,12 +272,81 @@ const BasicLayout: React.FC = () => {
     };
   }, [user?.id, workspace]);
 
+  useEffect(() => {
+    if (!outlet || !currentPathAccessible || !isPageTabRoute(location.pathname)) {
+      return;
+    }
+
+    setOpenedTabs((previous) => (
+      previous.includes(location.pathname) ? previous : [...previous, location.pathname]
+    ));
+
+    // Keep opened business pages mounted after the first visit so local form state survives route switches.
+    setCachedPages((previous) => (
+      previous[location.pathname] ? previous : { ...previous, [location.pathname]: outlet }
+    ));
+  }, [currentPathAccessible, isPageTabRoute, location.pathname, outlet]);
+
+  useEffect(() => {
+    setOpenedTabs((previous) => {
+      const next = previous.filter((path) => isTabPathAccessible(path));
+      return arePathListsEqual(previous, next) ? previous : next;
+    });
+
+    setCachedPages((previous) => {
+      const entries = Object.entries(previous).filter(([path]) => isTabPathAccessible(path));
+      if (entries.length === Object.keys(previous).length) {
+        return previous;
+      }
+      return Object.fromEntries(entries);
+    });
+  }, [isTabPathAccessible]);
+
   const handleMenuClick = ({ key }: { key: string }) => {
     navigate(key);
   };
 
+  const closeTab = useCallback((targetPath: string) => {
+    if (targetPath === '/dashboard') {
+      return;
+    }
+
+    const nextTabs = openedTabs.filter((path) => path !== targetPath);
+    setOpenedTabs(nextTabs);
+    setCachedPages((previous) => {
+      if (!previous[targetPath]) {
+        return previous;
+      }
+      const next = { ...previous };
+      delete next[targetPath];
+      return next;
+    });
+
+    if (location.pathname !== targetPath) {
+      return;
+    }
+
+    if (nextTabs.length === 0) {
+      navigate(getWorkspaceHomePath(workspace, permissions, authorizedMenuPaths));
+      return;
+    }
+
+    const closingIndex = openedTabs.indexOf(targetPath);
+    const fallbackIndex = Math.min(closingIndex, nextTabs.length - 1);
+    navigate(nextTabs[Math.max(fallbackIndex, 0)]);
+  }, [authorizedMenuPaths, location.pathname, navigate, openedTabs, permissions, workspace]);
+
+  const handleTabEdit: TabsProps['onEdit'] = (targetKey, action) => {
+    if (action !== 'remove' || typeof targetKey !== 'string') {
+      return;
+    }
+    closeTab(targetKey);
+  };
+
   const handleLogout = async () => {
     await logout();
+    setOpenedTabs([]);
+    setCachedPages({});
     navigate('/login');
   };
 
@@ -365,17 +508,44 @@ const BasicLayout: React.FC = () => {
           </Space>
         </Header>
 
-        <Content
-          style={{
-            margin: 20,
-            padding: 24,
-            minHeight: 360,
-            borderRadius: 20,
-            background: '#ffffff',
-            boxShadow: '0 12px 36px rgba(15,23,42,0.06)',
-          }}
-        >
-          {currentPathAccessible ? <Outlet /> : <Navigate to="/403" replace />}
+        <Content style={{ margin: 20, minHeight: 360 }}>
+          {openedTabs.length > 0 ? (
+            <div className="page-tabs-shell">
+              <Tabs
+                className="page-tabs"
+                type="editable-card"
+                hideAdd
+                activeKey={isPageTabRoute(location.pathname) ? location.pathname : undefined}
+                items={tabItems}
+                onChange={(activeKey) => navigate(activeKey)}
+                onEdit={handleTabEdit}
+              />
+            </div>
+          ) : null}
+
+          <div className="page-content-shell">
+            <div className="keep-alive-pages">
+              {renderedKeepAlivePaths.map((path) => {
+                const pageContent = path === location.pathname ? (cachedPages[path] ?? outlet) : cachedPages[path];
+                if (!pageContent) {
+                  return null;
+                }
+                return (
+                  <div
+                    key={path}
+                    className={path === location.pathname && currentPathAccessible && isPageTabRoute(location.pathname)
+                      ? 'keep-alive-page keep-alive-page--active'
+                      : 'keep-alive-page'}
+                  >
+                    {pageContent}
+                  </div>
+                );
+              })}
+            </div>
+
+            {!currentPathAccessible ? <Navigate to="/403" replace /> : null}
+            {currentPathAccessible && !isPageTabRoute(location.pathname) ? outlet : null}
+          </div>
         </Content>
       </Layout>
     </Layout>
