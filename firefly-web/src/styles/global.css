@@ -332,42 +332,55 @@ body {
   margin-bottom: 10px;
 }
 
-.page-tabs .ant-tabs-nav {
-  margin: 0 !important;
+.page-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   padding: 0 6px;
 }
 
-.page-tabs .ant-tabs-nav::before,
-.page-tabs .ant-tabs-content-holder {
-  display: none !important;
-}
-
-.page-tabs .ant-tabs-nav-list {
-  gap: 8px;
-}
-
-.page-tabs .ant-tabs-tab {
-  margin: 0 !important;
-  padding: 9px 14px !important;
-  border-radius: 14px !important;
-  border: 1px solid rgba(203, 213, 225, 0.9) !important;
-  background: rgba(255, 255, 255, 0.9) !important;
+.page-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 9px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
-  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease !important;
+  color: #475569;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.page-tabs .ant-tabs-tab-active {
-  background: linear-gradient(180deg, rgba(59, 130, 246, 0.18), rgba(96, 165, 250, 0.08)) !important;
-  border-color: rgba(96, 165, 250, 0.45) !important;
+.page-tab:hover {
+  border-color: rgba(148, 163, 184, 0.95);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+.page-tab--active {
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.18), rgba(96, 165, 250, 0.08));
+  border-color: rgba(96, 165, 250, 0.45);
   box-shadow: 0 10px 24px rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
 }
 
-.page-tabs .ant-tabs-tab-remove {
-  color: #94a3b8 !important;
+.page-tab__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: #94a3b8;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-.page-tabs .ant-tabs-tab-remove:hover {
-  color: #475569 !important;
+.page-tab__close:hover {
+  background: rgba(148, 163, 184, 0.16);
+  color: #475569;
 }
 
 .page-tab-label {

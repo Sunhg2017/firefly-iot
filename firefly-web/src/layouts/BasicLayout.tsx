@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useOutlet } from 'react-router-dom';
-import { Avatar, Breadcrumb, Dropdown, Layout, Menu, Space, Spin, Tabs, Tag } from 'antd';
-import type { MenuProps, TabsProps } from 'antd';
+import { Avatar, Breadcrumb, Dropdown, Layout, Menu, Space, Spin, Tag } from 'antd';
+import type { MenuProps } from 'antd';
 import {
+  CloseOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -218,20 +219,6 @@ const BasicLayout: React.FC = () => {
     displayedTabs.includes(location.pathname) ? location.pathname : undefined
   ), [displayedTabs, location.pathname]);
 
-  const tabItems = useMemo<TabsProps['items']>(() => displayedTabs.map((path) => {
-    const meta = resolveTabMeta(path);
-    return {
-      key: path,
-      closable: path !== '/dashboard',
-      label: (
-        <span className="page-tab-label">
-          {meta.icon ? <span className="page-tab-label__icon">{meta.icon}</span> : null}
-          <span className="page-tab-label__text">{meta.label}</span>
-        </span>
-      ),
-    };
-  }), [displayedTabs, resolveTabMeta]);
-
   useEffect(() => {
     setMenuOpenKeys(openKeys);
   }, [openKeys]);
@@ -346,13 +333,6 @@ const BasicLayout: React.FC = () => {
     const fallbackIndex = Math.min(closingIndex, nextTabs.length - 1);
     navigate(nextTabs[Math.max(fallbackIndex, 0)]);
   }, [authorizedMenuPaths, location.pathname, navigate, openedTabs, permissions, workspace]);
-
-  const handleTabEdit: TabsProps['onEdit'] = (targetKey, action) => {
-    if (action !== 'remove' || typeof targetKey !== 'string') {
-      return;
-    }
-    closeTab(targetKey);
-  };
 
   const handleLogout = async () => {
     await logout();
@@ -522,15 +502,39 @@ const BasicLayout: React.FC = () => {
         <Content style={{ margin: 20, minHeight: 360 }}>
           {displayedTabs.length > 0 ? (
             <div className="page-tabs-shell">
-              <Tabs
-                className="page-tabs"
-                type="editable-card"
-                hideAdd
-                activeKey={activeTabKey}
-                items={tabItems}
-                onChange={(activeKey) => navigate(activeKey)}
-                onEdit={handleTabEdit}
-              />
+              <div className="page-tabs" role="tablist" aria-label="已打开页面">
+                {displayedTabs.map((path) => {
+                  const meta = resolveTabMeta(path);
+                  const closable = path !== '/dashboard';
+                  const active = path === activeTabKey;
+                  return (
+                    <button
+                      key={path}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      className={active ? 'page-tab page-tab--active' : 'page-tab'}
+                      onClick={() => navigate(path)}
+                    >
+                      <span className="page-tab-label">
+                        {meta.icon ? <span className="page-tab-label__icon">{meta.icon}</span> : null}
+                        <span className="page-tab-label__text">{meta.label}</span>
+                      </span>
+                      {closable ? (
+                        <span
+                          className="page-tab__close"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            closeTab(path);
+                          }}
+                        >
+                          <CloseOutlined />
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           ) : null}
 
