@@ -327,6 +327,50 @@ body {
   font-weight: 500;
 }
 
+/* ===== Layout header right tools ===== */
+.layout-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.layout-user-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 12px 6px 8px;
+  border-radius: 16px;
+  cursor: pointer;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96));
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.layout-user-trigger:hover {
+  border-color: rgba(148, 163, 184, 0.95);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.09);
+  transform: translateY(-1px);
+}
+
+.layout-user-trigger .ant-avatar {
+  flex-shrink: 0;
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.layout-user-trigger__name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #0f172a;
+  font-weight: 600;
+  line-height: 1;
+}
+
 /* ===== Layout page tabs ===== */
 .page-tabs-shell {
   margin-bottom: 10px;

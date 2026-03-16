@@ -477,26 +477,18 @@ const BasicLayout: React.FC = () => {
             />
           </Space>
 
-          <Space size={8}>
+          <div className="layout-header-right">
             <NotificationDropdown />
             <ExportCenterDropdown />
             <Dropdown menu={dropdownItems} placement="bottomRight">
-              <Space
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: 12,
-                  cursor: 'pointer',
-                  background: '#ffffff',
-                  border: '1px solid rgba(15,23,42,0.08)',
-                }}
-              >
+              <div className="layout-user-trigger">
                 <Avatar icon={<UserOutlined />} src={user?.avatarUrl} />
-                <span style={{ color: '#0f172a', fontWeight: 500 }}>
+                <span className="layout-user-trigger__name">
                   {user?.realName || user?.username || '用户'}
                 </span>
-              </Space>
+              </div>
             </Dropdown>
-          </Space>
+          </div>
         </Header>
 
         <Content style={{ margin: 20, minHeight: 360 }}>
