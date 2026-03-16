@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useOutlet } from 'react-router-dom';
-import { Avatar, Breadcrumb, Dropdown, Layout, Menu, Spin, Space, Tag } from 'antd';
+import { Avatar, Breadcrumb, Dropdown, Form, Input, Layout, Menu, Modal, Spin, Space, Tag, message } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   CloseOutlined,
+  LockOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -12,7 +13,7 @@ import {
 import NotificationDropdown from '../components/NotificationDropdown';
 import ExportCenterDropdown from '../components/ExportCenterDropdown';
 import useAuthStore from '../store/useAuthStore';
-import { workspaceMenuCustomizationApi } from '../services/api';
+import { userApi, workspaceMenuCustomizationApi } from '../services/api';
 import { getIcon } from '../config/iconMap';
 import { getRouteItemByPath, isRoutePathRegistered } from '../config/routes';
 import {
@@ -26,6 +27,11 @@ import {
 
 type MenuItem = Required<MenuProps>['items'][number];
 type BreadcrumbItem = { title: string; path?: string };
+type ChangePasswordFormValues = {
+  oldPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+};
 
 interface WorkspaceMenuNode {
   menuKey: string;
@@ -158,6 +164,9 @@ const BasicLayout: React.FC = () => {
   const [menuTreeLoading, setMenuTreeLoading] = useState(false);
   const [openedTabs, setOpenedTabs] = useState<string[]>([]);
   const [cachedPages, setCachedPages] = useState<Record<string, React.ReactNode>>({});
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [changePasswordSubmitting, setChangePasswordSubmitting] = useState(false);
+  const [changePasswordForm] = Form.useForm<ChangePasswordFormValues>();
 
   const menuItems = useMemo(() => buildMenuItems(menuTree), [menuTree]);
   const openKeys = useMemo(
@@ -341,13 +350,50 @@ const BasicLayout: React.FC = () => {
     navigate('/login');
   };
 
+  const closeChangePasswordModal = useCallback(() => {
+    setChangePasswordOpen(false);
+    changePasswordForm.resetFields();
+  }, [changePasswordForm]);
+
+  const handleChangePassword = useCallback(async (values: ChangePasswordFormValues) => {
+    setChangePasswordSubmitting(true);
+    try {
+      await userApi.changePassword(values.oldPassword, values.newPassword);
+      message.success('密码修改成功');
+      closeChangePasswordModal();
+    } catch (error) {
+      const errorMessage = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(errorMessage || '密码修改失败');
+    } finally {
+      setChangePasswordSubmitting(false);
+    }
+  }, [closeChangePasswordModal]);
+
+  const handleUserMenuClick = useCallback(async ({ key }: { key: string }) => {
+    if (key === 'change-password') {
+      setChangePasswordOpen(true);
+      return;
+    }
+
+    if (key === 'logout') {
+      await handleLogout();
+    }
+  }, [handleLogout]);
+
   const dropdownItems: MenuProps = {
+    onClick: ({ key }) => {
+      void handleUserMenuClick({ key });
+    },
     items: [
+      {
+        key: 'change-password',
+        icon: <LockOutlined />,
+        label: '修改密码',
+      },
       {
         key: 'logout',
         icon: <LogoutOutlined />,
         label: '退出登录',
-        onClick: handleLogout,
       },
     ],
   };
@@ -555,6 +601,58 @@ const BasicLayout: React.FC = () => {
           </div>
         </Content>
       </Layout>
+      <Modal
+        title="修改密码"
+        open={changePasswordOpen}
+        onCancel={closeChangePasswordModal}
+        onOk={() => changePasswordForm.submit()}
+        confirmLoading={changePasswordSubmitting}
+        destroyOnHidden
+        width={420}
+      >
+        <Form<ChangePasswordFormValues>
+          form={changePasswordForm}
+          layout="vertical"
+          autoComplete="off"
+          onFinish={(values) => void handleChangePassword(values)}
+        >
+          <Form.Item
+            name="oldPassword"
+            label="当前密码"
+            rules={[{ required: true, message: '请输入当前密码' }]}
+          >
+            <Input.Password placeholder="请输入当前密码" autoComplete="current-password" />
+          </Form.Item>
+          <Form.Item
+            name="newPassword"
+            label="新密码"
+            rules={[
+              { required: true, message: '请输入新密码' },
+              { min: 6, message: '新密码至少 6 位' },
+            ]}
+          >
+            <Input.Password placeholder="请输入新密码" autoComplete="new-password" />
+          </Form.Item>
+          <Form.Item
+            name="confirmPassword"
+            label="确认新密码"
+            dependencies={['newPassword']}
+            rules={[
+              { required: true, message: '请再次输入新密码' },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue('newPassword') === value) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error('两次输入的新密码不一致'));
+                },
+              }),
+            ]}
+          >
+            <Input.Password placeholder="请再次输入新密码" autoComplete="new-password" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Layout>
   );
 };
