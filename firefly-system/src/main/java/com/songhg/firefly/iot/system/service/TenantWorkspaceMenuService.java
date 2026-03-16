@@ -28,12 +28,14 @@ public class TenantWorkspaceMenuService {
     private final WorkspaceMenuCatalogService workspaceMenuCatalogService;
 
     public Set<String> listAuthorizedMenuKeys(Long tenantId) {
-        return tenantMenuConfigMapper.selectList(new LambdaQueryWrapper<TenantMenuConfig>()
+        Set<String> authorizedMenuKeys = tenantMenuConfigMapper.selectList(new LambdaQueryWrapper<TenantMenuConfig>()
                         .eq(TenantMenuConfig::getTenantId, tenantId)
                         .orderByAsc(TenantMenuConfig::getId))
                 .stream()
                 .map(TenantMenuConfig::getMenuKey)
                 .collect(LinkedHashSet::new, Set::add, Set::addAll);
+        authorizedMenuKeys.add(WorkspaceMenuCustomizationService.REQUIRED_TENANT_MENU_KEY);
+        return authorizedMenuKeys;
     }
 
     public Set<String> listAuthorizedRoutePaths(Long tenantId) {
@@ -85,6 +87,7 @@ public class TenantWorkspaceMenuService {
         if (normalizedMenuKeys.isEmpty()) {
             throw new BizException(ResultCode.PARAM_ERROR, "please select at least one tenant workspace menu");
         }
+        normalizedMenuKeys.add(WorkspaceMenuCustomizationService.REQUIRED_TENANT_MENU_KEY);
 
         Set<String> grantableMenuKeys = listGrantableTenantMenuKeys();
         List<String> invalidMenuKeys = normalizedMenuKeys.stream()

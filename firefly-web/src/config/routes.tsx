@@ -22,6 +22,7 @@ import {
   LineChartOutlined,
   LockOutlined,
   MessageOutlined,
+  MenuOutlined,
   MonitorOutlined,
   ProjectOutlined,
   SafetyOutlined,
@@ -100,6 +101,7 @@ const routeConfigs: RouteEntry[] = [
         permission: 'workspace-menu:read',
         workspace: 'platform',
       },
+      { path: '/menu-customization', label: '菜单配置', icon: <MenuOutlined />, permission: 'menu-customization:read', workspace: 'platform' },
       { path: '/dict', label: '数据字典', icon: <BookOutlined />, permission: 'dict:read', workspace: 'platform' },
     ],
   },
@@ -136,6 +138,7 @@ const routeConfigs: RouteEntry[] = [
     children: [
       { path: '/user', label: '用户管理', icon: <TeamOutlined />, permission: 'user:read', workspace: 'tenant' },
       { path: '/role', label: '角色管理', icon: <SafetyOutlined />, permission: 'role:read', workspace: 'tenant' },
+      { path: '/menu-customization', label: '菜单配置', icon: <MenuOutlined />, permission: 'menu-customization:read', workspace: 'tenant' },
     ],
   },
   {

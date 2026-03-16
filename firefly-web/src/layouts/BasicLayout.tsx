@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Avatar, Breadcrumb, Dropdown, Layout, Menu, Space, Tag } from 'antd';
+import { Avatar, Breadcrumb, Dropdown, Layout, Menu, Space, Spin, Tag } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   LogoutOutlined,
@@ -10,12 +10,11 @@ import {
 } from '@ant-design/icons';
 import NotificationDropdown from '../components/NotificationDropdown';
 import ExportCenterDropdown from '../components/ExportCenterDropdown';
-import { isRouteGroup, type RouteNode } from '../config/routes';
 import useAuthStore from '../store/useAuthStore';
+import { workspaceMenuCustomizationApi } from '../services/api';
+import { getIcon } from '../config/iconMap';
 import {
-  filterWorkspaceRoutes,
   getWorkspaceHomePath,
-  hasRoutePermission,
   isWorkspacePathAllowed,
   resolveWorkspaceByPath,
   resolveWorkspaceByUserType,
@@ -26,7 +25,17 @@ import {
 type MenuItem = Required<MenuProps>['items'][number];
 type BreadcrumbItem = { title: string; path?: string };
 
+interface WorkspaceMenuNode {
+  menuKey: string;
+  label: string;
+  icon?: string | null;
+  routePath?: string | null;
+  visible?: boolean;
+  children?: WorkspaceMenuNode[];
+}
+
 const { Header, Sider, Content } = Layout;
+const MENU_TREE_REFRESH_EVENT = 'firefly:menu-tree-refresh';
 
 function loadWorkspaceCache(): WorkspaceType {
   const cached = localStorage.getItem(WORKSPACE_STORAGE_KEY);
@@ -37,67 +46,62 @@ function persistWorkspace(workspace: WorkspaceType) {
   localStorage.setItem(WORKSPACE_STORAGE_KEY, workspace);
 }
 
-function buildMenuItems(
-  nodes: RouteNode[],
-  permissions: readonly string[],
-  authorizedMenuPaths: readonly string[],
-): MenuItem[] {
+function buildMenuItems(nodes: WorkspaceMenuNode[]): MenuItem[] {
   return nodes.flatMap((node) => {
-    if (isRouteGroup(node)) {
-      const children = buildMenuItems(node.children, permissions, authorizedMenuPaths);
-      if (children.length === 0) {
-        return [];
-      }
+    if (node.visible === false) {
+      return [];
+    }
+    const children = buildMenuItems(node.children ?? []);
+    if (children.length > 0) {
       return [{
-        key: node.key,
-        icon: node.icon,
+        key: node.menuKey,
+        icon: getIcon(node.icon),
         label: node.label,
         children,
       }];
     }
-
-    if (!hasRoutePermission(node.permission, permissions)) {
+    if (!node.routePath) {
       return [];
     }
-    if (!authorizedMenuPaths.includes(node.path)) {
-      return [];
-    }
-
     return [{
-      key: node.path,
-      icon: node.icon,
+      key: node.routePath,
+      icon: getIcon(node.icon),
       label: node.label,
     }];
   });
 }
 
-function findMenuTrail(nodes: RouteNode[], pathname: string, trail: string[] = []): string[] | null {
+function findMenuTrail(nodes: WorkspaceMenuNode[], pathname: string, trail: string[] = []): string[] | null {
   for (const node of nodes) {
-    if (isRouteGroup(node)) {
-      const found = findMenuTrail(node.children, pathname, [...trail, node.key]);
+    if (node.routePath === pathname) {
+      return trail;
+    }
+    const children = node.children ?? [];
+    if (children.length > 0) {
+      const found = findMenuTrail(children, pathname, [...trail, node.menuKey]);
       if (found) {
         return found;
       }
-      continue;
-    }
-    if (node.path === pathname) {
-      return trail;
     }
   }
   return null;
 }
 
-function findBreadcrumbTrail(nodes: RouteNode[], pathname: string, trail: BreadcrumbItem[] = []): BreadcrumbItem[] | null {
+function findBreadcrumbTrail(
+  nodes: WorkspaceMenuNode[],
+  pathname: string,
+  trail: BreadcrumbItem[] = [],
+): BreadcrumbItem[] | null {
   for (const node of nodes) {
-    if (isRouteGroup(node)) {
-      const found = findBreadcrumbTrail(node.children, pathname, [...trail, { title: node.label }]);
+    if (node.routePath === pathname) {
+      return [...trail, { title: node.label, path: node.routePath }];
+    }
+    const children = node.children ?? [];
+    if (children.length > 0) {
+      const found = findBreadcrumbTrail(children, pathname, [...trail, { title: node.label }]);
       if (found) {
         return found;
       }
-      continue;
-    }
-    if (node.path === pathname) {
-      return [...trail, { title: node.label }];
     }
   }
   return null;
@@ -107,13 +111,13 @@ const BasicLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuthStore();
-  const permissions = useMemo(
-    () => (Array.isArray(user?.permissions) ? user.permissions : []),
-    [user?.permissions],
-  );
   const authorizedMenuPaths = useMemo(
     () => (Array.isArray(user?.authorizedMenuPaths) ? user.authorizedMenuPaths : []),
     [user?.authorizedMenuPaths],
+  );
+  const permissions = useMemo(
+    () => (Array.isArray(user?.permissions) ? user.permissions : []),
+    [user?.permissions],
   );
   const enforcedWorkspace = useMemo(
     () => resolveWorkspaceByUserType(user?.userType),
@@ -123,37 +127,18 @@ const BasicLayout: React.FC = () => {
   const [workspace, setWorkspace] = useState<WorkspaceType>(loadWorkspaceCache);
   const [collapsed, setCollapsed] = useState(false);
   const [menuOpenKeys, setMenuOpenKeys] = useState<string[]>([]);
+  const [menuTree, setMenuTree] = useState<WorkspaceMenuNode[]>([]);
+  const [menuTreeLoading, setMenuTreeLoading] = useState(false);
 
-  const routeEntries = useMemo(
-    () => filterWorkspaceRoutes(workspace),
-    [workspace],
-  );
-  const menuItems = useMemo(
-    () => buildMenuItems(routeEntries, permissions, authorizedMenuPaths),
-    [authorizedMenuPaths, routeEntries, permissions],
-  );
-
+  const menuItems = useMemo(() => buildMenuItems(menuTree), [menuTree]);
   const openKeys = useMemo(
-    () => findMenuTrail(routeEntries, location.pathname) ?? [],
-    [routeEntries, location.pathname],
+    () => findMenuTrail(menuTree, location.pathname) ?? [],
+    [location.pathname, menuTree],
   );
-
-  const breadcrumbItems = useMemo(() => {
-    const items: BreadcrumbItem[] = [];
-    if (hasRoutePermission('dashboard:read', permissions)) {
-      if (authorizedMenuPaths.includes('/dashboard')) {
-        items.push({ title: '工作台', path: '/dashboard' });
-      }
-    }
-    if (location.pathname === '/dashboard') {
-      return items;
-    }
-    const trail = findBreadcrumbTrail(routeEntries, location.pathname);
-    if (trail) {
-      items.push(...trail);
-    }
-    return items;
-  }, [authorizedMenuPaths, permissions, routeEntries, location.pathname]);
+  const breadcrumbItems = useMemo(
+    () => findBreadcrumbTrail(menuTree, location.pathname) ?? [],
+    [location.pathname, menuTree],
+  );
 
   const currentPathAccessible = useMemo(() => {
     if (location.pathname === '/403') {
@@ -177,7 +162,41 @@ const BasicLayout: React.FC = () => {
       setWorkspace(enforcedWorkspace);
       persistWorkspace(enforcedWorkspace);
     }
-  }, [authorizedMenuPaths, location.pathname, workspace, enforcedWorkspace, navigate, permissions]);
+  }, [authorizedMenuPaths, enforcedWorkspace, location.pathname, navigate, permissions, workspace]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadMenuTree = async () => {
+      setMenuTreeLoading(true);
+      try {
+        const response = await workspaceMenuCustomizationApi.currentTree();
+        if (!active) {
+          return;
+        }
+        setMenuTree((response.data?.data ?? []) as WorkspaceMenuNode[]);
+      } catch {
+        if (active) {
+          setMenuTree([]);
+        }
+      } finally {
+        if (active) {
+          setMenuTreeLoading(false);
+        }
+      }
+    };
+
+    void loadMenuTree();
+
+    const handleRefresh = () => {
+      void loadMenuTree();
+    };
+    window.addEventListener(MENU_TREE_REFRESH_EVENT, handleRefresh);
+    return () => {
+      active = false;
+      window.removeEventListener(MENU_TREE_REFRESH_EVENT, handleRefresh);
+    };
+  }, [user?.id, workspace]);
 
   const handleMenuClick = ({ key }: { key: string }) => {
     navigate(key);
@@ -250,19 +269,25 @@ const BasicLayout: React.FC = () => {
         </div>
 
         <div style={{ height: 'calc(100vh - 64px)', overflow: 'auto', padding: 8 }}>
-          <Menu
-            mode="inline"
-            theme="dark"
-            items={menuItems}
-            selectedKeys={[location.pathname]}
-            openKeys={collapsed ? [] : menuOpenKeys}
-            onOpenChange={(keys) => setMenuOpenKeys(keys as string[])}
-            onClick={handleMenuClick}
-            style={{
-              background: 'transparent',
-              border: 'none',
-            }}
-          />
+          {menuTreeLoading ? (
+            <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Spin size="small" />
+            </div>
+          ) : (
+            <Menu
+              mode="inline"
+              theme="dark"
+              items={menuItems}
+              selectedKeys={[location.pathname]}
+              openKeys={collapsed ? [] : menuOpenKeys}
+              onOpenChange={(keys) => setMenuOpenKeys(keys as string[])}
+              onClick={handleMenuClick}
+              style={{
+                background: 'transparent',
+                border: 'none',
+              }}
+            />
+          )}
         </div>
       </Sider>
 

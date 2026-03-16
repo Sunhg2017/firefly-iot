@@ -503,6 +503,16 @@ export const systemMenuPermissionApi = {
     request.put(`/system-menu-permissions/menus/${menuKey}/permissions`, data),
 };
 
+export const workspaceMenuCustomizationApi = {
+  currentTree: () => request.get('/workspace-menu-customizations/current/tree'),
+  currentManageTree: () => request.get('/workspace-menu-customizations/current/manage/tree'),
+  updateCurrentMenu: (
+    menuKey: string,
+    data: { label: string; parentMenuKey?: string; sortOrder?: number },
+  ) => request.put(`/workspace-menu-customizations/current/menus/${menuKey}`, data),
+  resetCurrentMenu: (menuKey: string) => request.delete(`/workspace-menu-customizations/current/menus/${menuKey}`),
+};
+
 // ==================== System Monitor API ====================
 export const monitorApi = {
   getAll: () => dataRequest.get('/monitor'),

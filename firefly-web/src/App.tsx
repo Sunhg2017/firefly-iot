@@ -23,6 +23,7 @@ const MessageTemplatePage = React.lazy(() => import('./pages/message-template/Me
 const SystemMonitorPage = React.lazy(() => import('./pages/monitor/SystemMonitorPage'));
 const PermissionResourcePage = React.lazy(() => import('./pages/permission/PermissionResourcePage'));
 const SystemMenuPermissionPage = React.lazy(() => import('./pages/system-menu-permission/SystemMenuPermissionPage'));
+const WorkspaceMenuCustomizationPage = React.lazy(() => import('./pages/menu-customization/WorkspaceMenuCustomizationPage'));
 const DictPage = React.lazy(() => import('./pages/dict/DictPage'));
 const RuleEngineList = React.lazy(() => import('./pages/rule-engine/RuleEngineList'));
 const AlarmRulePage = React.lazy(() => import('./pages/alarm/AlarmRulePage'));
@@ -82,6 +83,7 @@ const App: React.FC = () => {
             <Route path="monitor" element={<SystemMonitorPage />} />
             <Route path="permission" element={<PermissionResourcePage />} />
             <Route path="system-menu-permission" element={<SystemMenuPermissionPage />} />
+            <Route path="menu-customization" element={<WorkspaceMenuCustomizationPage />} />
             <Route path="dict" element={<DictPage />} />
             <Route path="rule-engine" element={<RuleEngineList />} />
             <Route path="alarm-rules" element={<AlarmRulePage />} />
