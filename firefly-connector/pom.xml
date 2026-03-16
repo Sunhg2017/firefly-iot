@@ -147,6 +147,13 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <additionalClasspathElements>
+                        <additionalClasspathElement>${project.parent.basedir}/firefly-common/target/classes</additionalClasspathElement>
+                        <additionalClasspathElement>${project.parent.basedir}/firefly-api/target/classes</additionalClasspathElement>
+                        <additionalClasspathElement>${project.parent.basedir}/firefly-plugin-api/target/classes</additionalClasspathElement>
+                    </additionalClasspathElements>
+                </configuration>
             </plugin>
         </plugins>
     </build>

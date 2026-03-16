@@ -60,7 +60,7 @@ cd firefly-system && mvn spring-boot:run
 cd firefly-device && mvn spring-boot:run
 cd firefly-rule && mvn spring-boot:run
 cd firefly-support && mvn spring-boot:run
-cd firefly-connector && mvn spring-boot:run
+mvn -pl firefly-connector -am -DskipTests spring-boot:run
 cd firefly-gateway && mvn spring-boot:run
 ```
 

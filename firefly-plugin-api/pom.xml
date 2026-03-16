@@ -13,4 +13,16 @@
     <artifactId>firefly-plugin-api</artifactId>
     <name>Firefly IoT - Plugin API</name>
     <description>Protocol parser plugin SPI and shared models</description>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

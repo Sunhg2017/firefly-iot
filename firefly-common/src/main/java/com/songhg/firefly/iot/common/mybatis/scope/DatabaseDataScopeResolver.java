@@ -9,6 +9,7 @@ import com.songhg.firefly.iot.common.mybatis.DataScopeResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -25,6 +26,7 @@ import java.util.Set;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnClass(name = "com.baomidou.mybatisplus.core.mapper.BaseMapper")
 @ConditionalOnBean({
         DataScopeUserRoleMapper.class,
         DataScopeRoleMapper.class,
