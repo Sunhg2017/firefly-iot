@@ -517,7 +517,9 @@ const UserList: React.FC = () => {
         <Steps current={stepIndex} items={stepItems} style={{ marginBottom: 24 }} />
 
         <Spin spinning={drawerLoading}>
-          <Form form={form} layout="vertical" preserve={false}>
+          {/* Step fields must stay in the form store across unmounts, otherwise edit backfill
+              and final submission will drop values from non-active steps. */}
+          <Form form={form} layout="vertical">
           {stepIndex === 0 && (
             <Row gutter={16}>
               <Col span={12}>
