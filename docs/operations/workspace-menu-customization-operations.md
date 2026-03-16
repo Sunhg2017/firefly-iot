@@ -1,124 +1,59 @@
 # 工作空间菜单配置运维说明
 
-## 1. 部署范围
+## 1. 适用范围
 
-本功能涉及：
+用于租户空间菜单授权、菜单个性化配置以及“新租户默认菜单授权”问题的发布验证、排查和回滚说明。
 
-- `firefly-system`：新增菜单配置表、接口、权限资源和默认授权迁移。
-- `firefly-web`：新增菜单配置页面，布局切换为动态菜单树。
+## 2. 本次变更
 
-上线前需确保同时发布后端与前端。
+- 删除新租户创建时自动授予全部租户空间菜单的逻辑。
+- 租户空间菜单仅以系统运维在“租户管理 -> 空间授权”中的勾选结果为准。
+- 删除后端冗余的默认全量授权服务方法，避免被再次调用。
 
-## 2. 数据库变更
+## 3. 构建与发布
 
-新增 Flyway：
-
-- `V25__init_workspace_menu_customizations.sql`
-
-迁移内容：
-
-- 创建 `workspace_menu_customizations`。
-- 初始化 `menu-customization:*` 权限资源。
-- 向 `workspace_menu_catalog`、`workspace_menu_permission_catalog` 插入菜单配置入口。
-- 给系统超级管理员、历史租户管理员补齐菜单配置权限。
-- 给历史租户补齐 `tenant_menu_configs.menu_key='menu-customization'`。
-
-## 3. 依赖与配置
-
-无新增外部中间件依赖。
-
-依赖现有能力：
-
-- `workspace_menu_catalog`
-- `workspace_menu_permission_catalog`
-- `tenant_menu_configs`
-- `permission_resources`
-- `role_permissions`
-
-## 4. 启动与验证
-
-建议验证顺序：
-
-1. 启动后端，确认 Flyway 成功执行到 `V25`。
-2. 使用系统运维管理员登录，访问 `/menu-customization`。
-3. 使用租户管理员登录，访问 `/menu-customization`。
-4. 修改菜单名称或层级后刷新页面，确认左侧导航与面包屑同步变化。
-
-本次开发验证命令：
+后端验证命令：
 
 ```bash
 mvn -pl firefly-system -am -DskipTests compile
-cd firefly-web
-npm run build
 ```
 
-## 5. 监控与日志
+本次变更不涉及新的 Flyway SQL；若历史环境中已被旧逻辑写入全量租户菜单授权数据，需要运维手动清理旧数据。
 
-重点关注：
+## 4. 发布后验证
 
-- Flyway 启动日志中 `V25__init_workspace_menu_customizations.sql`
-- 后端 4xx 日志中的菜单配置校验失败
-- 前端 `/workspace-menu-customizations/current/tree` 请求是否持续成功
+1. 使用系统运维账号创建一个新的租户。
+2. 不要给该租户分配任何租户空间菜单。
+3. 使用新租户管理员账号登录。
+4. 确认租户侧不会出现整套租户业务菜单。
+5. 返回系统运维空间，在“租户管理 -> 空间授权”中只勾选少量菜单。
+6. 让租户管理员重新登录，确认仅显示被授权的菜单。
+7. 进入租户角色管理页，确认可分配权限范围与已授权菜单一致。
 
-涉及类：
+## 5. 常见问题排查
 
-- `WorkspaceMenuCustomizationService`
-- `WorkspaceMenuCustomizationController`
-- `TenantWorkspaceMenuService`
+### 5.1 新租户仍然看到全部租户菜单
 
-## 6. 常见问题排查
+- 确认部署版本已包含本次删除默认授权的修复代码。
+- 检查数据库 `tenant_menu_configs`，确认该租户是否已经残留了旧逻辑写入的全量菜单记录。
+- 如存在旧数据，按实际授权要求删除后重新通过系统运维界面授权。
 
-### 6.1 菜单配置页访问 403
+### 5.2 新租户登录后几乎看不到菜单
 
-检查项：
+- 这是系统运维尚未完成租户空间授权时的预期结果。
+- 请在系统运维空间中给该租户显式分配所需菜单，然后让租户重新登录。
 
-- 当前用户是否拥有 `menu-customization:read`
-- 当前用户是否为系统超级管理员或租户超级管理员
-- 当前租户是否已补齐 `tenant_menu_configs.menu_key='menu-customization'`
+### 5.3 租户角色分配不到预期权限
 
-### 6.2 左侧菜单没有按新配置显示
+- 检查该租户是否已经拿到对应菜单授权。
+- 角色可分配权限与租户空间菜单授权绑定，未被授权的菜单权限不会出现在可分配列表中。
 
-检查项：
+## 6. 回滚
 
-- `workspace_menu_customizations` 是否存在对应租户、空间、菜单键记录
-- 前端是否成功请求 `/api/v1/workspace-menu-customizations/current/tree`
-- 当前用户是否具备该菜单绑定的页面权限
+如需回滚代码版本，恢复以下文件到修复前版本后重新发布：
 
-### 6.3 保存时报“不能移动到自己的后代下”
+- `firefly-system/src/main/java/com/songhg/firefly.iot.system.service.TenantService`
+- `firefly-system/src/main/java/com/songhg/firefly.iot.system.service.TenantMenuConfigService`
+- `firefly-system/src/main/java/com/songhg/firefly.iot.system.service.TenantWorkspaceMenuService`
 
-原因：
-
-- 当前菜单被配置成挂到自己的子树节点下，后端循环校验阻止保存。
-
-处理：
-
-- 重新选择父级目录。
-
-### 6.4 历史菜单层级异常或节点消失
-
-原因：
-
-- 历史配置中的 `parent_menu_key` 已不在当前可配置集合中，或者基础菜单键发生了调整。
-
-处理：
-
-- 删除对应 `workspace_menu_customizations` 记录后重试。
-- 如果基础菜单结构发生了大的重构，应同步清理失效个性化配置。
-
-## 7. 回滚方案
-
-回滚顺序：
-
-1. 回滚前端版本，避免继续访问新接口。
-2. 回滚后端版本。
-3. 如需彻底回退数据，可删除：
-   - `workspace_menu_customizations`
-   - `workspace_menu_catalog` 中 `menu_key='menu-customization'` 的记录
-   - `workspace_menu_permission_catalog` 中 `menu_key='menu-customization'` 的记录
-   - `permission_resources` 中 `menu-customization:*`
-   - `role_permissions` 中 `menu-customization:*`
-   - `tenant_menu_configs` 中 `menu_key='menu-customization'`
-
-注意：
-
-- 若仅回滚代码、不回滚数据，遗留数据不会影响旧功能主流程，但新入口会失效。
+注意：如果代码回滚但数据库里已经清理过旧的全量授权数据，回滚后是否重新产生默认菜单，取决于当时恢复的代码逻辑。回滚前请确认发布风险。

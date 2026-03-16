@@ -32,10 +32,6 @@ public class TenantMenuConfigService {
         return tenantWorkspaceMenuService.replaceAuthorizedMenus(tenantId, menuKeys);
     }
 
-    public void grantDefaultMenus(Long tenantId) {
-        tenantWorkspaceMenuService.grantDefaultMenus(tenantId);
-    }
-
     public void deleteAuthorizationsByMenuKeys(Collection<String> menuKeys) {
         tenantWorkspaceMenuService.deleteAuthorizationsByMenuKeys(menuKeys);
     }

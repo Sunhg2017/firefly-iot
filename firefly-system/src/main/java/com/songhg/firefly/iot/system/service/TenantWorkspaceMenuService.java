@@ -112,11 +112,6 @@ public class TenantWorkspaceMenuService {
     }
 
     @Transactional
-    public void grantDefaultMenus(Long tenantId) {
-        replaceAuthorizedMenus(tenantId, listGrantableTenantMenuKeys());
-    }
-
-    @Transactional
     public void deleteAuthorizationsByMenuKeys(Collection<String> menuKeys) {
         Set<String> normalizedMenuKeys = workspaceMenuCatalogService.normalizeMenuKeys(menuKeys);
         if (normalizedMenuKeys.isEmpty()) {

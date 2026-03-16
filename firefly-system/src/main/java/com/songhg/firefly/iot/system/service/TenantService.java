@@ -106,7 +106,7 @@ public class TenantService {
         Long adminUserId = withTenantContext(tenant.getId(), () -> {
             TenantQuota quota = createQuotaForPlan(tenant.getId(), tenant.getPlan());
             tenantQuotaMapper.insert(quota);
-            tenantMenuConfigService.grantDefaultMenus(tenant.getId());
+            // Tenant workspace menus are now granted only by explicit system-ops authorization.
             return createTenantAdmin(tenant, dto.getAdminUser(), operatorId);
         });
         tenant.setAdminUserId(adminUserId);
