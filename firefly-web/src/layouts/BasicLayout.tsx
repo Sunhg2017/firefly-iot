@@ -4,7 +4,6 @@ import { Avatar, Breadcrumb, Dropdown, Layout, Menu, Space, Spin, Tag } from 'an
 import type { MenuProps } from 'antd';
 import {
   CloseOutlined,
-  DownOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -486,9 +485,6 @@ const BasicLayout: React.FC = () => {
                 <Avatar icon={<UserOutlined />} src={user?.avatarUrl} />
                 <span className="layout-user-trigger__name">
                   {user?.realName || user?.username || '用户'}
-                </span>
-                <span className="layout-user-trigger__arrow">
-                  <DownOutlined />
                 </span>
               </div>
             </Dropdown>
