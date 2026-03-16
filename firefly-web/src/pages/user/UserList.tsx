@@ -8,6 +8,7 @@ import {
   Drawer,
   Form,
   Input,
+  Modal,
   Row,
   Select,
   Space,
@@ -95,12 +96,54 @@ const statusColors: Record<string, string> = {
 };
 
 const avatarColors = ['#2563eb', '#0f766e', '#d97706', '#dc2626', '#7c3aed', '#0891b2'];
+const passwordUpperChars = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+const passwordLowerChars = 'abcdefghijkmnopqrstuvwxyz';
+const passwordDigitChars = '23456789';
+const passwordSymbolChars = '!@#$%^&*';
+const passwordAllChars = `${passwordUpperChars}${passwordLowerChars}${passwordDigitChars}${passwordSymbolChars}`;
 
 const getErrorMessage = (error: unknown, fallback: string): string => {
   if (error instanceof Error && error.message) {
     return error.message;
   }
   return fallback;
+};
+
+const fillRandomNumbers = (length: number): number[] => {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi?.getRandomValues) {
+    const values = new Uint32Array(length);
+    cryptoApi.getRandomValues(values);
+    return Array.from(values);
+  }
+  return Array.from({ length }, () => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
+};
+
+const pickRandomChars = (charset: string, count: number): string[] => {
+  const randomNumbers = fillRandomNumbers(count);
+  return randomNumbers.map((value) => charset[value % charset.length]);
+};
+
+const shuffleChars = (chars: string[]): string[] => {
+  const nextChars = [...chars];
+  const randomNumbers = fillRandomNumbers(Math.max(0, nextChars.length - 1));
+  for (let index = nextChars.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomNumbers[nextChars.length - 1 - index] % (index + 1);
+    [nextChars[index], nextChars[swapIndex]] = [nextChars[swapIndex], nextChars[index]];
+  }
+  return nextChars;
+};
+
+const generateRandomPassword = (length = 12): string => {
+  const requiredChars = [
+    ...pickRandomChars(passwordUpperChars, 1),
+    ...pickRandomChars(passwordLowerChars, 1),
+    ...pickRandomChars(passwordDigitChars, 1),
+    ...pickRandomChars(passwordSymbolChars, 1),
+  ];
+  const remainingCount = Math.max(0, length - requiredChars.length);
+  const remainingChars = pickRandomChars(passwordAllChars, remainingCount);
+  return shuffleChars([...requiredChars, ...remainingChars]).join('');
 };
 
 const UserList: React.FC = () => {
@@ -235,6 +278,52 @@ const UserList: React.FC = () => {
     }
   };
 
+  const handleResetPassword = (record: UserRecord) => {
+    Modal.confirm({
+      title: '确认重置密码',
+      content: `将为用户 ${record.username} 生成新的随机密码，并立即使旧密码失效。`,
+      okText: '重置密码',
+      cancelText: '取消',
+      onOk: async () => {
+        const newPassword = generateRandomPassword();
+        try {
+          await userApi.resetPassword(record.id, newPassword);
+          Modal.success({
+            title: '密码已重置',
+            okText: '我知道了',
+            content: (
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                <Typography.Text>
+                  用户 <Typography.Text strong>{record.username}</Typography.Text> 的新密码如下，请及时通知用户登录后修改。
+                </Typography.Text>
+                <Typography.Paragraph
+                  copyable={{ text: newPassword }}
+                  style={{
+                    marginBottom: 0,
+                    padding: '12px 16px',
+                    borderRadius: 8,
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    fontFamily: 'Consolas, Monaco, monospace',
+                    fontSize: 16,
+                  }}
+                >
+                  {newPassword}
+                </Typography.Paragraph>
+                <Typography.Text type="secondary">
+                  新密码只会展示这一次。
+                </Typography.Text>
+              </Space>
+            ),
+          });
+        } catch (error) {
+          message.error(getErrorMessage(error, '重置密码失败'));
+          throw error;
+        }
+      },
+    });
+  };
+
   const handleNextStep = async () => {
     if (stepIndex === 0) {
       const requiredFields = editingUser
@@ -364,12 +453,15 @@ const UserList: React.FC = () => {
     },
     {
       title: '操作',
-      width: 220,
+      width: 300,
       fixed: 'right',
       render: (_value, record) => (
         <Space>
           <Button type="link" size="small" onClick={() => void openEditDrawer(record)}>
             编辑
+          </Button>
+          <Button type="link" size="small" onClick={() => void handleResetPassword(record)}>
+            重置密码
           </Button>
           {record.status === 'ACTIVE' ? (
             <Button type="link" size="small" danger onClick={() => void handleUpdateStatus(record, 'DISABLED')}>
