@@ -207,7 +207,18 @@ const BasicLayout: React.FC = () => {
     return visiblePaths;
   }, [cachedPages, currentPathAccessible, isPageTabRoute, location.pathname, openedTabs]);
 
-  const tabItems = useMemo<TabsProps['items']>(() => openedTabs.map((path) => {
+  const displayedTabs = useMemo(() => {
+    if (!currentPathAccessible || !isPageTabRoute(location.pathname) || openedTabs.includes(location.pathname)) {
+      return openedTabs;
+    }
+    return [...openedTabs, location.pathname];
+  }, [currentPathAccessible, isPageTabRoute, location.pathname, openedTabs]);
+
+  const activeTabKey = useMemo(() => (
+    displayedTabs.includes(location.pathname) ? location.pathname : undefined
+  ), [displayedTabs, location.pathname]);
+
+  const tabItems = useMemo<TabsProps['items']>(() => displayedTabs.map((path) => {
     const meta = resolveTabMeta(path);
     return {
       key: path,
@@ -219,7 +230,7 @@ const BasicLayout: React.FC = () => {
         </span>
       ),
     };
-  }), [openedTabs, resolveTabMeta]);
+  }), [displayedTabs, resolveTabMeta]);
 
   useEffect(() => {
     setMenuOpenKeys(openKeys);
@@ -509,13 +520,13 @@ const BasicLayout: React.FC = () => {
         </Header>
 
         <Content style={{ margin: 20, minHeight: 360 }}>
-          {openedTabs.length > 0 ? (
+          {displayedTabs.length > 0 ? (
             <div className="page-tabs-shell">
               <Tabs
                 className="page-tabs"
                 type="editable-card"
                 hideAdd
-                activeKey={isPageTabRoute(location.pathname) ? location.pathname : undefined}
+                activeKey={activeTabKey}
                 items={tabItems}
                 onChange={(activeKey) => navigate(activeKey)}
                 onEdit={handleTabEdit}
