@@ -11,6 +11,7 @@ import {
   UserOutlined,
 } from '@ant-design/icons';
 import NotificationDropdown from '../components/NotificationDropdown';
+import AlarmDropdown from '../components/AlarmDropdown';
 import ExportCenterDropdown from '../components/ExportCenterDropdown';
 import useAuthStore from '../store/useAuthStore';
 import { userApi, workspaceMenuCustomizationApi } from '../services/api';
@@ -184,6 +185,10 @@ const BasicLayout: React.FC = () => {
     }
     return isWorkspacePathAllowed(location.pathname, permissions, authorizedMenuPaths);
   }, [authorizedMenuPaths, location.pathname, permissions]);
+
+  const canViewAlarmDropdown = useMemo(() => (
+    enforcedWorkspace === 'tenant' && isWorkspacePathAllowed('/alarm-records', permissions, authorizedMenuPaths)
+  ), [authorizedMenuPaths, enforcedWorkspace, permissions]);
 
   const isPageTabRoute = useCallback((pathname: string) => (
     isRoutePathRegistered(pathname) && !PAGE_TAB_EXCLUDED_PATHS.has(pathname)
@@ -525,6 +530,7 @@ const BasicLayout: React.FC = () => {
 
           <div className="layout-header-right">
             <NotificationDropdown />
+            <AlarmDropdown visible={canViewAlarmDropdown} />
             <ExportCenterDropdown />
             <Dropdown menu={dropdownItems} placement="bottomRight">
               <div className="layout-user-inline">
