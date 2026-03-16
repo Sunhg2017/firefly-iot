@@ -85,7 +85,9 @@ public class TenantService {
 
         // Check code uniqueness
         Long count = tenantMapper.selectCount(
-                new LambdaQueryWrapper<Tenant>().eq(Tenant::getCode, dto.getCode()));
+                new LambdaQueryWrapper<Tenant>()
+                        .eq(Tenant::getCode, dto.getCode())
+                        .isNull(Tenant::getDeletedAt));
         if (count > 0) {
             throw new BizException(ResultCode.TENANT_CODE_EXISTS);
         }
@@ -135,7 +137,9 @@ public class TenantService {
     public TenantVO getTenantByCode(String code) {
         assertSystemOpsOperator();
         Tenant tenant = tenantMapper.selectOne(
-                new LambdaQueryWrapper<Tenant>().eq(Tenant::getCode, code));
+                new LambdaQueryWrapper<Tenant>()
+                        .eq(Tenant::getCode, code)
+                        .isNull(Tenant::getDeletedAt));
         if (tenant == null) {
             throw new BizException(ResultCode.TENANT_NOT_FOUND);
         }

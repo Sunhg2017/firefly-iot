@@ -1267,6 +1267,12 @@ L2: Redis 缓存
 | `tenant_quota_usage_ratio{tenant,resource}` | 配额使用率 |
 | `tenant_context_cache_hit_ratio` | 上下文缓存命中率 |
 
+### 13.5 租户编码复用规则
+
+- 租户注销采用逻辑删除，`deleted_at` 置值后不再参与有效租户唯一性校验。
+- 创建租户时，`code` 唯一性只针对 `deleted_at IS NULL` 的有效租户检查。
+- 数据库唯一约束同步调整为“仅未删除租户唯一”，因此已注销租户的 `code` 允许被重新创建复用。
+
 ---
 
 > **文档维护**: 本文档随项目迭代持续更新，最新版本请以仓库 `docs/design/detailed-design-tenant-management.md` 为准。
