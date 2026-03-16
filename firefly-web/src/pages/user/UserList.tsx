@@ -11,6 +11,7 @@ import {
   Row,
   Select,
   Space,
+  Spin,
   Statistic,
   Steps,
   Table,
@@ -73,6 +74,14 @@ interface UserFormValues {
   roles?: number[];
 }
 
+const toUserFormValues = (record?: UserRecord | null): UserFormValues => ({
+  username: record?.username,
+  realName: record?.realName,
+  phone: record?.phone,
+  email: record?.email,
+  roles: record?.roles?.map((role) => role.roleId) ?? [],
+});
+
 const statusLabels: Record<string, string> = {
   ACTIVE: '启用',
   DISABLED: '停用',
@@ -107,6 +116,7 @@ const UserList: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [editingUser, setEditingUser] = useState<UserRecord | null>(null);
+  const [drawerLoading, setDrawerLoading] = useState(false);
   const [params, setParams] = useState<QueryState>({ pageNum: 1, pageSize: 20 });
 
   const fetchData = async (nextParams = params) => {
@@ -139,6 +149,19 @@ const UserList: React.FC = () => {
   useEffect(() => {
     void fetchRoleOptions();
   }, []);
+
+  useEffect(() => {
+    if (!drawerOpen) {
+      return;
+    }
+    // Drawer uses destroyOnClose, so populate after mount to keep edit values stable.
+    if (editingUser) {
+      form.setFieldsValue(toUserFormValues(editingUser));
+      return;
+    }
+    form.resetFields();
+    form.setFieldsValue({ roles: [] });
+  }, [drawerOpen, editingUser, form]);
 
   const stats = useMemo(
     () => ({
@@ -173,22 +196,23 @@ const UserList: React.FC = () => {
   const openCreateDrawer = () => {
     setEditingUser(null);
     setStepIndex(0);
-    form.resetFields();
-    form.setFieldsValue({ roles: [] });
     setDrawerOpen(true);
   };
 
-  const openEditDrawer = (record: UserRecord) => {
-    setEditingUser(record);
+  const openEditDrawer = async (record: UserRecord) => {
+    setEditingUser(null);
     setStepIndex(0);
-    form.setFieldsValue({
-      username: record.username,
-      realName: record.realName,
-      phone: record.phone,
-      email: record.email,
-      roles: record.roles?.map((role) => role.roleId) ?? [],
-    });
     setDrawerOpen(true);
+    setDrawerLoading(true);
+    try {
+      const res = await userApi.get(record.id);
+      setEditingUser((res.data?.data ?? record) as UserRecord);
+    } catch (error) {
+      setEditingUser(record);
+      message.error(getErrorMessage(error, '加载用户详情失败，已使用列表数据回填'));
+    } finally {
+      setDrawerLoading(false);
+    }
   };
 
   const handleUpdateStatus = async (record: UserRecord, status: string) => {
@@ -344,7 +368,7 @@ const UserList: React.FC = () => {
       fixed: 'right',
       render: (_value, record) => (
         <Space>
-          <Button type="link" size="small" onClick={() => openEditDrawer(record)}>
+          <Button type="link" size="small" onClick={() => void openEditDrawer(record)}>
             编辑
           </Button>
           {record.status === 'ACTIVE' ? (
@@ -492,7 +516,8 @@ const UserList: React.FC = () => {
       >
         <Steps current={stepIndex} items={stepItems} style={{ marginBottom: 24 }} />
 
-        <Form form={form} layout="vertical" preserve={false}>
+        <Spin spinning={drawerLoading}>
+          <Form form={form} layout="vertical" preserve={false}>
           {stepIndex === 0 && (
             <Row gutter={16}>
               <Col span={12}>
@@ -604,7 +629,8 @@ const UserList: React.FC = () => {
               </Card>
             </Space>
           )}
-        </Form>
+          </Form>
+        </Spin>
       </Drawer>
     </div>
   );
