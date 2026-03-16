@@ -122,6 +122,9 @@ public class WorkspaceMenuCustomizationService {
 
     public Set<String> appendRequiredTenantMenuKeys(Collection<String> menuKeys) {
         Set<String> normalized = workspaceMenuCatalogService.normalizeMenuKeys(menuKeys);
+        if (normalized.isEmpty()) {
+            return normalized;
+        }
         normalized.add(REQUIRED_TENANT_MENU_KEY);
         return normalized;
     }

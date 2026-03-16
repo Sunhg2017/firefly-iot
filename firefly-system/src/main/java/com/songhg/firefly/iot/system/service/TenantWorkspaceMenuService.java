@@ -34,6 +34,9 @@ public class TenantWorkspaceMenuService {
                 .stream()
                 .map(TenantMenuConfig::getMenuKey)
                 .collect(LinkedHashSet::new, Set::add, Set::addAll);
+        if (authorizedMenuKeys.isEmpty()) {
+            return authorizedMenuKeys;
+        }
         authorizedMenuKeys.add(WorkspaceMenuCustomizationService.REQUIRED_TENANT_MENU_KEY);
         return authorizedMenuKeys;
     }
