@@ -479,6 +479,34 @@ public class TenantService {
                         tenant.getStatus().getValue(), TenantStatus.DEACTIVATING.getValue(), operatorId));
     }
 
+    @Transactional
+    public void resetTenantAdminPassword(Long tenantId, String newPassword) {
+        assertSystemOpsOperator();
+        if (!StringUtils.hasText(newPassword)) {
+            throw new BizException(ResultCode.PARAM_ERROR, "newPassword is required");
+        }
+
+        Tenant tenant = requireTenant(tenantId);
+        if (tenant.getAdminUserId() == null || tenant.getAdminUserId() <= 0) {
+            throw new BizException(ResultCode.PARAM_ERROR, "tenant admin user does not exist");
+        }
+
+        withTenantContext(tenantId, () -> {
+            User adminUser = userMapper.selectById(tenant.getAdminUserId());
+            if (adminUser == null || adminUser.getDeletedAt() != null) {
+                throw new BizException(ResultCode.USER_NOT_FOUND, "tenant admin user not found");
+            }
+            adminUser.setPasswordHash(passwordEncoder.encode(newPassword));
+            adminUser.setPasswordChangedAt(LocalDateTime.now());
+            adminUser.setLoginFailCount(0);
+            adminUser.setLockUntil(null);
+            userMapper.updateById(adminUser);
+            return null;
+        });
+
+        log.info("Tenant admin password reset: tenantId={}, adminUserId={}", tenantId, tenant.getAdminUserId());
+    }
+
     // ==================== Overview ====================
 
     public TenantOverviewVO getOverview() {

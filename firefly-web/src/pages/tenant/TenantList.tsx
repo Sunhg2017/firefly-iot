@@ -4,7 +4,10 @@ import {
   ApiOutlined,
   AppstoreOutlined,
   BarChartOutlined,
+  DownOutlined,
   EditOutlined,
+  KeyOutlined,
+  MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
   SettingOutlined,
@@ -16,6 +19,7 @@ import {
   Card,
   Col,
   DatePicker,
+  Dropdown,
   Drawer,
   Empty,
   Form,
@@ -36,10 +40,12 @@ import {
 } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import type { ColumnsType } from 'antd/es/table';
+import type { MenuProps } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import PageHeader from '../../components/PageHeader';
 import { tenantApi } from '../../services/api';
 import TenantWebhookDrawer from './TenantWebhookDrawer';
+import { generateRandomPassword } from '../../utils/password';
 
 const { RangePicker } = DatePicker;
 const TenantTrendChart = React.lazy(() => import('./TenantTrendChart'));
@@ -514,6 +520,52 @@ const TenantList: React.FC = () => {
     }
   };
 
+  const handleResetAdminPassword = (record: TenantItem) => {
+    Modal.confirm({
+      title: '确认重置超级管理员密码',
+      content: `将为租户 ${record.name} 的超级管理员生成新的随机密码，并立即使旧密码失效。`,
+      okText: '重置密码',
+      cancelText: '取消',
+      onOk: async () => {
+        const newPassword = generateRandomPassword();
+        try {
+          await tenantApi.resetAdminPassword(record.id, newPassword);
+          Modal.success({
+            title: '超级管理员密码已重置',
+            okText: '我知道了',
+            content: (
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                <Typography.Text>
+                  租户 <Typography.Text strong>{record.name}</Typography.Text> 的超级管理员新密码如下，请及时通知对方登录后修改。
+                </Typography.Text>
+                <Typography.Paragraph
+                  copyable={{ text: newPassword }}
+                  style={{
+                    marginBottom: 0,
+                    padding: '12px 16px',
+                    borderRadius: 8,
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    fontFamily: 'Consolas, Monaco, monospace',
+                    fontSize: 16,
+                  }}
+                >
+                  {newPassword}
+                </Typography.Paragraph>
+                <Typography.Text type="secondary">
+                  新密码只会展示这一次。
+                </Typography.Text>
+              </Space>
+            ),
+          });
+        } catch (error) {
+          message.error(getErrorMessage(error, '重置超级管理员密码失败'));
+          throw error;
+        }
+      },
+    });
+  };
+
   const openQuotaModal = async (record: TenantItem) => {
     setCurrentTenant(record);
     try {
@@ -593,8 +645,70 @@ const TenantList: React.FC = () => {
     setFilters({});
   };
 
-  const columns = useMemo<ColumnsType<TenantItem>>(
-    () => [
+  const buildMoreActionItems = (record: TenantItem): MenuProps['items'] => {
+    const items: MenuProps['items'] = [
+      {
+        key: 'plan',
+        icon: <SwapOutlined />,
+        label: '调整套餐',
+        onClick: () => openPlanModal(record),
+      },
+      {
+        key: 'quota',
+        icon: <SettingOutlined />,
+        label: '调整配额',
+        onClick: () => void openQuotaModal(record),
+      },
+      {
+        key: 'reset-admin-password',
+        icon: <KeyOutlined />,
+        label: '重置超管密码',
+        onClick: () => void handleResetAdminPassword(record),
+      },
+    ];
+
+    if (!isSystemOpsTenant(record)) {
+      items.push(
+        {
+          key: 'space-menus',
+          icon: <AppstoreOutlined />,
+          label: '空间授权',
+          onClick: () => void openSpaceModal(record),
+        },
+        {
+          key: 'webhook',
+          icon: <ApiOutlined />,
+          label: 'Webhook',
+          onClick: () => openWebhookDrawer(record),
+        },
+      );
+    }
+
+    items.push(
+      { type: 'divider' },
+      {
+        key: 'deactivate',
+        danger: true,
+        label: '注销租户',
+        onClick: () => {
+          Modal.confirm({
+            title: '确认注销该租户？',
+            content: `租户 ${record.name} 注销后将进入注销流程，请谨慎操作。`,
+            okText: '确认注销',
+            cancelText: '取消',
+            okButtonProps: { danger: true },
+            onOk: async () => {
+              await handleDeactivate(record);
+            },
+          });
+        },
+      },
+    );
+
+    return items;
+  };
+
+  const columns: ColumnsType<TenantItem> = [
       { title: '编码', dataIndex: 'code', width: 160 },
       { title: '名称', dataIndex: 'name', width: 180 },
       { title: '展示名', dataIndex: 'displayName', width: 180, render: (value?: string) => value || '-' },
@@ -619,19 +733,11 @@ const TenantList: React.FC = () => {
         title: '操作',
         key: 'action',
         fixed: 'right',
-        width: 480,
+        width: 300,
         render: (_value: unknown, record) => (
           <Space size="small" wrap>
             <Button type="link" size="small" icon={<BarChartOutlined />} onClick={() => setUsageTenant(record)}>用量</Button>
-            {!isSystemOpsTenant(record) && (
-              <Button type="link" size="small" icon={<AppstoreOutlined />} onClick={() => void openSpaceModal(record)}>空间授权</Button>
-            )}
-            {!isSystemOpsTenant(record) && (
-              <Button type="link" size="small" icon={<ApiOutlined />} onClick={() => openWebhookDrawer(record)}>Webhook</Button>
-            )}
             <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEditModal(record)}>编辑</Button>
-            <Button type="link" size="small" icon={<SwapOutlined />} onClick={() => openPlanModal(record)}>套餐</Button>
-            <Button type="link" size="small" icon={<SettingOutlined />} onClick={() => void openQuotaModal(record)}>配额</Button>
             {record.status === 'SUSPENDED' ? (
               <Popconfirm title="确认恢复该租户？" onConfirm={() => void handleStatusChange(record, 'ACTIVE')}>
                 <Button type="link" size="small">启用</Button>
@@ -641,15 +747,16 @@ const TenantList: React.FC = () => {
                 <Button type="link" size="small" icon={<StopOutlined />}>暂停</Button>
               </Popconfirm>
             )}
-            <Popconfirm title="确认注销该租户？" onConfirm={() => void handleDeactivate(record)}>
-              <Button type="link" size="small" danger>注销</Button>
-            </Popconfirm>
+            <Dropdown menu={{ items: buildMoreActionItems(record) }} trigger={['click']}>
+              <Button type="link" size="small" icon={<MoreOutlined />}>
+                更多
+                <DownOutlined style={{ fontSize: 10 }} />
+              </Button>
+            </Dropdown>
           </Space>
         ),
       },
-    ],
-    [],
-  );
+    ];
 
   const trendChartData = useMemo(
     () => usageDaily.map((item) => ({ date: item.date, value: Number(item[trendMetric] ?? 0) })),

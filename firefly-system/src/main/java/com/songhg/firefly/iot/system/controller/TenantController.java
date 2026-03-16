@@ -5,6 +5,7 @@ import com.songhg.firefly.iot.common.enums.TenantStatus;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresPermission;
 import com.songhg.firefly.iot.system.dto.tenant.TenantCreateDTO;
+import com.songhg.firefly.iot.system.dto.tenant.TenantAdminPasswordResetDTO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantOverviewVO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantPlanUpdateDTO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantQuotaUpdateDTO;
@@ -161,6 +162,17 @@ public class TenantController {
     public R<Void> deactivateTenant(@Parameter(description = "Tenant ID", required = true) @PathVariable Long id) {
         userDomainService.assertCurrentUserIsSystemOps();
         tenantService.deactivateTenant(id);
+        return R.ok();
+    }
+
+    @PostMapping("/{id}/admin-password/reset")
+    @RequiresPermission("tenant:manage")
+    @Operation(summary = "Reset tenant super admin password")
+    public R<Void> resetTenantAdminPassword(
+            @Parameter(description = "Tenant ID", required = true) @PathVariable Long id,
+            @Valid @RequestBody TenantAdminPasswordResetDTO dto) {
+        userDomainService.assertCurrentUserIsSystemOps();
+        tenantService.resetTenantAdminPassword(id, dto.getNewPassword());
         return R.ok();
     }
 

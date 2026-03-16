@@ -358,6 +358,8 @@ export const tenantApi = {
       params: { startDate: normalizeOptionalDate(startDate), endDate: normalizeOptionalDate(endDate) },
     }),
   deactivate: (id: number) => request.post(`/platform/tenants/${normalizeTenantId(id)}/deactivate`),
+  resetAdminPassword: (id: number, newPassword: string) =>
+    request.post(`/platform/tenants/${normalizeTenantId(id)}/admin-password/reset`, { newPassword }),
   overview: () => request.get('/platform/tenants/overview'),
 };
 
