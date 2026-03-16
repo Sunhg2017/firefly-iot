@@ -99,7 +99,7 @@ const roleTypeLabels: Record<string, string> = {
 const dataScopeLabels: Record<string, string> = {
   ALL: '全部数据',
   PROJECT: '项目范围',
-  GROUP: '分组范围',
+  GROUP: '设备分组范围',
   SELF: '仅本人',
   CUSTOM: '自定义范围',
 };
@@ -239,7 +239,7 @@ const RoleList: React.FC = () => {
     const groupLabels = (config.groupIds ?? [])
       .map((groupId) => groupLabelMap.get(groupId))
       .filter((item): item is string => Boolean(item))
-      .map((label) => `分组: ${label}`);
+      .map((label) => `设备分组: ${label}`);
     return [...projectLabels, ...groupLabels];
   };
 
@@ -258,13 +258,13 @@ const RoleList: React.FC = () => {
       throw new Error('project-scope-required');
     }
     if (scope === 'GROUP' && groupIds.length === 0) {
-      form.setFields([{ name: ['dataScopeConfig', 'groupIds'], errors: ['请选择至少一个分组'] }]);
+      form.setFields([{ name: ['dataScopeConfig', 'groupIds'], errors: ['请选择至少一个设备分组'] }]);
       throw new Error('group-scope-required');
     }
     if (scope === 'CUSTOM' && projectIds.length === 0 && groupIds.length === 0) {
       form.setFields([
-        { name: ['dataScopeConfig', 'projectIds'], errors: ['请至少选择一个项目或分组'] },
-        { name: ['dataScopeConfig', 'groupIds'], errors: ['请至少选择一个项目或分组'] },
+        { name: ['dataScopeConfig', 'projectIds'], errors: ['请至少选择一个项目或设备分组'] },
+        { name: ['dataScopeConfig', 'groupIds'], errors: ['请至少选择一个项目或设备分组'] },
       ]);
       throw new Error('custom-scope-required');
     }
@@ -682,7 +682,7 @@ const RoleList: React.FC = () => {
               )}
               {(selectedDataScope === 'GROUP' || selectedDataScope === 'CUSTOM') && (
                 <Col span={24}>
-                  <Form.Item name={['dataScopeConfig', 'groupIds']} label="分组范围">
+                  <Form.Item name={['dataScopeConfig', 'groupIds']} label="设备分组范围">
                     <Select
                       mode="multiple"
                       allowClear

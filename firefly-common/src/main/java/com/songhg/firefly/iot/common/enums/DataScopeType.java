@@ -14,7 +14,7 @@ public enum DataScopeType implements IEnum<String> {
 
     ALL("ALL", "全部数据"),
     PROJECT("PROJECT", "项目级数据"),
-    GROUP("GROUP", "部门级数据"),
+    GROUP("GROUP", "设备分组范围"),
     SELF("SELF", "仅本人数据"),
     CUSTOM("CUSTOM", "自定义数据范围");
 

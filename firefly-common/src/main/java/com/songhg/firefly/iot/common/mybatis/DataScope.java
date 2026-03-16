@@ -13,7 +13,7 @@ import java.lang.annotation.Target;
  * dataScope 取自当前用户最宽角色的 data_scope 字段:
  *   ALL     — 不追加任何条件 (租户内全部数据)
  *   PROJECT — WHERE {tableAlias}.project_id IN (用户绑定的 project_id 列表)
- *   GROUP   — WHERE {tableAlias}.group_id IN (角色 dataScopeConfig.groupIds)
+ *   GROUP   — WHERE {tableAlias}.group_id IN (角色配置的设备分组 dataScopeConfig.groupIds)
  *   SELF    — WHERE {tableAlias}.created_by = {userId}
  *   CUSTOM  — WHERE {tableAlias}.project_id IN (角色 dataScopeConfig.projectIds)
  */
@@ -44,7 +44,7 @@ public @interface DataScope {
     String deviceColumn() default "device_id";
 
     /**
-     * 分组字段名，默认 "group_id"。GROUP 范围时使用。
+     * 设备分组字段名，默认 "group_id"。GROUP 范围时使用。
      */
     String groupColumn() default "group_id";
 

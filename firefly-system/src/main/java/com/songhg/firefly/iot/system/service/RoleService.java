@@ -274,10 +274,10 @@ public class RoleService {
             throw new BizException(ResultCode.PARAM_ERROR, "PROJECT 数据范围至少选择一个项目");
         }
         if (effectiveScope == DataScopeType.GROUP && groupIds.isEmpty()) {
-            throw new BizException(ResultCode.PARAM_ERROR, "GROUP 数据范围至少选择一个分组");
+            throw new BizException(ResultCode.PARAM_ERROR, "GROUP 数据范围至少选择一个设备分组");
         }
         if (effectiveScope == DataScopeType.CUSTOM && projectIds.isEmpty() && groupIds.isEmpty()) {
-            throw new BizException(ResultCode.PARAM_ERROR, "CUSTOM 数据范围至少选择一个项目或分组");
+            throw new BizException(ResultCode.PARAM_ERROR, "CUSTOM 数据范围至少选择一个项目或设备分组");
         }
         return normalized;
     }
