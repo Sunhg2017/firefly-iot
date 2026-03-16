@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useOutlet } from 'react-router-dom';
-import { Avatar, Breadcrumb, Dropdown, Layout, Menu, Space, Spin, Tag } from 'antd';
+import { Avatar, Breadcrumb, Dropdown, Layout, Menu, Spin, Space, Tag } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   CloseOutlined,
@@ -441,7 +441,7 @@ const BasicLayout: React.FC = () => {
             zIndex: 10,
           }}
         >
-          <Space size={16}>
+          <Space size={16} className="layout-header-left">
             <div
               onClick={() => setCollapsed((value) => !value)}
               style={{
@@ -477,26 +477,18 @@ const BasicLayout: React.FC = () => {
             />
           </Space>
 
-          <Space size={8}>
+          <div className="layout-header-right">
             <NotificationDropdown />
             <ExportCenterDropdown />
             <Dropdown menu={dropdownItems} placement="bottomRight">
-              <Space
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: 12,
-                  cursor: 'pointer',
-                  background: '#ffffff',
-                  border: '1px solid rgba(15,23,42,0.08)',
-                }}
-              >
+              <div className="layout-user-inline">
                 <Avatar icon={<UserOutlined />} src={user?.avatarUrl} />
-                <span style={{ color: '#0f172a', fontWeight: 500 }}>
+                <span className="layout-user-inline__name">
                   {user?.realName || user?.username || '用户'}
                 </span>
-              </Space>
+              </div>
             </Dropdown>
-          </Space>
+          </div>
         </Header>
 
         <Content style={{ margin: 20, minHeight: 360 }}>
