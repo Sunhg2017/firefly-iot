@@ -8,6 +8,7 @@ import com.songhg.firefly.iot.common.mybatis.DataScopeContext;
 import com.songhg.firefly.iot.common.mybatis.DataScopeResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -24,6 +25,13 @@ import java.util.Set;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnBean({
+        DataScopeUserRoleMapper.class,
+        DataScopeRoleMapper.class,
+        DataScopeDeviceMapper.class,
+        DataScopeProductMapper.class,
+        DataScopeDeviceGroupMemberMapper.class
+})
 public class DatabaseDataScopeResolver implements DataScopeResolver {
 
     private final DataScopeUserRoleMapper userRoleMapper;
