@@ -14,7 +14,7 @@ import java.util.Map;
 /**
  * Maintains platform-required built-in thing model definitions.
  * <p>
- * Built-in properties and lifecycle services are part of the platform contract
+ * Built-in properties and lifecycle events are part of the platform contract
  * and should always exist in every product thing model, regardless of whether
  * the model was created from scratch, edited manually, or imported
  * asynchronously.
@@ -24,15 +24,15 @@ import java.util.Map;
 public class ThingModelBuiltinDefinitionSupport {
 
     public static final List<String> BUILTIN_PROPERTY_IDENTIFIERS = List.of("ip");
-    public static final List<String> BUILTIN_SERVICE_IDENTIFIERS = List.of("online", "offline", "heartbeat");
+    public static final List<String> BUILTIN_EVENT_IDENTIFIERS = List.of("online", "offline", "heartbeat");
 
     private final ObjectMapper objectMapper;
 
     public ObjectNode createDefaultThingModel() {
         ObjectNode root = objectMapper.createObjectNode();
         root.set("properties", buildBuiltinProperties());
-        root.set("events", objectMapper.createArrayNode());
-        root.set("services", buildBuiltinServices());
+        root.set("events", buildBuiltinEvents());
+        root.set("services", objectMapper.createArrayNode());
         return root;
     }
 
@@ -43,8 +43,8 @@ public class ThingModelBuiltinDefinitionSupport {
 
         ObjectNode normalized = root.deepCopy();
         normalized.set("properties", mergeBuiltinProperties(properties));
-        normalized.set("events", events);
-        normalized.set("services", mergeBuiltinServices(services));
+        normalized.set("events", mergeBuiltinEvents(events));
+        normalized.set("services", mergeCustomServices(services));
         return normalized;
     }
 
@@ -52,8 +52,8 @@ public class ThingModelBuiltinDefinitionSupport {
         return identifier != null && BUILTIN_PROPERTY_IDENTIFIERS.contains(identifier.trim());
     }
 
-    public boolean isBuiltinServiceIdentifier(String identifier) {
-        return identifier != null && BUILTIN_SERVICE_IDENTIFIERS.contains(identifier.trim());
+    public boolean isBuiltinEventIdentifier(String identifier) {
+        return identifier != null && BUILTIN_EVENT_IDENTIFIERS.contains(identifier.trim());
     }
 
     private ArrayNode ensureArray(ObjectNode root, String fieldName) {
@@ -82,22 +82,37 @@ public class ThingModelBuiltinDefinitionSupport {
         return mergedProperties;
     }
 
-    private ArrayNode mergeBuiltinServices(ArrayNode services) {
-        Map<String, JsonNode> customServices = new LinkedHashMap<>();
+    private ArrayNode mergeBuiltinEvents(ArrayNode events) {
+        Map<String, JsonNode> customEvents = new LinkedHashMap<>();
+        for (JsonNode event : events) {
+            if (!event.isObject()) {
+                continue;
+            }
+            String identifier = event.path("identifier").asText("");
+            if (BUILTIN_EVENT_IDENTIFIERS.contains(identifier)) {
+                continue;
+            }
+            customEvents.putIfAbsent(identifier, event.deepCopy());
+        }
+
+        ArrayNode mergedEvents = buildBuiltinEvents();
+        customEvents.values().forEach(mergedEvents::add);
+        return mergedEvents;
+    }
+
+    private ArrayNode mergeCustomServices(ArrayNode services) {
+        ArrayNode customServices = objectMapper.createArrayNode();
         for (JsonNode service : services) {
             if (!service.isObject()) {
                 continue;
             }
             String identifier = service.path("identifier").asText("");
-            if (BUILTIN_SERVICE_IDENTIFIERS.contains(identifier)) {
+            if (BUILTIN_EVENT_IDENTIFIERS.contains(identifier)) {
                 continue;
             }
-            customServices.putIfAbsent(identifier, service.deepCopy());
+            customServices.add(service.deepCopy());
         }
-
-        ArrayNode mergedServices = buildBuiltinServices();
-        customServices.values().forEach(mergedServices::add);
-        return mergedServices;
+        return customServices;
     }
 
     private ArrayNode buildBuiltinProperties() {
@@ -106,12 +121,12 @@ public class ThingModelBuiltinDefinitionSupport {
         return properties;
     }
 
-    private ArrayNode buildBuiltinServices() {
-        ArrayNode services = objectMapper.createArrayNode();
-        services.add(createBuiltinService("online", "上线", "设备连接建立后上报在线状态"));
-        services.add(createBuiltinService("offline", "离线", "设备断开或超时后上报离线状态"));
-        services.add(createBuiltinService("heartbeat", "心跳", "设备周期性保活，维持在线状态"));
-        return services;
+    private ArrayNode buildBuiltinEvents() {
+        ArrayNode events = objectMapper.createArrayNode();
+        events.add(createBuiltinEvent("online", "上线", "设备连接建立后上报在线状态"));
+        events.add(createBuiltinEvent("offline", "离线", "设备断开或超时后上报离线状态"));
+        events.add(createBuiltinEvent("heartbeat", "心跳", "设备周期性保活，维持在线状态"));
+        return events;
     }
 
     private ObjectNode createBuiltinProperty(String identifier, String name, String description) {
@@ -129,17 +144,16 @@ public class ThingModelBuiltinDefinitionSupport {
         return property;
     }
 
-    private ObjectNode createBuiltinService(String identifier, String name, String description) {
-        ObjectNode service = objectMapper.createObjectNode();
-        service.put("identifier", identifier);
-        service.put("name", name);
-        service.put("description", description);
-        service.put("callType", "async");
-        service.put("system", true);
-        service.put("readonly", true);
-        service.put("lifecycle", true);
-        service.set("inputData", objectMapper.createArrayNode());
-        service.set("outputData", objectMapper.createArrayNode());
-        return service;
+    private ObjectNode createBuiltinEvent(String identifier, String name, String description) {
+        ObjectNode event = objectMapper.createObjectNode();
+        event.put("identifier", identifier);
+        event.put("name", name);
+        event.put("description", description);
+        event.put("type", "info");
+        event.put("system", true);
+        event.put("readonly", true);
+        event.put("lifecycle", true);
+        event.set("outputData", objectMapper.createArrayNode());
+        return event;
     }
 }

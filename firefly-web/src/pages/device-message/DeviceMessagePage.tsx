@@ -26,15 +26,9 @@ interface ThingModelServiceItem {
   description?: unknown;
 }
 
-const BUILTIN_SERVICE_OPTIONS: ServiceOption[] = [
-  { value: 'online', label: '上线', description: '设备连接建立后上报在线状态' },
-  { value: 'offline', label: '离线', description: '设备断开或超时后上报离线状态' },
-  { value: 'heartbeat', label: '心跳', description: '设备周期性保活，维持在线状态' },
-];
-
 const parseThingModelServices = (rawThingModel: unknown): ServiceOption[] => {
   if (typeof rawThingModel !== 'string' || !rawThingModel.trim()) {
-    return BUILTIN_SERVICE_OPTIONS;
+    return [];
   }
 
   try {
@@ -53,10 +47,6 @@ const parseThingModelServices = (rawThingModel: unknown): ServiceOption[] => {
       })
       .filter((item): item is NonNullable<typeof item> => item !== null);
 
-    if (resolved.length === 0) {
-      return BUILTIN_SERVICE_OPTIONS;
-    }
-
     const deduplicated = new Map<string, ServiceOption>();
     resolved.forEach((item) => {
       if (!deduplicated.has(item.value)) {
@@ -65,7 +55,7 @@ const parseThingModelServices = (rawThingModel: unknown): ServiceOption[] => {
     });
     return Array.from(deduplicated.values());
   } catch {
-    return BUILTIN_SERVICE_OPTIONS;
+    return [];
   }
 };
 
@@ -135,7 +125,7 @@ const ServiceInvokeTab: React.FC<TabProps> = ({ deviceOptions }) => {
   const [form] = Form.useForm();
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
-  const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>(BUILTIN_SERVICE_OPTIONS);
+  const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>([]);
   const [serviceLoading, setServiceLoading] = useState(false);
   const serviceCacheRef = useRef<Map<number, ServiceOption[]>>(new Map());
   const selectedDeviceId = Form.useWatch('deviceId', form) as number | undefined;
@@ -148,7 +138,7 @@ const ServiceInvokeTab: React.FC<TabProps> = ({ deviceOptions }) => {
   useEffect(() => {
     const loadProductServices = async () => {
       if (!selectedDevice?.productId) {
-        setServiceOptions(BUILTIN_SERVICE_OPTIONS);
+        setServiceOptions([]);
         form.setFieldValue('serviceName', undefined);
         return;
       }
@@ -168,9 +158,9 @@ const ServiceInvokeTab: React.FC<TabProps> = ({ deviceOptions }) => {
         setServiceOptions(options);
         form.setFieldValue('serviceName', options[0]?.value);
       } catch {
-        setServiceOptions(BUILTIN_SERVICE_OPTIONS);
-        form.setFieldValue('serviceName', BUILTIN_SERVICE_OPTIONS[0].value);
-        message.warning('加载产品物模型服务失败，已回退到固有服务列表');
+        setServiceOptions([]);
+        form.setFieldValue('serviceName', undefined);
+        message.warning('加载产品物模型服务失败，请稍后重试');
       } finally {
         setServiceLoading(false);
       }
@@ -212,7 +202,6 @@ const ServiceInvokeTab: React.FC<TabProps> = ({ deviceOptions }) => {
         onFinish={handleSend}
         initialValues={{
           params: '{\n  \n}',
-          serviceName: BUILTIN_SERVICE_OPTIONS[0].value,
         }}
       >
         <Form.Item name="deviceId" label="目标设备" rules={[{ required: true, message: '请选择设备' }]}>
@@ -240,6 +229,7 @@ const ServiceInvokeTab: React.FC<TabProps> = ({ deviceOptions }) => {
               label: service.label,
               title: service.description,
             }))}
+            notFoundContent={selectedDevice ? '当前产品暂无可调用服务' : '请先选择设备'}
           />
         </Form.Item>
         <Form.Item
@@ -374,7 +364,7 @@ const DeviceMessagePage: React.FC = () => {
     <div>
       <PageHeader
         title="设备消息"
-        description="向设备下发属性设置、调用物模型服务或直接发送原始下行消息。服务调用会根据设备所属产品自动加载物模型服务列表。"
+        description="向设备下发属性设置、调用产品自定义服务或直接发送原始下行消息。上线、离线、心跳属于生命周期事件，不在服务调用列表中。"
       />
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0, 0, 0, 0.04)' }}>
         <Tabs

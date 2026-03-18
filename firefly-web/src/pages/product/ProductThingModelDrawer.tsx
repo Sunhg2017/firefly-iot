@@ -172,8 +172,8 @@ const SECTION_CONFIGS: ThingModelSection[] = [
   { key: 'services', title: '服务', emptyText: '暂无服务定义', itemLabel: '服务' },
 ];
 
-const BUILTIN_SERVICE_IDENTIFIERS = ['online', 'offline', 'heartbeat'] as const;
 const BUILTIN_PROPERTY_IDENTIFIERS = ['ip'] as const;
+const BUILTIN_EVENT_IDENTIFIERS = ['online', 'offline', 'heartbeat'] as const;
 
 const BUILTIN_PROPERTY_ITEMS: ThingModelItem[] = [
   {
@@ -189,46 +189,43 @@ const BUILTIN_PROPERTY_ITEMS: ThingModelItem[] = [
   },
 ];
 
-const BUILTIN_SERVICE_ITEMS: ThingModelItem[] = [
+const BUILTIN_EVENT_ITEMS: ThingModelItem[] = [
   {
     identifier: 'online',
     name: '上线',
     description: '设备连接建立后上报在线状态',
-    callType: 'async',
+    type: 'info',
     system: true,
     readonly: true,
     lifecycle: true,
-    inputData: [],
     outputData: [],
   },
   {
     identifier: 'offline',
     name: '离线',
     description: '设备断开或超时后上报离线状态',
-    callType: 'async',
+    type: 'info',
     system: true,
     readonly: true,
     lifecycle: true,
-    inputData: [],
     outputData: [],
   },
   {
     identifier: 'heartbeat',
     name: '心跳',
     description: '设备周期性保活，维持在线状态',
-    callType: 'async',
+    type: 'info',
     system: true,
     readonly: true,
     lifecycle: true,
-    inputData: [],
     outputData: [],
   },
 ];
 
 const DEFAULT_THING_MODEL: ThingModelRoot = {
   properties: BUILTIN_PROPERTY_ITEMS.map((item) => ({ ...item })),
-  events: [],
-  services: BUILTIN_SERVICE_ITEMS.map((item) => ({ ...item })),
+  events: BUILTIN_EVENT_ITEMS.map((item) => ({ ...item })),
+  services: [],
 };
 
 const DEFAULT_THING_MODEL_TEXT = JSON.stringify(DEFAULT_THING_MODEL, null, 2);
@@ -726,9 +723,9 @@ const isBuiltinPropertyItem = (item: ThingModelItem | undefined) => {
   return BUILTIN_PROPERTY_IDENTIFIERS.includes(identifier as (typeof BUILTIN_PROPERTY_IDENTIFIERS)[number]);
 };
 
-const isBuiltinServiceItem = (item: ThingModelItem | undefined) => {
+const isBuiltinEventItem = (item: ThingModelItem | undefined) => {
   const identifier = typeof item?.identifier === 'string' ? item.identifier.trim() : '';
-  return BUILTIN_SERVICE_IDENTIFIERS.includes(identifier as (typeof BUILTIN_SERVICE_IDENTIFIERS)[number]);
+  return BUILTIN_EVENT_IDENTIFIERS.includes(identifier as (typeof BUILTIN_EVENT_IDENTIFIERS)[number]);
 };
 
 const ensureBuiltinDefinitions = (root: ThingModelRoot): ThingModelRoot => ({
@@ -737,9 +734,12 @@ const ensureBuiltinDefinitions = (root: ThingModelRoot): ThingModelRoot => ({
     ...BUILTIN_PROPERTY_ITEMS.map((item) => ({ ...item })),
     ...root.properties.filter((item) => !isBuiltinPropertyItem(item)),
   ],
+  events: [
+    ...BUILTIN_EVENT_ITEMS.map((item) => ({ ...item })),
+    ...root.events.filter((item) => !isBuiltinEventItem(item)),
+  ],
   services: [
-    ...BUILTIN_SERVICE_ITEMS.map((item) => ({ ...item })),
-    ...root.services.filter((item) => !isBuiltinServiceItem(item)),
+    ...root.services.filter((item) => !isBuiltinEventItem(item)),
   ],
 });
 
@@ -1391,15 +1391,34 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
     if (section === 'properties') {
       return isBuiltinPropertyItem(draftModel.properties[index]);
     }
+    if (section === 'events') {
+      return isBuiltinEventItem(draftModel.events[index]);
+    }
     if (section === 'services') {
-      return isBuiltinServiceItem(draftModel.services[index]);
+      return false;
     }
     return false;
   };
 
-  const getBuiltinItemLabel = (section: SectionKey) => (section === 'properties' ? '系统固有属性' : '系统固有服务');
+  const getBuiltinItemLabel = (section: SectionKey) => {
+    if (section === 'properties') {
+      return '系统固有属性';
+    }
+    if (section === 'events') {
+      return '系统固有事件';
+    }
+    return '系统固有项';
+  };
 
-  const getBuiltinItemTagLabel = (section: SectionKey) => (section === 'properties' ? '固有属性' : '固有服务');
+  const getBuiltinItemTagLabel = (section: SectionKey) => {
+    if (section === 'properties') {
+      return '固有属性';
+    }
+    if (section === 'events') {
+      return '固有事件';
+    }
+    return '固有项';
+  };
 
   const syncDraftModel = (nextRoot: ThingModelRoot) => {
     const normalizedRoot = ensureBuiltinDefinitions(nextRoot);

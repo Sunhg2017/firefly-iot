@@ -63,8 +63,8 @@ class ProductServiceTest {
 
         JsonNode root = objectMapper.readTree(inserted.getThingModel());
         assertEquals(List.of("ip"), extractPropertyIdentifiers(root));
-        List<String> identifiers = extractServiceIdentifiers(root);
-        assertEquals(List.of("online", "offline", "heartbeat"), identifiers);
+        assertEquals(List.of("online", "offline", "heartbeat"), extractEventIdentifiers(root));
+        assertEquals(List.of(), extractServiceIdentifiers(root));
     }
 
     @Test
@@ -79,7 +79,8 @@ class ProductServiceTest {
 
         JsonNode root = objectMapper.readTree(thingModel);
         assertEquals(List.of("ip"), extractPropertyIdentifiers(root));
-        assertEquals(List.of("online", "offline", "heartbeat"), extractServiceIdentifiers(root));
+        assertEquals(List.of("online", "offline", "heartbeat"), extractEventIdentifiers(root));
+        assertEquals(List.of(), extractServiceIdentifiers(root));
     }
 
     @Test
@@ -93,16 +94,18 @@ class ProductServiceTest {
 
         productService.updateThingModel(
                 1L,
-                "{\"properties\":[{\"identifier\":\"temperature\",\"name\":\"温度\"},{\"identifier\":\"ip\",\"name\":\"自定义IP\"}],\"events\":[],\"services\":[{\"identifier\":\"reboot\",\"name\":\"重启设备\"},{\"identifier\":\"online\",\"name\":\"自定义上线\"}]}"
+                "{\"properties\":[{\"identifier\":\"temperature\",\"name\":\"温度\"},{\"identifier\":\"ip\",\"name\":\"自定义IP\"}],\"events\":[{\"identifier\":\"overheat\",\"name\":\"过热告警\"},{\"identifier\":\"online\",\"name\":\"自定义上线\"}],\"services\":[{\"identifier\":\"reboot\",\"name\":\"重启设备\"},{\"identifier\":\"heartbeat\",\"name\":\"自定义心跳服务\"}]}"
         );
 
         JsonNode root = objectMapper.readTree(product.getThingModel());
         List<String> propertyIdentifiers = extractPropertyIdentifiers(root);
-        List<String> identifiers = extractServiceIdentifiers(root);
+        List<String> eventIdentifiers = extractEventIdentifiers(root);
+        List<String> serviceIdentifiers = extractServiceIdentifiers(root);
         assertEquals(List.of("ip", "temperature"), propertyIdentifiers);
         assertTrue(root.path("properties").get(0).path("system").asBoolean(false));
-        assertEquals(List.of("online", "offline", "heartbeat", "reboot"), identifiers);
-        assertTrue(root.path("services").get(0).path("system").asBoolean(false));
+        assertEquals(List.of("online", "offline", "heartbeat", "overheat"), eventIdentifiers);
+        assertTrue(root.path("events").get(0).path("system").asBoolean(false));
+        assertEquals(List.of("reboot"), serviceIdentifiers);
     }
 
     private List<String> extractPropertyIdentifiers(JsonNode root) {
@@ -112,6 +115,11 @@ class ProductServiceTest {
 
     private List<String> extractServiceIdentifiers(JsonNode root) {
         return root.path("services")
+                .findValuesAsText("identifier");
+    }
+
+    private List<String> extractEventIdentifiers(JsonNode root) {
+        return root.path("events")
                 .findValuesAsText("identifier");
     }
 }
