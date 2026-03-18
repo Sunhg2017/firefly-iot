@@ -156,3 +156,76 @@
 - 删除模拟器设备时，如果该设备是模拟器动态注册创建的，则先调用 connector 的 `/api/v1/protocol/device/unregister`。
 - connector 再调用 device 内部接口，按 `productKey + productSecret + deviceName` 校验并删除平台设备。
 - 删除平台设备时继续复用 `DeviceService.deleteDevice(...)`，确保设备定位器、设备数量统计和软删除逻辑保持一致。
+
+
+## 10. 2026-03-19 设备模拟器物模型联动与生命周期事件
+
+### 10.1 背景
+
+- 设备模拟器原先只能基于本地固定模板随机生成属性和事件数据，无法反映产品真实物模型，调试价值有限。
+- 平台已将内置 `ip` 属性以及 `online`、`offline`、`heartbeat` 生命周期事件纳入物模型默认定义，模拟器也需要按同一口径工作。
+- 模拟器是设备侧调试工具，不应依赖平台管理端登录态，因此需要提供按 `productKey` 读取物模型的设备侧只读链路。
+
+### 10.2 目标
+
+- 让 HTTP、CoAP、MQTT 模拟设备在“数据上报”面板中直接按产品物模型生成随机属性/事件 payload。
+- 设备连接成功后补发 `online` 事件，手工断开前补发 `offline` 事件。
+- 设备在线期间按固定周期自动发送 `heartbeat` 事件；HTTP 同时调用 `/api/v1/protocol/http/heartbeat` 刷新在线状态。
+- 物模型获取链路只依赖 `productKey`，便于未发布产品、动态注册场景和本地联调场景使用。
+
+### 10.3 后端链路设计
+
+- `firefly-device`
+  - 新增 `GET /api/v1/internal/products/{id}/basic`，继续承接服务间读取产品基础信息。
+  - 新增 `GET /api/v1/internal/products/thing-model?productKey=...`，支持按 `productKey` 读取产品物模型。
+  - `ProductService.getThingModelByProductKey(...)` 复用现有物模型解析与写回逻辑，统一补齐内置 `ip / online / offline / heartbeat`。
+- `firefly-api`
+  - `ProductClient` 的 Feign 路径收口到 `/api/v1/internal/products`，并新增 `getThingModelByProductKey(...)`。
+- `firefly-connector`
+  - 新增 `GET /api/v1/protocol/products/thing-model?productKey=...`。
+  - connector 通过 `ProductClient` 转调 device 服务，对设备侧调试工具暴露只读物模型能力。
+
+### 10.4 模拟器实现
+
+- `DeviceControlPanel` 不再依赖本地随机模板来驱动默认数据模拟，而是加载产品物模型后生成候选属性、事件列表。
+- 数据源切换为“物模型模拟 / 自定义 JSON”。
+  - 物模型模拟时，属性支持“全部属性”或单个属性。
+  - 事件支持选择具体事件，并根据 `outputData` 自动生成字段。
+- 新增生命周期事件发送辅助方法，统一封装 `identifier`、`eventType`、`eventName`、`timestamp`、`occurredAt`、`protocol`、`productKey`、`deviceName`、`ip` 等字段。
+- 新增心跳定时器状态，跟随设备在线状态启动和停止。
+
+### 10.5 随机值生成策略
+
+- `int`：按 `min/max` 生成随机整数，默认范围 `0..100`。
+- `float / double`：按 `min/max/precision` 生成随机浮点数，默认保留 2 位小数。
+- `bool`：随机 `true/false`。
+- `enum`：优先使用物模型 `values` 中定义的候选项。
+- `date`：使用当前毫秒时间戳。
+- `string`：默认生成随机字符串；`ip` 标识符单独生成 IPv4 地址。
+- `array / struct`：递归按子类型和字段定义生成示例值。
+
+### 10.6 生命周期事件策略
+
+- 连接成功
+  - HTTP 鉴权成功后立即发送 `online` 事件。
+  - CoAP 鉴权成功后立即发送 `online` 事件。
+  - MQTT 建连成功后立即发送 `online` 事件。
+- 主动断开
+  - 在手工点击 `Disconnect` 时，先尝试发送 `offline` 事件，再执行协议断连。
+  - MQTT 如果是异常掉线，连接已关闭后无法保证再补发 `offline`，这是协议边界。
+- 心跳
+  - HTTP / CoAP / MQTT 设备在线时自动启动心跳定时器。
+  - 默认周期 30 秒，可选 `15 / 30 / 60 / 120 / 300` 秒。
+  - HTTP 心跳会同时发送 `heartbeat` 事件，并调用 `/api/v1/protocol/http/heartbeat` 刷新 connector 侧在线状态。
+
+### 10.7 交互设计
+
+- 当物模型存在可选项时，默认进入“物模型模拟”模式。
+- 控制面板展示随机样例预览，便于用户在发送前确认 payload 结构。
+- 当产品还未配置对应属性或事件时，界面自动提示切换为自定义 JSON，避免空发送。
+
+### 10.8 边界与风险
+
+- 物模型读取链路要求模拟器能访问 connector；若 `baseUrl` 未配置或 connector 未发布对应接口，将退化为自定义 JSON。
+- MQTT 异常断线无法 100% 保证补发 `offline` 事件，只能在主动断开路径上保证。
+- 自动心跳与自动上报都依赖本地定时器，若桌面进程被挂起或退出，事件发送会随之停止。

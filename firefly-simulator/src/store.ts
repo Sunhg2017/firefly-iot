@@ -104,6 +104,8 @@ export interface SimDevice {
   autoReport: boolean;
   autoIntervalSec: number;
   autoTimerId: number | null;
+  heartbeatIntervalSec: number;
+  heartbeatTimerId: number | null;
   // Stats
   sentCount: number;
   errorCount: number;
@@ -433,6 +435,8 @@ export const useSimStore = create<SimulatorState>()(
       autoReport: false,
       autoIntervalSec: 5,
       autoTimerId: null,
+      heartbeatIntervalSec: partial.heartbeatIntervalSec || 30,
+      heartbeatTimerId: null,
       sentCount: 0,
       errorCount: 0,
       dynamicRegistered: partial.dynamicRegistered ?? false,
@@ -484,6 +488,7 @@ export const useSimStore = create<SimulatorState>()(
           token: '',
           autoReport: false,
           autoTimerId: null,
+          heartbeatTimerId: null,
           sentCount: 0,
           errorCount: 0,
           videoDeviceId: null,

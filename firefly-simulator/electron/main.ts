@@ -215,6 +215,27 @@ ipcMain.handle('http:event', async (_e, baseUrl: string, token: string, event: R
   }
 });
 
+ipcMain.handle('http:heartbeat', async (_e, baseUrl: string, token: string) => {
+  try {
+    const url = `${baseUrl}/api/v1/protocol/http/heartbeat`;
+    const res = await httpRequest(url, 'POST', { 'X-Device-Token': token });
+    return { success: true, ...JSON.parse(res.data), _status: res.status, _headers: res.headers, _elapsed: res.elapsed };
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('product:thingModel', async (_e, baseUrl: string, productKey: string) => {
+  try {
+    const url = new URL(`${baseUrl}/api/v1/protocol/products/thing-model`);
+    url.searchParams.set('productKey', productKey || '');
+    const res = await httpRequest(url.toString(), 'GET', {});
+    return { success: true, ...JSON.parse(res.data), _status: res.status, _headers: res.headers, _elapsed: res.elapsed };
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+});
+
 ipcMain.handle('device:dynamicRegister', async (
   _e,
   baseUrl: string,

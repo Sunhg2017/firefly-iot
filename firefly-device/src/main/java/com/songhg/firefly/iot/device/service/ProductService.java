@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.songhg.firefly.iot.api.dto.ProductBasicVO;
 import com.songhg.firefly.iot.api.client.FileClient;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DataFormat;
@@ -82,6 +83,21 @@ public class ProductService {
             throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
         }
         return ProductConvert.INSTANCE.toVO(product);
+    }
+
+    public ProductBasicVO getProductBasic(Long id) {
+        Product product = productMapper.selectById(id);
+        if (product == null) {
+            throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
+        }
+        ProductBasicVO basic = new ProductBasicVO();
+        basic.setId(product.getId());
+        basic.setProductKey(product.getProductKey());
+        basic.setName(product.getName());
+        basic.setNodeType(product.getNodeType() == null ? null : product.getNodeType().name());
+        basic.setProtocol(product.getProtocol() == null ? null : product.getProtocol().name());
+        basic.setTenantId(product.getTenantId());
+        return basic;
     }
 
     @DataScope(projectColumn = "project_id", productColumn = "id", deviceColumn = "", groupColumn = "")
@@ -176,6 +192,19 @@ public class ProductService {
 
     public String getThingModel(Long id) {
         Product product = productMapper.selectById(id);
+        if (product == null) {
+            throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
+        }
+        return writeThingModel(parseThingModel(product.getThingModel()));
+    }
+
+    public String getThingModelByProductKey(String productKey) {
+        String normalizedProductKey = trimToNull(productKey);
+        if (normalizedProductKey == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "productKey 不能为空");
+        }
+
+        Product product = productMapper.selectByProductKeyIgnoreTenant(normalizedProductKey);
         if (product == null) {
             throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
         }

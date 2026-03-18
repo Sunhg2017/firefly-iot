@@ -26,7 +26,8 @@ import {
   ReloadOutlined,
   SendOutlined,
 } from '@ant-design/icons';
-import { generatePayload, useSimStore } from '../store';
+import type { SimDevice } from '../store';
+import { useSimStore } from '../store';
 import {
   CoapControlPanel,
   HttpControlPanel,
@@ -49,6 +50,13 @@ import {
   validateMqttDevice,
 } from '../utils/mqtt';
 import { getDeviceAccessOverviewItems, getDeviceAccessValidationError } from '../utils/deviceAccess';
+import {
+  buildRandomEventPayload,
+  buildRandomPropertyBatchPayload,
+  buildRandomPropertyPayload,
+  parseThingModelText,
+  type ThingModelRoot,
+} from '../utils/thingModel';
 
 const { Text, Title } = Typography;
 
@@ -72,6 +80,17 @@ const STATUS_TEXT = {
   error: 'Error',
 } as const;
 
+const ALL_PROPERTIES_VALUE = '__all_properties__';
+const HEARTBEAT_INTERVAL_OPTIONS = [15, 30, 60, 120, 300].map((value) => ({
+  label: `${value} sec`,
+  value,
+}));
+const LIFECYCLE_EVENT_LABELS: Record<'online' | 'offline' | 'heartbeat', string> = {
+  online: 'Online',
+  offline: 'Offline',
+  heartbeat: 'Heartbeat',
+};
+
 function maskSecret(value?: string | null): string {
   const text = (value ?? '').trim();
   if (!text) return '未配置';
@@ -79,17 +98,45 @@ function maskSecret(value?: string | null): string {
   return `${'*'.repeat(Math.max(4, text.length - 4))}${text.slice(-4)}`;
 }
 
+function supportsThingModelReport(protocol?: string): boolean {
+  return protocol === 'HTTP' || protocol === 'CoAP' || protocol === 'MQTT';
+}
+
+function resolveThingModelBaseUrl(device: SimDevice): string {
+  if (device.protocol === 'HTTP') return (device.httpBaseUrl || '').trim();
+  if (device.protocol === 'CoAP') return (device.coapBaseUrl || '').trim();
+  if (device.protocol === 'MQTT') return (device.mqttRegisterBaseUrl || '').trim();
+  return '';
+}
+
+function buildLifecycleEventPayload(device: SimDevice, identifier: 'online' | 'offline' | 'heartbeat'): Record<string, unknown> {
+  return {
+    identifier,
+    eventType: identifier,
+    eventName: LIFECYCLE_EVENT_LABELS[identifier],
+    timestamp: Date.now(),
+    occurredAt: new Date().toISOString(),
+    protocol: device.protocol,
+    productKey: device.productKey,
+    deviceName: device.deviceName,
+    ip: `192.168.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 253) + 2}`,
+  };
+}
+
 export default function DeviceControlPanel() {
-  const { devices, selectedDeviceId, updateDevice, addLog, templates } = useSimStore();
+  const { devices, selectedDeviceId, updateDevice, addLog } = useSimStore();
   const device = devices.find((item) => item.id === selectedDeviceId);
 
   const [sending, setSending] = useState(false);
-  const [selectedTplId, setSelectedTplId] = useState('');
-  const [payloadMode, setPayloadMode] = useState<'template' | 'custom'>('template');
+  const [selectedModelIdentifier, setSelectedModelIdentifier] = useState('');
+  const [payloadMode, setPayloadMode] = useState<'model' | 'custom'>('model');
   const [customPayload, setCustomPayload] = useState('{\n  "temperature": 25.5,\n  "humidity": 60\n}');
   const [reportType, setReportType] = useState<'property' | 'event' | 'ota'>('property');
   const [mqttTopic, setMqttTopic] = useState('');
-  const [templatePreviewNonce, setTemplatePreviewNonce] = useState(0);
+  const [modelPreviewNonce, setModelPreviewNonce] = useState(0);
+  const [thingModelLoading, setThingModelLoading] = useState(false);
+  const [thingModelError, setThingModelError] = useState('');
+  const [thingModelRoot, setThingModelRoot] = useState<ThingModelRoot | null>(null);
   const [sipMessages, setSipMessages] = useState<SipMsg[]>([]);
   const [httpHistory, setHttpHistory] = useState<HttpHistoryEntry[]>([]);
   const [coapShadowPolling, setCoapShadowPolling] = useState(false);
@@ -128,6 +175,19 @@ export default function DeviceControlPanel() {
     }
   }
 
+  function stopHeartbeatForDevice(deviceId: string, options?: { silent?: boolean; reason?: string }) {
+    const current = useSimStore.getState().devices.find((item) => item.id === deviceId);
+    if (!current || !current.heartbeatTimerId) {
+      return;
+    }
+
+    clearInterval(current.heartbeatTimerId);
+    updateDevice(deviceId, { heartbeatTimerId: null });
+    if (!options?.silent) {
+      addLog(deviceId, current.name, 'info', options?.reason || 'Heartbeat stopped');
+    }
+  }
+
   useEffect(() => {
     if (!device || device.protocol !== 'MQTT') {
       setMqttTopic('');
@@ -136,41 +196,122 @@ export default function DeviceControlPanel() {
     setMqttTopic(buildMqttPublishTopic(device, reportType === 'event' ? 'event' : 'property'));
   }, [selectedDeviceId, device?.protocol, device?.productKey, device?.deviceName, reportType]);
 
-  const availableTemplates = useMemo(
-    () => templates.filter((item) => item.type === reportType),
-    [templates, reportType],
+  useEffect(() => {
+    if (!device || !supportsThingModelReport(device.protocol)) {
+      setThingModelRoot(null);
+      setThingModelError('');
+      setThingModelLoading(false);
+      return;
+    }
+
+    const productKey = (device.productKey || '').trim();
+    const baseUrl = resolveThingModelBaseUrl(device);
+    if (!productKey || !baseUrl) {
+      setThingModelRoot(null);
+      setThingModelError(productKey ? '产品物模型服务地址未配置' : '请先配置 ProductKey');
+      setThingModelLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setThingModelLoading(true);
+    setThingModelError('');
+
+    void window.electronAPI.productGetThingModel(baseUrl, productKey)
+      .then((result) => {
+        if (cancelled) return;
+        if (!result?.success || (typeof result.code === 'number' && result.code !== 0)) {
+          setThingModelRoot(null);
+          setThingModelError(result?.message || result?.msg || '加载产品物模型失败');
+          return;
+        }
+        setThingModelRoot(parseThingModelText(typeof result.data === 'string' ? result.data : '{}'));
+      })
+      .catch((error: any) => {
+        if (!cancelled) {
+          setThingModelRoot(null);
+          setThingModelError(error?.message || '加载产品物模型失败');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setThingModelLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedDeviceId,
+    device?.protocol,
+    device?.productKey,
+    device?.httpBaseUrl,
+    device?.coapBaseUrl,
+    device?.mqttRegisterBaseUrl,
+  ]);
+
+  const availableModelItems = useMemo(
+    () => {
+      if (!thingModelRoot) return [];
+      if (reportType === 'property') return thingModelRoot.properties.filter((item) => Boolean(item.identifier));
+      if (reportType === 'event') return thingModelRoot.events.filter((item) => Boolean(item.identifier));
+      return [];
+    },
+    [thingModelRoot, reportType],
   );
 
-  const activeTemplate = useMemo(
-    () => availableTemplates.find((item) => item.id === selectedTplId) || null,
-    [availableTemplates, selectedTplId],
+  const activeModelItem = useMemo(
+    () => availableModelItems.find((item) => item.identifier === selectedModelIdentifier) || null,
+    [availableModelItems, selectedModelIdentifier],
   );
 
-  const templatePreview = useMemo(() => {
-    if (!activeTemplate) return '';
-    return JSON.stringify(generatePayload(activeTemplate.fields), null, 2);
-  }, [activeTemplate, templatePreviewNonce]);
+  const modelPreview = useMemo(() => {
+    if (payloadMode !== 'model' || reportType === 'ota') return '';
+    if (reportType === 'property') {
+      const payload = selectedModelIdentifier === ALL_PROPERTIES_VALUE
+        ? buildRandomPropertyBatchPayload(availableModelItems)
+        : activeModelItem
+          ? buildRandomPropertyPayload(activeModelItem)
+          : null;
+      return payload ? JSON.stringify(payload, null, 2) : '';
+    }
+    if (reportType === 'event' && activeModelItem) {
+      return JSON.stringify(buildRandomEventPayload(activeModelItem), null, 2);
+    }
+    return '';
+  }, [activeModelItem, availableModelItems, modelPreviewNonce, payloadMode, reportType, selectedModelIdentifier]);
 
   useEffect(() => {
-    if (payloadMode !== 'template') return;
-    if (activeTemplate) return;
-    if (availableTemplates.length > 0) {
-      setSelectedTplId(availableTemplates[0].id);
+    if (payloadMode !== 'model' || reportType === 'ota' || thingModelLoading) return;
+    if (reportType === 'property') {
+      if (selectedModelIdentifier === ALL_PROPERTIES_VALUE) return;
+      if (activeModelItem) return;
+      if (availableModelItems.length > 0) {
+        setSelectedModelIdentifier(ALL_PROPERTIES_VALUE);
+        return;
+      }
+    } else if (activeModelItem) {
+      return;
+    }
+    if (availableModelItems.length > 0) {
+      setSelectedModelIdentifier(availableModelItems[0].identifier as string);
       return;
     }
     setPayloadMode('custom');
-    setSelectedTplId('');
-  }, [payloadMode, activeTemplate, availableTemplates]);
+    setSelectedModelIdentifier('');
+  }, [payloadMode, reportType, thingModelLoading, activeModelItem, availableModelItems, selectedModelIdentifier]);
 
   useEffect(() => {
-    if (availableTemplates.length === 0 && payloadMode === 'template') {
+    if (thingModelLoading) return;
+    if ((reportType === 'ota' || availableModelItems.length === 0) && payloadMode === 'model') {
       setPayloadMode('custom');
       return;
     }
-    if (availableTemplates.length > 0 && payloadMode === 'custom' && !customPayload.trim()) {
-      setPayloadMode('template');
+    if (reportType !== 'ota' && availableModelItems.length > 0 && payloadMode === 'custom' && !customPayload.trim()) {
+      setPayloadMode('model');
     }
-  }, [availableTemplates, payloadMode, customPayload]);
+  }, [availableModelItems, customPayload, payloadMode, reportType, thingModelLoading]);
 
   useEffect(() => () => {
     if (autoTimerRef.current) clearInterval(autoTimerRef.current);
@@ -191,6 +332,7 @@ export default function DeviceControlPanel() {
     setTcpMessages([]);
     setLoraMessages([]);
     setSipMessages([]);
+    setSelectedModelIdentifier('');
   }, [selectedDeviceId]);
 
   useEffect(() => {
@@ -204,6 +346,7 @@ export default function DeviceControlPanel() {
       const current = useSimStore.getState().devices.find((item) => item.id === id);
       if (!current) return;
       stopAutoReportForDevice(id, { reason: 'Auto report stopped because device disconnected' });
+      stopHeartbeatForDevice(id, { silent: true });
       useSimStore.getState().updateDevice(id, { status: 'offline' });
       useSimStore.getState().addLog(id, current.name, 'info', 'MQTT disconnected');
     });
@@ -373,6 +516,120 @@ export default function DeviceControlPanel() {
   const accessError = getDeviceAccessValidationError(device);
   const accessItems = getDeviceAccessOverviewItems(device);
 
+  const publishPayload = async (
+    target: SimDevice,
+    type: 'property' | 'event' | 'ota',
+    payload: Record<string, unknown>,
+    options?: { trackHttpHistory?: boolean; preferSelectedMqttTopic?: boolean },
+  ) => {
+    if (target.protocol === 'HTTP') {
+      if (type === 'ota') {
+        return { success: false, message: 'HTTP has no generic ota channel' };
+      }
+      const url = `${target.httpBaseUrl}/api/v1/protocol/http/${type === 'property' ? 'property/post' : 'event/post'}`;
+      const result = type === 'property'
+        ? await window.electronAPI.httpReportProperty(target.httpBaseUrl, target.token, payload)
+        : await window.electronAPI.httpReportEvent(target.httpBaseUrl, target.token, payload);
+      if (options?.trackHttpHistory && target.id === selectedDeviceId) {
+        setHttpHistory((prev) => [...prev.slice(-99), {
+          method: 'POST',
+          url,
+          reqBody: JSON.stringify(payload, null, 2),
+          status: result._status || 0,
+          resBody: JSON.stringify(result, null, 2),
+          resHeaders: result._headers || {},
+          elapsed: result._elapsed || 0,
+          ts: Date.now(),
+        }]);
+      }
+      return result;
+    }
+
+    if (target.protocol === 'CoAP') {
+      if (type === 'property') {
+        return window.electronAPI.coapReportProperty(target.coapBaseUrl, target.token, payload);
+      }
+      if (type === 'event') {
+        return window.electronAPI.coapReportEvent(target.coapBaseUrl, target.token, payload);
+      }
+      return window.electronAPI.coapReportOtaProgress(target.coapBaseUrl, target.token, payload);
+    }
+
+    if (target.protocol === 'MQTT') {
+      if (type === 'ota') {
+        return { success: false, message: 'MQTT has no generic ota channel' };
+      }
+      const topic = options?.preferSelectedMqttTopic && target.id === selectedDeviceId && mqttTopic
+        ? mqttTopic
+        : buildMqttPublishTopic(target, type === 'event' ? 'event' : 'property');
+      const payloadText = JSON.stringify(payload);
+      const result = await window.electronAPI.mqttPublish(target.id, topic, payloadText, mqttQos, mqttRetain);
+      if (result.success && target.id === selectedDeviceId) {
+        setMqttMessages((prev) => [...prev.slice(-199), { dir: 'pub', topic, payload: payloadText, qos: mqttQos, ts: Date.now() }]);
+      }
+      return result;
+    }
+
+    return { success: false, message: `${target.protocol} has no generic ${type} channel` };
+  };
+
+  const sendLifecycleEvent = async (
+    target: SimDevice,
+    identifier: 'online' | 'offline' | 'heartbeat',
+    options?: { silentSuccess?: boolean; silentFailure?: boolean },
+  ) => {
+    if (!supportsThingModelReport(target.protocol)) {
+      return { success: false, skipped: true };
+    }
+
+    const payload = buildLifecycleEventPayload(target, identifier);
+    const result = await publishPayload(target, 'event', payload, { trackHttpHistory: target.id === selectedDeviceId });
+    if (identifier === 'heartbeat' && target.protocol === 'HTTP' && target.token) {
+      const heartbeatResult = await window.electronAPI.httpHeartbeat(target.httpBaseUrl, target.token);
+      if (!heartbeatResult?.success || (typeof heartbeatResult.code === 'number' && heartbeatResult.code !== 0)) {
+        if (!options?.silentFailure) {
+          addLog(target.id, target.name, 'warn', `Heartbeat presence refresh failed: ${heartbeatResult?.message || heartbeatResult?.msg || 'unknown error'}`);
+        }
+        return heartbeatResult;
+      }
+    }
+
+    if (result.success) {
+      if (!options?.silentSuccess) {
+        addLog(target.id, target.name, 'info', `${LIFECYCLE_EVENT_LABELS[identifier]} event sent`);
+      }
+    } else if (!options?.silentFailure) {
+      addLog(target.id, target.name, 'warn', `${LIFECYCLE_EVENT_LABELS[identifier]} event failed: ${result.message || JSON.stringify(result)}`);
+    }
+    return result;
+  };
+
+  const sendHeartbeatByDeviceId = async (deviceId: string) => {
+    const latest = useSimStore.getState().devices.find((item) => item.id === deviceId);
+    if (!latest || latest.status !== 'online') {
+      stopHeartbeatForDevice(deviceId, { silent: true });
+      return;
+    }
+    try {
+      await sendLifecycleEvent(latest, 'heartbeat', { silentSuccess: true });
+    } catch (error: any) {
+      addLog(latest.id, latest.name, 'warn', `Heartbeat event failed: ${error?.message || 'unknown error'}`);
+    }
+  };
+
+  const startHeartbeatForDevice = (target: SimDevice, options?: { silent?: boolean }) => {
+    if (!supportsThingModelReport(target.protocol)) {
+      return;
+    }
+    stopHeartbeatForDevice(target.id, { silent: true });
+    const intervalSeconds = target.heartbeatIntervalSec || 30;
+    const timerId = window.setInterval(() => { void sendHeartbeatByDeviceId(target.id); }, intervalSeconds * 1000);
+    updateDevice(target.id, { heartbeatTimerId: timerId });
+    if (!options?.silent) {
+      addLog(target.id, target.name, 'info', `Heartbeat started (${intervalSeconds}s)`);
+    }
+  };
+
   const connectMqtt = async () => {
     const validationError = validateMqttDevice(device);
     if (validationError) throw new Error(validationError);
@@ -415,6 +672,8 @@ export default function DeviceControlPanel() {
     }
     updateDevice(target.id, { status: 'online', restoreOnLaunch: true });
     addLog(target.id, target.name, 'success', `MQTT connected: ${target.mqttBrokerUrl}`);
+    await sendLifecycleEvent(target, 'online', { silentFailure: true });
+    startHeartbeatForDevice(target);
   };
 
   const handleConnect = async () => {
@@ -454,8 +713,11 @@ export default function DeviceControlPanel() {
           ts: Date.now(),
         }]);
         if (result.success && result.data?.token) {
+          const targetOnline = { ...target, status: 'online' as const, token: result.data.token };
           updateDevice(device.id, { status: 'online', token: result.data.token, restoreOnLaunch: true });
           addLog(device.id, device.name, 'success', `HTTP auth succeeded: ${result.data.token.slice(0, 20)}...`);
+          await sendLifecycleEvent(targetOnline, 'online', { silentFailure: true });
+          startHeartbeatForDevice(targetOnline);
         } else {
           updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
           addLog(device.id, device.name, 'error', `HTTP auth failed: ${result.message || result.msg || JSON.stringify(result)}`);
@@ -470,8 +732,11 @@ export default function DeviceControlPanel() {
           deviceSecret: device.deviceSecret,
         });
         if (result.success && result.data?.token) {
+          const targetOnline = { ...device, status: 'online' as const, token: result.data.token };
           updateDevice(device.id, { status: 'online', token: result.data.token, restoreOnLaunch: true });
           addLog(device.id, device.name, 'success', `CoAP auth succeeded: ${result.data.token.slice(0, 20)}...`);
+          await sendLifecycleEvent(targetOnline, 'online', { silentFailure: true });
+          startHeartbeatForDevice(targetOnline);
         } else {
           updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
           addLog(device.id, device.name, 'error', `CoAP auth failed: ${result.message || result.msg || JSON.stringify(result)}`);
@@ -572,25 +837,46 @@ export default function DeviceControlPanel() {
   const handleDisconnect = async () => {
     try {
       stopAutoReportForDevice(device.id, { silent: true });
+      stopHeartbeatForDevice(device.id, { silent: true });
+      if (device.status === 'online' && supportsThingModelReport(device.protocol)) {
+        await sendLifecycleEvent(device, 'offline', { silentFailure: true });
+      }
       if (device.protocol === 'MQTT') await window.electronAPI.mqttDisconnect(device.id);
       if (device.protocol === 'WebSocket') await window.electronAPI.wsDisconnect(device.id);
       if (device.protocol === 'TCP') await window.electronAPI.tcpDisconnect(device.id);
       if (device.protocol === 'Video' && device.streamMode === 'GB28181') await window.electronAPI.sipStop(device.id);
-      updateDevice(device.id, { status: 'offline', token: '', videoDeviceId: null, streamUrl: '', sipRegistered: false, restoreOnLaunch: false });
+      updateDevice(device.id, { status: 'offline', token: '', videoDeviceId: null, streamUrl: '', sipRegistered: false, restoreOnLaunch: false, heartbeatTimerId: null });
       addLog(device.id, device.name, 'info', 'Disconnected');
     } catch (error: any) {
-      updateDevice(device.id, { status: 'offline', restoreOnLaunch: false });
+      updateDevice(device.id, { status: 'offline', restoreOnLaunch: false, heartbeatTimerId: null });
       addLog(device.id, device.name, 'warn', `Disconnect warning: ${error?.message || 'unknown error'}`);
     }
   };
 
   const getPayload = (): Record<string, any> | null => {
-    if (payloadMode === 'template') {
-      if (!activeTemplate) {
-        message.warning('当前上报类型还没有可用的随机模板');
-        return null;
+    if (payloadMode === 'model') {
+      if (reportType === 'property') {
+        if (selectedModelIdentifier === ALL_PROPERTIES_VALUE) {
+          if (availableModelItems.length === 0) {
+            message.warning('当前产品物模型还没有可模拟的属性');
+            return null;
+          }
+          return buildRandomPropertyBatchPayload(availableModelItems);
+        }
+        if (!activeModelItem) {
+          message.warning('请先选择要模拟的属性');
+          return null;
+        }
+        return buildRandomPropertyPayload(activeModelItem);
       }
-      return generatePayload(activeTemplate.fields);
+      if (reportType === 'event') {
+        if (!activeModelItem) {
+          message.warning('请先选择要模拟的事件');
+          return null;
+        }
+        return buildRandomEventPayload(activeModelItem);
+      }
+      return null;
     }
     try {
       return JSON.parse(customPayload);
@@ -612,35 +898,16 @@ export default function DeviceControlPanel() {
 
     setSending(true);
     try {
-      let result: any;
-      if (device.protocol === 'HTTP') {
-        const url = `${device.httpBaseUrl}/api/v1/protocol/http/${reportType === 'property' ? 'property/post' : 'event/post'}`;
-        result = reportType === 'property'
-          ? await window.electronAPI.httpReportProperty(device.httpBaseUrl, device.token, payload)
-          : await window.electronAPI.httpReportEvent(device.httpBaseUrl, device.token, payload);
-        setHttpHistory((prev) => [...prev.slice(-99), {
-          method: 'POST', url, reqBody: JSON.stringify(payload, null, 2), status: result._status || 0,
-          resBody: JSON.stringify(result, null, 2), resHeaders: result._headers || {}, elapsed: result._elapsed || 0, ts: Date.now(),
-        }]);
-      } else if (device.protocol === 'CoAP') {
-        result = reportType === 'property'
-          ? await window.electronAPI.coapReportProperty(device.coapBaseUrl, device.token, payload)
-          : reportType === 'event'
-            ? await window.electronAPI.coapReportEvent(device.coapBaseUrl, device.token, payload)
-            : await window.electronAPI.coapReportOtaProgress(device.coapBaseUrl, device.token, payload);
-      } else if (device.protocol === 'MQTT') {
-        const topic = mqttTopic || buildMqttPublishTopic(device, reportType === 'event' ? 'event' : 'property');
-        const payloadText = JSON.stringify(payload);
-        result = await window.electronAPI.mqttPublish(device.id, topic, payloadText, mqttQos, mqttRetain);
-        if (result.success) {
-          setMqttMessages((prev) => [...prev.slice(-199), { dir: 'pub', topic, payload: payloadText, qos: mqttQos, ts: Date.now() }]);
-        }
-      } else {
-        message.info(`${device.protocol} has its own send panel`);
+      if (!supportsThingModelReport(latestDevice.protocol) && reportType !== 'ota') {
+        message.info(`${latestDevice.protocol} has its own send panel`);
         return;
       }
+      const result = await publishPayload(latestDevice, reportType, payload, {
+        trackHttpHistory: true,
+        preferSelectedMqttTopic: true,
+      });
 
-      const current = useSimStore.getState().devices.find((item) => item.id === device.id) || device;
+      const current = useSimStore.getState().devices.find((item) => item.id === device.id) || latestDevice;
       if (result.success) {
         updateDevice(device.id, { sentCount: current.sentCount + 1 });
         addLog(device.id, device.name, 'success', `[${reportType}] sent: ${JSON.stringify(payload).slice(0, 120)}`);
@@ -667,6 +934,14 @@ export default function DeviceControlPanel() {
       return;
     }
     stopAutoReportForDevice(device.id);
+  };
+
+  const handleHeartbeatIntervalChange = (value: number) => {
+    updateDevice(device.id, { heartbeatIntervalSec: value });
+    const latest = useSimStore.getState().devices.find((item) => item.id === device.id);
+    if (latest?.status === 'online') {
+      startHeartbeatForDevice({ ...latest, heartbeatIntervalSec: value }, { silent: true });
+    }
   };
 
   return (
@@ -812,49 +1087,78 @@ export default function DeviceControlPanel() {
                   value={payloadMode}
                   onChange={(event) => setPayloadMode(event.target.value)}
                 >
-                  <Radio.Button value="template" disabled={availableTemplates.length === 0}>随机模拟</Radio.Button>
+                  <Radio.Button value="model" disabled={reportType === 'ota' || availableModelItems.length === 0 || thingModelLoading}>物模型模拟</Radio.Button>
                   <Radio.Button value="custom">自定义 JSON</Radio.Button>
                 </Radio.Group>
               </div>
             </div>
 
-            {payloadMode === 'template' && (
+            {payloadMode === 'model' && reportType !== 'ota' && (
               <>
+                {thingModelError ? (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message="物模型加载失败"
+                    description={thingModelError}
+                  />
+                ) : null}
+
                 <div>
-                  <Text type="secondary" style={{ fontSize: 12 }}>随机模板</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>物模型项</Text>
                   <Select
                     size="small"
-                    placeholder="选择一个随机模板"
-                    value={selectedTplId || undefined}
-                    onChange={(value) => setSelectedTplId(value)}
+                    placeholder={reportType === 'property' ? '选择要模拟的属性' : '选择要模拟的事件'}
+                    value={selectedModelIdentifier || undefined}
+                    onChange={(value) => setSelectedModelIdentifier(value)}
                     style={{ width: '100%', marginTop: 4 }}
-                    options={availableTemplates.map((item) => ({ label: item.name, value: item.id }))}
+                    loading={thingModelLoading}
+                    options={[
+                      ...(reportType === 'property'
+                        ? [{ label: '全部属性', value: ALL_PROPERTIES_VALUE }]
+                        : []),
+                      ...availableModelItems.map((item) => ({
+                        label: `${item.name || item.identifier} (${item.identifier})`,
+                        value: item.identifier,
+                      })),
+                    ]}
                   />
                 </div>
 
-                {activeTemplate ? (
+                {(selectedModelIdentifier === ALL_PROPERTIES_VALUE || activeModelItem) ? (
                   <>
                     <Alert
                       type="success"
                       showIcon
-                      message="当前已启用随机模拟数据"
-                      description="每次点击发送或自动上报，都会基于模板重新生成一份随机 payload。"
+                      message="当前将按物模型生成随机数据"
+                      description="每次点击发送或自动上报，都会根据当前物模型重新生成一份随机 payload。"
                     />
 
                     <div style={{ padding: 12, background: 'rgba(255,255,255,0.04)', borderRadius: 12 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 12 }}>
-                        <Space size={6}>
-                          <Text style={{ fontSize: 12, color: '#f8fafc' }}>模板字段</Text>
-                          {activeTemplate.fields.map((field) => (
-                            <Tag key={field.key} style={{ margin: 0 }}>{field.key} ({field.valueType})</Tag>
-                          ))}
+                        <Space size={6} wrap>
+                          <Text style={{ fontSize: 12, color: '#f8fafc' }}>字段预览</Text>
+                          {selectedModelIdentifier === ALL_PROPERTIES_VALUE
+                            ? availableModelItems.map((item) => (
+                              <Tag key={item.identifier} style={{ margin: 0 }}>{item.identifier}</Tag>
+                            ))
+                            : activeModelItem
+                              ? [
+                                <Tag key="identifier" style={{ margin: 0 }}>{activeModelItem.identifier}</Tag>,
+                                ...(Array.isArray(activeModelItem.outputData)
+                                  ? activeModelItem.outputData.map((field) => (
+                                    <Tag key={String(field.identifier)} style={{ margin: 0 }}>{String(field.identifier)}</Tag>
+                                  ))
+                                  : []),
+                              ]
+                              : null}
                         </Space>
                         <Tooltip title="刷新一份新的随机样例">
                           <Button
                             size="small"
                             type="text"
                             icon={<ReloadOutlined />}
-                            onClick={() => setTemplatePreviewNonce((value) => value + 1)}
+                            onClick={() => setModelPreviewNonce((value) => value + 1)}
                           >
                             换一组
                           </Button>
@@ -863,7 +1167,7 @@ export default function DeviceControlPanel() {
                       <Text type="secondary" style={{ fontSize: 12 }}>随机样例预览</Text>
                       <Input.TextArea
                         rows={6}
-                        value={templatePreview}
+                        value={modelPreview}
                         readOnly
                         style={{ fontFamily: 'monospace', fontSize: 12, marginTop: 6 }}
                       />
@@ -873,8 +1177,8 @@ export default function DeviceControlPanel() {
                   <Alert
                     type="warning"
                     showIcon
-                    message="当前上报类型还没有随机模板"
-                    description="可以先切到自定义 JSON，或在左下角“模板管理”中新增对应模板。"
+                    message="当前上报类型没有可模拟项"
+                    description="可以先切到自定义 JSON，或检查产品物模型里是否已配置对应属性或事件。"
                   />
                 )}
               </>
@@ -894,6 +1198,19 @@ export default function DeviceControlPanel() {
                 <Text style={{ fontSize: 12 }}>Auto report</Text>
                 <InputNumber size="small" min={1} max={3600} value={device.autoIntervalSec} onChange={(value) => updateDevice(device.id, { autoIntervalSec: value || 5 })} disabled={device.autoReport} style={{ width: 90 }} addonAfter="sec" />
               </Space>
+              {supportsThingModelReport(device.protocol) ? (
+                <Space size={8}>
+                  <Text style={{ fontSize: 12 }}>Heartbeat</Text>
+                  <Select
+                    size="small"
+                    style={{ width: 108 }}
+                    value={device.heartbeatIntervalSec || 30}
+                    options={HEARTBEAT_INTERVAL_OPTIONS}
+                    onChange={handleHeartbeatIntervalChange}
+                    disabled={!isOnline}
+                  />
+                </Space>
+              ) : null}
             </div>
           </Space>
         </Card>

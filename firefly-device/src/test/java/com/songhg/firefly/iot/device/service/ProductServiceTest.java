@@ -84,6 +84,22 @@ class ProductServiceTest {
     }
 
     @Test
+    void shouldLoadThingModelByProductKey() throws Exception {
+        Product product = new Product();
+        product.setId(2L);
+        product.setProductKey("pk_simulator");
+        product.setThingModel("{\"properties\":[{\"identifier\":\"temperature\"}],\"events\":[],\"services\":[]}");
+
+        when(productMapper.selectByProductKeyIgnoreTenant("pk_simulator")).thenReturn(product);
+
+        String thingModel = productService.getThingModelByProductKey(" pk_simulator ");
+
+        JsonNode root = objectMapper.readTree(thingModel);
+        assertEquals(List.of("ip", "temperature"), extractPropertyIdentifiers(root));
+        assertEquals(List.of("online", "offline", "heartbeat"), extractEventIdentifiers(root));
+    }
+
+    @Test
     void shouldKeepBuiltinDefinitionsWhenUpdatingThingModel() throws Exception {
         Product product = new Product();
         product.setId(1L);

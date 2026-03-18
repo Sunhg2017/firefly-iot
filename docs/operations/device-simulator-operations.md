@@ -193,3 +193,57 @@ npm run build:vite
 - 新建一台 HTTP 或 MQTT 一型一密设备，填写“模拟设备名称”
 - 首次连接成功后断开，再次连接应直接成功，不能再报设备已存在
 - 删除该设备后，平台设备列表中对应 `deviceName` 应被同步删除
+
+
+## 8. 2026-03-19 物模型联动与生命周期事件运维补充
+
+### 8.1 新增接口
+
+- `firefly-connector`
+  - `GET /api/v1/protocol/products/thing-model?productKey=...`
+- `firefly-device`
+  - `GET /api/v1/internal/products/{id}/basic`
+  - `GET /api/v1/internal/products/thing-model?productKey=...`
+
+上述链路为 connector 调 device 的 Feign 只读调用，返回产品物模型 JSON，供模拟器按 `productKey` 动态加载。
+
+### 8.2 发布要求
+
+- 需要同时发布 `firefly-device`，否则 connector 无法按 `productKey` 读取物模型。
+- 需要同时发布 `firefly-connector`，否则模拟器无法获取物模型，也无法通过 HTTP heartbeat 刷新在线状态。
+- 需要同步更新 `firefly-simulator` 桌面端资源，前端才会出现物模型模拟、生命周期事件和心跳配置入口。
+
+### 8.3 回归检查项
+
+- HTTP / CoAP / MQTT 模拟设备连接后，应能看到对应的 `online` 事件。
+- 主动点击断开后，应能看到对应的 `offline` 事件。
+- 设备在线一段时间后，应持续产生 `heartbeat` 事件。
+- HTTP 心跳除发送事件外，还应调用 `/api/v1/protocol/http/heartbeat`，确保 connector 在线态刷新正常。
+
+### 8.4 故障排查
+
+- 模拟器提示物模型加载失败或界面没有候选属性、事件
+  - 先确认设备已填写 `productKey`。
+  - 再确认模拟器填写的协议基础地址可访问 connector。
+  - 直接检查 connector 的 `/api/v1/protocol/products/thing-model` 是否可用。
+  - 如 connector 正常，再检查 device 的 `/api/v1/internal/products/thing-model` 是否返回期望内容。
+
+- HTTP 设备没有持续在线
+  - 检查是否成功发送了 `heartbeat` 事件。
+  - 检查 connector 日志中是否收到 heartbeat 请求。
+  - 直接调用 `/api/v1/protocol/http/heartbeat` 验证认证 token 是否仍有效。
+
+- MQTT 设备异常掉线后没有 `offline` 事件
+  - 先区分是否为用户主动点击 `Disconnect`。
+  - 若是 broker 或网络导致的异常断连，属于当前协议实现边界，无法在连接已关闭后保证补发 `offline`。
+
+### 8.5 验证命令
+
+```bash
+cd firefly-simulator
+npm run build:vite
+
+cd ..
+mvn -pl firefly-device,firefly-connector -am -DskipTests compile
+mvn -pl firefly-device -Dtest=ProductServiceTest test
+```
