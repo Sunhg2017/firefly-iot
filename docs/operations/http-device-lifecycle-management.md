@@ -40,6 +40,12 @@ HTTP 设备应通过以下端点表达生命周期动作：
 - `/api/v1/protocol/http/offline`
 - `/api/v1/protocol/http/heartbeat`
 
+同时兼容：
+
+- `/api/v1/protocol/http/event/post` 上报 `identifier` 或 `eventType` 为 `online`
+- `/api/v1/protocol/http/event/post` 上报 `identifier` 或 `eventType` 为 `offline`
+- `/api/v1/protocol/http/event/post` 上报 `identifier` 或 `eventType` 为 `heartbeat`
+
 行为说明：
 
 - `/online`
@@ -66,9 +72,9 @@ HTTP 设备应通过以下端点表达生命周期动作：
 
 注意：
 
-- `/event/post` 只允许普通业务事件
-- 当 `identifier` 或 `eventType` 为 `online`、`offline`、`heartbeat` 时，会返回 `400`
-- 错误码：`HTTP_LIFECYCLE_EVENT_MUST_USE_DEDICATED_ENDPOINT`
+- `/event/post` 默认用于普通业务事件
+- 但当 `identifier` 或 `eventType` 为 `online`、`offline`、`heartbeat` 时，connector 会自动补齐对应生命周期处理
+- 因此现场排查时，需要同时检查“事件是否收到”与“生命周期是否同步触发”
 
 ## 3.3 超时离线
 
@@ -84,7 +90,7 @@ HTTP 设备应通过以下端点表达生命周期动作：
 
 按以下顺序排查：
 
-1. 确认客户端使用的是 `/api/v1/protocol/http/online`，不是 `/event/post`
+1. 确认客户端使用的是 `/api/v1/protocol/http/online` 或 `/event/post` 中的 `online`
 2. 确认 `X-Device-Token` 有效，且是 `/auth` 最新签发的 token
 3. 确认 connector 日志中存在 `HTTP device online`
 4. 确认上游消息中同时出现 `DEVICE_ONLINE` 与 `online` 事件
@@ -94,20 +100,21 @@ HTTP 设备应通过以下端点表达生命周期动作：
 
 按以下顺序排查：
 
-1. 确认客户端调用的是 `/api/v1/protocol/http/offline`
+1. 确认客户端调用的是 `/api/v1/protocol/http/offline`，或者 `/event/post` 中的 `offline`
 2. 确认 connector 日志中存在 `HTTP device offline`
 3. 检查 Redis 中对应在线标记是否已删除
 4. 检查上游是否已产生 `DEVICE_OFFLINE`
 5. 确认 `firefly-device` 生命周期消费链路正常
 
-## 4.3 接口返回 `HTTP_LIFECYCLE_EVENT_MUST_USE_DEDICATED_ENDPOINT`
+## 4.3 普通事件上报了生命周期事件，但平台状态没有变化
 
-说明客户端仍在把生命周期事件发到普通事件接口。处理方式：
+按以下顺序排查：
 
-1. 将 `online` 改到 `/api/v1/protocol/http/online`
-2. 将 `offline` 改到 `/api/v1/protocol/http/offline`
-3. 将 `heartbeat` 改到 `/api/v1/protocol/http/heartbeat`
-4. 普通业务事件继续使用 `/api/v1/protocol/http/event/post`
+1. 检查事件体中的 `identifier` 或 `eventType` 是否准确为 `online`、`offline`、`heartbeat`
+2. 检查 connector 是否命中了生命周期处理分支
+3. 检查对应的 `DEVICE_ONLINE` / `DEVICE_OFFLINE` 是否已发布
+4. 检查 `firefly-device` 是否正常消费生命周期消息
+5. 检查事件体中是否带了离线原因 `reason`，避免排查时误判
 
 ## 4.4 HTTP 设备一直不离线
 
@@ -142,7 +149,7 @@ HTTP 设备应通过以下端点表达生命周期动作：
 6. 调用一次 `/api/v1/protocol/http/offline`
 7. 检查设备状态是否立即变为 `OFFLINE`
 8. 再次调用 `/event/post` 上报 `identifier=online`
-9. 检查是否返回 `400` 与错误码 `HTTP_LIFECYCLE_EVENT_MUST_USE_DEDICATED_ENDPOINT`
+9. 检查是否同样触发 `DEVICE_ONLINE` 与 `online` 事件
 
 ## 6. 回滚说明
 
@@ -150,7 +157,7 @@ HTTP 设备应通过以下端点表达生命周期动作：
 
 - `firefly-connector` 的 HTTP 生命周期专用端点
 - `HttpDeviceLifecycleService` 主动离线逻辑
-- 普通事件接口上的生命周期拦截
+- 普通事件接口上的生命周期识别逻辑
 - 模拟器中 HTTP 生命周期端点调用逻辑
 
 否则会出现“客户端仍走新端点，但服务端已回退”或“服务端要求新端点，但客户端还走旧入口”的不一致情况。

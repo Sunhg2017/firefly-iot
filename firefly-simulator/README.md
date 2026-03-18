@@ -63,7 +63,7 @@ npm run electron:build
 - 连接成功后，认证请求也会进入 HTTP 请求历史，便于排查“服务端未拿到认证参数”这类问题。
 - 如果 HTTP 设备选择“一型一密”，模拟器会先调用 `POST /api/v1/protocol/device/register` 动态注册，拿到 `deviceSecret` 后再调用 `/api/v1/protocol/http/auth`。
 - 模拟器连接后会自动调用 `/online`，断开时自动调用 `/offline`，定时心跳会调用 `/heartbeat`。
-- `online`、`offline`、`heartbeat` 仍然是物模型事件，但必须走专用生命周期端点，不能走普通 `/event/post`。
+- `online`、`offline`、`heartbeat` 仍然是物模型事件；模拟器默认走专用生命周期端点，服务端也兼容通过普通 `/event/post` 上报这三个事件。
 
 ### MQTT 模式
 

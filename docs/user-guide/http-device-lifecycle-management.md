@@ -4,7 +4,7 @@
 
 ## 1. HTTP 生命周期现在怎么发
 
-HTTP 设备的 `online`、`offline`、`heartbeat` 仍然是物模型事件，但不能再通过普通事件接口上报。
+HTTP 设备的 `online`、`offline`、`heartbeat` 仍然是物模型事件。
 
 请使用以下专用端点：
 
@@ -15,6 +15,12 @@ HTTP 设备的 `online`、`offline`、`heartbeat` 仍然是物模型事件，但
 普通业务事件继续使用：
 
 - `POST /api/v1/protocol/http/event/post`
+
+同时，服务端也兼容下面这种历史上报方式：
+
+- 在 `POST /api/v1/protocol/http/event/post` 中上报 `identifier` 或 `eventType` 为 `online`
+- 在 `POST /api/v1/protocol/http/event/post` 中上报 `identifier` 或 `eventType` 为 `offline`
+- 在 `POST /api/v1/protocol/http/event/post` 中上报 `identifier` 或 `eventType` 为 `heartbeat`
 
 ## 2. 推荐调用顺序
 
@@ -34,20 +40,25 @@ HTTP 设备的 `online`、`offline`、`heartbeat` 仍然是物模型事件，但
 1. 调用 `POST /api/v1/protocol/http/offline`
 2. 平台会立即把设备切为离线
 
-## 3. 为什么不能再把上线、离线、心跳发到 `/event/post`
+## 3. 如果把上线、离线、心跳发到 `/event/post` 会怎样
 
-因为普通事件接口只能处理事件本身，不能正确触发平台生命周期链路。
+现在服务端会自动识别这三个内置生命周期事件，并同步触发生命周期处理。
 
-如果把以下事件打到 `/event/post`：
+也就是说，如果把以下事件打到 `/event/post`：
 
 - `online`
 - `offline`
 - `heartbeat`
 
-服务端会直接拒绝，请求返回：
+服务端不会拒绝，而是会：
 
-- HTTP 状态：`400`
-- 错误码：`HTTP_LIFECYCLE_EVENT_MUST_USE_DEDICATED_ENDPOINT`
+- 继续写入对应物模型事件
+- 同时触发上线、离线或心跳对应的生命周期处理
+
+建议：
+
+- 新接入设备优先使用专用端点
+- 已经走普通事件入口的历史设备可以继续使用，不需要强制中断联调
 
 ## 4. 请求示例
 
@@ -69,6 +80,8 @@ Content-Type: application/json
 - 平台设备状态切为在线
 - 物模型事件流中同时出现 `online` 事件
 
+同样的事件体如果发到 `/api/v1/protocol/http/event/post`，也会得到相同处理结果。
+
 ### 4.2 心跳
 
 ```http
@@ -87,6 +100,8 @@ Content-Type: application/json
 - 刷新在线租约
 - 物模型事件流中同时出现 `heartbeat` 事件
 
+同样的事件体如果发到 `/api/v1/protocol/http/event/post`，也会得到相同处理结果。
+
 ### 4.3 离线
 
 ```http
@@ -104,6 +119,8 @@ Content-Type: application/json
 
 - 平台设备立即切为离线
 - 物模型事件流中同时出现 `offline` 事件
+
+同样的事件体如果发到 `/api/v1/protocol/http/event/post`，也会得到相同处理结果。
 
 ## 5. 在线状态判定规则
 

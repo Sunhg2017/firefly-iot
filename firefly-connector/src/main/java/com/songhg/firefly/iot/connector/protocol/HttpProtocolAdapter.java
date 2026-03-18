@@ -91,8 +91,9 @@ public class HttpProtocolAdapter {
         if (!auth.isSuccess()) {
             return R.fail(401, "UNAUTHORIZED");
         }
-        if (isLifecycleEvent(event)) {
-            return R.fail(400, "HTTP_LIFECYCLE_EVENT_MUST_USE_DEDICATED_ENDPOINT");
+        String lifecycleIdentifier = extractLifecycleIdentifier(event);
+        if (lifecycleIdentifier != null) {
+            return handleLifecycleEvent(auth, lifecycleIdentifier, event);
         }
         lifecycleService.markActive(auth, "event");
         messageProducer.publishUpstream(buildHttpMessage(
@@ -112,14 +113,7 @@ public class HttpProtocolAdapter {
         if (!auth.isSuccess()) {
             return R.fail(401, "UNAUTHORIZED");
         }
-        lifecycleService.markActive(auth, "online");
-        messageProducer.publishUpstream(buildHttpMessage(
-                auth,
-                DeviceMessage.MessageType.EVENT_REPORT,
-                "/thing/event/post",
-                buildLifecycleEventPayload("online", event)
-        ));
-        return R.ok();
+        return handleLifecycleEvent(auth, "online", event);
     }
 
     @Operation(summary = "HTTP 设备离线")
@@ -130,14 +124,7 @@ public class HttpProtocolAdapter {
         if (!auth.isSuccess()) {
             return R.fail(401, "UNAUTHORIZED");
         }
-        lifecycleService.markOffline(auth, resolveOfflineReason(event));
-        messageProducer.publishUpstream(buildHttpMessage(
-                auth,
-                DeviceMessage.MessageType.EVENT_REPORT,
-                "/thing/event/post",
-                buildLifecycleEventPayload("offline", event)
-        ));
-        return R.ok();
+        return handleLifecycleEvent(auth, "offline", event);
     }
 
     /**
@@ -193,14 +180,7 @@ public class HttpProtocolAdapter {
         if (!auth.isSuccess()) {
             return R.fail(401, "UNAUTHORIZED");
         }
-        lifecycleService.markActive(auth, "heartbeat");
-        messageProducer.publishUpstream(buildHttpMessage(
-                auth,
-                DeviceMessage.MessageType.EVENT_REPORT,
-                "/thing/event/post",
-                buildLifecycleEventPayload("heartbeat", event)
-        ));
-        return R.ok();
+        return handleLifecycleEvent(auth, "heartbeat", event);
     }
 
     private String firstNonBlank(String... values) {
@@ -216,16 +196,32 @@ public class HttpProtocolAdapter {
         return authService.authenticateByToken(token);
     }
 
-    private boolean isLifecycleEvent(Map<String, Object> event) {
-        String identifier = extractEventIdentifier(event);
-        return "online".equals(identifier) || "offline".equals(identifier) || "heartbeat".equals(identifier);
+    private R<Void> handleLifecycleEvent(DeviceAuthResult auth,
+                                         String identifier,
+                                         Map<String, Object> event) {
+        if ("offline".equals(identifier)) {
+            lifecycleService.markOffline(auth, resolveOfflineReason(event));
+        } else {
+            lifecycleService.markActive(auth, identifier);
+        }
+        messageProducer.publishUpstream(buildHttpMessage(
+                auth,
+                DeviceMessage.MessageType.EVENT_REPORT,
+                "/thing/event/post",
+                buildLifecycleEventPayload(identifier, event)
+        ));
+        return R.ok();
     }
 
-    private String extractEventIdentifier(Map<String, Object> event) {
+    private String extractLifecycleIdentifier(Map<String, Object> event) {
         if (event == null || event.isEmpty()) {
             return null;
         }
-        return firstNonBlank(asText(event.get("identifier")), asText(event.get("eventType")));
+        String identifier = firstNonBlank(asText(event.get("identifier")), asText(event.get("eventType")));
+        if ("online".equals(identifier) || "offline".equals(identifier) || "heartbeat".equals(identifier)) {
+            return identifier;
+        }
+        return null;
     }
 
     private String resolveOfflineReason(Map<String, Object> event) {

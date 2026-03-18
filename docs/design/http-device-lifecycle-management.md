@@ -5,11 +5,9 @@
 
 ## 1. 背景
 
-HTTP 设备的 `online`、`offline`、`heartbeat` 已经被定义为物模型内置事件，但此前模拟器和部分客户端把它们和普通业务事件一样直接上报到：
+HTTP 设备的 `online`、`offline`、`heartbeat` 已经被定义为物模型内置事件。此前系统一度要求它们必须走专用生命周期端点，但联调场景里仍然存在一部分设备通过普通事件接口上报这三个事件。
 
-- `POST /api/v1/protocol/http/event/post`
-
-这样只能产出 `EVENT_REPORT`，后续生命周期处理链路拿不到对应的 `DEVICE_ONLINE` / `DEVICE_OFFLINE`，导致：
+如果普通事件入口不能识别并补齐生命周期语义，就会只产出 `EVENT_REPORT`，后续生命周期处理链路拿不到对应的 `DEVICE_ONLINE` / `DEVICE_OFFLINE`，导致：
 
 - HTTP 主动上线后平台在线态不一定及时建立
 - HTTP 主动离线后平台只能等超时扫描才离线
@@ -19,21 +17,22 @@ HTTP 设备的 `online`、`offline`、`heartbeat` 已经被定义为物模型内
 
 - 保持 `online`、`offline`、`heartbeat` 仍然是物模型事件
 - 同时保证平台生命周期链路能正确处理 HTTP 上下线和心跳
-- 禁止继续把生命周期事件混入普通 `/event/post`
+- 保留 `/online`、`/offline`、`/heartbeat` 三个专用端点
+- 同时兼容设备通过普通 `/event/post` 上报三个生命周期事件
 - 保留“最后活跃时间”模型，用于 HTTP 无连接协议的在线状态管理
 
 ## 3. 设计原则
 
 - `/auth` 只负责认证，不代表设备已经上线
 - 生命周期事件仍保留为 `EVENT_REPORT`，便于规则、告警、审计按事件消费
-- 生命周期语义必须通过专用 HTTP 端点触发，不能依赖普通事件接口推断
+- 生命周期语义优先通过专用 HTTP 端点表达，但普通事件入口也必须能识别并补齐这三个内置生命周期事件
 - 业务属性/普通事件/通用数据仍可作为活跃刷新来源，避免设备只要有业务流量就被误判离线
 
 ## 4. 整体方案
 
 ## 4.1 生命周期专用端点
 
-新增并统一使用以下端点：
+保留以下专用端点：
 
 - `POST /api/v1/protocol/http/online`
 - `POST /api/v1/protocol/http/offline`
@@ -79,14 +78,27 @@ HTTP 设备的 `online`、`offline`、`heartbeat` 已经被定义为物模型内
 - 平台在线状态依赖 `DEVICE_ONLINE` / `DEVICE_OFFLINE`
 - 物模型、规则和审计仍可消费 `online` / `offline` / `heartbeat` 事件
 
-## 4.3 普通事件接口收口
+## 4.3 普通事件接口兼容生命周期事件
 
-`POST /api/v1/protocol/http/event/post` 继续负责普通业务事件，但新增限制：
+`POST /api/v1/protocol/http/event/post` 继续负责普通业务事件，同时新增生命周期识别：
 
-- 当 `identifier` 或 `eventType` 为 `online` / `offline` / `heartbeat` 时，直接返回 `400`
-- 错误码：`HTTP_LIFECYCLE_EVENT_MUST_USE_DEDICATED_ENDPOINT`
+- 当 `identifier` 或 `eventType` 为 `online`
+  - 触发 `markActive(auth, "online")`
+  - 发布内置 `online` 事件
 
-这样可以避免客户端继续走错误入口，防止生命周期链路再次失效。
+- 当 `identifier` 或 `eventType` 为 `heartbeat`
+  - 触发 `markActive(auth, "heartbeat")`
+  - 发布内置 `heartbeat` 事件
+
+- 当 `identifier` 或 `eventType` 为 `offline`
+  - 触发 `markOffline(auth, reason)`
+  - 发布内置 `offline` 事件
+
+- 其他事件
+  - 仍按普通业务事件处理
+  - 触发 `markActive(auth, "event")`
+
+这样可以保证两条入口都能收敛到同一套生命周期链路，而不是让普通事件入口再次失效。
 
 ## 4.4 活跃刷新与超时离线
 
@@ -107,12 +119,18 @@ HTTP 设备的 `online`、`offline`、`heartbeat` 已经被定义为物模型内
 
 ## 4.5 模拟器联动
 
-设备模拟器改为统一走专用生命周期接口：
+设备模拟器当前统一走专用生命周期接口：
 
 - HTTP 连接成功后：`/auth` -> `/online`
 - HTTP 主动断开时：`/offline`
 - HTTP 定时保活时：`/heartbeat`
 - 批量连接、批量断开、场景编排也统一复用同一套运行时封装
+
+但服务端仍兼容：
+
+- 第三方设备通过 `/event/post` 上报 `online`
+- 第三方设备通过 `/event/post` 上报 `offline`
+- 第三方设备通过 `/event/post` 上报 `heartbeat`
 
 ## 5. Redis 结构
 
@@ -161,5 +179,5 @@ HTTP 设备的 `online`、`offline`、`heartbeat` 已经被定义为物模型内
 ## 8. 风险与边界
 
 - HTTP 仍然是“最后活跃时间模型”，不是物理连接模型
-- 客户端若继续把生命周期事件打到 `/event/post`，会收到 `400`，需要同步改造接入端
+- 不同客户端可以走专用端点或普通事件入口，但两者都必须保持相同生命周期语义
 - 极端并发下，显式离线与新心跳可能短暂交错，最终状态仍以最后一次有效生命周期动作为准

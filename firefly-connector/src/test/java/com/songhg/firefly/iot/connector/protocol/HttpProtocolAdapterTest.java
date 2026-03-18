@@ -10,10 +10,8 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -33,16 +31,54 @@ class HttpProtocolAdapterTest {
     );
 
     @Test
-    void shouldRejectLifecycleEventOnGenericEventEndpoint() {
+    void shouldProcessOnlineLifecycleEventOnGenericEventEndpoint() {
         DeviceAuthResult auth = successAuth();
         when(authService.authenticateByToken("token")).thenReturn(auth);
 
-        R<Void> response = adapter.reportEvent("token", Map.of("identifier", "offline"));
+        R<Void> response = adapter.reportEvent("token", Map.of("identifier", "online", "ip", "192.168.10.3"));
 
-        assertEquals(400, response.getCode());
-        assertEquals("HTTP_LIFECYCLE_EVENT_MUST_USE_DEDICATED_ENDPOINT", response.getMessage());
-        verify(lifecycleService, never()).markActive(auth, "event");
-        verify(messageProducer, never()).publishUpstream(any(DeviceMessage.class));
+        assertEquals(0, response.getCode());
+        verify(lifecycleService).markActive(auth, "online");
+        verify(messageProducer).publishUpstream(argThat(message ->
+                message.getType() == DeviceMessage.MessageType.EVENT_REPORT
+                        && "/sys/http/3/thing/event/post".equals(message.getTopic())
+                        && "online".equals(message.getPayload().get("identifier"))
+                        && "192.168.10.3".equals(message.getPayload().get("ip"))
+        ));
+    }
+
+    @Test
+    void shouldProcessOfflineLifecycleEventOnGenericEventEndpoint() {
+        DeviceAuthResult auth = successAuth();
+        when(authService.authenticateByToken("token")).thenReturn(auth);
+
+        R<Void> response = adapter.reportEvent("token", Map.of("eventType", "offline", "reason", "manual_disconnect"));
+
+        assertEquals(0, response.getCode());
+        verify(lifecycleService).markOffline(auth, "manual_disconnect");
+        verify(messageProducer).publishUpstream(argThat(message ->
+                message.getType() == DeviceMessage.MessageType.EVENT_REPORT
+                        && "/sys/http/3/thing/event/post".equals(message.getTopic())
+                        && "offline".equals(message.getPayload().get("identifier"))
+                        && "manual_disconnect".equals(message.getPayload().get("reason"))
+        ));
+    }
+
+    @Test
+    void shouldProcessHeartbeatLifecycleEventOnGenericEventEndpoint() {
+        DeviceAuthResult auth = successAuth();
+        when(authService.authenticateByToken("token")).thenReturn(auth);
+
+        R<Void> response = adapter.reportEvent("token", Map.of("identifier", "heartbeat", "intervalSec", 45));
+
+        assertEquals(0, response.getCode());
+        verify(lifecycleService).markActive(auth, "heartbeat");
+        verify(messageProducer).publishUpstream(argThat(message ->
+                message.getType() == DeviceMessage.MessageType.EVENT_REPORT
+                        && "/sys/http/3/thing/event/post".equals(message.getTopic())
+                        && "heartbeat".equals(message.getPayload().get("identifier"))
+                        && Integer.valueOf(45).equals(message.getPayload().get("intervalSec"))
+        ));
     }
 
     @Test
@@ -94,6 +130,23 @@ class HttpProtocolAdapterTest {
                         && "/sys/http/3/thing/event/post".equals(message.getTopic())
                         && "heartbeat".equals(message.getPayload().get("identifier"))
                         && Integer.valueOf(30).equals(message.getPayload().get("intervalSec"))
+        ));
+    }
+
+    @Test
+    void shouldKeepNormalBusinessEventBehaviorOnGenericEventEndpoint() {
+        DeviceAuthResult auth = successAuth();
+        when(authService.authenticateByToken("token")).thenReturn(auth);
+
+        R<Void> response = adapter.reportEvent("token", Map.of("identifier", "alarm", "level", "high"));
+
+        assertEquals(0, response.getCode());
+        verify(lifecycleService).markActive(auth, "event");
+        verify(messageProducer).publishUpstream(argThat(message ->
+                message.getType() == DeviceMessage.MessageType.EVENT_REPORT
+                        && "/sys/http/3/thing/event/post".equals(message.getTopic())
+                        && "alarm".equals(message.getPayload().get("identifier"))
+                        && "high".equals(message.getPayload().get("level"))
         ));
     }
 
