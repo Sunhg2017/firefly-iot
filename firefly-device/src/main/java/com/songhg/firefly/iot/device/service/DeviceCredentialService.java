@@ -11,7 +11,6 @@ import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DeviceAuthType;
 import com.songhg.firefly.iot.common.enums.DeviceStatus;
 import com.songhg.firefly.iot.common.enums.OnlineStatus;
-import com.songhg.firefly.iot.common.enums.ProductStatus;
 import com.songhg.firefly.iot.device.dto.device.DeviceNameRules;
 import com.songhg.firefly.iot.device.entity.Device;
 import com.songhg.firefly.iot.device.entity.Product;
@@ -117,9 +116,6 @@ public class DeviceCredentialService {
         Product product = productMapper.selectByProductKeyIgnoreTenant(request.getProductKey());
         if (product == null) {
             return registerFailed("PRODUCT_NOT_FOUND");
-        }
-        if (product.getStatus() != ProductStatus.PUBLISHED) {
-            return registerFailed("PRODUCT_NOT_PUBLISHED");
         }
         if (product.getDeviceAuthType() != DeviceAuthType.PRODUCT_SECRET) {
             return registerFailed("PRODUCT_DYNAMIC_REGISTER_DISABLED");

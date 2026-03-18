@@ -38,7 +38,7 @@
 2. 确认产品的认证方式和发布状态正确。
 3. 如果验证一型一密：
    - 产品必须是 `PRODUCT_SECRET`
-   - 产品状态必须是 `PUBLISHED`
+   - 产品状态可以是 `DEVELOPMENT` 或 `PUBLISHED`
 4. 如果验证协议说明：
    - MQTT / HTTP / CoAP 接口应与页面说明保持一致
    - 自定义协议需确认协议解析规则已配置
@@ -60,7 +60,7 @@
 ### 重点观察项
 
 - 动态注册失败率是否异常升高。
-- `PRODUCT_NOT_PUBLISHED`、`INVALID_PRODUCT_SECRET`、`DEVICE_NAME_EXISTS` 是否集中出现。
+- `INVALID_PRODUCT_SECRET`、`DEVICE_NAME_EXISTS` 是否集中出现。
 - HTTP 认证成功后，属性、事件、心跳接口是否稳定返回 200。
 
 ## 常见故障与排查
@@ -77,15 +77,14 @@
 
 排查：
 
-1. 检查产品状态是否为 `PUBLISHED`。
-2. 检查产品认证方式是否为 `PRODUCT_SECRET`。
+1. 检查产品认证方式是否为 `PRODUCT_SECRET`。
+2. 检查前端版本是否仍保留“必须已发布”的旧限制。
 3. 检查页面提示是否为“仅可预览接入参数”而不是前端故障。
 
 ### 3. 动态注册返回失败
 
 常见错误：
 
-- `PRODUCT_NOT_PUBLISHED`
 - `INVALID_PRODUCT_SECRET`
 - `DEVICE_NAME_EXISTS`
 - `INVALID_DEVICE_NAME`
@@ -122,6 +121,6 @@
 建议至少执行以下验证：
 
 1. 一机一密产品打开“设备接入”，确认看到手动创建设备指引。
-2. 一型一密未发布产品打开“设备接入”，确认只能预览、不能动态注册。
+2. 一型一密开发中产品打开“设备接入”，确认可以执行动态注册。
 3. 一型一密已发布产品完成一次动态注册，确认返回 `productKey / deviceName / deviceSecret`。
 4. HTTP 产品按页面说明完成认证、属性上报和心跳调用。

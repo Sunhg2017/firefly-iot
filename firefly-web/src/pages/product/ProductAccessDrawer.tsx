@@ -87,7 +87,6 @@ const DEVICE_NAME_EXAMPLE = 'SN20240301001';
 
 const ERROR_MESSAGE_MAP: Record<string, string> = {
   PRODUCT_DYNAMIC_REGISTER_DISABLED: '当前产品未启用一型一密认证，不能进行动态注册',
-  PRODUCT_NOT_PUBLISHED: '当前产品尚未发布，不能进行动态注册',
   INVALID_PRODUCT_SECRET: 'ProductSecret 校验失败，请刷新后重试',
   DEVICE_NAME_EXISTS: '设备名称已存在，请更换后重试',
   INVALID_DEVICE_NAME: DEVICE_NAME_RULE_MESSAGE,
@@ -118,7 +117,7 @@ const buildGuideSteps = (
         title: '动态注册换取设备密钥',
         description: canRegister
           ? '调用动态注册后会真实创建一台设备，并返回专属 DeviceSecret。'
-          : '产品发布后才能执行动态注册，当前可以先预览接入参数。',
+          : '当前产品未启用一型一密认证，只能先查看接入参数。',
       },
       {
         title: `按 ${product.protocol} 建立连接`,
@@ -297,7 +296,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
   const [form] = Form.useForm();
 
   const supportsProductSecret = product?.deviceAuthType === 'PRODUCT_SECRET';
-  const canRegister = product?.status === 'PUBLISHED' && supportsProductSecret;
+  const canRegister = supportsProductSecret;
 
   const drawerTitle = useMemo(() => {
     if (!product) {
@@ -328,12 +327,12 @@ const ProductAccessDrawer: React.FC<Props> = ({
       if (canRegister) {
         return {
           type: 'success' as const,
-          message: '当前产品已具备完整的一型一密接入条件，可直接查看 ProductSecret 并调试动态注册。',
+          message: '当前产品已启用一型一密，可直接查看 ProductSecret 并调试动态注册，开发中产品同样支持联调。',
         };
       }
       return {
         type: 'warning' as const,
-        message: '当前产品已配置一型一密，但尚未发布，只能预览接入参数，暂不能执行动态注册。',
+        message: '当前产品未启用一型一密，暂不能执行动态注册。',
       };
     }
 
@@ -413,7 +412,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
     }
 
     if (!canRegister) {
-      message.warning('只有已发布且启用一型一密的产品才支持动态注册');
+      message.warning('只有启用一型一密的产品才支持动态注册');
       return;
     }
 
@@ -598,7 +597,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
               message={
                 canRegister
                   ? '调试注册会真实创建一台设备，并返回新的 DeviceSecret。请避免在正式环境重复创建测试设备。'
-                  : '当前产品尚未发布，暂不能执行动态注册。你可以先查看 ProductSecret 和协议参数。'
+                  : '当前产品未启用一型一密，暂不能执行动态注册。你可以先查看协议参数。'
               }
             />
 
