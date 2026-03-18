@@ -53,3 +53,4 @@ npm run build:vite
 1. 新建 HTTP 设备进入第三步。
 2. 在“配置摘要”中确认 `DeviceName / 设备名称` 已显示当前填写值。
 3. 若未显示，优先检查 `buildSummary(...)` 是否仍遗漏 `deviceName`。
+4. 若“模拟设备名称 / 平台设备昵称”显示为 `-`，优先检查 `onValuesChange` 是否仍使用了不完整的 `allValues`，当前应读取 `form.getFieldsValue(true)`。

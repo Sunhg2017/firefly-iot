@@ -130,8 +130,7 @@ function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, 
 function buildSummary(values: Record<string, unknown>) {
   const protocol = (values.protocol || 'HTTP') as string;
   return [
-    { key: 'nickname', label: '平台设备昵称', value: values.name || '-' },
-    { key: 'name', label: '模拟设备名称', value: values.name || '-' },
+    { key: 'name', label: '模拟设备名称 / 平台设备昵称', value: values.name || '-' },
     { key: 'protocol', label: '接入协议', value: protocol },
     { key: 'main1', label: 'ProductKey / 核心标识', value: values.productKey || values.gbDeviceId || values.loraDevEui || values.snmpHost || values.modbusHost || values.wsEndpoint || values.tcpHost || values.udpHost || '-' },
     { key: 'deviceName', label: 'DeviceName / 设备名称', value: values.deviceName || '-' },
@@ -517,7 +516,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
         form={form}
         layout="vertical"
         initialValues={initialValues}
-        onValuesChange={(_changedValues, allValues) => setFormSnapshot(allValues)}
+        onValuesChange={() => setFormSnapshot(form.getFieldsValue(true))}
       >
         <Steps
           current={currentStep}
