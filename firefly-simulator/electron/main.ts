@@ -215,10 +215,31 @@ ipcMain.handle('http:event', async (_e, baseUrl: string, token: string, event: R
   }
 });
 
-ipcMain.handle('http:heartbeat', async (_e, baseUrl: string, token: string) => {
+ipcMain.handle('http:online', async (_e, baseUrl: string, token: string, event: Record<string, any>) => {
+  try {
+    const url = `${baseUrl}/api/v1/protocol/http/online`;
+    const res = await httpRequest(url, 'POST', { 'X-Device-Token': token }, JSON.stringify(event || {}));
+    return { success: true, ...JSON.parse(res.data), _status: res.status, _headers: res.headers, _elapsed: res.elapsed };
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('http:offline', async (_e, baseUrl: string, token: string, event: Record<string, any>) => {
+  try {
+    const url = `${baseUrl}/api/v1/protocol/http/offline`;
+    const res = await httpRequest(url, 'POST', { 'X-Device-Token': token }, JSON.stringify(event || {}));
+    return { success: true, ...JSON.parse(res.data), _status: res.status, _headers: res.headers, _elapsed: res.elapsed };
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('http:heartbeat', async (_e, baseUrl: string, token: string, event?: Record<string, any>) => {
   try {
     const url = `${baseUrl}/api/v1/protocol/http/heartbeat`;
-    const res = await httpRequest(url, 'POST', { 'X-Device-Token': token });
+    const body = event ? JSON.stringify(event) : undefined;
+    const res = await httpRequest(url, 'POST', { 'X-Device-Token': token }, body);
     return { success: true, ...JSON.parse(res.data), _status: res.status, _headers: res.headers, _elapsed: res.elapsed };
   } catch (err: any) {
     return { success: false, message: err.message };

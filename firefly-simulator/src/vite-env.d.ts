@@ -8,7 +8,9 @@ interface ElectronAPI {
   httpAuth: (baseUrl: string, productKey: string, deviceName: string, deviceSecret: string) => Promise<any>;
   httpReportProperty: (baseUrl: string, token: string, properties: Record<string, any>) => Promise<any>;
   httpReportEvent: (baseUrl: string, token: string, event: Record<string, any>) => Promise<any>;
-  httpHeartbeat: (baseUrl: string, token: string) => Promise<any>;
+  httpOnline: (baseUrl: string, token: string, event: Record<string, any>) => Promise<any>;
+  httpOffline: (baseUrl: string, token: string, event: Record<string, any>) => Promise<any>;
+  httpHeartbeat: (baseUrl: string, token: string, event?: Record<string, any>) => Promise<any>;
   productGetThingModel: (baseUrl: string, productKey: string) => Promise<any>;
   deviceDynamicRegister: (
     baseUrl: string,

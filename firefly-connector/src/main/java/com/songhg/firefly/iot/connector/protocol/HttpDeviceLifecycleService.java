@@ -11,6 +11,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -56,6 +57,31 @@ public class HttpDeviceLifecycleService {
             ));
             log.info("HTTP device online: deviceId={}, trigger={}", auth.getDeviceId(), trigger);
         }
+    }
+
+    /**
+     * HTTP 设备主动下线时需要立刻撤销在线标记并补发 DEVICE_OFFLINE，
+     * 不能继续等待超时扫描，否则平台在线态会长时间滞后。
+     */
+    public void markOffline(DeviceAuthResult auth, String reason) {
+        if (auth == null || !auth.isSuccess() || auth.getDeviceId() == null) {
+            return;
+        }
+
+        String member = buildMember(auth);
+        String markerKey = buildMarkerKey(member);
+        Boolean removed = redisTemplate.delete(markerKey);
+        redisTemplate.opsForZSet().remove(LAST_SEEN_KEY, member);
+
+        if (!Boolean.TRUE.equals(removed)) {
+            return;
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("protocol", "HTTP");
+        payload.put("reason", normalizeReason(reason));
+        publishLifecycle(auth, DeviceMessage.MessageType.DEVICE_OFFLINE, payload);
+        log.info("HTTP device offline: deviceId={}, reason={}", auth.getDeviceId(), payload.get("reason"));
     }
 
     @Scheduled(
@@ -147,6 +173,13 @@ public class HttpDeviceLifecycleService {
 
     private String buildMarkerKey(String member) {
         return ONLINE_MARKER_PREFIX + member;
+    }
+
+    private String normalizeReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return "explicit_offline";
+        }
+        return reason;
     }
 
     private HttpPresenceMember parseMember(String member) {

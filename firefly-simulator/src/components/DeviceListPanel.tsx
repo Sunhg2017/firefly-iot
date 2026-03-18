@@ -25,16 +25,11 @@ import {
 import { Protocol, SimDevice, useSimStore } from '../store';
 import AddDeviceModal from './AddDeviceModal';
 import {
-  buildMqttServiceTopic,
-  dynamicRegisterDevice,
-  resolveMqttIdentity,
   shouldCleanupDynamicRegistration,
-  shouldDynamicRegister,
-  shouldRetryDynamicRegisterAfterFailure,
   unregisterDynamicDevice,
-  validateMqttDevice,
 } from '../utils/mqtt';
-import { getDeviceAccessMissingFields, getDeviceAccessValidationError } from '../utils/deviceAccess';
+import { getDeviceAccessMissingFields } from '../utils/deviceAccess';
+import { connectSimDevice, disconnectSimDevice } from '../utils/runtime';
 
 const { Search } = Input;
 const { Paragraph, Text, Title } = Typography;
@@ -127,19 +122,6 @@ function getDynamicRegisterBaseUrl(device: SimDevice): string | undefined {
     return device.mqttRegisterBaseUrl;
   }
   return undefined;
-}
-
-async function refreshDynamicRegistrationSecret(device: SimDevice) {
-  const registerResult = await dynamicRegisterDevice(device, getDynamicRegisterBaseUrl(device));
-  useSimStore.getState().updateDevice(device.id, {
-    deviceSecret: registerResult.deviceSecret,
-    dynamicRegistered: true,
-  });
-  return {
-    ...device,
-    deviceSecret: registerResult.deviceSecret,
-    dynamicRegistered: true,
-  };
 }
 
 export default function DeviceListPanel() {
@@ -355,18 +337,15 @@ export default function DeviceListPanel() {
   const handleRemove = async (device: SimDevice) => {
     try {
       if (device.status === 'online') {
-        if (device.protocol === 'MQTT') await window.electronAPI.mqttDisconnect(device.id);
-        if (device.protocol === 'WebSocket') await window.electronAPI.wsDisconnect(device.id);
-        if (device.protocol === 'TCP') await window.electronAPI.tcpDisconnect(device.id);
-        if (device.protocol === 'Video' && device.streamMode === 'GB28181') await window.electronAPI.sipStop(device.id);
+        await disconnectSimDevice(device.id, { silent: true });
       }
-    if (device.autoTimerId) clearInterval(device.autoTimerId);
-    if (shouldCleanupDynamicRegistration(device)) {
-      await unregisterDynamicDevice(device, getDynamicRegisterBaseUrl(device));
-      addLog(device.id, device.name, 'success', `已同步删除平台设备：${device.deviceName}`);
-    }
-    removeDevice(device.id);
-    addLog('system', 'System', 'info', `已移除模拟设备：${device.name}`);
+      if (device.autoTimerId) clearInterval(device.autoTimerId);
+      if (shouldCleanupDynamicRegistration(device)) {
+        await unregisterDynamicDevice(device, getDynamicRegisterBaseUrl(device));
+        addLog(device.id, device.name, 'success', `已同步删除平台设备：${device.deviceName}`);
+      }
+      removeDevice(device.id);
+      addLog('system', 'System', 'info', `已移除模拟设备：${device.name}`);
     } catch (error: any) {
       const messageText = error?.message || 'unknown error';
       addLog(device.id, device.name, 'error', `删除设备失败：${messageText}`);
@@ -393,155 +372,31 @@ export default function DeviceListPanel() {
 
     setBatchConnecting(true);
     addLog('system', 'System', 'info', `开始批量连接 ${connectable.length} 台模拟设备`);
-    const { updateDevice } = useSimStore.getState();
     let ok = 0;
     let fail = 0;
-
-    for (const device of connectable) {
-      try {
-        updateDevice(device.id, { status: 'connecting' });
-
-        const accessError = getDeviceAccessValidationError(device);
-        if (accessError) {
-          updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
-          addLog(device.id, device.name, 'warn', accessError);
-          fail += 1;
-          continue;
-        }
-
-        if (device.protocol === 'HTTP') {
-          let target = device;
-          if (shouldDynamicRegister(device)) {
-            const registerResult = await dynamicRegisterDevice(device, device.httpRegisterBaseUrl);
-            target = { ...device, deviceSecret: registerResult.deviceSecret };
-            updateDevice(device.id, { deviceSecret: registerResult.deviceSecret, dynamicRegistered: true });
-            addLog(device.id, device.name, 'success', `HTTP 动态注册成功：${registerResult.deviceName}`);
-          }
-          let result = await window.electronAPI.httpAuth(target.httpBaseUrl, target.productKey, target.deviceName, target.deviceSecret);
-          if ((!result.success || !result.data?.token) && shouldRetryDynamicRegisterAfterFailure(target, result)) {
-            addLog(device.id, device.name, 'warn', 'HTTP auth failed with cached DeviceSecret, retrying dynamic registration');
-            try {
-              target = await refreshDynamicRegistrationSecret(target);
-              result = await window.electronAPI.httpAuth(target.httpBaseUrl, target.productKey, target.deviceName, target.deviceSecret);
-            } catch (retryError: any) {
-              addLog(device.id, device.name, 'warn', `Dynamic registration retry failed: ${retryError?.message || 'unknown error'}`);
-            }
-          }
-          if (result.success && result.data?.token) {
-            updateDevice(device.id, { status: 'online', token: result.data.token, restoreOnLaunch: true });
-            addLog(device.id, device.name, 'success', 'HTTP 批量连接成功');
-            ok += 1;
-          } else {
-            updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
-            addLog(device.id, device.name, 'error', `HTTP 批量连接失败：${result.message || result.msg || JSON.stringify(result)}`);
-            fail += 1;
-          }
-          continue;
-        }
-
-        if (device.protocol === 'CoAP') {
-          const result = await window.electronAPI.coapAuth(device.coapBaseUrl, {
-            productKey: device.productKey,
-            deviceName: device.deviceName,
-            deviceSecret: device.deviceSecret,
-          });
-          if (result.success && result.data?.token) {
-            updateDevice(device.id, { status: 'online', token: result.data.token, restoreOnLaunch: true });
-            addLog(device.id, device.name, 'success', 'CoAP 批量连接成功');
-            ok += 1;
-          } else {
-            updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
-            addLog(device.id, device.name, 'error', `CoAP 批量连接失败：${result.message || result.msg || JSON.stringify(result)}`);
-            fail += 1;
-          }
-          continue;
-        }
-
-        const validationError = validateMqttDevice(device);
-        if (validationError) throw new Error(validationError);
-
-        let target = device;
-        if (shouldDynamicRegister(device)) {
-          const registerResult = await dynamicRegisterDevice(device, device.mqttRegisterBaseUrl);
-          target = { ...device, deviceSecret: registerResult.deviceSecret };
-          updateDevice(device.id, { deviceSecret: registerResult.deviceSecret, dynamicRegistered: true });
-          addLog(device.id, device.name, 'success', `动态注册成功：${registerResult.deviceName}`);
-        }
-
-        let identity = resolveMqttIdentity(target);
-        const mqttOpts: any = { clean: target.mqttClean, keepalive: target.mqttKeepalive || 60 };
-        if (target.mqttWillTopic) {
-          mqttOpts.willTopic = target.mqttWillTopic;
-          mqttOpts.willPayload = target.mqttWillPayload || '';
-          mqttOpts.willQos = target.mqttWillQos ?? 1;
-          mqttOpts.willRetain = target.mqttWillRetain ?? false;
-        }
-
-        let result = await window.electronAPI.mqttConnect(
-          target.id,
-          target.mqttBrokerUrl,
-          identity.clientId,
-          identity.username,
-          identity.password,
-          mqttOpts,
-        );
-        if (!result.success && shouldRetryDynamicRegisterAfterFailure(target, result)) {
-          addLog(target.id, target.name, 'warn', 'MQTT connect failed with cached DeviceSecret, retrying dynamic registration');
-          try {
-            target = await refreshDynamicRegistrationSecret(target);
-            identity = resolveMqttIdentity(target);
-            result = await window.electronAPI.mqttConnect(
-              target.id,
-              target.mqttBrokerUrl,
-              identity.clientId,
-              identity.username,
-              identity.password,
-              mqttOpts,
-            );
-          } catch (retryError: any) {
-            addLog(target.id, target.name, 'warn', `Dynamic registration retry failed: ${retryError?.message || 'unknown error'}`);
-          }
-        }
-        if (result.success) {
-          updateDevice(target.id, { status: 'online', restoreOnLaunch: true });
-          const serviceTopic = buildMqttServiceTopic(target);
-          if (serviceTopic) {
-            await window.electronAPI.mqttSubscribe(target.id, serviceTopic, 1);
-          }
-          addLog(target.id, target.name, 'success', 'MQTT 批量连接成功');
-          ok += 1;
-        } else {
-          updateDevice(target.id, { status: 'error', restoreOnLaunch: false });
-          addLog(target.id, target.name, 'error', `MQTT 批量连接失败：${result.message}`);
-          fail += 1;
-        }
-      } catch (error: any) {
-        updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
-        addLog(device.id, device.name, 'error', `批量连接异常：${error?.message || 'unknown error'}`);
+    for (const target of connectable) {
+      const result = await connectSimDevice(target.id, { silent: true });
+      if (result.success) {
+        addLog(target.id, target.name, 'success', `${target.protocol} 批量连接成功`);
+        ok += 1;
+      } else {
         fail += 1;
       }
     }
-
     setBatchConnecting(false);
     addLog('system', 'System', 'success', `批量连接完成：成功 ${ok}，失败 ${fail}`);
     message.success(`批量连接完成：成功 ${ok}，失败 ${fail}`);
   };
 
   const handleBatchDisconnect = async () => {
-    const onlineDevices = devices.filter((device) => device.status === 'online');
+    const onlineDevices = devices.filter((item) => item.status === 'online');
     if (onlineDevices.length === 0) {
       message.info('当前没有在线设备');
       return;
     }
 
-    const { updateDevice } = useSimStore.getState();
-    for (const device of onlineDevices) {
-      if (device.autoTimerId) clearInterval(device.autoTimerId);
-      if (device.protocol === 'MQTT') await window.electronAPI.mqttDisconnect(device.id);
-      if (device.protocol === 'WebSocket') await window.electronAPI.wsDisconnect(device.id);
-      if (device.protocol === 'TCP') await window.electronAPI.tcpDisconnect(device.id);
-      if (device.protocol === 'Video' && device.streamMode === 'GB28181') await window.electronAPI.sipStop(device.id);
-      updateDevice(device.id, { status: 'offline', autoReport: false, autoTimerId: null, token: '', restoreOnLaunch: false });
+    for (const target of onlineDevices) {
+      await disconnectSimDevice(target.id, { silent: true });
     }
     addLog('system', 'System', 'info', `已断开 ${onlineDevices.length} 台模拟设备`);
     message.success(`已断开 ${onlineDevices.length} 台模拟设备`);

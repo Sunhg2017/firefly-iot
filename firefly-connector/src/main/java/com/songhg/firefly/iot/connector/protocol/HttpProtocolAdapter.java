@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -86,21 +87,56 @@ public class HttpProtocolAdapter {
     @Operation(summary = "上报事件")
     @PostMapping("/event/post")
     public R<Void> reportEvent(@RequestHeader("X-Device-Token") String token, @RequestBody Map<String, Object> event) {
-        DeviceAuthResult auth = authService.authenticateByToken(token);
+        DeviceAuthResult auth = authenticateToken(token);
         if (!auth.isSuccess()) {
             return R.fail(401, "UNAUTHORIZED");
         }
+        if (isLifecycleEvent(event)) {
+            return R.fail(400, "HTTP_LIFECYCLE_EVENT_MUST_USE_DEDICATED_ENDPOINT");
+        }
         lifecycleService.markActive(auth, "event");
+        messageProducer.publishUpstream(buildHttpMessage(
+                auth,
+                DeviceMessage.MessageType.EVENT_REPORT,
+                "/thing/event/post",
+                event
+        ));
+        return R.ok();
+    }
 
-        DeviceMessage message = DeviceMessage.builder()
-                .tenantId(auth.getTenantId())
-                .productId(auth.getProductId())
-                .deviceId(auth.getDeviceId())
-                .type(DeviceMessage.MessageType.EVENT_REPORT)
-                .topic("/sys/http/" + auth.getDeviceId() + "/thing/event/post")
-                .payload(event)
-                .build();
-        messageProducer.publishUpstream(message);
+    @Operation(summary = "HTTP 设备上线")
+    @PostMapping("/online")
+    public R<Void> online(@RequestHeader("X-Device-Token") String token,
+                          @RequestBody(required = false) Map<String, Object> event) {
+        DeviceAuthResult auth = authenticateToken(token);
+        if (!auth.isSuccess()) {
+            return R.fail(401, "UNAUTHORIZED");
+        }
+        lifecycleService.markActive(auth, "online");
+        messageProducer.publishUpstream(buildHttpMessage(
+                auth,
+                DeviceMessage.MessageType.EVENT_REPORT,
+                "/thing/event/post",
+                buildLifecycleEventPayload("online", event)
+        ));
+        return R.ok();
+    }
+
+    @Operation(summary = "HTTP 设备离线")
+    @PostMapping("/offline")
+    public R<Void> offline(@RequestHeader("X-Device-Token") String token,
+                           @RequestBody(required = false) Map<String, Object> event) {
+        DeviceAuthResult auth = authenticateToken(token);
+        if (!auth.isSuccess()) {
+            return R.fail(401, "UNAUTHORIZED");
+        }
+        lifecycleService.markOffline(auth, resolveOfflineReason(event));
+        messageProducer.publishUpstream(buildHttpMessage(
+                auth,
+                DeviceMessage.MessageType.EVENT_REPORT,
+                "/thing/event/post",
+                buildLifecycleEventPayload("offline", event)
+        ));
         return R.ok();
     }
 
@@ -151,12 +187,19 @@ public class HttpProtocolAdapter {
 
     @Operation(summary = "HTTP 设备心跳")
     @PostMapping("/heartbeat")
-    public R<Void> heartbeat(@RequestHeader("X-Device-Token") String token) {
-        DeviceAuthResult auth = authService.authenticateByToken(token);
+    public R<Void> heartbeat(@RequestHeader("X-Device-Token") String token,
+                             @RequestBody(required = false) Map<String, Object> event) {
+        DeviceAuthResult auth = authenticateToken(token);
         if (!auth.isSuccess()) {
             return R.fail(401, "UNAUTHORIZED");
         }
         lifecycleService.markActive(auth, "heartbeat");
+        messageProducer.publishUpstream(buildHttpMessage(
+                auth,
+                DeviceMessage.MessageType.EVENT_REPORT,
+                "/thing/event/post",
+                buildLifecycleEventPayload("heartbeat", event)
+        ));
         return R.ok();
     }
 
@@ -167,5 +210,59 @@ public class HttpProtocolAdapter {
             }
         }
         return null;
+    }
+
+    private DeviceAuthResult authenticateToken(String token) {
+        return authService.authenticateByToken(token);
+    }
+
+    private boolean isLifecycleEvent(Map<String, Object> event) {
+        String identifier = extractEventIdentifier(event);
+        return "online".equals(identifier) || "offline".equals(identifier) || "heartbeat".equals(identifier);
+    }
+
+    private String extractEventIdentifier(Map<String, Object> event) {
+        if (event == null || event.isEmpty()) {
+            return null;
+        }
+        return firstNonBlank(asText(event.get("identifier")), asText(event.get("eventType")));
+    }
+
+    private String resolveOfflineReason(Map<String, Object> event) {
+        return firstNonBlank(asText(event == null ? null : event.get("reason")), "client_offline");
+    }
+
+    private String asText(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = value.toString().trim();
+        return text.isEmpty() ? null : text;
+    }
+
+    private Map<String, Object> buildLifecycleEventPayload(String identifier, Map<String, Object> event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (event != null && !event.isEmpty()) {
+            payload.putAll(event);
+        }
+        payload.putIfAbsent("identifier", identifier);
+        payload.putIfAbsent("eventType", identifier);
+        payload.putIfAbsent("protocol", "HTTP");
+        payload.putIfAbsent("timestamp", System.currentTimeMillis());
+        return payload;
+    }
+
+    private DeviceMessage buildHttpMessage(DeviceAuthResult auth,
+                                           DeviceMessage.MessageType type,
+                                           String topicSuffix,
+                                           Map<String, Object> payload) {
+        return DeviceMessage.builder()
+                .tenantId(auth.getTenantId())
+                .productId(auth.getProductId())
+                .deviceId(auth.getDeviceId())
+                .type(type)
+                .topic("/sys/http/" + auth.getDeviceId() + topicSuffix)
+                .payload(payload)
+                .build();
     }
 }

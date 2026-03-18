@@ -4,7 +4,7 @@
 
 ## 功能
 
-- **HTTP 协议模拟** — 设备认证（productKey/deviceName/deviceSecret）→ Token → 属性/事件上报
+- **HTTP 协议模拟** — 设备认证（productKey/deviceName/deviceSecret）→ `online`/`heartbeat`/`offline` 生命周期事件 + 属性/事件上报
 - **MQTT 协议模拟** — 直连 `firefly-connector` 内置 MQTT (`mqtt://host:1883`) → Topic 发布/订阅 → 属性/事件上报
 - **CoAP 协议模拟** — CoAP Bridge 认证 (TTL 7d) → 属性/事件/OTA进度上报 + 设备影子拉取
 - **视频设备模拟** — GB28181/RTSP 接入 → 推流/停流、PTZ 云台控制、截图、录制、目录/通道查询
@@ -50,8 +50,11 @@ npm run electron:build
 | 步骤 | API | 说明 |
 |------|-----|------|
 | 1. 认证 | `POST /api/v1/protocol/http/auth` | 获取设备 Token |
-| 2. 属性上报 | `POST /api/v1/protocol/http/property/post` | Header: `X-Device-Token` |
-| 3. 事件上报 | `POST /api/v1/protocol/http/event/post` | Header: `X-Device-Token` |
+| 2. 上线 | `POST /api/v1/protocol/http/online` | Header: `X-Device-Token`，同时触发生命周期上线和内置 `online` 事件 |
+| 3. 属性上报 | `POST /api/v1/protocol/http/property/post` | Header: `X-Device-Token` |
+| 4. 普通事件上报 | `POST /api/v1/protocol/http/event/post` | Header: `X-Device-Token`，不用于 `online/offline/heartbeat` |
+| 5. 心跳 | `POST /api/v1/protocol/http/heartbeat` | Header: `X-Device-Token`，同时触发生命周期保活和内置 `heartbeat` 事件 |
+| 6. 离线 | `POST /api/v1/protocol/http/offline` | Header: `X-Device-Token`，同时触发生命周期离线和内置 `offline` 事件 |
 
 补充说明：
 
@@ -59,6 +62,8 @@ npm run electron:build
 - HTTP 认证请求会同时携带 JSON Body 和同名 Query 参数，方便 connector 在不同取参口径下都能兼容。
 - 连接成功后，认证请求也会进入 HTTP 请求历史，便于排查“服务端未拿到认证参数”这类问题。
 - 如果 HTTP 设备选择“一型一密”，模拟器会先调用 `POST /api/v1/protocol/device/register` 动态注册，拿到 `deviceSecret` 后再调用 `/api/v1/protocol/http/auth`。
+- 模拟器连接后会自动调用 `/online`，断开时自动调用 `/offline`，定时心跳会调用 `/heartbeat`。
+- `online`、`offline`、`heartbeat` 仍然是物模型事件，但必须走专用生命周期端点，不能走普通 `/event/post`。
 
 ### MQTT 模式
 

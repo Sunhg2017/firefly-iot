@@ -9,6 +9,7 @@ import {
   validateMqttDevice,
 } from './mqtt';
 import { getDeviceAccessValidationError } from './deviceAccess';
+import { buildLifecycleEventPayload, invokeHttpLifecycle } from './httpLifecycle';
 
 const RESTORABLE_PROTOCOLS: Protocol[] = [
   'HTTP',
@@ -37,6 +38,16 @@ function clearDeviceAutoTimer(device: SimDevice) {
   if (device.autoTimerId) {
     window.clearInterval(device.autoTimerId);
   }
+}
+
+function clearDeviceHeartbeatTimer(device: SimDevice) {
+  if (device.heartbeatTimerId) {
+    window.clearInterval(device.heartbeatTimerId);
+  }
+}
+
+function isSuccessfulResponse(result: any) {
+  return Boolean(result?.success) && (typeof result?.code !== 'number' || result.code === 0);
 }
 
 async function refreshDynamicRegistrationSecret(device: SimDevice) {
@@ -115,11 +126,25 @@ export async function connectSimDevice(
         }
       }
       if (result.success && result.data?.token) {
+        const targetOnline = { ...target, token: result.data.token };
         store.updateDevice(device.id, {
           status: 'online',
           token: result.data.token,
           restoreOnLaunch: true,
         });
+        try {
+          const lifecycle = await invokeHttpLifecycle(
+            targetOnline,
+            'online',
+            buildLifecycleEventPayload(targetOnline, 'online'),
+          );
+          if (!isSuccessfulResponse(lifecycle.result)) {
+            store.addLog(device.id, device.name, 'warn', `HTTP online event failed: ${lifecycle.result?.message || lifecycle.result?.msg || 'unknown error'}`);
+          }
+        } catch (lifecycleError) {
+          const lifecycleMessage = lifecycleError instanceof Error ? lifecycleError.message : 'unknown error';
+          store.addLog(device.id, device.name, 'warn', `HTTP online event failed: ${lifecycleMessage}`);
+        }
         if (!options?.silent) {
           store.addLog(device.id, device.name, 'success', `HTTP auth succeeded: ${result.data.token.slice(0, 20)}...`);
         }
@@ -353,6 +378,22 @@ export async function disconnectSimDevice(deviceId: string, options?: { silent?:
 
   try {
     clearDeviceAutoTimer(device);
+    clearDeviceHeartbeatTimer(device);
+    if (device.protocol === 'HTTP' && device.token) {
+      try {
+        const lifecycle = await invokeHttpLifecycle(
+          device,
+          'offline',
+          buildLifecycleEventPayload(device, 'offline'),
+        );
+        if (!isSuccessfulResponse(lifecycle.result)) {
+          store.addLog(device.id, device.name, 'warn', `HTTP offline event failed: ${lifecycle.result?.message || lifecycle.result?.msg || 'unknown error'}`);
+        }
+      } catch (lifecycleError) {
+        const lifecycleMessage = lifecycleError instanceof Error ? lifecycleError.message : 'unknown error';
+        store.addLog(device.id, device.name, 'warn', `HTTP offline event failed: ${lifecycleMessage}`);
+      }
+    }
     if (device.protocol === 'MQTT') {
       await window.electronAPI.mqttDisconnect(device.id);
     }
@@ -373,6 +414,7 @@ export async function disconnectSimDevice(deviceId: string, options?: { silent?:
       sipRegistered: false,
       autoReport: false,
       autoTimerId: null,
+      heartbeatTimerId: null,
       restoreOnLaunch: false,
     });
     if (!options?.silent) {
@@ -385,6 +427,7 @@ export async function disconnectSimDevice(deviceId: string, options?: { silent?:
       status: 'offline',
       autoReport: false,
       autoTimerId: null,
+      heartbeatTimerId: null,
       restoreOnLaunch: false,
     });
     store.addLog(device.id, device.name, 'warn', `Disconnect warning: ${message}`);

@@ -50,6 +50,7 @@ import {
   validateMqttDevice,
 } from '../utils/mqtt';
 import { getDeviceAccessOverviewItems, getDeviceAccessValidationError } from '../utils/deviceAccess';
+import { buildLifecycleEventPayload, invokeHttpLifecycle } from '../utils/httpLifecycle';
 import {
   buildRandomEventPayload,
   buildDefaultFixedValue,
@@ -133,20 +134,6 @@ function resolveThingModelBaseUrl(device: SimDevice): string {
   if (device.protocol === 'CoAP') return (device.coapBaseUrl || '').trim();
   if (device.protocol === 'MQTT') return (device.mqttRegisterBaseUrl || '').trim();
   return '';
-}
-
-function buildLifecycleEventPayload(device: SimDevice, identifier: 'online' | 'offline' | 'heartbeat'): Record<string, unknown> {
-  return {
-    identifier,
-    eventType: identifier,
-    eventName: LIFECYCLE_EVENT_LABELS[identifier],
-    timestamp: Date.now(),
-    occurredAt: new Date().toISOString(),
-    protocol: device.protocol,
-    productKey: device.productKey,
-    deviceName: device.deviceName,
-    ip: `192.168.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 253) + 2}`,
-  };
 }
 
 export default function DeviceControlPanel() {
@@ -634,18 +621,30 @@ export default function DeviceControlPanel() {
     }
 
     const payload = buildLifecycleEventPayload(target, identifier);
-    const result = await publishPayload(target, 'event', payload, { trackHttpHistory: target.id === selectedDeviceId });
-    if (identifier === 'heartbeat' && target.protocol === 'HTTP' && target.token) {
-      const heartbeatResult = await window.electronAPI.httpHeartbeat(target.httpBaseUrl, target.token);
-      if (!heartbeatResult?.success || (typeof heartbeatResult.code === 'number' && heartbeatResult.code !== 0)) {
-        if (!options?.silentFailure) {
-          addLog(target.id, target.name, 'warn', `Heartbeat presence refresh failed: ${heartbeatResult?.message || heartbeatResult?.msg || 'unknown error'}`);
-        }
-        return heartbeatResult;
+    let result: any;
+    if (target.protocol === 'HTTP') {
+      // HTTP lifecycle uses dedicated endpoints so online/offline semantics do not get
+      // mixed back into the generic event reporting path.
+      const lifecycle = await invokeHttpLifecycle(target, identifier, payload);
+      result = lifecycle.result;
+      if (target.id === selectedDeviceId) {
+        setHttpHistory((prev) => [...prev.slice(-99), {
+          method: 'POST',
+          url: lifecycle.url,
+          reqBody: JSON.stringify(lifecycle.payload, null, 2),
+          status: result._status || 0,
+          resBody: JSON.stringify(result, null, 2),
+          resHeaders: result._headers || {},
+          elapsed: result._elapsed || 0,
+          ts: Date.now(),
+        }]);
       }
+    } else {
+      result = await publishPayload(target, 'event', payload, { trackHttpHistory: target.id === selectedDeviceId });
     }
 
-    if (result.success) {
+    const succeeded = result?.success && (typeof result.code !== 'number' || result.code === 0);
+    if (succeeded) {
       if (!options?.silentSuccess) {
         addLog(target.id, target.name, 'info', `${LIFECYCLE_EVENT_LABELS[identifier]} event sent`);
       }

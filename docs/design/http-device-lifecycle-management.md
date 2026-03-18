@@ -1,98 +1,144 @@
 # HTTP 设备上下线与心跳管理设计说明
-> 版本: v1.0.0
-> 日期: 2026-03-14
+> 版本: v1.1.0
+> 日期: 2026-03-19
 > 状态: Done
 
 ## 1. 背景
 
-HTTP 设备接入原先只有认证与数据上报能力，没有完整的在线状态管理：
+HTTP 设备的 `online`、`offline`、`heartbeat` 已经被定义为物模型内置事件，但此前模拟器和部分客户端把它们和普通业务事件一样直接上报到：
 
-- `/api/v1/protocol/http/auth` 只负责鉴权和签发 token
-- `property/post`、`event/post`、`data/{action}` 只转发业务消息
-- 没有专门的 HTTP 心跳入口
-- 没有基于超时的 HTTP 设备离线判定
+- `POST /api/v1/protocol/http/event/post`
 
-这会导致 HTTP 设备虽然持续上报数据，但设备管理页在线状态无法及时建立，也无法在停止上报后自动离线。
+这样只能产出 `EVENT_REPORT`，后续生命周期处理链路拿不到对应的 `DEVICE_ONLINE` / `DEVICE_OFFLINE`，导致：
+
+- HTTP 主动上线后平台在线态不一定及时建立
+- HTTP 主动离线后平台只能等超时扫描才离线
+- 心跳虽然作为事件存在，但无法稳定承担在线保活语义
 
 ## 2. 目标
 
-- 为 HTTP 设备补齐“上线、心跳、离线”完整链路
-- 不引入长连接语义，保持 HTTP 无连接协议特性
-- 复用现有 `DEVICE_ONLINE` / `DEVICE_OFFLINE` 生命周期消息链路
-- 支持通过配置调整超时阈值和扫描周期
+- 保持 `online`、`offline`、`heartbeat` 仍然是物模型事件
+- 同时保证平台生命周期链路能正确处理 HTTP 上下线和心跳
+- 禁止继续把生命周期事件混入普通 `/event/post`
+- 保留“最后活跃时间”模型，用于 HTTP 无连接协议的在线状态管理
 
 ## 3. 设计原则
 
-- HTTP 不以 `/auth` 作为真正上线依据
-  - 认证成功只说明凭证合法，不代表设备已经进入稳定运行态
-- 首次有效业务请求或显式心跳才视为上线
-- 后续有效请求只刷新活跃时间，不重复发上线事件
-- 离线由“心跳超时”判定，而不是连接断开
+- `/auth` 只负责认证，不代表设备已经上线
+- 生命周期事件仍保留为 `EVENT_REPORT`，便于规则、告警、审计按事件消费
+- 生命周期语义必须通过专用 HTTP 端点触发，不能依赖普通事件接口推断
+- 业务属性/普通事件/通用数据仍可作为活跃刷新来源，避免设备只要有业务流量就被误判离线
 
-## 4. 方案
+## 4. 整体方案
 
-## 4.1 活跃刷新
+## 4.1 生命周期专用端点
 
-`firefly-connector` 新增 `HttpDeviceLifecycleService`，对以下请求统一做活跃刷新：
+新增并统一使用以下端点：
+
+- `POST /api/v1/protocol/http/online`
+- `POST /api/v1/protocol/http/offline`
+- `POST /api/v1/protocol/http/heartbeat`
+
+三个端点都使用 `X-Device-Token` 鉴权，并允许携带可选 JSON 请求体。请求体会被补齐以下通用字段：
+
+- `identifier`
+- `eventType`
+- `protocol`
+- `timestamp`
+
+其中 `online` / `offline` / `heartbeat` 的物模型事件仍然以 `EVENT_REPORT` 形式写入 `/sys/http/{deviceId}/thing/event/post`。
+
+## 4.2 生命周期语义与事件双写
+
+专用端点不只发事件，还会显式驱动生命周期服务：
+
+### `/online`
+
+1. 校验 token
+2. `markActive(auth, "online")`
+3. 若首次上线，发布 `DEVICE_ONLINE`
+4. 同时发布内置 `online` 事件
+
+### `/offline`
+
+1. 校验 token
+2. `markOffline(auth, reason)`
+3. 立即清理 Redis 在线标记与最近活跃索引
+4. 立即发布 `DEVICE_OFFLINE`
+5. 同时发布内置 `offline` 事件
+
+### `/heartbeat`
+
+1. 校验 token
+2. `markActive(auth, "heartbeat")`
+3. 刷新在线租约与最近活跃时间
+4. 同时发布内置 `heartbeat` 事件
+
+这样生命周期链路与事件链路保持一致：
+
+- 平台在线状态依赖 `DEVICE_ONLINE` / `DEVICE_OFFLINE`
+- 物模型、规则和审计仍可消费 `online` / `offline` / `heartbeat` 事件
+
+## 4.3 普通事件接口收口
+
+`POST /api/v1/protocol/http/event/post` 继续负责普通业务事件，但新增限制：
+
+- 当 `identifier` 或 `eventType` 为 `online` / `offline` / `heartbeat` 时，直接返回 `400`
+- 错误码：`HTTP_LIFECYCLE_EVENT_MUST_USE_DEDICATED_ENDPOINT`
+
+这样可以避免客户端继续走错误入口，防止生命周期链路再次失效。
+
+## 4.4 活跃刷新与超时离线
+
+`HttpDeviceLifecycleService` 继续承担 HTTP 在线租约管理，对以下请求刷新活跃时间：
 
 - `POST /api/v1/protocol/http/property/post`
 - `POST /api/v1/protocol/http/event/post`
 - `POST /api/v1/protocol/http/data/{action}`
+- `POST /api/v1/protocol/http/online`
 - `POST /api/v1/protocol/http/heartbeat`
 
-处理逻辑：
+当超时扫描发现：
 
-1. 先按 token 解析设备身份
-2. 刷新 Redis 在线标记 TTL
-3. 刷新 Redis 最近活跃时间索引
-4. 若该设备此前不在线，则补发 `DEVICE_ONLINE`
+- 最近活跃时间已早于阈值
+- 且在线标记 TTL 已失效
 
-## 4.2 显式心跳接口
+则补发 `DEVICE_OFFLINE(reason=heartbeat_timeout)`。
 
-新增接口：
+## 4.5 模拟器联动
 
-- `POST /api/v1/protocol/http/heartbeat`
+设备模拟器改为统一走专用生命周期接口：
 
-用途：
-
-- 设备没有属性或事件要上报时，也可以通过心跳维持在线状态
-- 心跳本身不写入业务遥测或事件数据，只更新生命周期状态
-
-## 4.3 离线判定
-
-新增定时离线扫描：
-
-- `firefly-connector` 启用调度器
-- 周期性扫描 HTTP 设备最近活跃时间
-- 超过超时阈值且在线标记已过期的设备，补发 `DEVICE_OFFLINE`
-
-这样离线仍然走已有生命周期消息主题，由 `firefly-device` 侧统一更新 `onlineStatus`、`lastOfflineAt` 和运维事件。
+- HTTP 连接成功后：`/auth` -> `/online`
+- HTTP 主动断开时：`/offline`
+- HTTP 定时保活时：`/heartbeat`
+- 批量连接、批量断开、场景编排也统一复用同一套运行时封装
 
 ## 5. Redis 结构
 
 - 最近活跃索引：`connector:http:device:last-seen`
-  - ZSET
-  - score 为最近活跃时间戳
-  - member 为 `tenantId:productId:deviceId`
+  - 类型：`ZSET`
+  - score：最近活跃时间戳
+  - member：`tenantId:productId:deviceId`
 
 - 在线标记：`connector:http:device:online:{tenantId}:{productId}:{deviceId}`
-  - String
-  - 使用 TTL 表示在线租约
+  - 类型：`String`
+  - TTL：在线租约
 
 说明：
 
-- 在线标记用于快速判断“首次上线”与“是否已经超时”
-- ZSET 用于定时扫描候选设备，避免全量扫描 Redis key
+- 在线标记用于判断首次上线与是否已超时
+- ZSET 用于按时间窗口扫描候选离线设备，避免全量扫描 Redis key
 
 ## 6. 配置项
 
 - `firefly.http.presence-timeout-seconds`
   - 默认 `300`
-  - 含义：HTTP 设备无活跃请求多久后判定离线
+  - HTTP 设备无活跃请求多久后判定离线
 
 - `firefly.http.presence-sweep-interval-seconds`
   - 默认 `30`
-  - 含义：离线扫描周期
+  - 离线扫描周期
 
 对应环境变量：
 
@@ -102,14 +148,18 @@ HTTP 设备接入原先只有认证与数据上报能力，没有完整的在线
 ## 7. 关键取舍
 
 - 没有把 `/auth` 直接当作上线
-  - 避免设备只取 token、不真正上报时被误判在线
+  - 避免设备只拿 token 不上报时被误判在线
 
-- 没有新增 `HEARTBEAT` 消息类型
-  - 当前只需要维护生命周期状态，使用现有 `DEVICE_ONLINE` / `DEVICE_OFFLINE` 即可
-  - 如后续规则引擎需要消费独立心跳事件，再扩展消息类型更合适
+- 没有新增独立心跳消息类型
+  - 平台生命周期继续复用 `DEVICE_ONLINE` / `DEVICE_OFFLINE`
+  - 业务侧通过内置 `heartbeat` 事件消费心跳语义
+
+- 主动离线立即生效，不再只依赖超时扫描
+  - 降低平台在线态滞后
+  - 更符合模拟器和真实设备的显式断开行为
 
 ## 8. 风险与边界
 
-- HTTP 本质上是“最后活跃时间模型”，不是物理连接在线模型
-- 极端并发下，超时扫描与新请求可能短暂交错，最坏情况会出现一次离线后立即再次上线的补偿事件
-- 这类瞬时抖动比“长时间卡在线”风险更低，且现有生命周期链路可以正确收敛最终状态
+- HTTP 仍然是“最后活跃时间模型”，不是物理连接模型
+- 客户端若继续把生命周期事件打到 `/event/post`，会收到 `400`，需要同步改造接入端
+- 极端并发下，显式离线与新心跳可能短暂交错，最终状态仍以最后一次有效生命周期动作为准

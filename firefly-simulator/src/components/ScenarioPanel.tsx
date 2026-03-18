@@ -8,6 +8,7 @@ import {
   PlayCircleOutlined, PauseCircleOutlined,
 } from '@ant-design/icons';
 import { useSimStore, generatePayload } from '../store';
+import { connectSimDevice, disconnectSimDevice } from '../utils/runtime';
 
 const { Text } = Typography;
 
@@ -49,13 +50,16 @@ export default function ScenarioPanel() {
   };
 
   const targetDevices = devices.filter((d) => targetProtocol === 'all' || d.protocol === targetProtocol);
+  const getTargetDevices = () =>
+    useSimStore.getState().devices.filter((device) => targetProtocol === 'all' || device.protocol === targetProtocol);
 
   const runScenario = async () => {
-    if (targetDevices.length === 0) { message.warning('没有匹配的设备'); return; }
+    const initialTargets = getTargetDevices();
+    if (initialTargets.length === 0) { message.warning('没有匹配的设备'); return; }
     if (steps.length === 0) { message.warning('请添加至少一个步骤'); return; }
     setRunning(true);
     abortRef.current = false;
-    addLog('system', '场景编排', 'info', `开始执行场景: ${steps.length} 步 × ${loops} 轮, ${targetDevices.length} 设备`);
+    addLog('system', '场景编排', 'info', `开始执行场景: ${steps.length} 步 × ${loops} 轮, ${initialTargets.length} 设备`);
 
     for (let loop = 0; loop < loops; loop++) {
       if (abortRef.current) break;
@@ -66,39 +70,30 @@ export default function ScenarioPanel() {
         const step = steps[si];
 
         if (step.type === 'connect') {
-          const offlineDevs = targetDevices.filter((d) => d.status === 'offline');
-          const { updateDevice: ud } = useSimStore.getState();
+          const offlineDevs = getTargetDevices().filter((device) => device.status === 'offline');
           for (const dev of offlineDevs) {
             if (abortRef.current) break;
-            try {
-              let res: any;
-              if (dev.protocol === 'HTTP') {
-                res = await window.electronAPI.httpAuth(dev.httpBaseUrl, dev.productKey, dev.deviceName, dev.deviceSecret);
-                if (res.success && res.data?.token) ud(dev.id, { status: 'online', token: res.data.token });
-              } else if (dev.protocol === 'CoAP') {
-                res = await window.electronAPI.coapAuth(dev.coapBaseUrl, { productKey: dev.productKey, deviceName: dev.deviceName, deviceSecret: dev.deviceSecret });
-                if (res.success && res.data?.token) ud(dev.id, { status: 'online', token: res.data.token });
-              } else if (dev.protocol === 'MQTT') {
-                res = await window.electronAPI.mqttConnect(dev.id, dev.mqttBrokerUrl, dev.mqttClientId, dev.mqttUsername, dev.mqttPassword, { clean: dev.mqttClean, keepalive: dev.mqttKeepalive || 60 });
-                if (res.success) ud(dev.id, { status: 'online' });
-              }
-            } catch { /* skip */ }
+            await connectSimDevice(dev.id, { silent: true });
           }
           addLog('system', '场景编排', 'info', `[轮${loop + 1}] 连接完成`);
+          continue;
+        }
 
-        } else if (step.type === 'disconnect') {
-          const onlineDevs = targetDevices.filter((d) => d.status === 'online');
-          const { updateDevice: ud } = useSimStore.getState();
+        if (step.type === 'disconnect') {
+          const onlineDevs = getTargetDevices().filter((device) => device.status === 'online');
           for (const dev of onlineDevs) {
-            if (dev.protocol === 'MQTT') await window.electronAPI.mqttDisconnect(dev.id);
-            ud(dev.id, { status: 'offline', autoReport: false, autoTimerId: null });
+            if (abortRef.current) break;
+            await disconnectSimDevice(dev.id, { silent: true });
           }
           addLog('system', '场景编排', 'info', `[轮${loop + 1}] 断开完成`);
+          continue;
 
-        } else if (step.type === 'send') {
+        }
+
+        if (step.type === 'send') {
           const tpl = templates.find((t) => t.id === step.templateId);
           if (!tpl) continue;
-          const onlineDevs = targetDevices.filter((d) => d.status === 'online');
+          const onlineDevs = getTargetDevices().filter((device) => device.status === 'online');
           const promises = onlineDevs.map(async (dev) => {
             const payload = generatePayload(tpl.fields);
             try {
@@ -124,6 +119,11 @@ export default function ScenarioPanel() {
     setCurrentStep(-1);
     setCurrentLoop(0);
     setRunning(false);
+    if (abortRef.current) {
+      addLog('system', '场景编排', 'warn', '场景已停止');
+      message.info('场景已停止');
+      return;
+    }
     addLog('system', '场景编排', 'success', '场景执行完成');
     message.success('场景执行完成');
   };

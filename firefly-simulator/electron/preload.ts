@@ -19,8 +19,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   httpReportEvent: (baseUrl: string, token: string, event: Record<string, any>) =>
     ipcRenderer.invoke('http:event', baseUrl, token, event),
 
-  httpHeartbeat: (baseUrl: string, token: string) =>
-    ipcRenderer.invoke('http:heartbeat', baseUrl, token),
+  httpOnline: (baseUrl: string, token: string, event: Record<string, any>) =>
+    ipcRenderer.invoke('http:online', baseUrl, token, event),
+
+  httpOffline: (baseUrl: string, token: string, event: Record<string, any>) =>
+    ipcRenderer.invoke('http:offline', baseUrl, token, event),
+
+  httpHeartbeat: (baseUrl: string, token: string, event?: Record<string, any>) =>
+    ipcRenderer.invoke('http:heartbeat', baseUrl, token, event),
 
   productGetThingModel: (baseUrl: string, productKey: string) =>
     ipcRenderer.invoke('product:thingModel', baseUrl, productKey),
