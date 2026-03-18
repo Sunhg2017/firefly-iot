@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Slf4j
@@ -48,14 +49,20 @@ public class MessageRouterService {
     }
 
     private void handlePropertyReport(DeviceMessage message) {
-        Map<String, Object> payload = message.getPayload();
+        Map<String, Object> payload = normalizePropertyPayload(message.getPayload());
         if (payload != null && !payload.isEmpty()) {
+            DeviceMessage normalizedMessage = withPayload(message, payload);
             try {
-                deviceDataService.writeTelemetryFromMessage(message);
+                deviceDataService.writeTelemetryFromMessage(normalizedMessage);
+            } catch (Exception ex) {
+                log.error("Failed to persist property report telemetry for device {}: {}",
+                        message.getDeviceId(), ex.getMessage());
+            }
+            try {
                 shadowService.updateReported(message.getDeviceId(), payload);
                 log.debug("Shadow reported updated for device {}", message.getDeviceId());
             } catch (Exception ex) {
-                log.error("Failed to process property report for device {}: {}",
+                log.error("Failed to update shadow for property report device {}: {}",
                         message.getDeviceId(), ex.getMessage());
             }
         }
@@ -168,5 +175,52 @@ public class MessageRouterService {
             return LocalDateTime.now();
         }
         return LocalDateTime.ofInstant(Instant.ofEpochMilli(message.getTimestamp()), ZoneId.systemDefault());
+    }
+
+    /**
+     * Property reports can arrive either as a plain property map or wrapped in
+     * a generic envelope such as {"params": {...}}. The shadow and telemetry
+     * flows must always consume the actual property set.
+     */
+    private Map<String, Object> normalizePropertyPayload(Map<String, Object> payload) {
+        if (payload == null || payload.isEmpty()) {
+            return payload;
+        }
+        Object params = payload.get("params");
+        if (params instanceof Map<?, ?> paramsMap) {
+            return toStringKeyMap(paramsMap);
+        }
+        Object properties = payload.get("properties");
+        if (properties instanceof Map<?, ?> propertiesMap) {
+            return toStringKeyMap(propertiesMap);
+        }
+        return payload;
+    }
+
+    private Map<String, Object> toStringKeyMap(Map<?, ?> source) {
+        Map<String, Object> normalized = new LinkedHashMap<>();
+        source.forEach((key, value) -> {
+            if (key != null) {
+                normalized.put(key.toString(), value);
+            }
+        });
+        return normalized;
+    }
+
+    private DeviceMessage withPayload(DeviceMessage message, Map<String, Object> payload) {
+        if (message == null || payload == null || payload == message.getPayload()) {
+            return message;
+        }
+        return DeviceMessage.builder()
+                .messageId(message.getMessageId())
+                .tenantId(message.getTenantId())
+                .productId(message.getProductId())
+                .deviceId(message.getDeviceId())
+                .deviceName(message.getDeviceName())
+                .type(message.getType())
+                .topic(message.getTopic())
+                .payload(payload)
+                .timestamp(message.getTimestamp())
+                .build();
     }
 }

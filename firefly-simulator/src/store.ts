@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 import dayjs from 'dayjs';
+import type { ThingModelSimulationRuleMap } from './utils/thingModel';
 
 // ============================================================
 // Types
@@ -110,6 +111,7 @@ export interface SimDevice {
   sentCount: number;
   errorCount: number;
   dynamicRegistered: boolean;
+  thingModelSimulationRules: ThingModelSimulationRuleMap;
 }
 
 export interface LogEntry {
@@ -440,6 +442,7 @@ export const useSimStore = create<SimulatorState>()(
       sentCount: 0,
       errorCount: 0,
       dynamicRegistered: partial.dynamicRegistered ?? false,
+      thingModelSimulationRules: partial.thingModelSimulationRules || {},
     };
     set((s) => ({ devices: [...s.devices, device], selectedDeviceId: id }));
   },

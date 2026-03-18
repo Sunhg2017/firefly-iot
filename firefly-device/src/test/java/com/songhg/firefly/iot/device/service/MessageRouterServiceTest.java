@@ -12,6 +12,7 @@ import java.util.Map;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -67,6 +68,53 @@ class MessageRouterServiceTest {
         routerService.routeUpstream(message);
 
         verify(deviceDataService).writeTelemetryFromMessage(message);
+        verify(shadowService).updateReported(eq(3L), eq(message.getPayload()));
+        verify(messageProducer).publishToTopic(
+                eq(KafkaTopics.RULE_ENGINE_INPUT),
+                argThat(ruleMessage -> "/sys/pk/dev-001/thing/property/post".equals(ruleMessage.getTopic()))
+        );
+    }
+
+    @Test
+    void shouldUnwrapPropertyEnvelopeBeforePersistingTelemetryAndShadow() {
+        Map<String, Object> params = Map.of("temperature", 26.5, "switch", true);
+        DeviceMessage message = DeviceMessage.builder()
+                .messageId("msg-2b")
+                .tenantId(1L)
+                .productId(2L)
+                .deviceId(3L)
+                .deviceName("dev-001")
+                .type(DeviceMessage.MessageType.PROPERTY_REPORT)
+                .topic("/sys/pk/dev-001/thing/property/post")
+                .payload(Map.of("id", "1", "params", params))
+                .timestamp(123456789L)
+                .build();
+
+        routerService.routeUpstream(message);
+
+        verify(deviceDataService).writeTelemetryFromMessage(argThat(actual ->
+                actual != null && params.equals(actual.getPayload())
+        ));
+        verify(shadowService).updateReported(eq(3L), eq(params));
+    }
+
+    @Test
+    void shouldStillUpdateShadowWhenTelemetryPersistenceFails() {
+        DeviceMessage message = DeviceMessage.builder()
+                .messageId("msg-2c")
+                .tenantId(1L)
+                .productId(2L)
+                .deviceId(3L)
+                .deviceName("dev-001")
+                .type(DeviceMessage.MessageType.PROPERTY_REPORT)
+                .topic("/sys/pk/dev-001/thing/property/post")
+                .payload(Map.of("temperature", 26.5))
+                .timestamp(123456789L)
+                .build();
+        doThrow(new RuntimeException("tsdb down")).when(deviceDataService).writeTelemetryFromMessage(any(DeviceMessage.class));
+
+        routerService.routeUpstream(message);
+
         verify(shadowService).updateReported(eq(3L), eq(message.getPayload()));
         verify(messageProducer).publishToTopic(
                 eq(KafkaTopics.RULE_ENGINE_INPUT),

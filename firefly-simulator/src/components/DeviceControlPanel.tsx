@@ -4,7 +4,6 @@ import {
   Badge,
   Button,
   Card,
-  Divider,
   Empty,
   Input,
   InputNumber,
@@ -53,10 +52,16 @@ import {
 import { getDeviceAccessOverviewItems, getDeviceAccessValidationError } from '../utils/deviceAccess';
 import {
   buildRandomEventPayload,
+  buildDefaultFixedValue,
   buildRandomPropertyBatchPayload,
   buildRandomPropertyPayload,
+  describeThingModelItemFields,
   parseThingModelText,
+  resolveThingModelEnumCandidates,
+  resolveThingModelValueTypeLabel,
+  type ThingModelFieldDescriptor,
   type ThingModelRoot,
+  type ThingModelSimulationRule,
 } from '../utils/thingModel';
 
 const { Text, Title } = Typography;
@@ -91,6 +96,26 @@ const LIFECYCLE_EVENT_LABELS: Record<'online' | 'offline' | 'heartbeat', string>
   offline: 'Offline',
   heartbeat: 'Heartbeat',
 };
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function supportsRangeRule(valueType: ThingModelFieldDescriptor['valueType']): boolean {
+  return valueType === 'int' || valueType === 'float' || valueType === 'double' || valueType === 'date';
+}
+
+function supportsJsonFixedValue(valueType: ThingModelFieldDescriptor['valueType']): boolean {
+  return valueType === 'array' || valueType === 'struct';
+}
+
+function supportsStringRandomConfig(valueType: ThingModelFieldDescriptor['valueType']): boolean {
+  return valueType === 'string';
+}
+
+function supportsArrayRandomConfig(valueType: ThingModelFieldDescriptor['valueType']): boolean {
+  return valueType === 'array';
+}
 
 function maskSecret(value?: string | null): string {
   const text = (value ?? '').trim();
@@ -138,6 +163,7 @@ export default function DeviceControlPanel() {
   const [thingModelLoading, setThingModelLoading] = useState(false);
   const [thingModelError, setThingModelError] = useState('');
   const [thingModelRoot, setThingModelRoot] = useState<ThingModelRoot | null>(null);
+  const [ruleJsonDrafts, setRuleJsonDrafts] = useState<Record<string, string>>({});
   const [sipMessages, setSipMessages] = useState<SipMsg[]>([]);
   const [httpHistory, setHttpHistory] = useState<HttpHistoryEntry[]>([]);
   const [coapShadowPolling, setCoapShadowPolling] = useState(false);
@@ -267,21 +293,44 @@ export default function DeviceControlPanel() {
     [availableModelItems, selectedModelIdentifier],
   );
 
+  const thingModelRules = device?.thingModelSimulationRules || {};
+
+  const activeRuleFields = useMemo(() => {
+    if (payloadMode !== 'model' || reportType === 'ota') return [];
+    if (reportType === 'property') {
+      const items = selectedModelIdentifier === ALL_PROPERTIES_VALUE
+        ? availableModelItems
+        : activeModelItem
+          ? [activeModelItem]
+          : [];
+      return items.flatMap((item) => describeThingModelItemFields(item, 'property'));
+    }
+    if (reportType === 'event' && activeModelItem) {
+      return describeThingModelItemFields(activeModelItem, 'event');
+    }
+    return [];
+  }, [activeModelItem, availableModelItems, payloadMode, reportType, selectedModelIdentifier]);
+
+  const customizedRuleCount = useMemo(
+    () => activeRuleFields.filter((field) => Boolean(thingModelRules[field.ruleKey])).length,
+    [activeRuleFields, thingModelRules],
+  );
+
   const modelPreview = useMemo(() => {
     if (payloadMode !== 'model' || reportType === 'ota') return '';
     if (reportType === 'property') {
       const payload = selectedModelIdentifier === ALL_PROPERTIES_VALUE
-        ? buildRandomPropertyBatchPayload(availableModelItems)
+        ? buildRandomPropertyBatchPayload(availableModelItems, thingModelRules)
         : activeModelItem
-          ? buildRandomPropertyPayload(activeModelItem)
+          ? buildRandomPropertyPayload(activeModelItem, thingModelRules)
           : null;
       return payload ? JSON.stringify(payload, null, 2) : '';
     }
     if (reportType === 'event' && activeModelItem) {
-      return JSON.stringify(buildRandomEventPayload(activeModelItem), null, 2);
+      return JSON.stringify(buildRandomEventPayload(activeModelItem, thingModelRules), null, 2);
     }
     return '';
-  }, [activeModelItem, availableModelItems, modelPreviewNonce, payloadMode, reportType, selectedModelIdentifier]);
+  }, [activeModelItem, availableModelItems, modelPreviewNonce, payloadMode, reportType, selectedModelIdentifier, thingModelRules]);
 
   useEffect(() => {
     if (payloadMode !== 'model' || reportType === 'ota' || thingModelLoading) return;
@@ -334,6 +383,7 @@ export default function DeviceControlPanel() {
     setLoraMessages([]);
     setSipMessages([]);
     setSelectedModelIdentifier('');
+    setRuleJsonDrafts({});
   }, [selectedDeviceId]);
 
   useEffect(() => {
@@ -910,6 +960,83 @@ export default function DeviceControlPanel() {
     }
   };
 
+  const updateThingModelRule = (ruleKey: string, patch: Partial<ThingModelSimulationRule>) => {
+    const nextRule = {
+      ...(thingModelRules[ruleKey] || {}),
+      ...patch,
+    };
+    const hasMeaningfulValue = Object.entries(nextRule).some(([, value]) => {
+      if (value === undefined || value === null) return false;
+      if (typeof value === 'string') return value !== '';
+      return true;
+    });
+    const nextRules = { ...thingModelRules };
+    if (hasMeaningfulValue) {
+      nextRules[ruleKey] = nextRule;
+    } else {
+      delete nextRules[ruleKey];
+    }
+    updateDevice(device.id, { thingModelSimulationRules: nextRules });
+  };
+
+  const clearThingModelRule = (ruleKey: string) => {
+    const nextRules = { ...thingModelRules };
+    delete nextRules[ruleKey];
+    updateDevice(device.id, { thingModelSimulationRules: nextRules });
+    setRuleJsonDrafts((prev) => {
+      if (!(ruleKey in prev)) return prev;
+      const nextDrafts = { ...prev };
+      delete nextDrafts[ruleKey];
+      return nextDrafts;
+    });
+  };
+
+  const getRuleMode = (field: ThingModelFieldDescriptor) => thingModelRules[field.ruleKey]?.mode || 'random';
+
+  const handleRuleModeChange = (
+    field: ThingModelFieldDescriptor,
+    mode: NonNullable<ThingModelSimulationRule['mode']>,
+  ) => {
+    updateThingModelRule(field.ruleKey, { mode });
+    if (mode === 'fixed' && thingModelRules[field.ruleKey]?.fixedValue === undefined) {
+      const defaultValue = buildDefaultFixedValue(field.identifier, field.dataType);
+      updateThingModelRule(field.ruleKey, { mode, fixedValue: defaultValue });
+      if (supportsJsonFixedValue(field.valueType)) {
+        setRuleJsonDrafts((prev) => ({
+          ...prev,
+          [field.ruleKey]: JSON.stringify(defaultValue, null, 2),
+        }));
+      }
+    }
+  };
+
+  const getJsonRuleDraft = (field: ThingModelFieldDescriptor) => {
+    if (ruleJsonDrafts[field.ruleKey] !== undefined) {
+      return ruleJsonDrafts[field.ruleKey];
+    }
+    const fixedValue = thingModelRules[field.ruleKey]?.fixedValue;
+    return JSON.stringify(fixedValue ?? buildDefaultFixedValue(field.identifier, field.dataType), null, 2);
+  };
+
+  const commitJsonRuleDraft = (field: ThingModelFieldDescriptor, draft: string) => {
+    try {
+      const parsed = JSON.parse(draft);
+      if (field.valueType === 'array' && !Array.isArray(parsed)) {
+        throw new Error('Fixed value must be a JSON array');
+      }
+      if (field.valueType === 'struct' && !isJsonObject(parsed)) {
+        throw new Error('Fixed value must be a JSON object');
+      }
+      updateThingModelRule(field.ruleKey, { mode: 'fixed', fixedValue: parsed });
+      setRuleJsonDrafts((prev) => ({
+        ...prev,
+        [field.ruleKey]: JSON.stringify(parsed, null, 2),
+      }));
+    } catch (error: any) {
+      message.warning(error?.message || 'Invalid JSON rule');
+    }
+  };
+
   const getPayload = (): Record<string, any> | null => {
     if (payloadMode === 'model') {
       if (reportType === 'property') {
@@ -918,20 +1045,20 @@ export default function DeviceControlPanel() {
             message.warning('当前产品物模型还没有可模拟的属性');
             return null;
           }
-          return buildRandomPropertyBatchPayload(availableModelItems);
+          return buildRandomPropertyBatchPayload(availableModelItems, thingModelRules);
         }
         if (!activeModelItem) {
           message.warning('请先选择要模拟的属性');
           return null;
         }
-        return buildRandomPropertyPayload(activeModelItem);
+        return buildRandomPropertyPayload(activeModelItem, thingModelRules);
       }
       if (reportType === 'event') {
         if (!activeModelItem) {
           message.warning('请先选择要模拟的事件');
           return null;
         }
-        return buildRandomEventPayload(activeModelItem);
+        return buildRandomEventPayload(activeModelItem, thingModelRules);
       }
       return null;
     }
@@ -999,6 +1126,241 @@ export default function DeviceControlPanel() {
     if (latest?.status === 'online') {
       startHeartbeatForDevice({ ...latest, heartbeatIntervalSec: value }, { silent: true });
     }
+  };
+
+  const renderSimulationRuleEditor = (field: ThingModelFieldDescriptor) => {
+    const rule = thingModelRules[field.ruleKey] || {};
+    const mode = getRuleMode(field);
+    const enumCandidates = resolveThingModelEnumCandidates(field.dataType);
+    const canUseRange = supportsRangeRule(field.valueType);
+    const valueTypeLabel = resolveThingModelValueTypeLabel(field.dataType);
+
+    return (
+      <div
+        key={field.ruleKey}
+        style={{
+          padding: '12px 14px',
+          borderRadius: 14,
+          border: '1px solid rgba(148,163,184,0.12)',
+          background: 'linear-gradient(180deg, rgba(15,23,42,0.68) 0%, rgba(8,15,29,0.88) 100%)',
+          marginLeft: field.depth * 18,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <Space direction="vertical" size={2} style={{ minWidth: 0 }}>
+            <Space size={8} wrap>
+              <Text style={{ color: '#f8fafc', fontSize: 13 }}>{field.label}</Text>
+              <Tag color="blue" style={{ margin: 0 }}>{valueTypeLabel}</Tag>
+              {field.category === 'property' ? (
+                <Tag style={{ margin: 0 }}>{field.itemName}</Tag>
+              ) : (
+                <Tag color="gold" style={{ margin: 0 }}>{field.itemName}</Tag>
+              )}
+            </Space>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              Rule key: {field.ruleKey}
+            </Text>
+          </Space>
+          <Button size="small" type="link" onClick={() => clearThingModelRule(field.ruleKey)}>
+            Reset
+          </Button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginTop: 12 }}>
+          <div>
+            <Text type="secondary" style={{ fontSize: 12 }}>Mode</Text>
+            <Select
+              size="small"
+              value={mode}
+              style={{ width: '100%', marginTop: 4 }}
+              onChange={(value) => handleRuleModeChange(field, value as NonNullable<ThingModelSimulationRule['mode']>)}
+              options={[
+                { label: 'Random', value: 'random' },
+                ...(canUseRange ? [{ label: 'Range', value: 'range' }] : []),
+                { label: 'Fixed', value: 'fixed' },
+              ]}
+            />
+          </div>
+
+          {mode === 'random' && supportsStringRandomConfig(field.valueType) ? (
+            <>
+              <div>
+                <Text type="secondary" style={{ fontSize: 12 }}>String generator</Text>
+                <Select
+                  size="small"
+                  value={rule.stringGenerator || (field.identifier === 'ip' ? 'ip' : 'random')}
+                  style={{ width: '100%', marginTop: 4 }}
+                  onChange={(value) => updateThingModelRule(field.ruleKey, { mode, stringGenerator: value as 'random' | 'ip' })}
+                  options={[
+                    { label: 'Random string', value: 'random' },
+                    { label: 'IP address', value: 'ip' },
+                  ]}
+                />
+              </div>
+              <div>
+                <Text type="secondary" style={{ fontSize: 12 }}>Length</Text>
+                <InputNumber
+                  size="small"
+                  min={1}
+                  max={64}
+                  value={typeof rule.stringLength === 'number' ? rule.stringLength : undefined}
+                  style={{ width: '100%', marginTop: 4 }}
+                  onChange={(value) => updateThingModelRule(field.ruleKey, { mode, stringLength: value || undefined })}
+                />
+              </div>
+            </>
+          ) : null}
+
+          {mode === 'random' && supportsArrayRandomConfig(field.valueType) ? (
+            <>
+              <div>
+                <Text type="secondary" style={{ fontSize: 12 }}>Min length</Text>
+                <InputNumber
+                  size="small"
+                  min={0}
+                  max={99}
+                  value={typeof rule.arrayMinLength === 'number' ? rule.arrayMinLength : undefined}
+                  style={{ width: '100%', marginTop: 4 }}
+                  onChange={(value) => updateThingModelRule(field.ruleKey, { mode, arrayMinLength: value || 0 })}
+                />
+              </div>
+              <div>
+                <Text type="secondary" style={{ fontSize: 12 }}>Max length</Text>
+                <InputNumber
+                  size="small"
+                  min={0}
+                  max={99}
+                  value={typeof rule.arrayMaxLength === 'number' ? rule.arrayMaxLength : undefined}
+                  style={{ width: '100%', marginTop: 4 }}
+                  onChange={(value) => updateThingModelRule(field.ruleKey, { mode, arrayMaxLength: value || 0 })}
+                />
+              </div>
+            </>
+          ) : null}
+
+          {mode === 'random' && (field.valueType === 'float' || field.valueType === 'double') ? (
+            <div>
+              <Text type="secondary" style={{ fontSize: 12 }}>Precision</Text>
+              <InputNumber
+                size="small"
+                min={0}
+                max={6}
+                value={typeof rule.precision === 'number' ? rule.precision : undefined}
+                style={{ width: '100%', marginTop: 4 }}
+                onChange={(value) => updateThingModelRule(field.ruleKey, { mode, precision: value ?? undefined })}
+              />
+            </div>
+          ) : null}
+
+          {mode === 'range' ? (
+            <>
+              <div>
+                <Text type="secondary" style={{ fontSize: 12 }}>Min</Text>
+                <InputNumber
+                  size="small"
+                  style={{ width: '100%', marginTop: 4 }}
+                  value={typeof rule.min === 'number' ? rule.min : undefined}
+                  onChange={(value) => updateThingModelRule(field.ruleKey, { mode, min: value ?? undefined })}
+                />
+              </div>
+              <div>
+                <Text type="secondary" style={{ fontSize: 12 }}>Max</Text>
+                <InputNumber
+                  size="small"
+                  style={{ width: '100%', marginTop: 4 }}
+                  value={typeof rule.max === 'number' ? rule.max : undefined}
+                  onChange={(value) => updateThingModelRule(field.ruleKey, { mode, max: value ?? undefined })}
+                />
+              </div>
+              {(field.valueType === 'float' || field.valueType === 'double') ? (
+                <div>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Precision</Text>
+                  <InputNumber
+                    size="small"
+                    min={0}
+                    max={6}
+                    style={{ width: '100%', marginTop: 4 }}
+                    value={typeof rule.precision === 'number' ? rule.precision : undefined}
+                    onChange={(value) => updateThingModelRule(field.ruleKey, { mode, precision: value ?? undefined })}
+                  />
+                </div>
+              ) : null}
+            </>
+          ) : null}
+
+          {mode === 'fixed' && (field.valueType === 'int' || field.valueType === 'float' || field.valueType === 'double' || field.valueType === 'date') ? (
+            <div>
+              <Text type="secondary" style={{ fontSize: 12 }}>{field.valueType === 'date' ? 'Timestamp' : 'Fixed value'}</Text>
+              <InputNumber
+                size="small"
+                style={{ width: '100%', marginTop: 4 }}
+                value={typeof rule.fixedValue === 'number' ? rule.fixedValue : undefined}
+                onChange={(value) => updateThingModelRule(field.ruleKey, { mode, fixedValue: value ?? undefined })}
+              />
+            </div>
+          ) : null}
+
+          {mode === 'fixed' && field.valueType === 'bool' ? (
+            <div>
+              <Text type="secondary" style={{ fontSize: 12 }}>Fixed value</Text>
+              <div style={{ marginTop: 8 }}>
+                <Switch
+                  checked={Boolean(rule.fixedValue)}
+                  onChange={(checked) => updateThingModelRule(field.ruleKey, { mode, fixedValue: checked })}
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {mode === 'fixed' && field.valueType === 'string' ? (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>Fixed value</Text>
+              <Input
+                size="small"
+                style={{ marginTop: 4 }}
+                value={typeof rule.fixedValue === 'string' ? rule.fixedValue : ''}
+                onChange={(event) => updateThingModelRule(field.ruleKey, { mode, fixedValue: event.target.value })}
+              />
+            </div>
+          ) : null}
+
+          {mode === 'fixed' && field.valueType === 'enum' ? (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>Fixed enum value</Text>
+              {enumCandidates.length > 0 ? (
+                <Select
+                  size="small"
+                  style={{ width: '100%', marginTop: 4 }}
+                  value={rule.fixedValue as string | number | undefined}
+                  onChange={(value) => updateThingModelRule(field.ruleKey, { mode, fixedValue: value })}
+                  options={enumCandidates.map((value) => ({ label: String(value), value }))}
+                />
+              ) : (
+                <Input
+                  size="small"
+                  style={{ marginTop: 4 }}
+                  value={rule.fixedValue == null ? '' : String(rule.fixedValue)}
+                  onChange={(event) => updateThingModelRule(field.ruleKey, { mode, fixedValue: event.target.value })}
+                />
+              )}
+            </div>
+          ) : null}
+        </div>
+
+        {mode === 'fixed' && supportsJsonFixedValue(field.valueType) ? (
+          <div style={{ marginTop: 12 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>Fixed JSON</Text>
+            <Input.TextArea
+              rows={4}
+              style={{ marginTop: 4, fontFamily: 'monospace', fontSize: 12 }}
+              value={getJsonRuleDraft(field)}
+              onChange={(event) => setRuleJsonDrafts((prev) => ({ ...prev, [field.ruleKey]: event.target.value }))}
+              onBlur={(event) => commitJsonRuleDraft(field, event.target.value)}
+            />
+          </div>
+        ) : null}
+      </div>
+    );
   };
 
   return (
@@ -1190,6 +1552,43 @@ export default function DeviceControlPanel() {
                       message="当前将按物模型生成随机数据"
                       description="每次点击发送或自动上报，都会根据当前物模型重新生成一份随机 payload。"
                     />
+
+                    {activeRuleFields.length > 0 ? (
+                      <div style={{ padding: 12, background: 'rgba(255,255,255,0.04)', borderRadius: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+                          <Space direction="vertical" size={2}>
+                            <Text style={{ fontSize: 12, color: '#f8fafc' }}>Field simulation rules</Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              Active custom rules: {customizedRuleCount}
+                            </Text>
+                          </Space>
+                          {customizedRuleCount > 0 ? (
+                            <Button
+                              size="small"
+                              onClick={() => {
+                                const activeRuleKeys = new Set(activeRuleFields.map((field) => field.ruleKey));
+                                const nextRules = Object.fromEntries(
+                                  Object.entries(thingModelRules).filter(([ruleKey]) => !activeRuleKeys.has(ruleKey)),
+                                );
+                                updateDevice(device.id, { thingModelSimulationRules: nextRules });
+                                setRuleJsonDrafts((prev) => {
+                                  const nextDrafts = { ...prev };
+                                  activeRuleFields.forEach((field) => {
+                                    delete nextDrafts[field.ruleKey];
+                                  });
+                                  return nextDrafts;
+                                });
+                              }}
+                            >
+                              Clear current rules
+                            </Button>
+                          ) : null}
+                        </div>
+                        <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                          {activeRuleFields.map(renderSimulationRuleEditor)}
+                        </Space>
+                      </div>
+                    ) : null}
 
                     <div style={{ padding: 12, background: 'rgba(255,255,255,0.04)', borderRadius: 12 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 12 }}>

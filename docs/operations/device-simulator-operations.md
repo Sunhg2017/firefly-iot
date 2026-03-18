@@ -252,3 +252,49 @@ cd ..
 mvn -pl firefly-device,firefly-connector -am -DskipTests compile
 mvn -pl firefly-device -Dtest=ProductServiceTest test
 ```
+## 9. 2026-03-19 字段规则与影子同步运维补充
+
+## 9. 2026-03-19 字段规则与影子同步运维补充
+
+### 9.1 发布范围
+
+- `firefly-simulator`
+  - 物模型模拟字段规则
+  - 设备配置持久化、导入导出、克隆携带规则
+- `firefly-device`
+  - 属性上报 payload 归一化
+  - 影子更新与时序写入解耦
+
+### 9.2 发布要求
+
+- 需要同时更新桌面端模拟器资源，否则界面中不会出现字段规则编辑区。
+- 需要同时更新 `firefly-device` 服务，否则影子仍可能因为时序写入失败而不更新。
+- 本次不涉及数据库结构变更，不新增 Flyway 迁移。
+
+### 9.3 验证命令
+
+```bash
+cd firefly-simulator
+npm run build:vite
+
+cd ..
+mvn -pl firefly-device -Dtest=MessageRouterServiceTest test
+```
+
+### 9.4 回归检查
+
+- 在模拟器中选择一个属性，配置固定值、范围值或固定 JSON，确认预览、单次发送、自动上报三处结果一致。
+- 导出设备配置后重新导入，确认字段规则仍然存在。
+- 发送带 `params` 包裹层的属性上报，确认平台影子 `reported` 仍会更新真实属性。
+- 人为制造时序写入异常时，确认 `MessageRouterService` 日志会报 telemetry 错误，但影子仍继续刷新。
+
+### 9.5 常见排查
+
+- 现象：物模型预览始终还是随机旧值
+  - 先检查当前是否选中了“物模型模拟”而不是“自定义 JSON”。
+  - 再检查是否给当前字段配置了规则，而不是配置到了其他属性/事件字段。
+  - 对 `array / struct` 固定值，确认输入的是合法 JSON。
+- 现象：设备属性已上报，但影子没有变化
+  - 检查消息类型是否为 `PROPERTY_REPORT`。
+  - 检查 payload 是否是平铺属性、`params` 或 `properties` 三种支持格式之一。
+  - 检查 `firefly-device` 日志，若出现 telemetry 落库报错，本次修复后影子仍应更新；若仍未更新，继续排查影子 Redis 写入链路。

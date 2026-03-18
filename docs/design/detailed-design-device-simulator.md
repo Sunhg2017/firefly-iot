@@ -232,3 +232,57 @@
 - 物模型读取链路要求模拟器能访问 connector；若 `baseUrl` 未配置或 connector 未发布对应接口，将退化为自定义 JSON。
 - MQTT 异常断线无法 100% 保证补发 `offline` 事件，只能在主动断开路径上保证。
 - 自动心跳与自动上报都依赖本地定时器，若桌面进程被挂起或退出，事件发送会随之停止。
+## 11. 2026-03-19 物模型字段规则与影子同步补充
+
+## 11. 2026-03-19 物模型字段规则与影子同步补充
+
+### 11.1 新增目标
+
+- 物模型模拟不再只有“按数据类型随机”这一种策略，而是允许针对字段单独配置规则。
+- 单次发送、自动上报和预览必须共用同一套字段规则，避免预览和真实上报不一致。
+- 设备属性上报进入服务端后，影子 `reported` 更新不能再依赖时序数据落库成功。
+
+### 11.2 模拟规则模型
+
+- 规则按“设备维度”持久化，存放在模拟器设备配置的 `thingModelSimulationRules` 中。
+- 规则键使用物模型字段路径：
+  - 属性：`property:{identifier}`
+  - 嵌套字段：`property:{identifier}.child`、`property:{identifier}[].child`
+  - 事件输出字段：`event:{eventIdentifier}.field`
+- 字段描述由物模型递归展开生成，属性支持根字段与结构体/数组子字段，事件支持 `outputData` 字段。
+
+### 11.3 规则类型
+
+- `random`
+  - 使用物模型原有的 `min/max/precision/length/enum` 定义生成值。
+  - 字符串额外支持 `random` 与 `ip` 两种生成器。
+  - 数组额外支持最小长度和最大长度。
+- `range`
+  - 适用于 `int / float / double / date`。
+  - 允许覆盖字段默认范围，浮点型额外允许覆盖精度。
+- `fixed`
+  - 标量字段直接使用固定值。
+  - `array / struct` 使用固定 JSON，便于构造稳定的复合报文。
+
+### 11.4 前端交互收口
+
+- 规则编辑入口直接放在 `DeviceControlPanel` 的“物模型模拟”区域内，不新增独立弹窗。
+- 当前所选属性、全部属性或当前事件的字段规则会即时联动显示。
+- 导入、导出、克隆设备时会一并保留字段规则，保证调试模板可复用。
+
+### 11.5 服务端影子同步修正
+
+- `MessageRouterService.handlePropertyReport(...)` 先对属性 payload 做归一化：
+  - 平铺属性 map 直接使用。
+  - 若上报格式带 `params` 或 `properties` 包裹层，则先提取真实属性集。
+- 时序写入 `deviceDataService.writeTelemetryFromMessage(...)` 与影子写入 `shadowService.updateReported(...)` 改为分别保护。
+- 即使时序库写入失败，影子 `reported` 仍会继续更新，保证控制台调试和影子观测不被联动故障阻断。
+
+### 11.6 涉及文件
+
+- `firefly-simulator/src/utils/thingModel.ts`
+- `firefly-simulator/src/components/DeviceControlPanel.tsx`
+- `firefly-simulator/src/store.ts`
+- `firefly-simulator/src/components/DeviceListPanel.tsx`
+- `firefly-device/src/main/java/com/songhg/firefly/iot/device/service/MessageRouterService.java`
+- `firefly-device/src/test/java/com/songhg/firefly/iot/device/service/MessageRouterServiceTest.java`

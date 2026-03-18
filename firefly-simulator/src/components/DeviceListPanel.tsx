@@ -205,6 +205,7 @@ export default function DeviceListPanel() {
       mqttWillPayload: device.mqttWillPayload,
       mqttWillQos: device.mqttWillQos,
       mqttWillRetain: device.mqttWillRetain,
+      thingModelSimulationRules: device.thingModelSimulationRules,
       ...(device.protocol === 'Video'
         ? {
             mediaBaseUrl: device.mediaBaseUrl,
@@ -338,6 +339,7 @@ export default function DeviceListPanel() {
           loraDevEui: row.loraDevEui || '',
           loraAppId: row.loraAppId || '',
           loraFPort: Number(row.loraFPort) || 1,
+          thingModelSimulationRules: (row as unknown as { thingModelSimulationRules?: SimDevice['thingModelSimulationRules'] }).thingModelSimulationRules || {},
         });
         count += 1;
       }
