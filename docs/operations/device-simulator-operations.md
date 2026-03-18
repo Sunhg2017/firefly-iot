@@ -237,6 +237,10 @@ npm run build:vite
   - 先区分是否为用户主动点击 `Disconnect`。
   - 若是 broker 或网络导致的异常断连，属于当前协议实现边界，无法在连接已关闭后保证补发 `offline`。
 
+- 服务端已经删除设备，但模拟器仍提示鉴权失败
+  - 一型一密设备会在检测到 `UNAUTHORIZED`、`INVALID_SECRET`、`DEVICE_NOT_FOUND` 一类失败后自动重走动态注册。
+  - 如果仍失败，再检查 `productSecret`、动态注册地址和服务端产品是否还允许动态注册。
+
 ### 8.5 验证命令
 
 ```bash

@@ -30,6 +30,7 @@ import {
   resolveMqttIdentity,
   shouldCleanupDynamicRegistration,
   shouldDynamicRegister,
+  shouldRetryDynamicRegisterAfterFailure,
   unregisterDynamicDevice,
   validateMqttDevice,
 } from '../utils/mqtt';
@@ -126,6 +127,19 @@ function getDynamicRegisterBaseUrl(device: SimDevice): string | undefined {
     return device.mqttRegisterBaseUrl;
   }
   return undefined;
+}
+
+async function refreshDynamicRegistrationSecret(device: SimDevice) {
+  const registerResult = await dynamicRegisterDevice(device, getDynamicRegisterBaseUrl(device));
+  useSimStore.getState().updateDevice(device.id, {
+    deviceSecret: registerResult.deviceSecret,
+    dynamicRegistered: true,
+  });
+  return {
+    ...device,
+    deviceSecret: registerResult.deviceSecret,
+    dynamicRegistered: true,
+  };
 }
 
 export default function DeviceListPanel() {
@@ -401,7 +415,16 @@ export default function DeviceListPanel() {
             updateDevice(device.id, { deviceSecret: registerResult.deviceSecret, dynamicRegistered: true });
             addLog(device.id, device.name, 'success', `HTTP 动态注册成功：${registerResult.deviceName}`);
           }
-          const result = await window.electronAPI.httpAuth(target.httpBaseUrl, target.productKey, target.deviceName, target.deviceSecret);
+          let result = await window.electronAPI.httpAuth(target.httpBaseUrl, target.productKey, target.deviceName, target.deviceSecret);
+          if ((!result.success || !result.data?.token) && shouldRetryDynamicRegisterAfterFailure(target, result)) {
+            addLog(device.id, device.name, 'warn', 'HTTP auth failed with cached DeviceSecret, retrying dynamic registration');
+            try {
+              target = await refreshDynamicRegistrationSecret(target);
+              result = await window.electronAPI.httpAuth(target.httpBaseUrl, target.productKey, target.deviceName, target.deviceSecret);
+            } catch (retryError: any) {
+              addLog(device.id, device.name, 'warn', `Dynamic registration retry failed: ${retryError?.message || 'unknown error'}`);
+            }
+          }
           if (result.success && result.data?.token) {
             updateDevice(device.id, { status: 'online', token: result.data.token, restoreOnLaunch: true });
             addLog(device.id, device.name, 'success', 'HTTP 批量连接成功');
@@ -443,7 +466,7 @@ export default function DeviceListPanel() {
           addLog(device.id, device.name, 'success', `动态注册成功：${registerResult.deviceName}`);
         }
 
-        const identity = resolveMqttIdentity(target);
+        let identity = resolveMqttIdentity(target);
         const mqttOpts: any = { clean: target.mqttClean, keepalive: target.mqttKeepalive || 60 };
         if (target.mqttWillTopic) {
           mqttOpts.willTopic = target.mqttWillTopic;
@@ -452,7 +475,7 @@ export default function DeviceListPanel() {
           mqttOpts.willRetain = target.mqttWillRetain ?? false;
         }
 
-        const result = await window.electronAPI.mqttConnect(
+        let result = await window.electronAPI.mqttConnect(
           target.id,
           target.mqttBrokerUrl,
           identity.clientId,
@@ -460,6 +483,23 @@ export default function DeviceListPanel() {
           identity.password,
           mqttOpts,
         );
+        if (!result.success && shouldRetryDynamicRegisterAfterFailure(target, result)) {
+          addLog(target.id, target.name, 'warn', 'MQTT connect failed with cached DeviceSecret, retrying dynamic registration');
+          try {
+            target = await refreshDynamicRegistrationSecret(target);
+            identity = resolveMqttIdentity(target);
+            result = await window.electronAPI.mqttConnect(
+              target.id,
+              target.mqttBrokerUrl,
+              identity.clientId,
+              identity.username,
+              identity.password,
+              mqttOpts,
+            );
+          } catch (retryError: any) {
+            addLog(target.id, target.name, 'warn', `Dynamic registration retry failed: ${retryError?.message || 'unknown error'}`);
+          }
+        }
         if (result.success) {
           updateDevice(target.id, { status: 'online', restoreOnLaunch: true });
           const serviceTopic = buildMqttServiceTopic(target);

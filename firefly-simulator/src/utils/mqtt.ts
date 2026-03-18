@@ -29,6 +29,24 @@ type DynamicCleanupSource = Pick<
   'protocol' | 'httpAuthMode' | 'mqttAuthMode' | 'dynamicRegistered' | 'productKey' | 'productSecret' | 'deviceName'
 >;
 
+type DynamicRetrySource = Pick<
+  SimDevice,
+  'protocol' | 'httpAuthMode' | 'mqttAuthMode' | 'dynamicRegistered' | 'deviceSecret'
+>;
+
+type DynamicRetryFailure =
+  | string
+  | {
+      code?: number;
+      status?: number;
+      _status?: number;
+      message?: string;
+      msg?: string;
+      errorCode?: string;
+    }
+  | null
+  | undefined;
+
 function trim(value?: string | null): string {
   return (value ?? '').trim();
 }
@@ -138,6 +156,69 @@ export function shouldDynamicRegister(
     return (device.mqttAuthMode || 'DEVICE_SECRET') === 'PRODUCT_SECRET' && !deviceSecret;
   }
   return false;
+}
+
+export function usesProductSecretAuth(
+  device: Pick<SimDevice, 'protocol' | 'httpAuthMode' | 'mqttAuthMode'>,
+): boolean {
+  if (device.protocol === 'HTTP') {
+    return (device.httpAuthMode || 'DEVICE_SECRET') === 'PRODUCT_SECRET';
+  }
+  if (device.protocol === 'MQTT') {
+    return (device.mqttAuthMode || 'DEVICE_SECRET') === 'PRODUCT_SECRET';
+  }
+  return false;
+}
+
+function normalizeFailureText(failure: DynamicRetryFailure): string {
+  if (!failure) {
+    return '';
+  }
+  if (typeof failure === 'string') {
+    return failure.trim().toLowerCase();
+  }
+  return [
+    typeof failure.code === 'number' ? String(failure.code) : '',
+    typeof failure.status === 'number' ? String(failure.status) : '',
+    typeof failure._status === 'number' ? String(failure._status) : '',
+    failure.message || '',
+    failure.msg || '',
+    failure.errorCode || '',
+  ]
+    .join(' ')
+    .trim()
+    .toLowerCase();
+}
+
+export function shouldRetryDynamicRegisterAfterFailure(
+  device: DynamicRetrySource,
+  failure: DynamicRetryFailure,
+): boolean {
+  if (!usesProductSecretAuth(device)) {
+    return false;
+  }
+  if (!trim(device.deviceSecret)) {
+    return false;
+  }
+
+  const normalizedFailure = normalizeFailureText(failure);
+  if (!normalizedFailure) {
+    return false;
+  }
+
+  const retryableKeywords = [
+    '401',
+    'unauthorized',
+    'not authorized',
+    'bad username or password',
+    'invalid_credentials',
+    'device_not_found',
+    'invalid_secret',
+    'device_secret_required',
+    'auth failed',
+  ];
+
+  return retryableKeywords.some((keyword) => normalizedFailure.includes(keyword));
 }
 
 export function shouldCleanupDynamicRegistration(device: DynamicCleanupSource): boolean {

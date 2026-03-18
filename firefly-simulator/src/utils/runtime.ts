@@ -5,6 +5,7 @@ import {
   dynamicRegisterDevice,
   resolveMqttIdentity,
   shouldDynamicRegister,
+  shouldRetryDynamicRegisterAfterFailure,
   validateMqttDevice,
 } from './mqtt';
 import { getDeviceAccessValidationError } from './deviceAccess';
@@ -36,6 +37,23 @@ function clearDeviceAutoTimer(device: SimDevice) {
   if (device.autoTimerId) {
     window.clearInterval(device.autoTimerId);
   }
+}
+
+async function refreshDynamicRegistrationSecret(device: SimDevice) {
+  const store = useSimStore.getState();
+  const registerBaseUrl = device.protocol === 'HTTP' ? device.httpRegisterBaseUrl : device.mqttRegisterBaseUrl;
+  const registerResult = await dynamicRegisterDevice(device, registerBaseUrl);
+  const refreshedDevice = {
+    ...device,
+    deviceSecret: registerResult.deviceSecret,
+    dynamicRegistered: true,
+  };
+  store.updateDevice(device.id, {
+    deviceSecret: registerResult.deviceSecret,
+    dynamicRegistered: true,
+  });
+  store.addLog(device.id, device.name, 'info', 'Cached DeviceSecret was refreshed by dynamic registration');
+  return refreshedDevice;
 }
 
 export async function connectSimDevice(
@@ -75,12 +93,27 @@ export async function connectSimDevice(
         });
         store.addLog(device.id, device.name, 'success', `Dynamic registration succeeded: ${registerResult.deviceName}`);
       }
-      const result = await window.electronAPI.httpAuth(
+      let result = await window.electronAPI.httpAuth(
         target.httpBaseUrl,
         target.productKey,
         target.deviceName,
         target.deviceSecret,
       );
+      if ((!result.success || !result.data?.token) && shouldRetryDynamicRegisterAfterFailure(target, result)) {
+        store.addLog(device.id, device.name, 'warn', 'HTTP auth failed with cached DeviceSecret, retrying dynamic registration');
+        try {
+          target = await refreshDynamicRegistrationSecret(target);
+          result = await window.electronAPI.httpAuth(
+            target.httpBaseUrl,
+            target.productKey,
+            target.deviceName,
+            target.deviceSecret,
+          );
+        } catch (retryError) {
+          const retryMessage = retryError instanceof Error ? retryError.message : 'unknown error';
+          store.addLog(device.id, device.name, 'warn', `Dynamic registration retry failed: ${retryMessage}`);
+        }
+      }
       if (result.success && result.data?.token) {
         store.updateDevice(device.id, {
           status: 'online',
@@ -256,7 +289,7 @@ export async function connectSimDevice(
       mqttOpts.willRetain = target.mqttWillRetain ?? false;
     }
 
-    const result = await window.electronAPI.mqttConnect(
+    let result = await window.electronAPI.mqttConnect(
       target.id,
       target.mqttBrokerUrl,
       identity.clientId,
@@ -264,6 +297,24 @@ export async function connectSimDevice(
       identity.password,
       mqttOpts,
     );
+    if (!result.success && shouldRetryDynamicRegisterAfterFailure(target, result)) {
+      store.addLog(target.id, target.name, 'warn', 'MQTT connect failed with cached DeviceSecret, retrying dynamic registration');
+      try {
+        target = await refreshDynamicRegistrationSecret(target);
+        const refreshedIdentity = resolveMqttIdentity(target);
+        result = await window.electronAPI.mqttConnect(
+          target.id,
+          target.mqttBrokerUrl,
+          refreshedIdentity.clientId,
+          refreshedIdentity.username,
+          refreshedIdentity.password,
+          mqttOpts,
+        );
+      } catch (retryError) {
+        const retryMessage = retryError instanceof Error ? retryError.message : 'unknown error';
+        store.addLog(target.id, target.name, 'warn', `Dynamic registration retry failed: ${retryMessage}`);
+      }
+    }
     if (!result.success) {
       throw new Error(result.message || 'MQTT connect failed');
     }
