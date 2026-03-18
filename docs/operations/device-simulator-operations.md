@@ -212,6 +212,7 @@ npm run build:vite
 - 需要同时发布 `firefly-device`，否则 connector 无法按 `productKey` 读取物模型。
 - 需要同时发布 `firefly-connector`，否则模拟器无法获取物模型，也无法通过 HTTP heartbeat 刷新在线状态。
 - 需要同步更新 `firefly-simulator` 桌面端资源，前端才会出现物模型模拟、生命周期事件和心跳配置入口。
+- 需要执行 `firefly-device` 的最新 Flyway 迁移；其中 `V21__allow_reuse_deleted_device_name.sql` 会把 `devices` 表旧的全量唯一约束替换成仅对 `deleted_at IS NULL` 生效的唯一索引，避免逻辑删除设备阻塞重新注册。
 
 ### 8.3 回归检查项
 

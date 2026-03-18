@@ -179,6 +179,7 @@
   - 新增 `GET /api/v1/internal/products/{id}/basic`，继续承接服务间读取产品基础信息。
   - 新增 `GET /api/v1/internal/products/thing-model?productKey=...`，支持按 `productKey` 读取产品物模型。
   - `ProductService.getThingModelByProductKey(...)` 复用现有物模型解析与写回逻辑，统一补齐内置 `ip / online / offline / heartbeat`。
+  - 数据库侧通过 Flyway 将 `devices(product_id, device_name)` 的旧唯一约束收口为 `deleted_at IS NULL` 条件唯一索引，保证逻辑删除后的设备名可复用。
 - `firefly-api`
   - `ProductClient` 的 Feign 路径收口到 `/api/v1/internal/products`，并新增 `getThingModelByProductKey(...)`。
 - `firefly-connector`
