@@ -31,7 +31,6 @@ interface Props {
 }
 
 const initialValues = {
-  nickname: '',
   protocol: 'HTTP',
   httpBaseUrl: 'http://localhost:9070',
   httpAuthMode: 'DEVICE_SECRET',
@@ -95,7 +94,7 @@ const drawerPanelCardStyle = {
 } as const;
 
 function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, streamMode?: string, httpAuthMode?: string): string[] {
-  if (step === 0) return ['name', 'nickname', 'protocol'];
+  if (step === 0) return ['name', 'protocol'];
   if (step === 1) {
     switch (protocol) {
       case 'HTTP':
@@ -131,7 +130,7 @@ function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, 
 function buildSummary(values: Record<string, unknown>) {
   const protocol = (values.protocol || 'HTTP') as string;
   return [
-    { key: 'nickname', label: 'Nickname', value: values.nickname || values.name || '-' },
+    { key: 'nickname', label: '平台设备昵称', value: values.name || '-' },
     { key: 'name', label: '模拟设备名称', value: values.name || '-' },
     { key: 'protocol', label: '接入协议', value: protocol },
     { key: 'main1', label: 'ProductKey / 核心标识', value: values.productKey || values.gbDeviceId || values.loraDevEui || values.snmpHost || values.modbusHost || values.wsEndpoint || values.tcpHost || values.udpHost || '-' },
@@ -180,7 +179,8 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     const values = form.getFieldsValue(true);
     const normalizedValues = {
       ...values,
-      nickname: `${values.nickname || values.name || ''}`.trim(),
+      // 模拟设备名称就是平台侧昵称口径，避免再维护一个重复输入框。
+      nickname: `${values.name || ''}`.trim(),
     };
 
     useSimStore.getState().addDevice(normalizedValues);
@@ -195,7 +195,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
         type="info"
         showIcon
         message="复杂表单改为抽屉分步配置"
-        description="先选协议，再按协议只显示真正需要的字段，避免一次性录入过多无关参数。"
+        description="先选协议，再按协议只显示真正需要的字段。模拟设备名称会同步作为平台设备昵称，不再额外单独填写 Nickname。"
       />
       <Form.Item name="name" label="模拟设备名称" rules={[{ required: true, message: '请输入模拟设备名称' }]}>
         <Input placeholder="例如：华东厂区温湿度模拟器-01" maxLength={64} />
@@ -207,9 +207,6 @@ export default function AddDeviceModal({ open, onClose }: Props) {
             label: `${value} · ${item.label}`,
           }))}
         />
-      </Form.Item>
-      <Form.Item name="nickname" label="Nickname" tooltip="用于一型一密动态注册时写入平台设备昵称，留空时默认使用模拟器名称">
-        <Input placeholder="留空时默认使用模拟器名称" maxLength={64} />
       </Form.Item>
       <Card size="small" style={drawerPanelCardStyle}>
         <Text strong>{meta.label}</Text>

@@ -40,7 +40,7 @@ npm run build:vite
 ### 4.2 日志仍出现 undefined
 
 - 先检查基础信息步骤中的模拟器名称是否填写。
-- 再检查是否误改了 `nickname` 的兜底逻辑，当前规则是 `nickname` 为空时回落到 `name`。
+- 再检查是否误改了 `nickname` 的同步逻辑，当前规则是直接使用模拟器名称写入 `nickname`。
 
 ## 5. 回滚说明
 
