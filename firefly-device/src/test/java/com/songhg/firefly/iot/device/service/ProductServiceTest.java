@@ -29,10 +29,10 @@ class ProductServiceTest {
     private final ProductMapper productMapper = mock(ProductMapper.class);
     private final FileClient fileClient = mock(FileClient.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final ThingModelBuiltinServiceSupport builtinServiceSupport =
-            new ThingModelBuiltinServiceSupport(objectMapper);
+    private final ThingModelBuiltinDefinitionSupport builtinDefinitionSupport =
+            new ThingModelBuiltinDefinitionSupport(objectMapper);
     private final ProductService productService =
-            new ProductService(productMapper, fileClient, objectMapper, builtinServiceSupport);
+            new ProductService(productMapper, fileClient, objectMapper, builtinDefinitionSupport);
 
     @AfterEach
     void tearDown() {
@@ -40,7 +40,7 @@ class ProductServiceTest {
     }
 
     @Test
-    void shouldInitializeBuiltinLifecycleServicesWhenCreatingProduct() throws Exception {
+    void shouldInitializeBuiltinThingModelDefinitionsWhenCreatingProduct() throws Exception {
         AppContextHolder.setTenantId(10L);
         AppContextHolder.setUserId(20L);
 
@@ -62,12 +62,13 @@ class ProductServiceTest {
         Product inserted = captor.getValue();
 
         JsonNode root = objectMapper.readTree(inserted.getThingModel());
+        assertEquals(List.of("ip"), extractPropertyIdentifiers(root));
         List<String> identifiers = extractServiceIdentifiers(root);
         assertEquals(List.of("online", "offline", "heartbeat"), identifiers);
     }
 
     @Test
-    void shouldBackfillBuiltinLifecycleServicesForLegacyThingModel() throws Exception {
+    void shouldBackfillBuiltinDefinitionsForLegacyThingModel() throws Exception {
         Product product = new Product();
         product.setId(1L);
         product.setThingModel("{\"properties\":[],\"events\":[],\"services\":[]}");
@@ -77,11 +78,12 @@ class ProductServiceTest {
         String thingModel = productService.getThingModel(1L);
 
         JsonNode root = objectMapper.readTree(thingModel);
+        assertEquals(List.of("ip"), extractPropertyIdentifiers(root));
         assertEquals(List.of("online", "offline", "heartbeat"), extractServiceIdentifiers(root));
     }
 
     @Test
-    void shouldKeepBuiltinLifecycleServicesWhenUpdatingThingModel() throws Exception {
+    void shouldKeepBuiltinDefinitionsWhenUpdatingThingModel() throws Exception {
         Product product = new Product();
         product.setId(1L);
         product.setStatus(ProductStatus.DEVELOPMENT);
@@ -91,13 +93,21 @@ class ProductServiceTest {
 
         productService.updateThingModel(
                 1L,
-                "{\"properties\":[],\"events\":[],\"services\":[{\"identifier\":\"reboot\",\"name\":\"重启设备\"},{\"identifier\":\"online\",\"name\":\"自定义上线\"}]}"
+                "{\"properties\":[{\"identifier\":\"temperature\",\"name\":\"温度\"},{\"identifier\":\"ip\",\"name\":\"自定义IP\"}],\"events\":[],\"services\":[{\"identifier\":\"reboot\",\"name\":\"重启设备\"},{\"identifier\":\"online\",\"name\":\"自定义上线\"}]}"
         );
 
         JsonNode root = objectMapper.readTree(product.getThingModel());
+        List<String> propertyIdentifiers = extractPropertyIdentifiers(root);
         List<String> identifiers = extractServiceIdentifiers(root);
+        assertEquals(List.of("ip", "temperature"), propertyIdentifiers);
+        assertTrue(root.path("properties").get(0).path("system").asBoolean(false));
         assertEquals(List.of("online", "offline", "heartbeat", "reboot"), identifiers);
         assertTrue(root.path("services").get(0).path("system").asBoolean(false));
+    }
+
+    private List<String> extractPropertyIdentifiers(JsonNode root) {
+        return root.path("properties")
+                .findValuesAsText("identifier");
     }
 
     private List<String> extractServiceIdentifiers(JsonNode root) {

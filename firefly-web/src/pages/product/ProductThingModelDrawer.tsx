@@ -173,6 +173,21 @@ const SECTION_CONFIGS: ThingModelSection[] = [
 ];
 
 const BUILTIN_SERVICE_IDENTIFIERS = ['online', 'offline', 'heartbeat'] as const;
+const BUILTIN_PROPERTY_IDENTIFIERS = ['ip'] as const;
+
+const BUILTIN_PROPERTY_ITEMS: ThingModelItem[] = [
+  {
+    identifier: 'ip',
+    name: 'IP地址',
+    description: '设备当前网络地址',
+    accessMode: 'r',
+    system: true,
+    readonly: true,
+    dataType: {
+      type: 'string',
+    },
+  },
+];
 
 const BUILTIN_SERVICE_ITEMS: ThingModelItem[] = [
   {
@@ -211,7 +226,7 @@ const BUILTIN_SERVICE_ITEMS: ThingModelItem[] = [
 ];
 
 const DEFAULT_THING_MODEL: ThingModelRoot = {
-  properties: [],
+  properties: BUILTIN_PROPERTY_ITEMS.map((item) => ({ ...item })),
   events: [],
   services: BUILTIN_SERVICE_ITEMS.map((item) => ({ ...item })),
 };
@@ -706,13 +721,22 @@ const coerceThingModelRoot = (value: Record<string, unknown>): ThingModelRoot =>
   services: Array.isArray(value.services) ? value.services.map(coerceThingModelItem) : [],
 });
 
+const isBuiltinPropertyItem = (item: ThingModelItem | undefined) => {
+  const identifier = typeof item?.identifier === 'string' ? item.identifier.trim() : '';
+  return BUILTIN_PROPERTY_IDENTIFIERS.includes(identifier as (typeof BUILTIN_PROPERTY_IDENTIFIERS)[number]);
+};
+
 const isBuiltinServiceItem = (item: ThingModelItem | undefined) => {
   const identifier = typeof item?.identifier === 'string' ? item.identifier.trim() : '';
   return BUILTIN_SERVICE_IDENTIFIERS.includes(identifier as (typeof BUILTIN_SERVICE_IDENTIFIERS)[number]);
 };
 
-const ensureBuiltinServices = (root: ThingModelRoot): ThingModelRoot => ({
+const ensureBuiltinDefinitions = (root: ThingModelRoot): ThingModelRoot => ({
   ...root,
+  properties: [
+    ...BUILTIN_PROPERTY_ITEMS.map((item) => ({ ...item })),
+    ...root.properties.filter((item) => !isBuiltinPropertyItem(item)),
+  ],
   services: [
     ...BUILTIN_SERVICE_ITEMS.map((item) => ({ ...item })),
     ...root.services.filter((item) => !isBuiltinServiceItem(item)),
@@ -734,7 +758,7 @@ const parseThingModelText = (rawText: string): ThingModelParseResult => {
     }
 
     return {
-      root: ensureBuiltinServices(coerceThingModelRoot(parsed)),
+      root: ensureBuiltinDefinitions(coerceThingModelRoot(parsed)),
       error: null,
     };
   } catch (error) {
@@ -1363,11 +1387,22 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
   const isPublishedLockedItem = (section: SectionKey, index: number) =>
     Boolean(isPublished && index < baselineModel[section].length);
 
-  const isBuiltinServiceAt = (section: SectionKey, index: number) =>
-    section === 'services' && isBuiltinServiceItem(draftModel.services[index]);
+  const isBuiltinItemAt = (section: SectionKey, index: number) => {
+    if (section === 'properties') {
+      return isBuiltinPropertyItem(draftModel.properties[index]);
+    }
+    if (section === 'services') {
+      return isBuiltinServiceItem(draftModel.services[index]);
+    }
+    return false;
+  };
+
+  const getBuiltinItemLabel = (section: SectionKey) => (section === 'properties' ? '系统固有属性' : '系统固有服务');
+
+  const getBuiltinItemTagLabel = (section: SectionKey) => (section === 'properties' ? '固有属性' : '固有服务');
 
   const syncDraftModel = (nextRoot: ThingModelRoot) => {
-    const normalizedRoot = ensureBuiltinServices(nextRoot);
+    const normalizedRoot = ensureBuiltinDefinitions(nextRoot);
     setDraftModel(normalizedRoot);
     setRawThingModel(JSON.stringify(normalizedRoot, null, 2));
     setJsonError(null);
@@ -1662,8 +1697,8 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
   };
 
   const openItemEditor = (section: SectionKey, index?: number) => {
-    if (index !== undefined && isBuiltinServiceAt(section, index)) {
-      message.warning('系统固有服务不可编辑，请保留上线、离线、心跳三个生命周期服务');
+    if (index !== undefined && isBuiltinItemAt(section, index)) {
+      message.warning(`${getBuiltinItemLabel(section)}不可编辑，请保留平台默认物模型项`);
       return;
     }
 
@@ -1687,8 +1722,8 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
   };
 
   const handleDeleteItem = (section: SectionKey, index: number) => {
-    if (isBuiltinServiceAt(section, index)) {
-      message.warning('系统固有服务不可删除');
+    if (isBuiltinItemAt(section, index)) {
+      message.warning(`${getBuiltinItemLabel(section)}不可删除`);
       return;
     }
 
@@ -1706,8 +1741,8 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
   };
 
   const handleDuplicateItem = (section: SectionKey, index: number) => {
-    if (isBuiltinServiceAt(section, index)) {
-      message.warning('系统固有服务不可复制');
+    if (isBuiltinItemAt(section, index)) {
+      message.warning(`${getBuiltinItemLabel(section)}不可复制`);
       return;
     }
 
@@ -1753,7 +1788,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
   };
 
   const handleDragStart = (section: SectionKey, index: number) => {
-    if (isPublished || isPublishedLockedItem(section, index)) {
+    if (isPublished || isPublishedLockedItem(section, index) || isBuiltinItemAt(section, index)) {
       return;
     }
 
@@ -1762,7 +1797,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
   };
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>, section: SectionKey, index: number) => {
-    if (!draggingItem || draggingItem.section !== section || draggingItem.index === index) {
+    if (!draggingItem || draggingItem.section !== section || draggingItem.index === index || isBuiltinItemAt(section, index)) {
       return;
     }
 
@@ -1771,7 +1806,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
   };
 
   const handleDrop = (section: SectionKey, index: number) => {
-    if (!draggingItem || draggingItem.section !== section || draggingItem.index === index) {
+    if (!draggingItem || draggingItem.section !== section || draggingItem.index === index || isBuiltinItemAt(section, index)) {
       setDraggingItem(null);
       setDragOverItem(null);
       return;
@@ -2203,7 +2238,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
               const outputCount = Array.isArray(item.outputData) ? item.outputData.length : 0;
               const inputCount = Array.isArray(item.inputData) ? item.inputData.length : 0;
               const isLocked = isPublishedLockedItem(section, index);
-              const isBuiltin = isBuiltinServiceAt(section, index);
+              const isBuiltin = isBuiltinItemAt(section, index);
               const isDragTarget = dragOverItem?.section === section && dragOverItem.index === index && draggingItem?.index !== index;
 
               return (
@@ -2268,9 +2303,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
                                 <HolderOutlined /> 拖拽排序
                               </Typography.Text>
                             ) : null}
-                            {isBuiltin ? (
-                              <Tag color="cyan">固有服务</Tag>
-                            ) : null}
+                            {isBuiltin ? <Tag color="cyan">{getBuiltinItemTagLabel(section)}</Tag> : null}
                             {isLocked ? (
                               <Tag color="gold">已发布锁定</Tag>
                             ) : isPublished ? (

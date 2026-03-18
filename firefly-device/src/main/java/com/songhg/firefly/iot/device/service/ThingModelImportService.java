@@ -47,7 +47,7 @@ public class ThingModelImportService {
     private final FileClient fileClient;
     private final AsyncTaskClient asyncTaskClient;
     private final ObjectMapper objectMapper;
-    private final ThingModelBuiltinServiceSupport thingModelBuiltinServiceSupport;
+    private final ThingModelBuiltinDefinitionSupport thingModelBuiltinDefinitionSupport;
 
     private static final int MAX_ERROR_MESSAGE_LENGTH = 500;
 
@@ -123,7 +123,7 @@ public class ThingModelImportService {
             asyncTaskClient.updateProgress(taskId, 70);
 
             // 更新物模型
-            product.setThingModel(objectMapper.writeValueAsString(thingModelBuiltinServiceSupport.ensureBuiltinServices(thingModel)));
+            product.setThingModel(objectMapper.writeValueAsString(thingModelBuiltinDefinitionSupport.ensureBuiltinDefinitions(thingModel)));
             productMapper.updateById(product);
 
             asyncTaskClient.updateProgress(taskId, 90);
@@ -188,9 +188,9 @@ public class ThingModelImportService {
         // 解析当前物模型
         ObjectNode thingModel;
         if (currentThingModelJson != null && !currentThingModelJson.isBlank()) {
-            thingModel = thingModelBuiltinServiceSupport.ensureBuiltinServices((ObjectNode) objectMapper.readTree(currentThingModelJson));
+            thingModel = thingModelBuiltinDefinitionSupport.ensureBuiltinDefinitions((ObjectNode) objectMapper.readTree(currentThingModelJson));
         } else {
-            thingModel = thingModelBuiltinServiceSupport.createDefaultThingModel();
+            thingModel = thingModelBuiltinDefinitionSupport.createDefaultThingModel();
         }
 
         try (InputStream inputStream = conn.getInputStream();
@@ -231,7 +231,7 @@ public class ThingModelImportService {
             }
         }
 
-        return thingModelBuiltinServiceSupport.ensureBuiltinServices(thingModel);
+        return thingModelBuiltinDefinitionSupport.ensureBuiltinDefinitions(thingModel);
     }
 
     /**

@@ -48,7 +48,7 @@ public class ProductService {
     private final ProductMapper productMapper;
     private final FileClient fileClient;
     private final ObjectMapper objectMapper;
-    private final ThingModelBuiltinServiceSupport thingModelBuiltinServiceSupport;
+    private final ThingModelBuiltinDefinitionSupport thingModelBuiltinDefinitionSupport;
 
     @Transactional
     public ProductVO createProduct(ProductCreateDTO dto) {
@@ -62,7 +62,7 @@ public class ProductService {
         product.setStatus(ProductStatus.DEVELOPMENT);
         product.setDeviceCount(0);
         product.setCreatedBy(userId);
-        product.setThingModel(writeThingModel(thingModelBuiltinServiceSupport.createDefaultThingModel()));
+        product.setThingModel(writeThingModel(thingModelBuiltinDefinitionSupport.createDefaultThingModel()));
         if (product.getNodeType() == null) {
             product.setNodeType(NodeType.DEVICE);
         }
@@ -297,7 +297,7 @@ public class ProductService {
     private ObjectNode parseThingModel(String thingModelJson) {
         String source = thingModelJson;
         if (source == null || source.isBlank()) {
-            return thingModelBuiltinServiceSupport.createDefaultThingModel();
+            return thingModelBuiltinDefinitionSupport.createDefaultThingModel();
         }
 
         JsonNode parsed;
@@ -314,7 +314,7 @@ public class ProductService {
         ensureThingModelArray(root, "properties");
         ensureThingModelArray(root, "events");
         ensureThingModelArray(root, "services");
-        return thingModelBuiltinServiceSupport.ensureBuiltinServices(root);
+        return thingModelBuiltinDefinitionSupport.ensureBuiltinDefinitions(root);
     }
 
     private void ensureThingModelArray(ObjectNode root, String fieldName) {
