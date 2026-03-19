@@ -23,7 +23,8 @@ import {
   SaveOutlined,
 } from '@ant-design/icons';
 import CodeEditorField from '../../components/CodeEditorField';
-import { deviceApi } from '../../services/api';
+import { deviceApi, productApi } from '../../services/api';
+import { buildDesiredTemplateFromThingModel } from '../../utils/deviceShadowThingModel';
 
 const { Paragraph } = Typography;
 
@@ -38,6 +39,7 @@ interface ShadowData {
 
 interface Props {
   deviceId: number | null;
+  productId?: number;
   deviceName?: string;
   nickname?: string;
   productName?: string;
@@ -69,6 +71,7 @@ const readOnlyTitle = (title: string) => (
 
 const DeviceShadowDrawer: React.FC<Props> = ({
   deviceId,
+  productId,
   deviceName,
   nickname,
   productName,
@@ -81,6 +84,7 @@ const DeviceShadowDrawer: React.FC<Props> = ({
   const [loading, setLoading] = useState(false);
   const [editingDesired, setEditingDesired] = useState(false);
   const [desiredJson, setDesiredJson] = useState('{}');
+  const [thingModel, setThingModel] = useState<unknown>(null);
   const displayName = nickname || deviceName || '未命名设备';
   const productDisplay = productName
     ? productKey
@@ -132,14 +136,17 @@ const DeviceShadowDrawer: React.FC<Props> = ({
     }
     setLoading(true);
     try {
-      const [shadowRes, deltaRes] = await Promise.all([
+      const [shadowRes, deltaRes, thingModelRes] = await Promise.all([
         deviceApi.getShadow(deviceId),
         deviceApi.getDelta(deviceId),
+        productId ? productApi.getThingModel(productId).catch(() => null) : Promise.resolve(null),
       ]);
       const nextShadow = shadowRes.data.data as ShadowData;
       setShadow(nextShadow);
       setDelta((deltaRes.data.data || {}) as Record<string, unknown>);
       setDesiredJson(formatJson(nextShadow.desired));
+      // 物模型缺失时仍允许编辑已有 desired，只是不再额外补齐默认值。
+      setThingModel(thingModelRes?.data?.data ?? null);
       setEditingDesired(false);
     } catch {
       message.error('加载设备影子失败');
@@ -154,8 +161,18 @@ const DeviceShadowDrawer: React.FC<Props> = ({
     }
     if (!open) {
       setEditingDesired(false);
+      setThingModel(null);
     }
-  }, [open, deviceId]);
+  }, [open, deviceId, productId]);
+
+  const handleEditDesired = () => {
+    if (!shadow) {
+      return;
+    }
+    const { desired } = buildDesiredTemplateFromThingModel(thingModel, shadow.desired);
+    setDesiredJson(formatJson(desired));
+    setEditingDesired(true);
+  };
 
   const handleUpdateDesired = async () => {
     if (!deviceId) {
@@ -371,7 +388,7 @@ const DeviceShadowDrawer: React.FC<Props> = ({
                 extra={
                   <Space size={8}>
                     {!editingDesired ? (
-                      <Button size="small" icon={<EditOutlined />} onClick={() => setEditingDesired(true)}>
+                      <Button size="small" icon={<EditOutlined />} onClick={handleEditDesired}>
                         编辑
                       </Button>
                     ) : (
@@ -406,7 +423,7 @@ const DeviceShadowDrawer: React.FC<Props> = ({
               >
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   <Paragraph style={{ margin: 0, color: '#64748b' }}>
-                    维护平台期望设备达到的目标状态。保存时会合并字段，属性值设为 <code>null</code> 可删除对应属性。
+                    维护平台期望设备达到的目标状态。点击“编辑”时会先根据产品物模型自动填充可写属性的初始值，再叠加当前 desired。保存时会合并字段，属性值设为 <code>null</code> 可删除对应属性。
                   </Paragraph>
                   <CodeEditorField
                     language="json"

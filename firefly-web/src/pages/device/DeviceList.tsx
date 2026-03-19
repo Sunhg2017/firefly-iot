@@ -34,7 +34,7 @@ interface DeviceCreateFormValues { productId: number; deviceName: string; nickna
 interface DeviceBatchCreateFormValues { productId: number; description?: string; tagIds?: number[]; groupIds?: number[]; }
 interface DeviceUpdateFormValues { nickname?: string; description?: string; tagIds?: number[]; groupIds?: number[]; }
 interface AsyncTaskRecord { status: string; progress?: number; errorMessage?: string; }
-interface ShadowDeviceContext { id: number; deviceName: string; nickname?: string; productName?: string; productKey?: string; }
+interface ShadowDeviceContext { id: number; productId: number; deviceName: string; nickname?: string; productName?: string; productKey?: string; }
 
 const DEVICE_AUTH_LABELS: Record<string, string> = { DEVICE_SECRET: '一机一密', PRODUCT_SECRET: '一型一密' };
 const DEVICE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_.-]{1,63}$/;
@@ -349,7 +349,7 @@ const DeviceList: React.FC = () => {
     { title: '在线', dataIndex: 'onlineStatus', width: 90, render: (value: string) => { const badge = ONLINE_BADGE[value] || ONLINE_BADGE.UNKNOWN; return <Badge status={badge.status} text={badge.text} />; } },
     { title: '固件版本', dataIndex: 'firmwareVersion', width: 120, render: (value?: string) => value || '-' },
     { title: '创建时间', dataIndex: 'createdAt', width: 180, render: (value?: string) => value || '-' },
-    { title: '操作', width: 360, fixed: 'right', render: (_: unknown, record: DeviceRecord) => <Space><Button type="link" size="small" onClick={() => handleEdit(record)}>编辑</Button><Button type="link" size="small" onClick={() => handleToggleStatus(record)}>{record.status === 'DISABLED' ? '启用' : '禁用'}</Button><Button type="link" size="small" icon={<KeyOutlined />} loading={viewingSecretId === record.id} onClick={() => void handleViewSecret(record)}>密钥</Button><Button type="link" size="small" onClick={() => setLocatorDevice(record)}>标识</Button><Button type="link" size="small" icon={<CloudOutlined />} onClick={() => { const product = productLookup.get(record.productId); setShadowDevice({ id: record.id, deviceName: record.deviceName, nickname: record.nickname, productName: product?.name, productKey: product?.productKey }); setShadowOpen(true); }}>影子</Button><Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>删除</Button></Space> },
+    { title: '操作', width: 360, fixed: 'right', render: (_: unknown, record: DeviceRecord) => <Space><Button type="link" size="small" onClick={() => handleEdit(record)}>编辑</Button><Button type="link" size="small" onClick={() => handleToggleStatus(record)}>{record.status === 'DISABLED' ? '启用' : '禁用'}</Button><Button type="link" size="small" icon={<KeyOutlined />} loading={viewingSecretId === record.id} onClick={() => void handleViewSecret(record)}>密钥</Button><Button type="link" size="small" onClick={() => setLocatorDevice(record)}>标识</Button><Button type="link" size="small" icon={<CloudOutlined />} onClick={() => { const product = productLookup.get(record.productId); setShadowDevice({ id: record.id, productId: record.productId, deviceName: record.deviceName, nickname: record.nickname, productName: product?.name, productKey: product?.productKey }); setShadowOpen(true); }}>影子</Button><Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>删除</Button></Space> },
   ];
 
   return (
@@ -437,7 +437,7 @@ const DeviceList: React.FC = () => {
         </Form>
       </Modal>
 
-      <DeviceShadowDrawer deviceId={shadowDevice?.id || null} deviceName={shadowDevice?.deviceName} nickname={shadowDevice?.nickname} productName={shadowDevice?.productName} productKey={shadowDevice?.productKey} open={shadowOpen} onClose={() => { setShadowOpen(false); setShadowDevice(null); }} />
+      <DeviceShadowDrawer deviceId={shadowDevice?.id || null} productId={shadowDevice?.productId} deviceName={shadowDevice?.deviceName} nickname={shadowDevice?.nickname} productName={shadowDevice?.productName} productKey={shadowDevice?.productKey} open={shadowOpen} onClose={() => { setShadowOpen(false); setShadowDevice(null); }} />
       <DeviceLocatorModal deviceId={locatorDevice?.id || null} deviceName={locatorDevice?.deviceName} open={Boolean(locatorDevice)} onClose={() => setLocatorDevice(null)} />
     </div>
   );

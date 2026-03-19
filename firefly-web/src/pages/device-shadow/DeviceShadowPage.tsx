@@ -25,7 +25,8 @@ import {
 } from '@ant-design/icons';
 import CodeEditorField from '../../components/CodeEditorField';
 import PageHeader from '../../components/PageHeader';
-import { deviceApi } from '../../services/api';
+import { deviceApi, productApi } from '../../services/api';
+import { buildDesiredTemplateFromThingModel } from '../../utils/deviceShadowThingModel';
 
 const { Paragraph, Title } = Typography;
 
@@ -40,6 +41,7 @@ interface ShadowData {
 
 interface DeviceOptionRecord {
   id: number;
+  productId?: number;
   deviceName: string;
   nickname?: string;
   onlineStatus?: string;
@@ -123,6 +125,7 @@ const DeviceShadowPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [editingDesired, setEditingDesired] = useState(false);
   const [desiredText, setDesiredText] = useState('{}');
+  const [thingModel, setThingModel] = useState<unknown>(null);
 
   const selectedDevice = useMemo(
     () => deviceOptions.find((item) => item.value === selectedDeviceId),
@@ -159,6 +162,7 @@ const DeviceShadowPage: React.FC = () => {
 
   const fetchShadow = async (deviceId?: number) => {
     const targetDeviceId = deviceId ?? selectedDeviceId;
+    const targetDevice = deviceOptions.find((item) => item.value === targetDeviceId);
     if (!targetDeviceId) {
       message.warning('请先选择设备');
       return;
@@ -166,20 +170,34 @@ const DeviceShadowPage: React.FC = () => {
 
     setLoading(true);
     try {
-      const [shadowRes, deltaRes] = await Promise.all([
+      const [shadowRes, deltaRes, thingModelRes] = await Promise.all([
         deviceApi.getShadow(targetDeviceId),
         deviceApi.getDelta(targetDeviceId),
+        targetDevice?.meta.productId
+          ? productApi.getThingModel(targetDevice.meta.productId).catch(() => null)
+          : Promise.resolve(null),
       ]);
       const nextShadow = shadowRes.data.data as ShadowData;
       setShadow(nextShadow);
       setDesiredText(formatJson(nextShadow.desired));
       setDelta((deltaRes.data.data || {}) as Record<string, unknown>);
+      // 物模型缺失时仍允许编辑既有 desired，只是不再补齐模板默认值。
+      setThingModel(thingModelRes?.data?.data ?? null);
       setEditingDesired(false);
     } catch {
       message.error('加载设备影子失败');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleEditDesired = () => {
+    if (!shadow) {
+      return;
+    }
+    const { desired } = buildDesiredTemplateFromThingModel(thingModel, shadow.desired);
+    setDesiredText(formatJson(desired));
+    setEditingDesired(true);
   };
 
   const handleSaveDesired = async () => {
@@ -313,6 +331,7 @@ const DeviceShadowPage: React.FC = () => {
                   setShadow(null);
                   setDelta(null);
                   setDesiredText('{}');
+                  setThingModel(null);
                   setEditingDesired(false);
                 }
               }}
@@ -453,7 +472,7 @@ const DeviceShadowPage: React.FC = () => {
                 extra={
                   <Space size={8}>
                     {!editingDesired ? (
-                      <Button size="small" icon={<EditOutlined />} onClick={() => setEditingDesired(true)}>
+                      <Button size="small" icon={<EditOutlined />} onClick={handleEditDesired}>
                         编辑
                       </Button>
                     ) : (
@@ -488,7 +507,7 @@ const DeviceShadowPage: React.FC = () => {
               >
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   <Paragraph style={{ margin: 0, color: '#64748b' }}>
-                    平台希望设备最终达到的目标状态。保存时会合并字段，属性值设为 <code>null</code> 可删除对应属性。
+                    平台希望设备最终达到的目标状态。点击“编辑”时会先根据产品物模型自动填充可写属性的初始值，再叠加当前 desired。保存时会合并字段，属性值设为 <code>null</code> 可删除对应属性。
                   </Paragraph>
                   <CodeEditorField
                     language="json"
