@@ -18,6 +18,29 @@ type ThingModelRoot = Record<string, unknown> & {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const normalizeThingModelDataType = (value: unknown): Record<string, unknown> | undefined => {
+  if (isRecord(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    return { type: value.trim() };
+  }
+  return undefined;
+};
+
+const resolveDataTypeOption = (dataType: Record<string, unknown> | undefined, key: string) => {
+  if (!dataType) {
+    return undefined;
+  }
+  if (dataType[key] !== undefined) {
+    return dataType[key];
+  }
+  if (isRecord(dataType.specs) && dataType.specs[key] !== undefined) {
+    return dataType.specs[key];
+  }
+  return undefined;
+};
+
 const normalizeInteger = (value: unknown, fallback: number) => {
   const numeric = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(numeric) ? Math.trunc(numeric) : fallback;
@@ -53,7 +76,7 @@ const resolveEnumCandidates = (dataType?: Record<string, unknown>): Array<string
   if (!dataType) {
     return [];
   }
-  const values = dataType.values;
+  const values = resolveDataTypeOption(dataType, 'values');
   if (Array.isArray(values)) {
     return values.map(normalizeEnumValue).filter((value) => value !== '');
   }
@@ -87,7 +110,8 @@ const resolveStructFields = (dataType?: Record<string, unknown>): ThingModelPara
 };
 
 const resolveThingModelValueType = (dataType?: Record<string, unknown>) => {
-  const type = typeof dataType?.type === 'string' ? dataType.type.toLowerCase() : 'string';
+  const typeValue = resolveDataTypeOption(dataType, 'type');
+  const type = typeof typeValue === 'string' ? typeValue.toLowerCase() : 'string';
   switch (type) {
     case 'int':
       return 'int';
@@ -119,10 +143,14 @@ const buildDefaultValue = (
   const valueType = resolveThingModelValueType(dataType);
   switch (valueType) {
     case 'int':
-      return normalizeInteger(dataType?.min, 0);
+      return normalizeInteger(resolveDataTypeOption(dataType, 'min'), 0);
     case 'float':
     case 'double':
-      return Number(normalizeNumber(dataType?.min, 0).toFixed(Math.max(0, normalizeInteger(dataType?.precision, 2))));
+      return Number(
+        normalizeNumber(resolveDataTypeOption(dataType, 'min'), 0).toFixed(
+          Math.max(0, normalizeInteger(resolveDataTypeOption(dataType, 'precision'), 2)),
+        ),
+      );
     case 'bool':
       return false;
     case 'enum': {
@@ -168,10 +196,10 @@ const parseThingModel = (rawThingModel: unknown): ThingModelRoot | null => {
 };
 
 const shouldIncludeProperty = (item: ThingModelPropertyItem) => {
-  if (item.readonly === true || item.system === true) {
+  if (item.system === true) {
     return false;
   }
-  if (typeof item.accessMode === 'string' && item.accessMode.trim().toLowerCase() === 'r') {
+  if (item.readonly === true) {
     return false;
   }
   return typeof item.identifier === 'string' && item.identifier.trim().length > 0;
@@ -204,7 +232,7 @@ export const buildDesiredTemplateFromThingModel = (
     .filter(shouldIncludeProperty)
     .reduce<Record<string, unknown>>((result, item) => {
       const identifier = item.identifier!.trim();
-      result[identifier] = buildDefaultValue(identifier, isRecord(item.dataType) ? item.dataType : undefined);
+      result[identifier] = buildDefaultValue(identifier, normalizeThingModelDataType(item.dataType));
       return result;
     }, {});
 
