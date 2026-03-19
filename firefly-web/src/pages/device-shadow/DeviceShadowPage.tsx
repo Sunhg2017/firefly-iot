@@ -124,6 +124,7 @@ const DeviceShadowPage: React.FC = () => {
   const [delta, setDelta] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const [editingDesired, setEditingDesired] = useState(false);
+  const [prefillingDesired, setPrefillingDesired] = useState(false);
   const [desiredText, setDesiredText] = useState('{}');
   const [thingModel, setThingModel] = useState<unknown>(null);
 
@@ -191,13 +192,39 @@ const DeviceShadowPage: React.FC = () => {
     }
   };
 
-  const handleEditDesired = () => {
+  const loadThingModelForEdit = async () => {
+    const targetProductId = selectedDevice?.meta.productId;
+    if (!targetProductId) {
+      return thingModel;
+    }
+    try {
+      const res = await productApi.getThingModel(targetProductId);
+      const payload = res.data.data ?? null;
+      setThingModel(payload);
+      return payload;
+    } catch {
+      if (thingModel) {
+        message.warning('最新物模型加载失败，已按已加载的物模型生成期望属性草稿');
+        return thingModel;
+      }
+      message.warning('加载产品物模型失败，已按当前期望属性打开编辑器');
+      return null;
+    }
+  };
+
+  const handleEditDesired = async () => {
     if (!shadow) {
       return;
     }
-    const { desired } = buildDesiredTemplateFromThingModel(thingModel, shadow.desired);
-    setDesiredText(formatJson(desired));
-    setEditingDesired(true);
+    setPrefillingDesired(true);
+    try {
+      const latestThingModel = await loadThingModelForEdit();
+      const { desired } = buildDesiredTemplateFromThingModel(latestThingModel, shadow.desired);
+      setDesiredText(formatJson(desired));
+      setEditingDesired(true);
+    } finally {
+      setPrefillingDesired(false);
+    }
   };
 
   const handleSaveDesired = async () => {
@@ -472,7 +499,12 @@ const DeviceShadowPage: React.FC = () => {
                 extra={
                   <Space size={8}>
                     {!editingDesired ? (
-                      <Button size="small" icon={<EditOutlined />} onClick={handleEditDesired}>
+                      <Button
+                        size="small"
+                        icon={<EditOutlined />}
+                        loading={prefillingDesired}
+                        onClick={() => void handleEditDesired()}
+                      >
                         编辑
                       </Button>
                     ) : (
@@ -511,7 +543,7 @@ const DeviceShadowPage: React.FC = () => {
                   </Paragraph>
                   <CodeEditorField
                     language="json"
-                    path="file:///device-shadow/desired.json"
+                    path={`file:///device-shadow/desired-${editingDesired ? 'draft' : 'view'}.json`}
                     value={desiredText}
                     onChange={setDesiredText}
                     readOnly={!editingDesired}
