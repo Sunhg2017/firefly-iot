@@ -1,7 +1,5 @@
 import React from 'react';
-import {
-  Button, Space, Typography, Switch, Divider,
-} from 'antd';
+import { Button, Divider, Space, Switch, Typography } from 'antd';
 import { ThunderboltOutlined, WifiOutlined } from '@ant-design/icons';
 import { useSimStore } from '../../store';
 import type { SimDevice } from '../../store';
@@ -18,7 +16,12 @@ interface Props {
 }
 
 export default function CoapControlPanel({
-  device, coapShadowPolling, setCoapShadowPolling, coapShadowData, setCoapShadowData, coapPollRef,
+  device,
+  coapShadowPolling,
+  setCoapShadowPolling,
+  coapShadowData,
+  setCoapShadowData,
+  coapPollRef,
 }: Props) {
   const { addLog } = useSimStore();
   const isOnline = device.status === 'online';
@@ -27,25 +30,28 @@ export default function CoapControlPanel({
 
   return (
     <div style={{ marginBottom: 16, padding: 12, background: 'rgba(255,255,255,0.02)', borderRadius: 8 }}>
-      <Space style={{ marginBottom: 8 }}><ThunderboltOutlined /><Text strong>设备影子 (Shadow)</Text></Space>
+      <Space style={{ marginBottom: 8 }}>
+        <ThunderboltOutlined />
+        <Text strong>设备影子</Text>
+      </Space>
       <Space direction="vertical" style={{ width: '100%' }} size={8}>
         <Space>
           <Button
             icon={<WifiOutlined />}
             onClick={async () => {
-              addLog(device.id, device.name, 'info', '拉取设备影子 desired...');
-              const res = await window.electronAPI.coapGetShadow(device.coapBaseUrl, device.token);
-              if (res.success) {
-                const data = JSON.stringify(res.data || res, null, 2);
+              addLog(device.id, device.name, 'info', '开始拉取设备影子期望值...');
+              const result = await window.electronAPI.coapGetShadow(device.coapBaseUrl, device.token);
+              if (result.success) {
+                const data = JSON.stringify(result.data || result, null, 2);
                 setCoapShadowData(data);
-                addLog(device.id, device.name, 'success', `Shadow desired: ${data.slice(0, 200)}`);
+                addLog(device.id, device.name, 'success', `影子期望值：${data.slice(0, 200)}`);
               } else {
-                addLog(device.id, device.name, 'error', `拉取失败: ${res.message || JSON.stringify(res)}`);
+                addLog(device.id, device.name, 'error', `拉取失败：${result.message || JSON.stringify(result)}`);
               }
             }}
             size="small"
           >
-            拉取 Desired 属性
+            拉取期望属性
           </Button>
           <Divider type="vertical" />
           <Switch
@@ -54,30 +60,37 @@ export default function CoapControlPanel({
             onChange={(checked) => {
               if (checked) {
                 const poll = async () => {
-                  const res = await window.electronAPI.coapGetShadow(device.coapBaseUrl, device.token);
-                  if (res.success) {
-                    setCoapShadowData(JSON.stringify(res.data || res, null, 2));
+                  const result = await window.electronAPI.coapGetShadow(device.coapBaseUrl, device.token);
+                  if (result.success) {
+                    setCoapShadowData(JSON.stringify(result.data || result, null, 2));
                   }
                 };
                 poll();
-                const tid = window.setInterval(poll, 10000);
-                coapPollRef.current = tid;
+                const timerId = window.setInterval(poll, 10000);
+                coapPollRef.current = timerId;
                 setCoapShadowPolling(true);
-                addLog(device.id, device.name, 'info', '影子自动拉取已开启 (10s)');
+                addLog(device.id, device.name, 'info', '已开启影子自动拉取（10秒）');
               } else {
-                if (coapPollRef.current) { clearInterval(coapPollRef.current); coapPollRef.current = null; }
+                if (coapPollRef.current) {
+                  clearInterval(coapPollRef.current);
+                  coapPollRef.current = null;
+                }
                 setCoapShadowPolling(false);
-                addLog(device.id, device.name, 'info', '影子自动拉取已关闭');
+                addLog(device.id, device.name, 'info', '已关闭影子自动拉取');
               }
             }}
             checkedChildren="自动"
             unCheckedChildren="手动"
           />
-          <Text type="secondary" style={{ fontSize: 11 }}>低功耗设备定期拉取期望状态</Text>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            低功耗设备定期拉取期望状态
+          </Text>
         </Space>
         {coapShadowData && (
           <div style={{ padding: 8, background: '#0d1117', borderRadius: 6, maxHeight: 160, overflow: 'auto' }}>
-            <pre style={{ margin: 0, fontSize: 11, fontFamily: 'monospace', color: '#d4d4d4', whiteSpace: 'pre-wrap' }}>{coapShadowData}</pre>
+            <pre style={{ margin: 0, fontSize: 11, fontFamily: 'monospace', color: '#d4d4d4', whiteSpace: 'pre-wrap' }}>
+              {coapShadowData}
+            </pre>
           </div>
         )}
       </Space>

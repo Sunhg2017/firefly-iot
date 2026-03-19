@@ -254,8 +254,6 @@ mvn -pl firefly-device -Dtest=ProductServiceTest test
 ```
 ## 9. 2026-03-19 字段规则与影子同步运维补充
 
-## 9. 2026-03-19 字段规则与影子同步运维补充
-
 ### 9.1 发布范围
 
 - `firefly-simulator`
@@ -298,3 +296,14 @@ mvn -pl firefly-device -Dtest=MessageRouterServiceTest test
   - 检查消息类型是否为 `PROPERTY_REPORT`。
   - 检查 payload 是否是平铺属性、`params` 或 `properties` 三种支持格式之一。
   - 检查 `firefly-device` 日志，若出现 telemetry 落库报错，本次修复后影子仍应更新；若仍未更新，继续排查影子 Redis 写入链路。
+
+### 9.6 页面文案统一发布说明
+
+- 本次发布需要同步更新 `firefly-simulator` 前端资源，重点变更为设备控制区、MQTT 控制区、CoAP 影子区的中文文案统一。
+- 发布后请重点回归以下界面是否仍出现旧英文按钮或提示：
+  - 设备状态 `离线 / 连接中 / 在线 / 异常`
+  - 主按钮 `连接 / 断开 / 发送`
+  - 数据区 `数据上报 / 自动上报 / 心跳 / 字段模拟规则`
+  - MQTT 区 `主题订阅管理 / 消息日志 / 发布 / 接收 / 保留`
+  - CoAP 区 `设备影子 / 拉取期望属性`
+- 本次不涉及数据库结构变更，也不需要新增或调整 Flyway 脚本。

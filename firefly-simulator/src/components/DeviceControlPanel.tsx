@@ -81,21 +81,21 @@ const PROTOCOL_COLORS: Record<string, string> = {
 };
 
 const STATUS_TEXT = {
-  offline: 'Offline',
-  connecting: 'Connecting',
-  online: 'Online',
-  error: 'Error',
+  offline: '离线',
+  connecting: '连接中',
+  online: '在线',
+  error: '异常',
 } as const;
 
 const ALL_PROPERTIES_VALUE = '__all_properties__';
 const HEARTBEAT_INTERVAL_OPTIONS = [15, 30, 60, 120, 300].map((value) => ({
-  label: `${value} sec`,
+  label: `${value} 秒`,
   value,
 }));
 const LIFECYCLE_EVENT_LABELS: Record<'online' | 'offline' | 'heartbeat', string> = {
-  online: 'Online',
-  offline: 'Offline',
-  heartbeat: 'Heartbeat',
+  online: '上线',
+  offline: '下线',
+  heartbeat: '心跳',
 };
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
@@ -185,7 +185,7 @@ export default function DeviceControlPanel() {
 
     updateDevice(deviceId, { autoReport: false, autoTimerId: null });
     if (!options?.silent) {
-      addLog(deviceId, current.name, 'info', options?.reason || 'Auto report stopped');
+      addLog(deviceId, current.name, 'info', options?.reason || '已停止自动上报');
     }
   }
 
@@ -198,7 +198,7 @@ export default function DeviceControlPanel() {
     clearInterval(current.heartbeatTimerId);
     updateDevice(deviceId, { heartbeatTimerId: null });
     if (!options?.silent) {
-      addLog(deviceId, current.name, 'info', options?.reason || 'Heartbeat stopped');
+      addLog(deviceId, current.name, 'info', options?.reason || '已停止心跳上报');
     }
   }
 
@@ -383,16 +383,16 @@ export default function DeviceControlPanel() {
     const unsubDc = window.electronAPI.onMqttDisconnected((id) => {
       const current = useSimStore.getState().devices.find((item) => item.id === id);
       if (!current) return;
-      stopAutoReportForDevice(id, { reason: 'Auto report stopped because device disconnected' });
+      stopAutoReportForDevice(id, { reason: '设备断开，已停止自动上报' });
       stopHeartbeatForDevice(id, { silent: true });
       useSimStore.getState().updateDevice(id, { status: 'offline' });
-      useSimStore.getState().addLog(id, current.name, 'info', 'MQTT disconnected');
+      useSimStore.getState().addLog(id, current.name, 'info', 'MQTT 已断开连接');
     });
     const unsubErr = window.electronAPI.onMqttError((id, errorText) => {
       const current = useSimStore.getState().devices.find((item) => item.id === id);
       if (!current) return;
       useSimStore.getState().updateDevice(id, { status: 'error' });
-      useSimStore.getState().addLog(id, current.name, 'error', `MQTT error: ${errorText}`);
+      useSimStore.getState().addLog(id, current.name, 'error', `MQTT 异常：${errorText}`);
     });
     return () => { unsubMsg(); unsubDc(); unsubErr(); };
   }, [selectedDeviceId]);
@@ -407,14 +407,14 @@ export default function DeviceControlPanel() {
     const unsubDc = window.electronAPI.onWsDisconnected((id, code, reason) => {
       const current = useSimStore.getState().devices.find((item) => item.id === id);
       if (!current) return;
-      stopAutoReportForDevice(id, { reason: 'Auto report stopped because device disconnected' });
+      stopAutoReportForDevice(id, { reason: '设备断开，已停止自动上报' });
       useSimStore.getState().updateDevice(id, { status: 'offline' });
-      useSimStore.getState().addLog(id, current.name, 'info', `WebSocket disconnected (${code}${reason ? `, ${reason}` : ''})`);
+      useSimStore.getState().addLog(id, current.name, 'info', `WebSocket 已断开（${code}${reason ? `，${reason}` : ''}）`);
     });
     const unsubErr = window.electronAPI.onWsError((id, errorText) => {
       const current = useSimStore.getState().devices.find((item) => item.id === id);
       if (!current) return;
-      useSimStore.getState().addLog(id, current.name, 'error', `WebSocket error: ${errorText}`);
+      useSimStore.getState().addLog(id, current.name, 'error', `WebSocket 异常：${errorText}`);
     });
     return () => { unsubMsg(); unsubDc(); unsubErr(); };
   }, [selectedDeviceId]);
@@ -429,14 +429,14 @@ export default function DeviceControlPanel() {
     const unsubDc = window.electronAPI.onTcpDisconnected((id) => {
       const current = useSimStore.getState().devices.find((item) => item.id === id);
       if (!current) return;
-      stopAutoReportForDevice(id, { reason: 'Auto report stopped because device disconnected' });
+      stopAutoReportForDevice(id, { reason: '设备断开，已停止自动上报' });
       useSimStore.getState().updateDevice(id, { status: 'offline' });
-      useSimStore.getState().addLog(id, current.name, 'info', 'TCP disconnected');
+      useSimStore.getState().addLog(id, current.name, 'info', 'TCP 已断开连接');
     });
     const unsubErr = window.electronAPI.onTcpError((id, errorText) => {
       const current = useSimStore.getState().devices.find((item) => item.id === id);
       if (!current) return;
-      useSimStore.getState().addLog(id, current.name, 'error', `TCP error: ${errorText}`);
+      useSimStore.getState().addLog(id, current.name, 'error', `TCP 异常：${errorText}`);
     });
     return () => { unsubMsg(); unsubDc(); unsubErr(); };
   }, [selectedDeviceId]);
@@ -450,35 +450,35 @@ export default function DeviceControlPanel() {
       switch (event.type) {
         case 'registered':
           store.updateDevice(id, { sipRegistered: true });
-          store.addLog(id, current.name, 'success', `SIP registered (${event.expires}s)`);
+          store.addLog(id, current.name, 'success', `SIP 注册成功（${event.expires}秒）`);
           break;
         case 'unregistered':
           store.updateDevice(id, { sipRegistered: false });
-          store.addLog(id, current.name, 'info', 'SIP unregistered');
+          store.addLog(id, current.name, 'info', 'SIP 已注销');
           break;
         case 'keepalive_sent':
-          store.addLog(id, current.name, 'info', `SIP keepalive sent (${event.sn})`);
+          store.addLog(id, current.name, 'info', `SIP 心跳已发送（${event.sn}）`);
           break;
         case 'catalog_response_sent':
-          store.addLog(id, current.name, 'success', `Catalog response sent (${event.channelCount})`);
+          store.addLog(id, current.name, 'success', `已响应目录查询（${event.channelCount} 个通道）`);
           break;
         case 'device_info_response_sent':
-          store.addLog(id, current.name, 'success', 'Device info response sent');
+          store.addLog(id, current.name, 'success', '已响应设备信息查询');
           break;
         case 'invite_accepted':
-          store.addLog(id, current.name, 'success', `INVITE accepted (${event.channelId})`);
+          store.addLog(id, current.name, 'success', `已接受 INVITE（${event.channelId}）`);
           break;
         case 'bye_accepted':
-          store.addLog(id, current.name, 'info', 'BYE accepted');
+          store.addLog(id, current.name, 'info', '已接受 BYE');
           break;
         case 'auth_challenge':
-          store.addLog(id, current.name, 'info', `Auth challenge (${event.realm})`);
+          store.addLog(id, current.name, 'info', `收到鉴权挑战（${event.realm}）`);
           break;
         case 'ptz_received':
-          store.addLog(id, current.name, 'info', `PTZ received: ${event.command}`);
+          store.addLog(id, current.name, 'info', `收到 PTZ 控制：${event.command}`);
           break;
         case 'error':
-          store.addLog(id, current.name, 'error', `SIP error: ${event.message}`);
+          store.addLog(id, current.name, 'error', `SIP 异常：${event.message}`);
           break;
         case 'sip_rx':
           setSipMessages((prev) => [...prev.slice(-99), { dir: 'rx', method: event.method, raw: event.raw, ts: Date.now() }]);
@@ -562,7 +562,7 @@ export default function DeviceControlPanel() {
   ) => {
     if (target.protocol === 'HTTP') {
       if (type === 'ota') {
-        return { success: false, message: 'HTTP has no generic ota channel' };
+        return { success: false, message: 'HTTP 不支持通用 OTA 通道' };
       }
       const url = `${target.httpBaseUrl}/api/v1/protocol/http/${type === 'property' ? 'property/post' : 'event/post'}`;
       const result = type === 'property'
@@ -595,7 +595,7 @@ export default function DeviceControlPanel() {
 
     if (target.protocol === 'MQTT') {
       if (type === 'ota') {
-        return { success: false, message: 'MQTT has no generic ota channel' };
+        return { success: false, message: 'MQTT 不支持通用 OTA 通道' };
       }
       const topic = options?.preferSelectedMqttTopic && target.id === selectedDeviceId && mqttTopic
         ? mqttTopic
@@ -608,7 +608,7 @@ export default function DeviceControlPanel() {
       return result;
     }
 
-    return { success: false, message: `${target.protocol} has no generic ${type} channel` };
+    return { success: false, message: `${target.protocol} 暂不支持该通用上报通道` };
   };
 
   const sendLifecycleEvent = async (
@@ -646,10 +646,10 @@ export default function DeviceControlPanel() {
     const succeeded = result?.success && (typeof result.code !== 'number' || result.code === 0);
     if (succeeded) {
       if (!options?.silentSuccess) {
-        addLog(target.id, target.name, 'info', `${LIFECYCLE_EVENT_LABELS[identifier]} event sent`);
+        addLog(target.id, target.name, 'info', `${LIFECYCLE_EVENT_LABELS[identifier]}事件已发送`);
       }
     } else if (!options?.silentFailure) {
-      addLog(target.id, target.name, 'warn', `${LIFECYCLE_EVENT_LABELS[identifier]} event failed: ${result.message || JSON.stringify(result)}`);
+      addLog(target.id, target.name, 'warn', `${LIFECYCLE_EVENT_LABELS[identifier]}事件发送失败：${result.message || JSON.stringify(result)}`);
     }
     return result;
   };
@@ -663,7 +663,7 @@ export default function DeviceControlPanel() {
     try {
       await sendLifecycleEvent(latest, 'heartbeat', { silentSuccess: true });
     } catch (error: any) {
-      addLog(latest.id, latest.name, 'warn', `Heartbeat event failed: ${error?.message || 'unknown error'}`);
+      addLog(latest.id, latest.name, 'warn', `心跳事件发送失败：${error?.message || '未知错误'}`);
     }
   };
 
@@ -676,7 +676,7 @@ export default function DeviceControlPanel() {
     const timerId = window.setInterval(() => { void sendHeartbeatByDeviceId(target.id); }, intervalSeconds * 1000);
     updateDevice(target.id, { heartbeatTimerId: timerId });
     if (!options?.silent) {
-      addLog(target.id, target.name, 'info', `Heartbeat started (${intervalSeconds}s)`);
+      addLog(target.id, target.name, 'info', `已开启心跳上报（${intervalSeconds}秒）`);
     }
   };
 
@@ -692,7 +692,7 @@ export default function DeviceControlPanel() {
       deviceSecret: registerResult.deviceSecret,
       dynamicRegistered: true,
     });
-    addLog(target.id, target.name, 'info', 'Cached DeviceSecret was refreshed by dynamic registration');
+    addLog(target.id, target.name, 'info', '已通过动态注册刷新缓存的 DeviceSecret');
     return refreshedTarget;
   };
 
@@ -705,7 +705,7 @@ export default function DeviceControlPanel() {
       const registerResult = await dynamicRegisterDevice(device, device.mqttRegisterBaseUrl);
       target = { ...device, deviceSecret: registerResult.deviceSecret };
       updateDevice(device.id, { deviceSecret: registerResult.deviceSecret, dynamicRegistered: true });
-      addLog(device.id, device.name, 'success', `Dynamic registration succeeded: ${registerResult.deviceName}`);
+      addLog(device.id, device.name, 'success', `动态注册成功：${registerResult.deviceName}`);
     }
 
     let identity = resolveMqttIdentity(target);
@@ -726,7 +726,7 @@ export default function DeviceControlPanel() {
       mqttOpts,
     );
     if (!result.success && shouldRetryDynamicRegisterAfterFailure(target, result)) {
-      addLog(target.id, target.name, 'warn', 'MQTT connect failed with cached DeviceSecret, retrying dynamic registration');
+      addLog(target.id, target.name, 'warn', '缓存 DeviceSecret 连接 MQTT 失败，正在重试动态注册');
       try {
         target = await refreshDynamicRegistrationSecret(target);
         identity = resolveMqttIdentity(target);
@@ -739,10 +739,10 @@ export default function DeviceControlPanel() {
           mqttOpts,
         );
       } catch (retryError: any) {
-        addLog(target.id, target.name, 'warn', `Dynamic registration retry failed: ${retryError?.message || 'unknown error'}`);
+        addLog(target.id, target.name, 'warn', `动态注册重试失败：${retryError?.message || '未知错误'}`);
       }
     }
-    if (!result.success) throw new Error(result.message || 'MQTT connect failed');
+    if (!result.success) throw new Error(result.message || 'MQTT 连接失败');
 
     const serviceTopic = buildMqttServiceTopic(target);
     if (serviceTopic) {
@@ -750,11 +750,11 @@ export default function DeviceControlPanel() {
       if (subResult.success) {
         setMqttSubs((prev) => prev.some((item) => item.topic === serviceTopic) ? prev : [...prev, { topic: serviceTopic, qos: 1 }]);
       } else {
-        addLog(target.id, target.name, 'warn', `Subscribe failed: ${subResult.message}`);
+        addLog(target.id, target.name, 'warn', `主题订阅失败：${subResult.message}`);
       }
     }
     updateDevice(target.id, { status: 'online', restoreOnLaunch: true });
-    addLog(target.id, target.name, 'success', `MQTT connected: ${target.mqttBrokerUrl}`);
+    addLog(target.id, target.name, 'success', `MQTT 已连接：${target.mqttBrokerUrl}`);
     await sendLifecycleEvent(target, 'online', { silentFailure: true });
     startHeartbeatForDevice(target);
   };
@@ -768,7 +768,7 @@ export default function DeviceControlPanel() {
     }
 
     updateDevice(device.id, { status: 'connecting' });
-    addLog(device.id, device.name, 'info', 'Connecting...');
+    addLog(device.id, device.name, 'info', '正在连接...');
 
     try {
       if (device.protocol === 'HTTP') {
@@ -796,7 +796,7 @@ export default function DeviceControlPanel() {
           ts: Date.now(),
         }]);
         if ((!result.success || !result.data?.token) && shouldRetryDynamicRegisterAfterFailure(target, result)) {
-          addLog(device.id, device.name, 'warn', 'HTTP auth failed with cached DeviceSecret, retrying dynamic registration');
+          addLog(device.id, device.name, 'warn', '缓存 DeviceSecret 的 HTTP 鉴权失败，正在重试动态注册');
           try {
             target = await refreshDynamicRegistrationSecret(target);
             result = await window.electronAPI.httpAuth(target.httpBaseUrl, target.productKey, target.deviceName, target.deviceSecret);
@@ -815,18 +815,18 @@ export default function DeviceControlPanel() {
               ts: Date.now(),
             }]);
           } catch (retryError: any) {
-            addLog(device.id, device.name, 'warn', `Dynamic registration retry failed: ${retryError?.message || 'unknown error'}`);
+            addLog(device.id, device.name, 'warn', `动态注册重试失败：${retryError?.message || '未知错误'}`);
           }
         }
         if (result.success && result.data?.token) {
           const targetOnline = { ...target, status: 'online' as const, token: result.data.token };
           updateDevice(device.id, { status: 'online', token: result.data.token, restoreOnLaunch: true });
-          addLog(device.id, device.name, 'success', `HTTP auth succeeded: ${result.data.token.slice(0, 20)}...`);
+          addLog(device.id, device.name, 'success', `HTTP 鉴权成功：${result.data.token.slice(0, 20)}...`);
           await sendLifecycleEvent(targetOnline, 'online', { silentFailure: true });
           startHeartbeatForDevice(targetOnline);
         } else {
           updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
-          addLog(device.id, device.name, 'error', `HTTP auth failed: ${result.message || result.msg || JSON.stringify(result)}`);
+          addLog(device.id, device.name, 'error', `HTTP 鉴权失败：${result.message || result.msg || JSON.stringify(result)}`);
         }
         return;
       }
@@ -840,12 +840,12 @@ export default function DeviceControlPanel() {
         if (result.success && result.data?.token) {
           const targetOnline = { ...device, status: 'online' as const, token: result.data.token };
           updateDevice(device.id, { status: 'online', token: result.data.token, restoreOnLaunch: true });
-          addLog(device.id, device.name, 'success', `CoAP auth succeeded: ${result.data.token.slice(0, 20)}...`);
+          addLog(device.id, device.name, 'success', `CoAP 鉴权成功：${result.data.token.slice(0, 20)}...`);
           await sendLifecycleEvent(targetOnline, 'online', { silentFailure: true });
           startHeartbeatForDevice(targetOnline);
         } else {
           updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
-          addLog(device.id, device.name, 'error', `CoAP auth failed: ${result.message || result.msg || JSON.stringify(result)}`);
+          addLog(device.id, device.name, 'error', `CoAP 鉴权失败：${result.message || result.msg || JSON.stringify(result)}`);
         }
         return;
       }
@@ -858,7 +858,7 @@ export default function DeviceControlPanel() {
           status: result.success && result.data?.data === true ? 'online' : 'error',
           restoreOnLaunch: result.success && result.data?.data === true,
         });
-        addLog(device.id, device.name, result.success && result.data?.data === true ? 'success' : 'error', result.success && result.data?.data === true ? `SNMP ready: ${device.snmpHost}:${device.snmpPort}` : `SNMP failed: ${result.data?.message || result.message || 'target unavailable'}`);
+        addLog(device.id, device.name, result.success && result.data?.data === true ? 'success' : 'error', result.success && result.data?.data === true ? `SNMP 已就绪：${device.snmpHost}:${device.snmpPort}` : `SNMP 连接失败：${result.data?.message || result.message || '目标不可达'}`);
         return;
       }
 
@@ -870,7 +870,7 @@ export default function DeviceControlPanel() {
           status: result.success && result.data?.data === true ? 'online' : 'error',
           restoreOnLaunch: result.success && result.data?.data === true,
         });
-        addLog(device.id, device.name, result.success && result.data?.data === true ? 'success' : 'error', result.success && result.data?.data === true ? `Modbus ready: ${device.modbusHost}:${device.modbusPort}` : `Modbus failed: ${result.data?.message || result.message || 'target unavailable'}`);
+        addLog(device.id, device.name, result.success && result.data?.data === true ? 'success' : 'error', result.success && result.data?.data === true ? `Modbus 已就绪：${device.modbusHost}:${device.modbusPort}` : `Modbus 连接失败：${result.data?.message || result.message || '目标不可达'}`);
         return;
       }
 
@@ -880,10 +880,10 @@ export default function DeviceControlPanel() {
         });
         if (result.success) {
           updateDevice(device.id, { status: 'online', restoreOnLaunch: true });
-          addLog(device.id, device.name, 'success', `WebSocket connected: ${device.wsEndpoint}`);
+          addLog(device.id, device.name, 'success', `WebSocket 已连接：${device.wsEndpoint}`);
         } else {
           updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
-          addLog(device.id, device.name, 'error', `WebSocket failed: ${result.message}`);
+          addLog(device.id, device.name, 'error', `WebSocket 连接失败：${result.message}`);
         }
         return;
       }
@@ -892,23 +892,23 @@ export default function DeviceControlPanel() {
         const result = await window.electronAPI.tcpConnect(device.id, device.tcpHost, device.tcpPort);
         if (result.success) {
           updateDevice(device.id, { status: 'online', restoreOnLaunch: true });
-          addLog(device.id, device.name, 'success', `TCP connected: ${device.tcpHost}:${device.tcpPort}`);
+          addLog(device.id, device.name, 'success', `TCP 已连接：${device.tcpHost}:${device.tcpPort}`);
         } else {
           updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
-          addLog(device.id, device.name, 'error', `TCP failed: ${result.message}`);
+          addLog(device.id, device.name, 'error', `TCP 连接失败：${result.message}`);
         }
         return;
       }
 
       if (device.protocol === 'UDP') {
         updateDevice(device.id, { status: 'online', restoreOnLaunch: true });
-        addLog(device.id, device.name, 'success', `UDP ready: ${device.udpHost}:${device.udpPort}`);
+        addLog(device.id, device.name, 'success', `UDP 已就绪：${device.udpHost}:${device.udpPort}`);
         return;
       }
 
       if (device.protocol === 'LoRaWAN') {
         updateDevice(device.id, { status: 'online', restoreOnLaunch: true });
-        addLog(device.id, device.name, 'success', `LoRaWAN ready: ${device.loraDevEui}`);
+        addLog(device.id, device.name, 'success', `LoRaWAN 已就绪：${device.loraDevEui}`);
         return;
       }
 
@@ -924,10 +924,10 @@ export default function DeviceControlPanel() {
         const result = await window.electronAPI.videoCreateDevice(device.mediaBaseUrl, dto);
         if (result.success && result.data?.data?.id) {
           updateDevice(device.id, { status: 'online', videoDeviceId: result.data.data.id, restoreOnLaunch: false });
-          addLog(device.id, device.name, 'success', `Video device created: ${result.data.data.id}`);
+          addLog(device.id, device.name, 'success', `视频设备创建成功：${result.data.data.id}`);
         } else {
           updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
-          addLog(device.id, device.name, 'error', `Video failed: ${result.data?.msg || result.message || JSON.stringify(result.data)}`);
+          addLog(device.id, device.name, 'error', `视频设备创建失败：${result.data?.msg || result.message || JSON.stringify(result.data)}`);
         }
         return;
       }
@@ -935,8 +935,8 @@ export default function DeviceControlPanel() {
       await connectMqtt();
     } catch (error: any) {
       updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
-      addLog(device.id, device.name, 'error', `Connect error: ${error?.message || 'unknown error'}`);
-      message.error(`Connect failed: ${error?.message || 'unknown error'}`);
+      addLog(device.id, device.name, 'error', `连接异常：${error?.message || '未知错误'}`);
+      message.error(`连接失败：${error?.message || '未知错误'}`);
     }
   };
 
@@ -952,10 +952,10 @@ export default function DeviceControlPanel() {
       if (device.protocol === 'TCP') await window.electronAPI.tcpDisconnect(device.id);
       if (device.protocol === 'Video' && device.streamMode === 'GB28181') await window.electronAPI.sipStop(device.id);
       updateDevice(device.id, { status: 'offline', token: '', videoDeviceId: null, streamUrl: '', sipRegistered: false, restoreOnLaunch: false, heartbeatTimerId: null });
-      addLog(device.id, device.name, 'info', 'Disconnected');
+      addLog(device.id, device.name, 'info', '已断开连接');
     } catch (error: any) {
       updateDevice(device.id, { status: 'offline', restoreOnLaunch: false, heartbeatTimerId: null });
-      addLog(device.id, device.name, 'warn', `Disconnect warning: ${error?.message || 'unknown error'}`);
+      addLog(device.id, device.name, 'warn', `断开连接时出现告警：${error?.message || '未知错误'}`);
     }
   };
 
@@ -1021,10 +1021,10 @@ export default function DeviceControlPanel() {
     try {
       const parsed = JSON.parse(draft);
       if (field.valueType === 'array' && !Array.isArray(parsed)) {
-        throw new Error('Fixed value must be a JSON array');
+        throw new Error('固定值必须是 JSON 数组');
       }
       if (field.valueType === 'struct' && !isJsonObject(parsed)) {
-        throw new Error('Fixed value must be a JSON object');
+        throw new Error('固定值必须是 JSON 对象');
       }
       updateThingModelRule(field.ruleKey, { mode: 'fixed', fixedValue: parsed });
       setRuleJsonDrafts((prev) => ({
@@ -1032,7 +1032,7 @@ export default function DeviceControlPanel() {
         [field.ruleKey]: JSON.stringify(parsed, null, 2),
       }));
     } catch (error: any) {
-      message.warning(error?.message || 'Invalid JSON rule');
+      message.warning(error?.message || 'JSON 规则格式不正确');
     }
   };
 
@@ -1064,7 +1064,7 @@ export default function DeviceControlPanel() {
     try {
       return JSON.parse(customPayload);
     } catch {
-      message.error('Invalid JSON payload');
+      message.error('JSON 载荷格式不正确');
       return null;
     }
   };
@@ -1072,7 +1072,7 @@ export default function DeviceControlPanel() {
   const sendData = async () => {
     const latestDevice = useSimStore.getState().devices.find((item) => item.id === device.id);
     if (!latestDevice || latestDevice.status !== 'online') {
-      stopAutoReportForDevice(device.id, { reason: 'Auto report stopped because device is offline' });
+      stopAutoReportForDevice(device.id, { reason: '设备离线，已停止自动上报' });
       return;
     }
 
@@ -1082,7 +1082,7 @@ export default function DeviceControlPanel() {
     setSending(true);
     try {
       if (!supportsThingModelReport(latestDevice.protocol) && reportType !== 'ota') {
-        message.info(`${latestDevice.protocol} has its own send panel`);
+        message.info(`${latestDevice.protocol} 协议请使用专属发送面板`);
         return;
       }
       const result = await publishPayload(latestDevice, reportType, payload, {
@@ -1093,15 +1093,15 @@ export default function DeviceControlPanel() {
       const current = useSimStore.getState().devices.find((item) => item.id === device.id) || latestDevice;
       if (result.success) {
         updateDevice(device.id, { sentCount: current.sentCount + 1 });
-        addLog(device.id, device.name, 'success', `[${reportType}] sent: ${JSON.stringify(payload).slice(0, 120)}`);
+        addLog(device.id, device.name, 'success', `[${reportType === 'property' ? '属性' : reportType === 'event' ? '事件' : 'OTA'}] 已发送：${JSON.stringify(payload).slice(0, 120)}`);
       } else {
         updateDevice(device.id, { errorCount: current.errorCount + 1 });
-        addLog(device.id, device.name, 'error', `Send failed: ${result.message || JSON.stringify(result)}`);
+        addLog(device.id, device.name, 'error', `发送失败：${result.message || JSON.stringify(result)}`);
       }
     } catch (error: any) {
       const current = useSimStore.getState().devices.find((item) => item.id === device.id) || device;
       updateDevice(device.id, { errorCount: current.errorCount + 1 });
-      addLog(device.id, device.name, 'error', `Send error: ${error?.message || 'unknown error'}`);
+      addLog(device.id, device.name, 'error', `发送异常：${error?.message || '未知错误'}`);
     } finally {
       setSending(false);
     }
@@ -1113,7 +1113,7 @@ export default function DeviceControlPanel() {
       const timerId = window.setInterval(() => { void sendData(); }, interval);
       autoTimerRef.current = timerId;
       updateDevice(device.id, { autoReport: true, autoTimerId: timerId });
-      addLog(device.id, device.name, 'info', `Auto report started (${device.autoIntervalSec || 5}s)`);
+      addLog(device.id, device.name, 'info', `已开启自动上报（${device.autoIntervalSec || 5}秒）`);
       return;
     }
     stopAutoReportForDevice(device.id);
@@ -1157,26 +1157,26 @@ export default function DeviceControlPanel() {
               )}
             </Space>
             <Text type="secondary" style={{ fontSize: 11 }}>
-              Rule key: {field.ruleKey}
+              规则键：{field.ruleKey}
             </Text>
           </Space>
           <Button size="small" type="link" onClick={() => clearThingModelRule(field.ruleKey)}>
-            Reset
+            重置
           </Button>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginTop: 12 }}>
           <div>
-            <Text type="secondary" style={{ fontSize: 12 }}>Mode</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>生成方式</Text>
             <Select
               size="small"
               value={mode}
               style={{ width: '100%', marginTop: 4 }}
               onChange={(value) => handleRuleModeChange(field, value as NonNullable<ThingModelSimulationRule['mode']>)}
               options={[
-                { label: 'Random', value: 'random' },
-                ...(canUseRange ? [{ label: 'Range', value: 'range' }] : []),
-                { label: 'Fixed', value: 'fixed' },
+                { label: '随机', value: 'random' },
+                ...(canUseRange ? [{ label: '区间', value: 'range' }] : []),
+                { label: '固定', value: 'fixed' },
               ]}
             />
           </div>
@@ -1184,20 +1184,20 @@ export default function DeviceControlPanel() {
           {mode === 'random' && supportsStringRandomConfig(field.valueType) ? (
             <>
               <div>
-                <Text type="secondary" style={{ fontSize: 12 }}>String generator</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>字符串生成器</Text>
                 <Select
                   size="small"
                   value={rule.stringGenerator || (field.identifier === 'ip' ? 'ip' : 'random')}
                   style={{ width: '100%', marginTop: 4 }}
                   onChange={(value) => updateThingModelRule(field.ruleKey, { mode, stringGenerator: value as 'random' | 'ip' })}
                   options={[
-                    { label: 'Random string', value: 'random' },
-                    { label: 'IP address', value: 'ip' },
+                      { label: '随机字符串', value: 'random' },
+                      { label: 'IP 地址', value: 'ip' },
                   ]}
                 />
               </div>
               <div>
-                <Text type="secondary" style={{ fontSize: 12 }}>Length</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>长度</Text>
                 <InputNumber
                   size="small"
                   min={1}
@@ -1213,7 +1213,7 @@ export default function DeviceControlPanel() {
           {mode === 'random' && supportsArrayRandomConfig(field.valueType) ? (
             <>
               <div>
-                <Text type="secondary" style={{ fontSize: 12 }}>Min length</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>最小长度</Text>
                 <InputNumber
                   size="small"
                   min={0}
@@ -1224,7 +1224,7 @@ export default function DeviceControlPanel() {
                 />
               </div>
               <div>
-                <Text type="secondary" style={{ fontSize: 12 }}>Max length</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>最大长度</Text>
                 <InputNumber
                   size="small"
                   min={0}
@@ -1239,7 +1239,7 @@ export default function DeviceControlPanel() {
 
           {mode === 'random' && (field.valueType === 'float' || field.valueType === 'double') ? (
             <div>
-              <Text type="secondary" style={{ fontSize: 12 }}>Precision</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>精度</Text>
               <InputNumber
                 size="small"
                 min={0}
@@ -1254,7 +1254,7 @@ export default function DeviceControlPanel() {
           {mode === 'range' ? (
             <>
               <div>
-                <Text type="secondary" style={{ fontSize: 12 }}>Min</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>最小值</Text>
                 <InputNumber
                   size="small"
                   style={{ width: '100%', marginTop: 4 }}
@@ -1263,7 +1263,7 @@ export default function DeviceControlPanel() {
                 />
               </div>
               <div>
-                <Text type="secondary" style={{ fontSize: 12 }}>Max</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>最大值</Text>
                 <InputNumber
                   size="small"
                   style={{ width: '100%', marginTop: 4 }}
@@ -1273,7 +1273,7 @@ export default function DeviceControlPanel() {
               </div>
               {(field.valueType === 'float' || field.valueType === 'double') ? (
                 <div>
-                  <Text type="secondary" style={{ fontSize: 12 }}>Precision</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>精度</Text>
                   <InputNumber
                     size="small"
                     min={0}
@@ -1289,7 +1289,7 @@ export default function DeviceControlPanel() {
 
           {mode === 'fixed' && (field.valueType === 'int' || field.valueType === 'float' || field.valueType === 'double' || field.valueType === 'date') ? (
             <div>
-              <Text type="secondary" style={{ fontSize: 12 }}>{field.valueType === 'date' ? 'Timestamp' : 'Fixed value'}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>{field.valueType === 'date' ? '时间戳' : '固定值'}</Text>
               <InputNumber
                 size="small"
                 style={{ width: '100%', marginTop: 4 }}
@@ -1301,7 +1301,7 @@ export default function DeviceControlPanel() {
 
           {mode === 'fixed' && field.valueType === 'bool' ? (
             <div>
-              <Text type="secondary" style={{ fontSize: 12 }}>Fixed value</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>固定值</Text>
               <div style={{ marginTop: 8 }}>
                 <Switch
                   checked={Boolean(rule.fixedValue)}
@@ -1313,7 +1313,7 @@ export default function DeviceControlPanel() {
 
           {mode === 'fixed' && field.valueType === 'string' ? (
             <div style={{ gridColumn: '1 / -1' }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>Fixed value</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>固定值</Text>
               <Input
                 size="small"
                 style={{ marginTop: 4 }}
@@ -1325,7 +1325,7 @@ export default function DeviceControlPanel() {
 
           {mode === 'fixed' && field.valueType === 'enum' ? (
             <div style={{ gridColumn: '1 / -1' }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>Fixed enum value</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>固定枚举值</Text>
               {enumCandidates.length > 0 ? (
                 <Select
                   size="small"
@@ -1348,7 +1348,7 @@ export default function DeviceControlPanel() {
 
         {mode === 'fixed' && supportsJsonFixedValue(field.valueType) ? (
           <div style={{ marginTop: 12 }}>
-            <Text type="secondary" style={{ fontSize: 12 }}>Fixed JSON</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>固定 JSON</Text>
             <Input.TextArea
               rows={4}
               style={{ marginTop: 4, fontFamily: 'monospace', fontSize: 12 }}
@@ -1383,9 +1383,9 @@ export default function DeviceControlPanel() {
           <Badge status={isOnline ? 'success' : device.status === 'connecting' ? 'processing' : device.status === 'error' ? 'error' : 'default'} text={STATUS_TEXT[device.status]} />
         </Space>
         {!isOnline ? (
-          <Button type="primary" icon={<ApiOutlined />} onClick={handleConnect} loading={device.status === 'connecting'}>Connect</Button>
+          <Button type="primary" icon={<ApiOutlined />} onClick={handleConnect} loading={device.status === 'connecting'}>连接</Button>
         ) : (
-          <Button danger icon={<DisconnectOutlined />} onClick={handleDisconnect}>Disconnect</Button>
+          <Button danger icon={<DisconnectOutlined />} onClick={handleDisconnect}>断开</Button>
         )}
       </div>
 
@@ -1423,11 +1423,11 @@ export default function DeviceControlPanel() {
           {device.protocol === 'MQTT' && mqttIdentity ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
               <div style={{ padding: '10px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.03)' }}>
-                <Text type="secondary" style={{ fontSize: 11 }}>Client ID</Text>
+                <Text type="secondary" style={{ fontSize: 11 }}>客户端 ID</Text>
                 <div style={{ marginTop: 4, color: '#cbd5e1', wordBreak: 'break-all' }}>{mqttIdentity.clientId || '自动生成'}</div>
               </div>
               <div style={{ padding: '10px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.03)' }}>
-                <Text type="secondary" style={{ fontSize: 11 }}>Username</Text>
+                <Text type="secondary" style={{ fontSize: 11 }}>用户名</Text>
                 <div style={{ marginTop: 4, color: '#cbd5e1', wordBreak: 'break-all' }}>{mqttIdentity.username || '自动生成'}</div>
               </div>
             </div>
@@ -1455,7 +1455,7 @@ export default function DeviceControlPanel() {
 
       {showGenericReport && (
         <Card
-          title={<Space><CloudUploadOutlined />Data Report</Space>}
+          title={<Space><CloudUploadOutlined />数据上报</Space>}
           size="small"
           style={{
             marginBottom: 16,
@@ -1470,14 +1470,14 @@ export default function DeviceControlPanel() {
               <Space direction="vertical" size={4}>
                 <Text type="secondary" style={{ fontSize: 12 }}>上报类型</Text>
                 <Radio.Group value={reportType} onChange={(event) => setReportType(event.target.value)} size="small">
-                  <Radio.Button value="property">Property</Radio.Button>
-                  <Radio.Button value="event">Event</Radio.Button>
+                  <Radio.Button value="property">属性</Radio.Button>
+                  <Radio.Button value="event">事件</Radio.Button>
                   {device.protocol === 'CoAP' && <Radio.Button value="ota">OTA</Radio.Button>}
                 </Radio.Group>
               </Space>
               <Space size={16} wrap>
-                <Text type="secondary">Sent: <Text strong style={{ color: '#52c41a' }}>{device.sentCount}</Text></Text>
-                <Text type="secondary">Errors: <Text strong style={{ color: '#ff4d4f' }}>{device.errorCount}</Text></Text>
+                <Text type="secondary">已发送：<Text strong style={{ color: '#52c41a' }}>{device.sentCount}</Text></Text>
+                <Text type="secondary">失败：<Text strong style={{ color: '#ff4d4f' }}>{device.errorCount}</Text></Text>
               </Space>
             </div>
 
@@ -1492,7 +1492,7 @@ export default function DeviceControlPanel() {
 
             {device.protocol === 'MQTT' && (
               <div>
-                <Text type="secondary" style={{ fontSize: 12 }}>Topic</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>主题</Text>
                 <Input size="small" value={mqttTopic} onChange={(event) => setMqttTopic(event.target.value)} style={{ marginTop: 4 }} />
               </div>
             )}
@@ -1556,9 +1556,9 @@ export default function DeviceControlPanel() {
                       <div style={{ padding: 12, background: 'rgba(255,255,255,0.04)', borderRadius: 12 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
                           <Space direction="vertical" size={2}>
-                            <Text style={{ fontSize: 12, color: '#f8fafc' }}>Field simulation rules</Text>
+                            <Text style={{ fontSize: 12, color: '#f8fafc' }}>字段模拟规则</Text>
                             <Text type="secondary" style={{ fontSize: 12 }}>
-                              Active custom rules: {customizedRuleCount}
+                              已生效自定义规则：{customizedRuleCount}
                             </Text>
                           </Space>
                           {customizedRuleCount > 0 ? (
@@ -1579,7 +1579,7 @@ export default function DeviceControlPanel() {
                                 });
                               }}
                             >
-                              Clear current rules
+                              清空当前规则
                             </Button>
                           ) : null}
                         </div>
@@ -1641,21 +1641,21 @@ export default function DeviceControlPanel() {
 
             {payloadMode === 'custom' && (
               <div>
-                <Text type="secondary" style={{ fontSize: 12 }}>Custom JSON</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>自定义 JSON</Text>
                 <Input.TextArea rows={5} value={customPayload} onChange={(event) => setCustomPayload(event.target.value)} style={{ fontFamily: 'monospace', fontSize: 12, marginTop: 4 }} />
               </div>
             )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-              <Button type="primary" icon={<SendOutlined />} onClick={sendData} loading={sending} disabled={!isOnline}>Send</Button>
+              <Button type="primary" icon={<SendOutlined />} onClick={sendData} loading={sending} disabled={!isOnline}>发送</Button>
               <Space size={8}>
                 <Switch checked={device.autoReport} onChange={handleAutoToggle} disabled={!isOnline} checkedChildren={<PlayCircleOutlined />} unCheckedChildren={<PauseCircleOutlined />} />
-                <Text style={{ fontSize: 12 }}>Auto report</Text>
-                <InputNumber size="small" min={1} max={3600} value={device.autoIntervalSec} onChange={(value) => updateDevice(device.id, { autoIntervalSec: value || 5 })} disabled={device.autoReport} style={{ width: 90 }} addonAfter="sec" />
+                <Text style={{ fontSize: 12 }}>自动上报</Text>
+                <InputNumber size="small" min={1} max={3600} value={device.autoIntervalSec} onChange={(value) => updateDevice(device.id, { autoIntervalSec: value || 5 })} disabled={device.autoReport} style={{ width: 90 }} addonAfter="秒" />
               </Space>
               {supportsThingModelReport(device.protocol) ? (
                 <Space size={8}>
-                  <Text style={{ fontSize: 12 }}>Heartbeat</Text>
+                  <Text style={{ fontSize: 12 }}>心跳</Text>
                   <Select
                     size="small"
                     style={{ width: 108 }}

@@ -234,8 +234,6 @@
 - 自动心跳与自动上报都依赖本地定时器，若桌面进程被挂起或退出，事件发送会随之停止。
 ## 11. 2026-03-19 物模型字段规则与影子同步补充
 
-## 11. 2026-03-19 物模型字段规则与影子同步补充
-
 ### 11.1 新增目标
 
 - 物模型模拟不再只有“按数据类型随机”这一种策略，而是允许针对字段单独配置规则。
@@ -286,3 +284,10 @@
 - `firefly-simulator/src/components/DeviceListPanel.tsx`
 - `firefly-device/src/main/java/com/songhg/firefly/iot/device/service/MessageRouterService.java`
 - `firefly-device/src/test/java/com/songhg/firefly/iot/device/service/MessageRouterServiceTest.java`
+
+### 11.7 页面中文文案统一
+
+- 本次收口 `DeviceControlPanel`、`MqttControlPanel`、`CoapControlPanel` 的用户可见文案，统一按钮、状态、提示、日志和面板标题的中文表达。
+- 重点覆盖“连接 / 断开”“数据上报”“自动上报”“心跳”“主题订阅管理”“设备影子”“字段模拟规则”等主操作区域，避免英文按钮和中文深色界面混用。
+- 协议缩写和技术名词仍保留 `HTTP / MQTT / CoAP / QoS / JSON` 等必要专业表达，其余交互文案以中文为主，降低一线调试人员的理解成本。
+- 本次仅涉及桌面模拟器前端展示层，不新增后端接口、数据库结构或 Flyway 迁移。
