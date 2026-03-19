@@ -605,8 +605,24 @@ export const modbusApi = {
   collectorStatus: (taskId: string) => connectorRequest.get(`/modbus/collectors/${taskId}/status`),
 };
 
+interface DeviceLocatorPayload {
+  locatorType: string;
+  locatorValue: string;
+  primaryLocator?: boolean;
+}
+
+interface DeviceDynamicRegisterPayload {
+  productKey: string;
+  productSecret: string;
+  deviceName: string;
+  nickname?: string;
+  description?: string;
+  tags?: string;
+  locators?: DeviceLocatorPayload[];
+}
+
 export const deviceAccessApi = {
-  dynamicRegister: (data: Record<string, unknown>) => connectorRequest.post('/protocol/device/register', data),
+  dynamicRegister: (data: DeviceDynamicRegisterPayload) => connectorRequest.post('/protocol/device/register', data),
 };
 
 // ==================== WebSocket API ====================

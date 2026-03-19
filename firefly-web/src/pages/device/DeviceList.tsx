@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Badge, Button, Card, Drawer, Form, Input, Modal, Progress, Select, Space, Table, Tag, Typography, message } from 'antd';
-import { CloudOutlined, DeleteOutlined, DownloadOutlined, KeyOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
+import { Alert, Badge, Button, Card, Drawer, Form, Input, Modal, Progress, Select, Space, Switch, Table, Tag, Typography, message } from 'antd';
+import { CloudOutlined, DeleteOutlined, DownloadOutlined, KeyOutlined, MinusCircleOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { TableRowSelection } from 'antd/es/table/interface';
 import DeviceShadowDrawer from './DeviceShadowDrawer';
@@ -29,7 +29,8 @@ interface DeviceRecord {
 }
 interface ProductOption { id: number; name: string; productKey: string; deviceAuthType?: string; }
 interface DeviceCredentialRecord { id: number; productId: number; productKey: string; productName?: string; deviceName: string; nickname?: string; deviceSecret: string; }
-interface DeviceCreateFormValues { productId: number; deviceName: string; nickname?: string; description?: string; tagIds?: number[]; groupIds?: number[]; }
+interface DeviceLocatorFormItem { locatorType?: string; locatorValue?: string; primaryLocator?: boolean; }
+interface DeviceCreateFormValues { productId: number; deviceName: string; nickname?: string; description?: string; tagIds?: number[]; groupIds?: number[]; locators?: DeviceLocatorFormItem[]; }
 interface DeviceBatchCreateFormValues { productId: number; description?: string; tagIds?: number[]; groupIds?: number[]; }
 interface DeviceUpdateFormValues { nickname?: string; description?: string; tagIds?: number[]; groupIds?: number[]; }
 interface AsyncTaskRecord { status: string; progress?: number; errorMessage?: string; }
@@ -45,6 +46,12 @@ const ONLINE_BADGE: Record<string, { status: 'success' | 'default' | 'warning'; 
   OFFLINE: { status: 'default', text: '离线' },
   UNKNOWN: { status: 'warning', text: '未知' },
 };
+const LOCATOR_TYPE_OPTIONS = [
+  { value: 'IMEI', label: 'IMEI' },
+  { value: 'ICCID', label: 'ICCID' },
+  { value: 'MAC', label: 'MAC' },
+  { value: 'SERIAL', label: 'SERIAL' },
+];
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (typeof error === 'object' && error !== null && 'response' in error) {
@@ -58,6 +65,20 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 const toCsvValue = (value: unknown) => {
   const text = `${value ?? ''}`;
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+};
+
+const normalizeLocatorInputs = (locators?: DeviceLocatorFormItem[]) => {
+  const normalized = (locators || [])
+    .map((item) => ({
+      locatorType: item.locatorType?.trim().toUpperCase(),
+      locatorValue: item.locatorValue?.trim(),
+      primaryLocator: Boolean(item.primaryLocator),
+    }))
+    .filter((item) => item.locatorType && item.locatorValue);
+  if (normalized.length > 0 && !normalized.some((item) => item.primaryLocator)) {
+    normalized[0].primaryLocator = true;
+  }
+  return normalized.length > 0 ? normalized : undefined;
 };
 
 const exportTriples = (records: DeviceCredentialRecord[]) => {
@@ -205,7 +226,10 @@ const DeviceList: React.FC = () => {
 
   const handleCreate = async (values: DeviceCreateFormValues) => {
     try {
-      const res = await deviceApi.create(values as unknown as Record<string, unknown>);
+      const res = await deviceApi.create({
+        ...values,
+        locators: normalizeLocatorInputs(values.locators),
+      });
       message.success('设备创建成功');
       closeCreateModal();
       void fetchData();
@@ -347,22 +371,54 @@ const DeviceList: React.FC = () => {
         <Table rowKey="id" rowSelection={rowSelection} columns={columns} dataSource={data} loading={loading} scroll={{ x: 1750 }} pagination={{ current: params.pageNum, pageSize: params.pageSize, total, showSizeChanger: true, showTotal: (count) => `共 ${count} 条`, onChange: (page, pageSize) => setParams({ pageNum: page, pageSize }) }} />
       </Card>
 
-      <Modal title="新建设备" open={createOpen} width={620} destroyOnHidden onCancel={closeCreateModal} onOk={() => createForm.submit()}>
+      <Drawer title="新建设备" open={createOpen} width={760} destroyOnClose onClose={closeCreateModal} footer={<Space style={{ width: '100%', justifyContent: 'flex-end' }}><Button onClick={closeCreateModal}>取消</Button><Button type="primary" onClick={() => createForm.submit()}>保存并创建</Button></Space>}>
         <Form form={createForm} layout="vertical" onFinish={handleCreate}>
           <Alert type="info" showIcon style={{ marginBottom: 16 }} message="这里只支持一机一密产品手动创建设备" description="一型一密产品请在“产品接入”页面的“设备接入”入口中使用动态注册创建。" />
           <Form.Item name="productId" label="所属产品" rules={[{ required: true, message: '请选择产品' }]}><Select options={manualProducts.map((item) => ({ value: item.id, label: `${item.name} (${item.productKey}) · ${DEVICE_AUTH_LABELS[item.deviceAuthType || 'DEVICE_SECRET'] || '一机一密'}` }))} /></Form.Item>
           <Form.Item name="deviceName" label="设备名称" rules={[{ required: true, message: '请输入设备名称' }, { pattern: DEVICE_NAME_PATTERN, message: DEVICE_NAME_RULE_MESSAGE }]}><Input maxLength={64} placeholder="例如：AA:BB:CC:DD:EE:FF / SN20240301001" /></Form.Item>
+          <Form.Item label="设备标识" extra="注册时可一并写入 IMEI、ICCID、MAC、SERIAL，后续协议解析与设备识别会直接复用这些标识。">
+            <Form.List name="locators">
+              {(fields, { add, remove }) => (
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  {fields.map((field, index) => (
+                    <Card key={field.key} size="small">
+                      <Space align="start" style={{ display: 'flex' }}>
+                        <Form.Item name={[field.name, 'locatorType']} label={index === 0 ? '标识类型' : undefined} rules={[{ required: true, message: '请选择标识类型' }]} style={{ width: 180, marginBottom: 0 }}>
+                          <Select showSearch optionFilterProp="label" options={LOCATOR_TYPE_OPTIONS} placeholder="选择类型" />
+                        </Form.Item>
+                        <Form.Item name={[field.name, 'locatorValue']} label={index === 0 ? '标识值' : undefined} rules={[{ required: true, message: '请输入标识值' }]} style={{ flex: 1, marginBottom: 0 }}>
+                          <Input maxLength={128} placeholder="输入设备上报或业务侧使用的标识值" />
+                        </Form.Item>
+                        <Form.Item name={[field.name, 'primaryLocator']} label={index === 0 ? '主标识' : undefined} valuePropName="checked" style={{ marginBottom: 0 }}>
+                          <Switch checkedChildren="是" unCheckedChildren="否" />
+                        </Form.Item>
+                        <Form.Item label={index === 0 ? ' ' : undefined} style={{ marginBottom: 0 }}>
+                          <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(field.name)}>
+                            删除
+                          </Button>
+                        </Form.Item>
+                      </Space>
+                    </Card>
+                  ))}
+                  <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({ locatorType: 'IMEI', primaryLocator: fields.length === 0 })}>
+                    新增设备标识
+                  </Button>
+                </Space>
+              )}
+            </Form.List>
+          </Form.Item>
           <Form.Item name="nickname" label="设备别名"><Input maxLength={256} placeholder="便于识别的展示名称" /></Form.Item>
           <Form.Item name="tagIds" label="设备标签"><Select mode="multiple" allowClear options={tagOptions} optionFilterProp="label" placeholder="直接选择已有标签" /></Form.Item>
           <Form.Item name="groupIds" label="所属分组"><Select mode="multiple" allowClear options={groupOptions} optionFilterProp="label" placeholder="直接选择已有分组" /></Form.Item>
           <Form.Item name="description" label="描述"><TextArea rows={3} placeholder="可选，补充设备用途、位置或备注" /></Form.Item>
         </Form>
-      </Modal>
+      </Drawer>
 
       <Drawer title="批量导入设备" open={batchOpen} width={760} destroyOnClose onClose={closeBatchDrawer} footer={<Space style={{ width: '100%', justifyContent: 'flex-end' }}><Button onClick={closeBatchDrawer}>取消</Button><Button type="primary" loading={batchCreating} onClick={() => batchForm.submit()}>开始导入</Button></Space>}>
         <Form form={batchForm} layout="vertical" onFinish={handleBatchCreate}>
           <Alert type="warning" showIcon style={{ marginBottom: 16 }} message="Excel/CSV 批量导入仅适用于一机一密产品" description="统一标签和统一分组会自动应用到本次导入成功的全部设备上。" />
           <Form.Item name="productId" label="所属产品" rules={[{ required: true, message: '请选择产品' }]}><Select options={manualProducts.map((item) => ({ value: item.id, label: `${item.name} (${item.productKey}) · ${DEVICE_AUTH_LABELS[item.deviceAuthType || 'DEVICE_SECRET'] || '一机一密'}` }))} /></Form.Item>
+          <Alert type="info" showIcon style={{ marginBottom: 16 }} message="导入文件可直接维护设备标识" description={<Space direction="vertical" size={4}><Typography.Text>通用列：locatorType、locatorValue、primaryLocator</Typography.Text><Typography.Text>快捷列：imei、iccid、mac、serial（或 sn）</Typography.Text><Typography.Text>若某行只导入了一个标识且未指定主标识，系统会自动将它设为主标识。</Typography.Text></Space>} />
           <Space style={{ marginBottom: 16 }} wrap><Button icon={<UploadOutlined />} onClick={() => batchImportInputRef.current?.click()} disabled={batchCreating}>选择 Excel/CSV 文件</Button>{batchImportFile ? <Typography.Text type="secondary">已选择：{batchImportFile.name}</Typography.Text> : null}</Space>
           <input ref={batchImportInputRef} type="file" accept=".xlsx,.xls,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" style={{ display: 'none' }} onChange={handleBatchImportChange} />
           {importProgress !== null ? <Card size="small" title="导入进度" style={{ marginBottom: 16 }}><Progress percent={importProgress} status={importProgress === 100 ? 'success' : 'active'} /></Card> : null}

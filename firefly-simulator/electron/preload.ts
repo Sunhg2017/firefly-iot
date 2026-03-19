@@ -40,6 +40,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       nickname?: string;
       description?: string;
       tags?: string;
+      locators?: Array<{
+        locatorType: string;
+        locatorValue: string;
+        primaryLocator?: boolean;
+      }>;
     },
   ) => ipcRenderer.invoke('device:dynamicRegister', baseUrl, payload),
 

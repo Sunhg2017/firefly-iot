@@ -21,6 +21,11 @@ interface ElectronAPI {
       nickname?: string;
       description?: string;
       tags?: string;
+      locators?: Array<{
+        locatorType: string;
+        locatorValue: string;
+        primaryLocator?: boolean;
+      }>;
     },
   ) => Promise<any>;
   deviceDynamicUnregister: (

@@ -2,6 +2,7 @@ package com.songhg.firefly.iot.device.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.songhg.firefly.iot.api.dto.DeviceAuthDTO;
+import com.songhg.firefly.iot.api.dto.DeviceLocatorInputDTO;
 import com.songhg.firefly.iot.api.dto.DeviceRegisterDTO;
 import com.songhg.firefly.iot.api.dto.DeviceRegisterRequestDTO;
 import com.songhg.firefly.iot.api.dto.DeviceUnregisterDTO;
@@ -16,6 +17,7 @@ import com.songhg.firefly.iot.device.entity.Device;
 import com.songhg.firefly.iot.device.entity.Product;
 import com.songhg.firefly.iot.device.mapper.DeviceMapper;
 import com.songhg.firefly.iot.device.mapper.ProductMapper;
+import com.songhg.firefly.iot.device.protocolparser.service.DeviceLocatorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -43,6 +45,7 @@ public class DeviceCredentialService {
     private final DeviceMapper deviceMapper;
     private final StringRedisTemplate redisTemplate;
     private final DeviceService deviceService;
+    private final DeviceLocatorService deviceLocatorService;
 
     public DeviceAuthDTO authenticate(String productKey, String deviceName, String deviceSecret) {
         if (isBlank(productKey) || isBlank(deviceName)) {
@@ -176,6 +179,7 @@ public class DeviceCredentialService {
         device.setStatus(DeviceStatus.INACTIVE);
         device.setOnlineStatus(OnlineStatus.UNKNOWN);
         deviceMapper.insert(device);
+        bindDeviceLocators(device.getId(), request.getLocators());
 
         product.setDeviceCount(product.getDeviceCount() != null ? product.getDeviceCount() + 1 : 1);
         productMapper.updateById(product);
@@ -223,6 +227,13 @@ public class DeviceCredentialService {
 
     private String buildSessionKey(String productKey, String deviceName) {
         return SESSION_CACHE_PREFIX + productKey + ":" + deviceName;
+    }
+
+    private void bindDeviceLocators(Long deviceId, java.util.List<DeviceLocatorInputDTO> locators) {
+        if (deviceId == null || locators == null || locators.isEmpty()) {
+            return;
+        }
+        deviceLocatorService.createBatch(deviceId, locators);
     }
 
     private DeviceAuthDTO authSuccess(Device device) {

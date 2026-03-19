@@ -12,6 +12,12 @@ export type Protocol = 'HTTP' | 'MQTT' | 'CoAP' | 'Video' | 'SNMP' | 'Modbus' | 
 export type HttpAuthMode = 'DEVICE_SECRET' | 'PRODUCT_SECRET';
 export type MqttAuthMode = 'DEVICE_SECRET' | 'PRODUCT_SECRET';
 
+export interface SimDeviceLocator {
+  locatorType: string;
+  locatorValue: string;
+  primaryLocator?: boolean;
+}
+
 export interface SipChannel {
   channelId: string;
   name: string;
@@ -39,6 +45,7 @@ export interface SimDevice {
   productSecret: string;
   deviceName: string;
   deviceSecret: string;
+  locators: SimDeviceLocator[];
   token: string;
   // MQTT config
   mqttAuthMode: MqttAuthMode;
@@ -381,6 +388,7 @@ export const useSimStore = create<SimulatorState>()(
       productSecret: partial.productSecret || '',
       deviceName: partial.deviceName || '',
       deviceSecret: partial.deviceSecret || '',
+      locators: partial.locators || [],
       token: '',
       mqttAuthMode: partial.mqttAuthMode || 'DEVICE_SECRET',
       mqttRegisterBaseUrl: partial.mqttRegisterBaseUrl || 'http://localhost:9070',

@@ -1,9 +1,14 @@
 package com.songhg.firefly.iot.device.service;
 
+import com.songhg.firefly.iot.api.dto.DeviceLocatorInputDTO;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DeviceStatus;
 import com.songhg.firefly.iot.common.enums.OnlineStatus;
+import com.songhg.firefly.iot.device.dto.device.DeviceBatchCreateDTO;
+import com.songhg.firefly.iot.device.dto.device.DeviceBatchCreateItemDTO;
+import com.songhg.firefly.iot.device.dto.device.DeviceCreateDTO;
 import com.songhg.firefly.iot.device.entity.Device;
+import com.songhg.firefly.iot.device.entity.Product;
 import com.songhg.firefly.iot.device.mapper.DeviceMapper;
 import com.songhg.firefly.iot.device.mapper.ProductMapper;
 import com.songhg.firefly.iot.device.protocolparser.service.DeviceLocatorService;
@@ -11,10 +16,14 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -105,5 +114,62 @@ class DeviceServiceTest {
         assertEquals(LocalDateTime.of(2026, 3, 18, 9, 0, 0), device.getActivatedAt());
         verify(deviceMapper).updateById(device);
         verify(deviceGroupService).rebuildDynamicGroupsForDevice(10L);
+    }
+
+    @Test
+    void createDeviceShouldBindLocatorsDuringRegistration() {
+        Product product = new Product();
+        product.setId(11L);
+
+        DeviceCreateDTO dto = new DeviceCreateDTO();
+        dto.setProductId(11L);
+        dto.setDeviceName("dev-011");
+        dto.setLocators(List.of(locator("IMEI", "860001234567890", true)));
+
+        when(productMapper.selectById(11L)).thenReturn(product);
+        when(deviceMapper.selectList(any())).thenReturn(List.of());
+        when(deviceMapper.insert(any(Device.class))).thenAnswer(invocation -> {
+            Device inserted = invocation.getArgument(0);
+            inserted.setId(11L);
+            return 1;
+        });
+
+        service.createDevice(dto);
+
+        verify(deviceLocatorService).createBatch(eq(11L), any());
+    }
+
+    @Test
+    void batchCreateDevicesShouldBindPerDeviceLocators() {
+        Product product = new Product();
+        product.setId(12L);
+
+        DeviceBatchCreateItemDTO item = new DeviceBatchCreateItemDTO();
+        item.setDeviceName("dev-012");
+        item.setLocators(List.of(locator("MAC", "AA:BB:CC:DD:EE:FF", true)));
+
+        DeviceBatchCreateDTO dto = new DeviceBatchCreateDTO();
+        dto.setProductId(12L);
+        dto.setDevices(List.of(item));
+
+        when(productMapper.selectById(12L)).thenReturn(product);
+        when(deviceMapper.selectList(any())).thenReturn(List.of());
+        when(deviceMapper.insert(any(Device.class))).thenAnswer(invocation -> {
+            Device inserted = invocation.getArgument(0);
+            inserted.setId(12L);
+            return 1;
+        });
+
+        service.batchCreateDevices(dto);
+
+        verify(deviceLocatorService, times(1)).createBatch(eq(12L), any());
+    }
+
+    private DeviceLocatorInputDTO locator(String type, String value, boolean primary) {
+        DeviceLocatorInputDTO locator = new DeviceLocatorInputDTO();
+        locator.setLocatorType(type);
+        locator.setLocatorValue(value);
+        locator.setPrimaryLocator(primary);
+        return locator;
     }
 }

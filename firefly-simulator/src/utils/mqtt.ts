@@ -1,4 +1,4 @@
-import type { SimDevice } from '../store';
+import type { SimDevice, SimDeviceLocator } from '../store';
 
 export interface MqttIdentity {
   productKey: string;
@@ -21,7 +21,7 @@ type DeviceIdentitySource = Partial<Pick<
 
 type DynamicRegisterSource = Pick<
   SimDevice,
-  'name' | 'nickname' | 'productKey' | 'productSecret' | 'deviceName'
+  'name' | 'nickname' | 'productKey' | 'productSecret' | 'deviceName' | 'locators'
 >;
 
 type DynamicCleanupSource = Pick<
@@ -49,6 +49,20 @@ type DynamicRetryFailure =
 
 function trim(value?: string | null): string {
   return (value ?? '').trim();
+}
+
+function normalizeLocators(locators?: SimDeviceLocator[]) {
+  const normalized = (locators || [])
+    .map((item) => ({
+      locatorType: trim(item.locatorType).toUpperCase(),
+      locatorValue: trim(item.locatorValue),
+      primaryLocator: Boolean(item.primaryLocator),
+    }))
+    .filter((item) => item.locatorType && item.locatorValue);
+  if (normalized.length > 0 && !normalized.some((item) => item.primaryLocator)) {
+    normalized[0].primaryLocator = true;
+  }
+  return normalized.length > 0 ? normalized : undefined;
 }
 
 export function buildMqttClientId(productKey: string, deviceName: string): string {
@@ -123,6 +137,7 @@ export async function dynamicRegisterDevice(device: DynamicRegisterSource, regis
     productSecret,
     deviceName,
     nickname: trim(device.nickname) || trim(device.name) || undefined,
+    locators: normalizeLocators(device.locators),
   });
 
   if (!response?.success) {

@@ -86,6 +86,13 @@ const PROTOCOL_META: Record<Protocol, { label: string; description: string }> = 
   LoRaWAN: { label: 'LoRaWAN 设备', description: '通过 Webhook 模拟 LoRaWAN 上行。' },
 };
 
+const LOCATOR_TYPE_OPTIONS = [
+  { value: 'IMEI', label: 'IMEI' },
+  { value: 'ICCID', label: 'ICCID' },
+  { value: 'MAC', label: 'MAC' },
+  { value: 'SERIAL', label: 'SERIAL' },
+];
+
 const drawerPanelCardStyle = {
   borderRadius: 16,
   background: 'linear-gradient(180deg, rgba(15,23,42,0.88) 0%, rgba(8,15,29,0.94) 100%)',
@@ -231,6 +238,42 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     </>
   );
 
+  const renderLocatorList = (description: string) => (
+    <Card size="small" style={{ borderRadius: 16 }}>
+      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Text strong>设备标识</Text>
+        <Paragraph type="secondary" style={{ margin: 0 }}>{description}</Paragraph>
+        <Form.List name="locators">
+          {(fields, { add, remove }) => (
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              {fields.map((field, index) => (
+                <Space key={field.key} align="start" style={{ display: 'flex' }}>
+                  <Form.Item name={[field.name, 'locatorType']} label={index === 0 ? '标识类型' : undefined} rules={[{ required: true, message: '请选择标识类型' }]} style={{ width: 180, marginBottom: 0 }}>
+                    <Select showSearch optionFilterProp="label" options={LOCATOR_TYPE_OPTIONS} placeholder="选择类型" />
+                  </Form.Item>
+                  <Form.Item name={[field.name, 'locatorValue']} label={index === 0 ? '标识值' : undefined} rules={[{ required: true, message: '请输入标识值' }]} style={{ flex: 1, marginBottom: 0 }}>
+                    <Input placeholder="输入设备真实上报的标识值" maxLength={128} />
+                  </Form.Item>
+                  <Form.Item name={[field.name, 'primaryLocator']} label={index === 0 ? '主标识' : undefined} valuePropName="checked" style={{ marginBottom: 0 }}>
+                    <Switch checkedChildren="是" unCheckedChildren="否" />
+                  </Form.Item>
+                  <Form.Item label={index === 0 ? ' ' : undefined} style={{ marginBottom: 0 }}>
+                    <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(field.name)}>
+                      删除
+                    </Button>
+                  </Form.Item>
+                </Space>
+              ))}
+              <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({ locatorType: 'IMEI', primaryLocator: fields.length === 0 })}>
+                新增设备标识
+              </Button>
+            </Space>
+          )}
+        </Form.List>
+      </Space>
+    </Card>
+  );
+
   const renderHttpAccessStep = () => (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Alert
@@ -262,6 +305,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
           <Form.Item name="productSecret" label="ProductSecret" rules={[{ required: true, message: '请输入 ProductSecret' }]}>
             <Input.Password placeholder="输入产品密钥" />
           </Form.Item>
+          {renderLocatorList('HTTP 一型一密自动注册时会把这些标识一并写入平台，便于后续设备识别与协议解析。')}
         </>
       ) : (
         <Form.Item name="deviceSecret" label="DeviceSecret" rules={[{ required: true, message: '请输入 DeviceSecret' }]}>
@@ -291,6 +335,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
               <>
                 <Form.Item name="mqttRegisterBaseUrl" label="动态注册服务地址" rules={[{ required: true, message: '请输入动态注册服务地址' }]}><Input /></Form.Item>
                 <Form.Item name="productSecret" label="ProductSecret" rules={[{ required: true, message: '请输入 ProductSecret' }]}><Input.Password /></Form.Item>
+                {renderLocatorList('MQTT 一型一密动态注册成功后，这些标识也会同步保存到平台设备档案。')}
               </>
             ) : (
               <Form.Item name="deviceSecret" label="DeviceSecret" rules={[{ required: true, message: '请输入 DeviceSecret' }]}><Input.Password /></Form.Item>

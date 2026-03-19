@@ -9,8 +9,10 @@ import {
   Empty,
   Form,
   Input,
+  Select,
   Space,
   Steps,
+  Switch,
   Tabs,
   Tag,
   Typography,
@@ -19,6 +21,8 @@ import {
 import {
   ApiOutlined,
   DeploymentUnitOutlined,
+  MinusCircleOutlined,
+  PlusOutlined,
   ReloadOutlined,
   UsbOutlined,
 } from '@ant-design/icons';
@@ -42,6 +46,22 @@ interface DynamicRegisterResult {
   productKey?: string;
   deviceName: string;
   deviceSecret: string;
+}
+
+interface DeviceLocatorFormItem {
+  locatorType?: string;
+  locatorValue?: string;
+  primaryLocator?: boolean;
+}
+
+interface DynamicRegisterFormValues {
+  productKey?: string;
+  productSecret?: string;
+  deviceName?: string;
+  nickname?: string;
+  description?: string;
+  tags?: string;
+  locators?: DeviceLocatorFormItem[];
 }
 
 interface ProtocolGuideSection {
@@ -84,6 +104,12 @@ const DEVICE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_.-]{1,63}$/;
 const DEVICE_NAME_RULE_MESSAGE =
   '设备名称支持 2-64 位字母、数字、冒号、下划线、中划线、小数点，且需以字母或数字开头';
 const DEVICE_NAME_EXAMPLE = 'SN20240301001';
+const LOCATOR_TYPE_OPTIONS = [
+  { value: 'IMEI', label: 'IMEI' },
+  { value: 'ICCID', label: 'ICCID' },
+  { value: 'MAC', label: 'MAC' },
+  { value: 'SERIAL', label: 'SERIAL' },
+];
 
 const ERROR_MESSAGE_MAP: Record<string, string> = {
   PRODUCT_DYNAMIC_REGISTER_DISABLED: '当前产品未启用一型一密认证，不能进行动态注册',
@@ -100,6 +126,20 @@ const getErrorMessage = (error: unknown, fallback: string) => {
     }
   }
   return fallback;
+};
+
+const normalizeLocatorInputs = (locators?: DeviceLocatorFormItem[]) => {
+  const normalized = (locators || [])
+    .map((item) => ({
+      locatorType: item.locatorType?.trim().toUpperCase(),
+      locatorValue: item.locatorValue?.trim(),
+      primaryLocator: Boolean(item.primaryLocator),
+    }))
+    .filter((item): item is { locatorType: string; locatorValue: string; primaryLocator: boolean } => Boolean(item.locatorType && item.locatorValue));
+  if (normalized.length > 0 && !normalized.some((item) => item.primaryLocator)) {
+    normalized[0].primaryLocator = true;
+  }
+  return normalized.length > 0 ? normalized : undefined;
 };
 
 const buildGuideSteps = (
@@ -152,7 +192,14 @@ const buildProtocolGuideSections = (
   const registerPayload = `{
   "productKey": "${product.productKey}",
   "productSecret": "<ProductSecret>",
-  "deviceName": "${DEVICE_NAME_EXAMPLE}"
+  "deviceName": "${DEVICE_NAME_EXAMPLE}",
+  "locators": [
+    {
+      "locatorType": "IMEI",
+      "locatorValue": "860001234567890",
+      "primaryLocator": true
+    }
+  ]
 }`;
   const httpAuthPayload = `{
   "productKey": "${product.productKey}",
@@ -293,7 +340,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
   const [productSecret, setProductSecret] = useState('');
   const [registerSubmitting, setRegisterSubmitting] = useState(false);
   const [registerResult, setRegisterResult] = useState<DynamicRegisterResult | null>(null);
-  const [form] = Form.useForm();
+  const [form] = Form.useForm<DynamicRegisterFormValues>();
 
   const supportsProductSecret = product?.deviceAuthType === 'PRODUCT_SECRET';
   const canRegister = supportsProductSecret;
@@ -354,6 +401,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
       nickname: undefined,
       description: undefined,
       tags: undefined,
+      locators: undefined,
     });
   };
 
@@ -401,7 +449,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
     }
   }, [form, mode, open, product, supportsProductSecret]);
 
-  const handleSubmitRegister = async (values: Record<string, string>) => {
+  const handleSubmitRegister = async (values: DynamicRegisterFormValues) => {
     if (!product) {
       return;
     }
@@ -416,15 +464,22 @@ const ProductAccessDrawer: React.FC<Props> = ({
       return;
     }
 
+    const deviceName = values.deviceName?.trim();
+    if (!deviceName) {
+      message.warning('请输入设备名称');
+      return;
+    }
+
     setRegisterSubmitting(true);
     try {
       const res = await deviceAccessApi.dynamicRegister({
         productKey: product.productKey,
         productSecret,
-        deviceName: values.deviceName,
+        deviceName,
         nickname: values.nickname,
         description: values.description,
         tags: values.tags,
+        locators: normalizeLocatorInputs(values.locators),
       });
       const payload = res.data.data as DynamicRegisterResult;
       setRegisterResult(payload);
@@ -433,6 +488,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
       form.setFieldValue('nickname', undefined);
       form.setFieldValue('description', undefined);
       form.setFieldValue('tags', undefined);
+      form.setFieldValue('locators', undefined);
     } catch (error) {
       message.error(getErrorMessage(error, '动态注册失败'));
     } finally {
@@ -624,6 +680,37 @@ const ProductAccessDrawer: React.FC<Props> = ({
               </Form.Item>
               <Form.Item label="设备描述" name="description">
                 <Input.TextArea rows={3} placeholder="选填，记录设备安装位置或用途" maxLength={255} />
+              </Form.Item>
+              <Form.Item label="设备标识" extra="可选，动态注册成功时会同步写入设备标识，便于协议解析和设备识别。">
+                <Form.List name="locators">
+                  {(fields, { add, remove }) => (
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                      {fields.map((field, index) => (
+                        <Card key={field.key} size="small" style={{ borderRadius: 12 }}>
+                          <Space align="start" style={{ display: 'flex' }}>
+                            <Form.Item name={[field.name, 'locatorType']} label={index === 0 ? '标识类型' : undefined} rules={[{ required: true, message: '请选择标识类型' }]} style={{ width: 180, marginBottom: 0 }}>
+                              <Select showSearch optionFilterProp="label" options={LOCATOR_TYPE_OPTIONS} placeholder="选择类型" />
+                            </Form.Item>
+                            <Form.Item name={[field.name, 'locatorValue']} label={index === 0 ? '标识值' : undefined} rules={[{ required: true, message: '请输入标识值' }]} style={{ flex: 1, marginBottom: 0 }}>
+                              <Input placeholder="输入设备真实上报的标识值" maxLength={128} />
+                            </Form.Item>
+                            <Form.Item name={[field.name, 'primaryLocator']} label={index === 0 ? '主标识' : undefined} valuePropName="checked" style={{ marginBottom: 0 }}>
+                              <Switch checkedChildren="是" unCheckedChildren="否" />
+                            </Form.Item>
+                            <Form.Item label={index === 0 ? ' ' : undefined} style={{ marginBottom: 0 }}>
+                              <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(field.name)}>
+                                删除
+                              </Button>
+                            </Form.Item>
+                          </Space>
+                        </Card>
+                      ))}
+                      <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({ locatorType: 'IMEI', primaryLocator: fields.length === 0 })}>
+                        新增设备标识
+                      </Button>
+                    </Space>
+                  )}
+                </Form.List>
               </Form.Item>
               <Form.Item
                 label="扩展标签"

@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * Device dynamic registration request for cross-service transport.
@@ -20,4 +21,5 @@ public class DeviceRegisterRequestDTO implements Serializable {
     private String nickname;
     private String description;
     private String tags;
+    private List<DeviceLocatorInputDTO> locators;
 }

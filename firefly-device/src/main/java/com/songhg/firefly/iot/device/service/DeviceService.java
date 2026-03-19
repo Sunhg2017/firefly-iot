@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.songhg.firefly.iot.api.dto.DeviceBasicVO;
+import com.songhg.firefly.iot.api.dto.DeviceLocatorInputDTO;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DeviceAuthType;
 import com.songhg.firefly.iot.common.enums.DeviceStatus;
@@ -80,6 +81,7 @@ public class DeviceService {
         deviceMapper.insert(device);
         deviceTagService.syncDeviceTags(device.getId(), dto.getTagIds());
         deviceGroupService.syncDeviceGroups(device.getId(), dto.getGroupIds());
+        bindDeviceLocators(device.getId(), dto.getLocators());
         increaseProductDeviceCount(product, 1);
 
         log.info("Device created: id={}, deviceName={}, productId={}", device.getId(), device.getDeviceName(), dto.getProductId());
@@ -118,6 +120,7 @@ public class DeviceService {
             deviceMapper.insert(device);
             deviceTagService.syncDeviceTags(device.getId(), dto.getTagIds());
             deviceGroupService.syncDeviceGroups(device.getId(), dto.getGroupIds());
+            bindDeviceLocators(device.getId(), item.getLocators());
             result.add(toCredentialVO(device, product));
         }
 
@@ -367,6 +370,13 @@ public class DeviceService {
         int currentCount = product.getDeviceCount() == null ? 0 : product.getDeviceCount();
         product.setDeviceCount(currentCount + increment);
         productMapper.updateById(product);
+    }
+
+    private void bindDeviceLocators(Long deviceId, Collection<DeviceLocatorInputDTO> locators) {
+        if (deviceId == null || locators == null || locators.isEmpty()) {
+            return;
+        }
+        deviceLocatorService.createBatch(deviceId, locators);
     }
 
     private LambdaQueryWrapper<Device> buildListWrapper(DeviceQueryDTO query) {

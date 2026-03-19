@@ -1,6 +1,8 @@
 package com.songhg.firefly.iot.device.dto.device;
 
+import com.songhg.firefly.iot.api.dto.DeviceLocatorInputDTO;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -38,6 +40,10 @@ public class DeviceCreateDTO {
 
     @Schema(description = "标签，逗号分隔", example = "warehouse,floor-2")
     private List<Long> tagIds;
+
+    @Valid
+    @Schema(description = "设备标识列表")
+    private List<DeviceLocatorInputDTO> locators;
 
     private List<Long> groupIds;
 }

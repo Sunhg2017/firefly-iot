@@ -4,8 +4,8 @@ import com.songhg.firefly.iot.api.client.AsyncTaskClient;
 import com.songhg.firefly.iot.api.client.FileClient;
 import com.songhg.firefly.iot.api.dto.AsyncTaskCreateDTO;
 import com.songhg.firefly.iot.api.dto.AsyncTaskVO;
+import com.songhg.firefly.iot.api.dto.DeviceLocatorInputDTO;
 import com.songhg.firefly.iot.common.context.AsyncContextHelper;
-import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.R;
@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 
 /**
  * 设备异步导入服务
@@ -224,6 +225,13 @@ public class DeviceImportService {
             // 确定设备名称和别名列的索引
             Integer deviceNameCol = findColumn(headerMap, "devicename", "device", "name", "设备名称", "设备编码", "mac", "sn");
             Integer nicknameCol = findColumn(headerMap, "nickname", "alias", "displayname", "设备别名", "别名", "显示名称");
+            Integer locatorTypeCol = findColumn(headerMap, "locatortype", "locator_type", "标识类型", "设备标识类型");
+            Integer locatorValueCol = findColumn(headerMap, "locatorvalue", "locator_value", "标识值", "设备标识值", "设备标识");
+            Integer primaryLocatorCol = findColumn(headerMap, "primarylocator", "primary_locator", "主标识");
+            Integer imeiCol = findColumn(headerMap, "imei");
+            Integer iccidCol = findColumn(headerMap, "iccid");
+            Integer macLocatorCol = findColumn(headerMap, "mac");
+            Integer serialCol = findColumn(headerMap, "serial", "serialnumber", "serial_no", "序列号", "sn");
 
             if (deviceNameCol == null) {
                 throw new BizException(ResultCode.BAD_REQUEST, "Excel文件中未找到设备名称列(deviceName)");
@@ -251,6 +259,16 @@ public class DeviceImportService {
                         item.setNickname(nickname);
                     }
                 }
+                item.setLocators(buildImportLocators(
+                        i + 1,
+                        locatorTypeCol == null ? null : getCellValueAsString(row.getCell(locatorTypeCol)),
+                        locatorValueCol == null ? null : getCellValueAsString(row.getCell(locatorValueCol)),
+                        primaryLocatorCol == null ? null : getCellValueAsString(row.getCell(primaryLocatorCol)),
+                        imeiCol == null ? null : getCellValueAsString(row.getCell(imeiCol)),
+                        iccidCol == null ? null : getCellValueAsString(row.getCell(iccidCol)),
+                        macLocatorCol == null ? null : getCellValueAsString(row.getCell(macLocatorCol)),
+                        serialCol == null ? null : getCellValueAsString(row.getCell(serialCol))
+                ));
                 devices.add(item);
             }
         }
@@ -279,6 +297,13 @@ public class DeviceImportService {
 
             Integer deviceNameCol = findColumn(headerMap, "devicename", "device", "name", "设备名称", "设备编码", "mac", "sn");
             Integer nicknameCol = findColumn(headerMap, "nickname", "alias", "displayname", "设备别名", "别名", "显示名称");
+            Integer locatorTypeCol = findColumn(headerMap, "locatortype", "locator_type", "标识类型", "设备标识类型");
+            Integer locatorValueCol = findColumn(headerMap, "locatorvalue", "locator_value", "标识值", "设备标识值", "设备标识");
+            Integer primaryLocatorCol = findColumn(headerMap, "primarylocator", "primary_locator", "主标识");
+            Integer imeiCol = findColumn(headerMap, "imei");
+            Integer iccidCol = findColumn(headerMap, "iccid");
+            Integer macLocatorCol = findColumn(headerMap, "mac");
+            Integer serialCol = findColumn(headerMap, "serial", "serialnumber", "serial_no", "序列号", "sn");
 
             if (deviceNameCol == null) {
                 throw new BizException(ResultCode.BAD_REQUEST, "CSV文件中未找到设备名称列(deviceName)");
@@ -308,6 +333,16 @@ public class DeviceImportService {
                         item.setNickname(nickname);
                     }
                 }
+                item.setLocators(buildImportLocators(
+                        rowNum,
+                        readCsvCell(values, locatorTypeCol),
+                        readCsvCell(values, locatorValueCol),
+                        readCsvCell(values, primaryLocatorCol),
+                        readCsvCell(values, imeiCol),
+                        readCsvCell(values, iccidCol),
+                        readCsvCell(values, macLocatorCol),
+                        readCsvCell(values, serialCol)
+                ));
                 devices.add(item);
             }
         }
@@ -338,5 +373,74 @@ public class DeviceImportService {
             case FORMULA -> cell.getCellFormula();
             default -> "";
         };
+    }
+
+    private String readCsvCell(String[] values, Integer index) {
+        if (index == null || index < 0 || index >= values.length) {
+            return null;
+        }
+        return values[index].trim().replace("\"", "");
+    }
+
+    private List<DeviceLocatorInputDTO> buildImportLocators(int rowNum,
+                                                            String locatorTypeText,
+                                                            String locatorValueText,
+                                                            String primaryLocatorText,
+                                                            String imeiText,
+                                                            String iccidText,
+                                                            String macText,
+                                                            String serialText) {
+        List<DeviceLocatorInputDTO> locators = new ArrayList<>();
+
+        appendLocator(locators, "IMEI", imeiText, false);
+        appendLocator(locators, "ICCID", iccidText, false);
+        appendLocator(locators, "MAC", macText, false);
+        appendLocator(locators, "SERIAL", serialText, false);
+
+        String locatorType = trim(locatorTypeText);
+        String locatorValue = trim(locatorValueText);
+        if (!locatorType.isEmpty() || !locatorValue.isEmpty()) {
+            if (locatorType.isEmpty() || locatorValue.isEmpty()) {
+                throw new BizException(ResultCode.BAD_REQUEST, "第 " + rowNum + " 行标识类型和标识值必须同时填写");
+            }
+            appendLocator(locators, locatorType, locatorValue, parsePrimaryLocator(primaryLocatorText));
+        }
+
+        if (locators.size() == 1 && locators.get(0).getPrimaryLocator() == null) {
+            locators.get(0).setPrimaryLocator(true);
+        }
+        return locators.isEmpty() ? null : locators;
+    }
+
+    private void appendLocator(List<DeviceLocatorInputDTO> locators,
+                               String locatorType,
+                               String locatorValue,
+                               Boolean primaryLocator) {
+        String normalizedValue = trim(locatorValue);
+        if (normalizedValue.isEmpty()) {
+            return;
+        }
+        DeviceLocatorInputDTO locator = new DeviceLocatorInputDTO();
+        locator.setLocatorType(trim(locatorType).toUpperCase(Locale.ROOT));
+        locator.setLocatorValue(normalizedValue);
+        locator.setPrimaryLocator(primaryLocator);
+        locators.add(locator);
+    }
+
+    private Boolean parsePrimaryLocator(String value) {
+        String normalized = trim(value).toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        return "true".equals(normalized)
+                || "1".equals(normalized)
+                || "yes".equals(normalized)
+                || "y".equals(normalized)
+                || "是".equals(normalized)
+                || "主".equals(normalized);
+    }
+
+    private String trim(String value) {
+        return value == null ? "" : value.trim();
     }
 }

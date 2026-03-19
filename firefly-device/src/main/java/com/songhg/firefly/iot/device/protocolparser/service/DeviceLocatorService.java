@@ -2,6 +2,7 @@ package com.songhg.firefly.iot.device.protocolparser.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.songhg.firefly.iot.api.dto.DeviceLocatorInputDTO;
 import com.songhg.firefly.iot.api.dto.DeviceLocatorResolveDTO;
 import com.songhg.firefly.iot.api.dto.DeviceLocatorResolveRequestDTO;
 import com.songhg.firefly.iot.common.exception.BizException;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 
@@ -93,23 +95,27 @@ public class DeviceLocatorService {
     }
 
     @Transactional
+    public void createBatch(Long deviceId, Collection<DeviceLocatorInputDTO> locators) {
+        if (locators == null || locators.isEmpty()) {
+            return;
+        }
+
+        Device device = getDeviceOrThrow(deviceId);
+        for (DeviceLocatorInputDTO locatorInput : locators) {
+            if (locatorInput == null) {
+                continue;
+            }
+            if (isBlank(locatorInput.getLocatorType()) && isBlank(locatorInput.getLocatorValue())) {
+                continue;
+            }
+            createLocator(device, locatorInput.getLocatorType(), locatorInput.getLocatorValue(), locatorInput.getPrimaryLocator());
+        }
+    }
+
+    @Transactional
     public DeviceLocatorVO create(Long deviceId, DeviceLocatorCreateDTO dto) {
         Device device = getDeviceOrThrow(deviceId);
-        String locatorType = normalizeLocatorType(dto.getLocatorType());
-        String locatorValue = normalizeLocatorValue(dto.getLocatorValue());
-        ensureUniqueLocator(device.getProductId(), locatorType, locatorValue, null);
-
-        DeviceLocator locator = new DeviceLocator();
-        locator.setTenantId(device.getTenantId());
-        locator.setProductId(device.getProductId());
-        locator.setDeviceId(device.getId());
-        locator.setLocatorType(locatorType);
-        locator.setLocatorValue(locatorValue);
-        locator.setIsPrimary(Boolean.TRUE.equals(dto.getPrimaryLocator()));
-        if (Boolean.TRUE.equals(locator.getIsPrimary())) {
-            clearPrimaryLocator(device.getId(), locatorType, null);
-        }
-        deviceLocatorMapper.insert(locator);
+        DeviceLocator locator = createLocator(device, dto.getLocatorType(), dto.getLocatorValue(), dto.getPrimaryLocator());
         return toVO(locator);
     }
 
@@ -198,6 +204,28 @@ public class DeviceLocatorService {
         vo.setCreatedAt(locator.getCreatedAt());
         vo.setUpdatedAt(locator.getUpdatedAt());
         return vo;
+    }
+
+    private DeviceLocator createLocator(Device device,
+                                        String rawLocatorType,
+                                        String rawLocatorValue,
+                                        Boolean primaryLocator) {
+        String locatorType = normalizeLocatorType(rawLocatorType);
+        String locatorValue = normalizeLocatorValue(rawLocatorValue);
+        ensureUniqueLocator(device.getProductId(), locatorType, locatorValue, null);
+
+        DeviceLocator locator = new DeviceLocator();
+        locator.setTenantId(device.getTenantId());
+        locator.setProductId(device.getProductId());
+        locator.setDeviceId(device.getId());
+        locator.setLocatorType(locatorType);
+        locator.setLocatorValue(locatorValue);
+        locator.setIsPrimary(Boolean.TRUE.equals(primaryLocator));
+        if (Boolean.TRUE.equals(locator.getIsPrimary())) {
+            clearPrimaryLocator(device.getId(), locatorType, null);
+        }
+        deviceLocatorMapper.insert(locator);
+        return locator;
     }
 
     private String normalizeLocatorType(String value) {

@@ -267,6 +267,11 @@ ipcMain.handle('device:dynamicRegister', async (
     nickname?: string;
     description?: string;
     tags?: string;
+    locators?: Array<{
+      locatorType: string;
+      locatorValue: string;
+      primaryLocator?: boolean;
+    }>;
   },
 ) => {
   try {
