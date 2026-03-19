@@ -269,6 +269,14 @@ public class DeviceService {
         device.setOnlineStatus(onlineStatus);
         if (onlineStatus == OnlineStatus.ONLINE) {
             device.setLastOnlineAt(changedAt);
+            // A device becomes "activated" after the first successful online event,
+            // regardless of whether it was pre-created or dynamically registered.
+            if (device.getStatus() == DeviceStatus.INACTIVE) {
+                device.setStatus(DeviceStatus.ACTIVE);
+                if (device.getActivatedAt() == null) {
+                    device.setActivatedAt(changedAt);
+                }
+            }
         } else if (onlineStatus == OnlineStatus.OFFLINE) {
             device.setLastOfflineAt(changedAt);
         }

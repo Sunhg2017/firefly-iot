@@ -132,6 +132,20 @@ HTTP 设备的 `online`、`offline`、`heartbeat` 已经被定义为物模型内
 - 第三方设备通过 `/event/post` 上报 `offline`
 - 第三方设备通过 `/event/post` 上报 `heartbeat`
 
+## 4.6 首次上线激活联动
+
+`firefly-device` 在消费 `DEVICE_ONLINE` 生命周期消息后，不仅更新 `onlineStatus=ONLINE`，还会执行以下收口：
+
+- 如果设备当前是 `INACTIVE`，则同步切换为 `ACTIVE`
+- 如果设备尚未记录 `activatedAt`，则以本次上线时间写入首次激活时间
+- 已经是 `ACTIVE` 的设备再次上线时，只刷新在线时间，不覆盖历史 `activatedAt`
+
+这样可以保证：
+
+- 一型一密动态注册设备首次真正连上平台后，会从“未激活”变为“已激活”
+- 预创建设备首次上线时，同样遵循“至少成功上线一次即视为激活”的设备状态模型
+- 平台“设备状态”和“在线状态”不会再出现“在线但仍未激活”的口径撕裂
+
 ## 5. Redis 结构
 
 - 最近活跃索引：`connector:http:device:last-seen`

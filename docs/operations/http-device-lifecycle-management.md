@@ -84,6 +84,14 @@ HTTP 设备应通过以下端点表达生命周期动作：
 - 默认 `reason=heartbeat_timeout`
 - `firefly-device` 消费后更新设备在线状态
 
+## 3.4 首次上线后的激活联动
+
+- `firefly-device` 消费到 `DEVICE_ONLINE` 后，会同时更新：
+  - `onlineStatus=ONLINE`
+  - 若设备原状态为 `INACTIVE`，则切换为 `ACTIVE`
+  - 若 `activatedAt` 为空，则写入首次上线时间
+- 因此一型一密 HTTP 设备动态注册成功后，只要真正完成 `/online` 或等价生命周期事件，平台设备状态就应从“未激活”变为“已激活”。
+
 ## 4. 排查方式
 
 ## 4.1 HTTP 设备调用了上线事件但平台仍未在线
@@ -95,6 +103,16 @@ HTTP 设备应通过以下端点表达生命周期动作：
 3. 确认 connector 日志中存在 `HTTP device online`
 4. 确认上游消息中同时出现 `DEVICE_ONLINE` 与 `online` 事件
 5. 确认 `firefly-device` 正常消费生命周期消息
+
+## 4.1.1 HTTP 设备已经在线但状态仍是未激活
+
+按以下顺序排查：
+
+1. 确认设备详情里的“在线状态”已经是 `ONLINE`
+2. 确认 connector 上游消息中确实产生了 `DEVICE_ONLINE`
+3. 确认 `firefly-device` 已部署到包含本次修复的版本
+4. 检查 `firefly-device` 消费日志，确认 `updateRuntimeConnectionState(...)` 已执行
+5. 如历史数据已处于“在线但未激活”的旧状态，需让设备重新触发一次有效上线事件，或按运维流程修正存量数据
 
 ## 4.2 HTTP 设备主动离线后平台没有及时离线
 
@@ -143,13 +161,14 @@ HTTP 设备应通过以下端点表达生命周期动作：
 
 1. HTTP 设备完成 `/auth`
 2. 调用一次 `/api/v1/protocol/http/online`
-3. 检查设备状态是否变为 `ONLINE`
+3. 检查设备详情中的设备状态是否从 `未激活` 变为 `已激活`
+4. 检查在线状态是否变为 `ONLINE`
 4. 调用一次 `/api/v1/protocol/http/heartbeat`
 5. 检查物模型事件流中是否出现 `heartbeat`
 6. 调用一次 `/api/v1/protocol/http/offline`
-7. 检查设备状态是否立即变为 `OFFLINE`
+7. 检查在线状态是否立即变为 `OFFLINE`
 8. 再次调用 `/event/post` 上报 `identifier=online`
-9. 检查是否同样触发 `DEVICE_ONLINE` 与 `online` 事件
+9. 检查是否同样触发 `DEVICE_ONLINE` 与 `online` 事件，并保持设备状态为 `已激活`
 
 ## 6. 回滚说明
 

@@ -10,6 +10,10 @@ import com.songhg.firefly.iot.device.protocolparser.service.DeviceLocatorService
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -58,5 +62,48 @@ class DeviceServiceTest {
 
         verify(deviceMapper).updateById(device);
         verify(deviceGroupService).rebuildDynamicGroupsForDevice(8L);
+    }
+
+    @Test
+    void updateRuntimeConnectionStateShouldActivateInactiveDeviceWhenItGoesOnline() {
+        Device device = new Device();
+        device.setId(9L);
+        device.setTenantId(1L);
+        device.setStatus(DeviceStatus.INACTIVE);
+        device.setOnlineStatus(OnlineStatus.UNKNOWN);
+
+        LocalDateTime occurredAt = LocalDateTime.of(2026, 3, 19, 11, 30, 0);
+        when(deviceMapper.selectByIdIgnoreTenant(9L)).thenReturn(device);
+
+        service.updateRuntimeConnectionState(1L, 9L, OnlineStatus.ONLINE, occurredAt);
+
+        assertEquals(DeviceStatus.ACTIVE, device.getStatus());
+        assertEquals(OnlineStatus.ONLINE, device.getOnlineStatus());
+        assertEquals(occurredAt, device.getLastOnlineAt());
+        assertEquals(occurredAt, device.getActivatedAt());
+        verify(deviceMapper).updateById(device);
+        verify(deviceGroupService).rebuildDynamicGroupsForDevice(9L);
+    }
+
+    @Test
+    void updateRuntimeConnectionStateShouldKeepExistingActivatedAtForActivatedDevice() {
+        Device device = new Device();
+        device.setId(10L);
+        device.setTenantId(1L);
+        device.setStatus(DeviceStatus.ACTIVE);
+        device.setOnlineStatus(OnlineStatus.OFFLINE);
+        device.setActivatedAt(LocalDateTime.of(2026, 3, 18, 9, 0, 0));
+
+        LocalDateTime occurredAt = LocalDateTime.of(2026, 3, 19, 12, 0, 0);
+        when(deviceMapper.selectByIdIgnoreTenant(10L)).thenReturn(device);
+
+        service.updateRuntimeConnectionState(1L, 10L, OnlineStatus.ONLINE, occurredAt);
+
+        assertEquals(DeviceStatus.ACTIVE, device.getStatus());
+        assertEquals(occurredAt, device.getLastOnlineAt());
+        assertNotNull(device.getActivatedAt());
+        assertEquals(LocalDateTime.of(2026, 3, 18, 9, 0, 0), device.getActivatedAt());
+        verify(deviceMapper).updateById(device);
+        verify(deviceGroupService).rebuildDynamicGroupsForDevice(10L);
     }
 }
