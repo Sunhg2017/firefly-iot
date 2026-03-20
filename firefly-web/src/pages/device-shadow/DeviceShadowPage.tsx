@@ -116,7 +116,7 @@ const statusTextMap: Record<string, string> = {
   DISABLED: '已禁用',
 };
 
-const renderDeviceLabel = (device: DeviceOptionRecord) => (
+const renderDeviceOption = (device: DeviceOptionRecord) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
     <span style={{ fontWeight: 600, color: '#0f172a' }}>{device.nickname || device.deviceName}</span>
     <span style={{ fontSize: 12, color: '#64748b' }}>{device.deviceName}</span>
@@ -536,8 +536,11 @@ const DeviceShadowPage: React.FC = () => {
               value={selectedDeviceId}
               options={deviceOptions.map((item) => ({
                 value: item.value,
-                label: renderDeviceLabel(item.meta),
+                label: item.label,
+                meta: item.meta,
               }))}
+              // Keep the dropdown rich, but make the selected value a single-line label so it does not overflow.
+              optionRender={(option) => renderDeviceOption((option.data as DeviceOption).meta)}
               onSearch={(value) => {
                 setDeviceSearchText(value);
                 void loadDeviceOptions(value.trim());
