@@ -1598,6 +1598,13 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
   const [sheetImportTarget, setSheetImportTarget] = useState<SheetImportTarget | null>(null);
   const [importingProgress, setImportingProgress] = useState<number | null>(null);
   const isPublished = product?.status === 'PUBLISHED';
+  const itemEditorFormValues = useMemo(
+    () => (itemEditor ? itemToFormValues(itemEditor.section, itemEditor.original) : undefined),
+    [itemEditor],
+  );
+  const itemEditorFormKey = itemEditor
+    ? `${itemEditor.section}-${itemEditor.index ?? 'new'}-${itemEditor.original?.identifier ?? 'blank'}`
+    : 'thing-model-item-editor';
 
   const extraRootKeys = useMemo(
     () => Object.keys(draftModel).filter((key) => !SECTION_CONFIGS.some((section) => section.key === key)),
@@ -1938,11 +1945,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
   useEffect(() => {
     if (!itemEditor) {
       itemForm.resetFields();
-      return;
     }
-
-    // Sync form values after the editor state is committed so edit dialogs always backfill current item data.
-    itemForm.setFieldsValue(itemToFormValues(itemEditor.section, itemEditor.original));
   }, [itemEditor, itemForm]);
 
   const openItemEditor = (section: SectionKey, index?: number) => {
@@ -2302,7 +2305,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
     const currentSection = itemEditor.section;
 
     return (
-      <Form form={itemForm} layout="vertical" preserve={false}>
+      <>
         <Row gutter={12}>
           <Col xs={24} md={12}>
             <Form.Item
@@ -2417,7 +2420,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
             {renderParameterFormList('outputData', '输出参数')}
           </Space>
         ) : null}
-      </Form>
+      </>
     );
   };
 
@@ -2740,12 +2743,29 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
         open={!!itemEditor}
         width={920}
         destroyOnClose
+        forceRender
         onCancel={closeItemEditor}
+        afterOpenChange={(visible) => {
+          if (visible && itemEditorFormValues) {
+            // Modal content is lazily mounted, so sync after open to guarantee edit forms backfill current values.
+            itemForm.setFieldsValue(itemEditorFormValues);
+          }
+        }}
         onOk={() => void handleSubmitItem()}
         okText={itemEditor?.index === null ? '新增' : '保存'}
         cancelText="取消"
       >
-        {renderItemEditorForm()}
+        {itemEditor ? (
+          <Form
+            key={itemEditorFormKey}
+            form={itemForm}
+            layout="vertical"
+            preserve={false}
+            initialValues={itemEditorFormValues}
+          >
+            {renderItemEditorForm()}
+          </Form>
+        ) : null}
       </Modal>
 
       <input
