@@ -12,6 +12,10 @@ public final class AuthConstants {
     public static final String HEADER_PLATFORM = "X-Platform";
     public static final String HEADER_DEVICE_FINGERPRINT = "X-Device-Fingerprint";
     public static final String HEADER_AUTHORIZATION = "Authorization";
+    public static final String HEADER_APP_KEY = "X-App-Key";
+    public static final String HEADER_APP_TIMESTAMP = "X-Timestamp";
+    public static final String HEADER_APP_NONCE = "X-Nonce";
+    public static final String HEADER_APP_SIGNATURE = "X-Signature";
     public static final String HEADER_APP_KEY_ID = "X-App-Key-Id";
     public static final String HEADER_OPEN_API_CODE = "X-Open-Api-Code";
     public static final String HEADER_GRANTED_PERMISSIONS = "X-Granted-Permissions";
@@ -32,6 +36,7 @@ public final class AuthConstants {
     public static final String REDIS_QRCODE = "qrcode:";
     public static final String REDIS_PERM_USER = "perm:user:";
     public static final String REDIS_PERM_ROLE = "perm:role:";
+    public static final String REDIS_OPEN_API_NONCE = "openapi:nonce:";
     public static final String REDIS_TENANT_CTX = "tenant:ctx:";
     public static final String REDIS_TENANT_QUOTA = "tenant:quota:";
     public static final String REDIS_QUOTA_PREFIX = "quota:tenant:";

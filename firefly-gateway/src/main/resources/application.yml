@@ -93,6 +93,11 @@ auth:
   jwt:
     public-key: ''  # Base64 encoded RSA public key, leave empty for dev passthrough mode
 
+firefly:
+  openapi:
+    appkey:
+      signature-window-seconds: 300
+
 management:
   endpoints:
     web:

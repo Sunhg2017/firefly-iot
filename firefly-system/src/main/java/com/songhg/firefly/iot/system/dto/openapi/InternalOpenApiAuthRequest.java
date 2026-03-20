@@ -13,8 +13,16 @@ public class InternalOpenApiAuthRequest {
     private String appKey;
 
     @NotBlank
-    @Schema(description = "App secret")
-    private String appSecret;
+    @Schema(description = "Request timestamp in epoch milliseconds")
+    private String timestamp;
+
+    @NotBlank
+    @Schema(description = "Unique request nonce")
+    private String nonce;
+
+    @NotBlank
+    @Schema(description = "HMAC-SHA256 request signature")
+    private String signature;
 
     @NotBlank
     @Schema(description = "Service code")
@@ -27,6 +35,13 @@ public class InternalOpenApiAuthRequest {
     @NotBlank
     @Schema(description = "Downstream path")
     private String requestPath;
+
+    @Schema(description = "Canonical query string sorted by key/value")
+    private String canonicalQuery;
+
+    @NotBlank
+    @Schema(description = "SHA256 hex of raw request body")
+    private String bodySha256;
 
     @Schema(description = "Client IP")
     private String clientIp;

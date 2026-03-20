@@ -77,6 +77,10 @@ auth:
 firefly:
   audit:
     enabled: false
+  openapi:
+    appkey:
+      signature-window-seconds: 300
+      secret-encrypt-key: 0123456789abcdef0123456789abcdef
 
 mybatis-plus:
   configuration:

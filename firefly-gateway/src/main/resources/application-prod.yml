@@ -71,6 +71,11 @@ auth:
   jwt:
     public-key: ${AUTH_JWT_PUBLIC_KEY:}
 
+firefly:
+  openapi:
+    appkey:
+      signature-window-seconds: ${FIREFLY_OPENAPI_APPKEY_SIGNATURE_WINDOW_SECONDS:300}
+
 logging:
   level:
     root: INFO

@@ -23,6 +23,7 @@ public class ApiKey {
     private String description;
     private String accessKey;
     private String secretKeyHash;
+    private String secretKeyCiphertext;
     @TableField(typeHandler = JsonbStringTypeHandler.class, jdbcType = JdbcType.OTHER)
     private String scopes;
     private Integer rateLimitPerMin;

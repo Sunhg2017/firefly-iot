@@ -49,3 +49,9 @@ logging:
   level:
     root: INFO
     com.songhg.firefly: INFO
+
+firefly:
+  openapi:
+    appkey:
+      signature-window-seconds: ${FIREFLY_OPENAPI_APPKEY_SIGNATURE_WINDOW_SECONDS:300}
+      secret-encrypt-key: ${FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY:}

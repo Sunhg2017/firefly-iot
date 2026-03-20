@@ -22,12 +22,6 @@ public class OpenApiGatewayController {
 
     @PostMapping("/authorize")
     public R<InternalOpenApiAuthVO> authorize(@Valid @RequestBody InternalOpenApiAuthRequest request) {
-        return R.ok(apiKeyService.authorizeOpenApiCall(
-                request.getAppKey(),
-                request.getAppSecret(),
-                request.getServiceCode(),
-                request.getHttpMethod(),
-                request.getRequestPath(),
-                request.getClientIp()));
+        return R.ok(apiKeyService.authorizeOpenApiCall(request));
     }
 }

@@ -11,29 +11,39 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.http.server.reactive.ServerHttpRequestDecorator;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.MessageDigest;
 import java.security.PublicKey;
 import java.security.spec.X509EncodedKeySpec;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -62,6 +72,9 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
     @Value("${auth.jwt.public-key:}")
     private String publicKeyBase64;
+
+    @Value("${firefly.openapi.appkey.signature-window-seconds:300}")
+    private long signatureWindowSeconds;
 
     private PublicKey publicKey;
 
@@ -98,10 +111,15 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             return authenticateJwt(exchange, chain, authHeader.substring(AuthConstants.TOKEN_PREFIX.length()));
         }
 
-        String appKey = request.getHeaders().getFirst("X-App-Key");
-        String appSecret = request.getHeaders().getFirst("X-App-Secret");
-        if (StringUtils.hasText(appKey) && StringUtils.hasText(appSecret)) {
-            return authenticateAppKey(exchange, chain, path, appKey, appSecret);
+        String appKey = request.getHeaders().getFirst(AuthConstants.HEADER_APP_KEY);
+        String timestamp = request.getHeaders().getFirst(AuthConstants.HEADER_APP_TIMESTAMP);
+        String nonce = request.getHeaders().getFirst(AuthConstants.HEADER_APP_NONCE);
+        String signature = request.getHeaders().getFirst(AuthConstants.HEADER_APP_SIGNATURE);
+        if (StringUtils.hasText(appKey)
+                || StringUtils.hasText(timestamp)
+                || StringUtils.hasText(nonce)
+                || StringUtils.hasText(signature)) {
+            return authenticateAppKey(exchange, chain, path, appKey, timestamp, nonce, signature);
         }
 
         return unauthorized(exchange);
@@ -162,39 +180,65 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
                 });
     }
 
-    private Mono<Void> authenticateAppKey(ServerWebExchange exchange, GatewayFilterChain chain,
-                                          String path, String appKey, String appSecret) {
+    private Mono<Void> authenticateAppKey(ServerWebExchange exchange,
+                                          GatewayFilterChain chain,
+                                          String path,
+                                          String appKey,
+                                          String timestamp,
+                                          String nonce,
+                                          String signature) {
         ServiceRequest serviceRequest = resolveServiceRequest(path);
         if (serviceRequest == null) {
             return forbidden(exchange);
         }
+        if (!StringUtils.hasText(appKey)
+                || !StringUtils.hasText(timestamp)
+                || !StringUtils.hasText(nonce)
+                || !StringUtils.hasText(signature)) {
+            return unauthorized(exchange);
+        }
+        if (!isTimestampFresh(timestamp)) {
+            return unauthorized(exchange);
+        }
 
-        InternalOpenApiAuthRequest authRequest = new InternalOpenApiAuthRequest();
-        authRequest.setAppKey(appKey.trim());
-        authRequest.setAppSecret(appSecret.trim());
-        authRequest.setServiceCode(serviceRequest.serviceCode());
-        authRequest.setHttpMethod(exchange.getRequest().getMethod() == null
-                ? "GET"
-                : exchange.getRequest().getMethod().name());
-        authRequest.setRequestPath(serviceRequest.requestPath());
-        authRequest.setClientIp(resolveClientIp(exchange.getRequest()));
+        // Gateway and system-service must hash the exact same raw body bytes,
+        // so we cache the body once and forward the cached request downstream.
+        return cacheRequestBody(exchange)
+                .flatMap(cachedRequest -> {
+                    ServerWebExchange cachedExchange = exchange.mutate().request(cachedRequest.request()).build();
 
-        return webClientBuilder.build()
-                .post()
-                .uri("http://firefly-system/api/v1/internal/open-apis/authorize")
-                .bodyValue(authRequest)
-                .retrieve()
-                .bodyToMono(InternalResponse.class)
-                .cast(InternalResponse.class)
-                .flatMap(response -> handleInternalAuthResponse(exchange, chain, response))
-                .onErrorResume(error -> {
-                    log.error("OpenAPI appKey authorization failed", error);
-                    return serviceUnavailable(exchange);
+                    InternalOpenApiAuthRequest authRequest = new InternalOpenApiAuthRequest();
+                    authRequest.setAppKey(appKey.trim());
+                    authRequest.setTimestamp(timestamp.trim());
+                    authRequest.setNonce(nonce.trim());
+                    authRequest.setSignature(signature.trim());
+                    authRequest.setServiceCode(serviceRequest.serviceCode());
+                    authRequest.setHttpMethod(cachedExchange.getRequest().getMethod() == null
+                            ? "GET"
+                            : cachedExchange.getRequest().getMethod().name());
+                    authRequest.setRequestPath(serviceRequest.requestPath());
+                    authRequest.setCanonicalQuery(buildCanonicalQuery(cachedExchange.getRequest()));
+                    authRequest.setBodySha256(sha256(cachedRequest.bodyBytes()));
+                    authRequest.setClientIp(resolveClientIp(cachedExchange.getRequest()));
+
+                    return webClientBuilder.build()
+                            .post()
+                            .uri("http://firefly-system/api/v1/internal/open-apis/authorize")
+                            .bodyValue(authRequest)
+                            .retrieve()
+                            .bodyToMono(InternalResponse.class)
+                            .flatMap(response -> handleInternalAuthResponse(cachedExchange, chain, response, nonce.trim()))
+                            .onErrorResume(error -> {
+                                log.error("OpenAPI appKey authorization failed", error);
+                                return serviceUnavailable(cachedExchange);
+                            });
                 });
     }
 
-    private Mono<Void> handleInternalAuthResponse(ServerWebExchange exchange, GatewayFilterChain chain,
-                                                  InternalResponse<?> response) {
+    private Mono<Void> handleInternalAuthResponse(ServerWebExchange exchange,
+                                                  GatewayFilterChain chain,
+                                                  InternalResponse<?> response,
+                                                  String nonce) {
         if (response == null) {
             return serviceUnavailable(exchange);
         }
@@ -203,10 +247,12 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         }
 
         GatewayAuthPayload payload = GatewayAuthPayload.fromMap(payloadMap);
-        return acquireLimits(payload)
+        return reserveNonce(payload.appKeyId(), nonce)
+                .then(acquireLimits(payload))
                 .flatMap(limitContext -> forwardWithAppKeyHeaders(exchange, chain, payload)
                         .doFinally(signalType -> limitContext.release().subscribe()))
-                .onErrorResume(LimitExceededException.class, error -> tooManyRequests(exchange));
+                .onErrorResume(LimitExceededException.class, error -> tooManyRequests(exchange))
+                .onErrorResume(ReplayAttackException.class, error -> unauthorized(exchange));
     }
 
     private Mono<LimitContext> acquireLimits(GatewayAuthPayload payload) {
@@ -216,6 +262,17 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
                 .then(context.reserveLimit("appkey-day", payload.rateLimitPerDay(), ttlToNextDay()))
                 .then(context.reserveLimit("subscription-day", payload.subscriptionDailyLimit(), ttlToNextDay()))
                 .thenReturn(context);
+    }
+
+    private Mono<Void> reserveNonce(Long appKeyId, String nonce) {
+        if (appKeyId == null || !StringUtils.hasText(nonce)) {
+            return Mono.error(new ReplayAttackException());
+        }
+        Duration ttl = Duration.ofSeconds(Math.max(30, signatureWindowSeconds));
+        String key = AuthConstants.REDIS_OPEN_API_NONCE + appKeyId + ":" + nonce;
+        return redisTemplate.opsForValue()
+                .setIfAbsent(key, "1", ttl)
+                .flatMap(saved -> Boolean.TRUE.equals(saved) ? Mono.empty() : Mono.error(new ReplayAttackException()));
     }
 
     private Mono<Void> forwardWithJwtHeaders(ServerWebExchange exchange, GatewayFilterChain chain,
@@ -231,6 +288,13 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     private Mono<Void> forwardWithAppKeyHeaders(ServerWebExchange exchange, GatewayFilterChain chain,
                                                 GatewayAuthPayload payload) {
         ServerHttpRequest.Builder builder = exchange.getRequest().mutate()
+                .headers(headers -> {
+                    // Signature material is only for gateway verification and must not leak downstream.
+                    headers.remove(AuthConstants.HEADER_APP_KEY);
+                    headers.remove(AuthConstants.HEADER_APP_TIMESTAMP);
+                    headers.remove(AuthConstants.HEADER_APP_NONCE);
+                    headers.remove(AuthConstants.HEADER_APP_SIGNATURE);
+                })
                 .header(AuthConstants.HEADER_TENANT_ID, String.valueOf(payload.tenantId()))
                 .header(AuthConstants.HEADER_PLATFORM, AuthConstants.PLATFORM_OPEN_API)
                 .header(AuthConstants.HEADER_APP_KEY_ID, String.valueOf(payload.appKeyId()))
@@ -241,6 +305,57 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         return chain.filter(exchange.mutate().request(builder.build()).build());
     }
 
+    private Mono<CachedRequestBody> cacheRequestBody(ServerWebExchange exchange) {
+        return DataBufferUtils.join(exchange.getRequest().getBody())
+                .defaultIfEmpty(exchange.getResponse().bufferFactory().wrap(new byte[0]))
+                .map(dataBuffer -> {
+                    byte[] bodyBytes = new byte[dataBuffer.readableByteCount()];
+                    dataBuffer.read(bodyBytes);
+                    DataBufferUtils.release(dataBuffer);
+
+                    ServerHttpRequest decorated = new ServerHttpRequestDecorator(exchange.getRequest()) {
+                        @Override
+                        public HttpHeaders getHeaders() {
+                            HttpHeaders headers = new HttpHeaders();
+                            headers.putAll(super.getHeaders());
+                            if (bodyBytes.length > 0) {
+                                headers.setContentLength(bodyBytes.length);
+                            } else {
+                                headers.remove(HttpHeaders.CONTENT_LENGTH);
+                            }
+                            return headers;
+                        }
+
+                        @Override
+                        public Flux<DataBuffer> getBody() {
+                            return Flux.defer(() -> Mono.just(exchange.getResponse().bufferFactory().wrap(bodyBytes)));
+                        }
+                    };
+                    return new CachedRequestBody(decorated, bodyBytes);
+                });
+    }
+
+    private String buildCanonicalQuery(ServerHttpRequest request) {
+        return request.getQueryParams().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .flatMap(entry -> {
+                    List<String> values = entry.getValue() == null || entry.getValue().isEmpty()
+                            ? List.of("")
+                            : new ArrayList<>(entry.getValue());
+                    values.sort(String::compareTo);
+                    return values.stream()
+                            .map(value -> rfc3986Encode(entry.getKey()) + "=" + rfc3986Encode(value == null ? "" : value));
+                })
+                .collect(Collectors.joining("&"));
+    }
+
+    private String rfc3986Encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8)
+                .replace("+", "%20")
+                .replace("*", "%2A")
+                .replace("%7E", "~");
+    }
+
     private ServiceRequest resolveServiceRequest(String gatewayPath) {
         if (!StringUtils.hasText(gatewayPath) || !gatewayPath.startsWith("/")) {
             return null;
@@ -249,7 +364,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         if (parts.length < 3 || !StringUtils.hasText(parts[1]) || !"api".equalsIgnoreCase(parts[2])) {
             return null;
         }
-        String serviceCode = parts[1].toUpperCase();
+        String serviceCode = parts[1].toUpperCase(Locale.ROOT);
         String requestPath = parts.length >= 4 ? "/api/" + parts[3] : "/api";
         return new ServiceRequest(serviceCode, requestPath);
     }
@@ -292,6 +407,16 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         return request.getRemoteAddress().getAddress().getHostAddress();
     }
 
+    private boolean isTimestampFresh(String timestampValue) {
+        try {
+            long timestamp = Long.parseLong(timestampValue.trim());
+            long delta = Math.abs(Instant.now().toEpochMilli() - timestamp);
+            return delta <= Math.max(30, signatureWindowSeconds) * 1000L;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private Duration ttlToNextMinute() {
         LocalDateTime nextMinute = LocalDateTime.now().withSecond(0).withNano(0).plusMinutes(1);
         return Duration.ofSeconds(Math.max(1, nextMinute.toEpochSecond(ZoneOffset.UTC) - LocalDateTime.now().toEpochSecond(ZoneOffset.UTC)));
@@ -303,7 +428,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     }
 
     private Mono<Void> mapInternalFailure(ServerWebExchange exchange, int code) {
-        if (code == 1002) {
+        if (code == 1001 || code == 1002) {
             return unauthorized(exchange);
         }
         if (code == 1004) {
@@ -344,10 +469,13 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     }
 
     private String sha256(String input) {
+        return sha256(input.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String sha256(byte[] input) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(hash);
+            return HexFormat.of().formatHex(digest.digest(input));
         } catch (Exception e) {
             return "";
         }
@@ -362,6 +490,9 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     }
 
     private record ServiceRequest(String serviceCode, String requestPath) {
+    }
+
+    private record CachedRequestBody(ServerHttpRequest request, byte[] bodyBytes) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -398,10 +529,14 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class InternalOpenApiAuthRequest {
         private String appKey;
-        private String appSecret;
+        private String timestamp;
+        private String nonce;
+        private String signature;
         private String serviceCode;
         private String httpMethod;
         private String requestPath;
+        private String canonicalQuery;
+        private String bodySha256;
         private String clientIp;
 
         public String getAppKey() {
@@ -412,12 +547,28 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             this.appKey = appKey;
         }
 
-        public String getAppSecret() {
-            return appSecret;
+        public String getTimestamp() {
+            return timestamp;
         }
 
-        public void setAppSecret(String appSecret) {
-            this.appSecret = appSecret;
+        public void setTimestamp(String timestamp) {
+            this.timestamp = timestamp;
+        }
+
+        public String getNonce() {
+            return nonce;
+        }
+
+        public void setNonce(String nonce) {
+            this.nonce = nonce;
+        }
+
+        public String getSignature() {
+            return signature;
+        }
+
+        public void setSignature(String signature) {
+            this.signature = signature;
         }
 
         public String getServiceCode() {
@@ -442,6 +593,22 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
         public void setRequestPath(String requestPath) {
             this.requestPath = requestPath;
+        }
+
+        public String getCanonicalQuery() {
+            return canonicalQuery;
+        }
+
+        public void setCanonicalQuery(String canonicalQuery) {
+            this.canonicalQuery = canonicalQuery;
+        }
+
+        public String getBodySha256() {
+            return bodySha256;
+        }
+
+        public void setBodySha256(String bodySha256) {
+            this.bodySha256 = bodySha256;
         }
 
         public String getClientIp() {
@@ -568,5 +735,8 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     }
 
     private static final class LimitExceededException extends RuntimeException {
+    }
+
+    private static final class ReplayAttackException extends RuntimeException {
     }
 }

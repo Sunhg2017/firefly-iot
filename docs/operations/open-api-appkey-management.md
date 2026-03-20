@@ -18,18 +18,21 @@
 Flyway 脚本：
 
 - `firefly-system/src/main/resources/db/migration/V27__init_open_api_management.sql`
+- `firefly-system/src/main/resources/db/migration/V28__harden_appkey_signature_auth.sql`
 
 主要动作：
 
 - 新建 `open_api_catalog`
 - 新建 `tenant_open_api_subscriptions`
 - 为 `api_access_logs` 增加 `open_api_code`
+- 为 `api_keys` 增加 `secret_key_ciphertext`
 - 删除旧 `api-key` 菜单、权限和台账
 - 新增 `open-api`、`app-key` 菜单与权限台账
 
 ### 2.2 应用变更
 
 - 网关增加 AppKey 鉴权与 Redis 配额控制逻辑
+- AppKey 鉴权从 `X-App-Secret` 明文传输切换为 `timestamp + nonce + HMAC-SHA256` 验签
 - 系统服务增加 OpenAPI 管理与租户订阅管理接口
 - 前端增加 OpenAPI 页面、租户订阅抽屉、AppKey 页面
 
@@ -62,6 +65,8 @@ Flyway 脚本：
 - 网关必须可通过服务发现访问 `firefly-system`
 - 网关 Redis 必须可写，否则并发与配额控制失效
 - JWT 公钥配置仍用于用户态请求；AppKey 请求不依赖 JWT
+- `firefly-system` 生产环境必须配置 `FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY`
+- `firefly-system` 与 `firefly-gateway` 的 `FIREFLY_OPENAPI_APPKEY_SIGNATURE_WINDOW_SECONDS` 应保持一致
 
 ## 5. 升级后检查项
 
@@ -72,6 +77,7 @@ Flyway 脚本：
 - `open_api_catalog`
 - `tenant_open_api_subscriptions`
 - `api_access_logs.open_api_code`
+- `api_keys.secret_key_ciphertext`
 
 确认以下台账已更新：
 
@@ -98,8 +104,8 @@ Flyway 脚本：
 1. 新建一条 OpenAPI。
 2. 在租户管理中为目标租户订阅该 OpenAPI。
 3. 进入租户空间创建 AppKey，并选择该 OpenAPI。
-4. 使用 `X-App-Key`、`X-App-Secret` 调用网关路径。
-5. 验证未订阅、未授权、超限、IP 不在白名单时返回拒绝。
+4. 使用 `X-App-Key`、`X-Timestamp`、`X-Nonce`、`X-Signature` 调用网关路径。
+5. 验证未订阅、未授权、超限、IP 不在白名单、时间戳过期、重复 nonce 时返回拒绝。
 
 ## 6. 运行排障
 
@@ -108,21 +114,24 @@ Flyway 脚本：
 排查顺序：
 
 1. 确认 Flyway `V27` 已执行。
-2. 确认当前角色已分配新权限。
-3. 确认租户空间授权未把 `app-key` 菜单取消。
-4. 确认浏览器重新登录后菜单缓存已刷新。
+2. 确认 Flyway `V28` 已执行。
+3. 确认当前角色已分配新权限。
+4. 确认租户空间授权未把 `app-key` 菜单取消。
+5. 确认浏览器重新登录后菜单缓存已刷新。
 
 ### 6.2 网关调用返回 401/403
 
 重点检查：
 
-- `X-App-Key`、`X-App-Secret` 是否正确
+- `X-App-Key`、`X-Timestamp`、`X-Nonce`、`X-Signature` 是否齐全且正确
+- 调用方本地签名串是否与网关验签规则一致
 - AppKey 状态是否为 `ACTIVE`
 - AppKey 是否过期
 - 访问路径是否命中已启用 OpenAPI
 - AppKey 是否勾选该 OpenAPI
 - 租户是否订阅该 OpenAPI
 - 请求 IP 是否在订阅白名单内
+- `firefly-system` 的 `FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY` 是否正确
 
 ### 6.3 网关调用返回 429
 
@@ -136,6 +145,7 @@ Flyway 脚本：
 
 常用 Redis 键前缀：
 
+- `openapi:nonce:`
 - `openapi:concurrent:`
 - `openapi:quota:appkey:minute:`
 - `openapi:quota:appkey:day:`
@@ -163,6 +173,7 @@ Flyway 脚本：
 关注日志关键字：
 
 - `OpenAPI appKey authorization failed`
+- `app key signature`
 - JWT / AppKey 鉴权相关 warning 或 error
 
 ### 7.2 系统服务
@@ -196,4 +207,6 @@ Flyway 脚本：
 
 - 生产环境先在系统运维空间完成 OpenAPI 目录初始化，再开放给租户配置。
 - 对外暴露前，先为每条 OpenAPI 配置明确的透传权限码，避免下游只做租户隔离而未做动作级控制。
+- 升级到签名方案后，历史 AppKey 必须重新创建；不要试图恢复 `X-App-Secret` 直传兼容逻辑。
+- 生产环境不要使用开发默认密钥，`FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY` 必须独立生成并妥善保管。
 - 若存在历史旧 API Key 相关脏数据，按新模型统一清理，不要在代码里恢复旧入口。

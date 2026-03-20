@@ -434,7 +434,7 @@ const ApiKeyPage: React.FC = () => {
         <Form form={editForm} layout="vertical">
           <Card size="small" style={{ marginBottom: 16 }}>
             <Typography.Text type="secondary">
-              只能选择当前租户已经订阅且处于启用状态的 OpenAPI。Secret Key 仅在创建成功时展示一次。
+              只能选择当前租户已经订阅且处于启用状态的 OpenAPI。Secret Key 仅在创建成功时展示一次，调用时只用于本地计算签名，不能随请求明文传输。
             </Typography.Text>
           </Card>
 
@@ -594,7 +594,7 @@ const ApiKeyPage: React.FC = () => {
         {createdResult ? (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
             <Typography.Text type="danger">
-              Secret Key 只会展示这一次，请立即复制并妥善保管。
+              Secret Key 只会展示这一次，请立即复制并妥善保管。后续调用请使用它在本地计算 HMAC-SHA256 签名，不要把 Secret Key 放到请求头或请求体里。
             </Typography.Text>
             <Descriptions column={1} bordered size="small">
               <Descriptions.Item label="名称">{createdResult.name}</Descriptions.Item>

@@ -7,7 +7,7 @@
 - 系统运维空间统一维护当前所有可开放的 OpenAPI。
 - 平台租户管理页面可以明确某个租户订阅了哪些 OpenAPI，并给每个 OpenAPI 配置调用限制。
 - 租户空间可以维护 AppKey，并限制每个 AppKey 只能调用已订阅 OpenAPI 的子集。
-- 网关必须在真正转发前完成 AppKey 认证、租户订阅校验和限流，避免后端服务重复实现一套鉴权。
+- 网关必须在真正转发前完成 AppKey 签名验签、租户订阅校验和限流，避免后端服务重复实现一套鉴权。
 
 根据仓库规则，本次实现直接收口到新模型，不再保留旧的“平台 API Key 管理页 / 旧权限点 / 旧菜单入口”双轨逻辑。
 
@@ -18,14 +18,14 @@
 - 建立 OpenAPI 目录表，使用业务唯一键 `code` 标识接口。
 - 建立租户 OpenAPI 订阅表，支持 IP 白名单、并发限制、日调用限制。
 - 复用现有 `api_keys` 作为租户空间 AppKey 存储，并将授权范围收口为 OpenAPI 编码列表。
-- 网关支持 `X-App-Key` + `X-App-Secret` 认证，并透传租户、AppKey、OpenAPI、权限上下文。
+- 网关支持 `X-App-Key + X-Timestamp + X-Nonce + X-Signature` 固定签名认证，并透传租户、AppKey、OpenAPI、权限上下文。
 - 提供系统运维空间、平台租户管理、租户空间三处前端管理能力。
 
 ### 2.2 非目标
 
 - 本次不新增单独的 AppKey-OpenAPI 绑定表，继续复用 `api_keys.scopes` JSONB。
 - 本次不保留旧 `/api-keys` 管理入口和旧 `apikey:*` 平台菜单。
-- 本次不实现新的第三方签名算法，只采用 AppKey/AppSecret 认证。
+- 本次不保留 `X-App-Secret` 明文传输方案，也不做多算法兼容，只采用固定的 `HMAC-SHA256` 签名方案。
 
 ## 3. 核心模型
 
@@ -62,6 +62,7 @@
 
 - 业务语义从旧 `API Key` 收口为租户空间的 `AppKey`。
 - `scopes` 字段不再表示通用权限范围，而是存储 `openApiCodes` JSON 数组。
+- `secret_key_hash` 保留为 Secret Key 指纹，`secret_key_ciphertext` 新增为服务端可解密密文，仅用于验签。
 - 前端和接口统一改为 `/api/v1/app-keys`。
 
 ## 4. 鉴权与转发链路
@@ -75,16 +76,19 @@
 ### 4.2 运行时链路
 
 1. 调用方通过网关访问 `/{SERVICE}/api/v1/...`。
-2. 网关读取 `X-App-Key`、`X-App-Secret`。
-3. 网关根据访问路径反解 `serviceCode + requestPath + httpMethod`。
+2. 调用方本地按固定规范计算签名，请求头携带 `X-App-Key`、`X-Timestamp`、`X-Nonce`、`X-Signature`，不会传输 Secret Key 本身。
+3. 网关缓存原始请求体，按访问路径反解 `serviceCode + requestPath + httpMethod`，并生成规范化 query/body 摘要。
 4. 网关调用系统服务内部接口 `/api/v1/internal/open-apis/authorize` 做统一鉴权。
 5. 系统服务依次校验：
    - AppKey 是否存在、未删除、未停用、未过期。
+   - 时间戳是否在允许窗口内，随机串是否满足格式要求。
+   - 用服务端解密 Secret Key 按相同 Canonical Request 计算 HMAC-SHA256，并校验签名。
    - 请求路径是否命中已启用 OpenAPI。
    - AppKey 是否被授予该 OpenAPI。
    - 租户是否订阅该 OpenAPI。
    - 请求 IP 是否在订阅白名单内。
-6. 网关在 Redis 上执行并发与配额控制：
+6. 网关在 Redis 上执行防重放、并发与配额控制：
+   - `appKeyId + nonce` 防重放
    - 单 OpenAPI 并发限制
    - AppKey 每分钟限制
    - AppKey 每日限制
@@ -96,6 +100,24 @@
    - `X-Open-Api-Code`
    - `X-Granted-Permissions`
 8. 下游服务通过 `firefly-common` 的上下文解析和安全切面识别 AppKey 调用。
+
+### 4.3 Canonical Request
+
+签名输入统一为以下七行文本，字段之间使用换行符 `\n` 连接：
+
+1. `HTTP_METHOD`，统一转大写
+2. `SERVICE_CODE`，统一转大写
+3. `REQUEST_PATH`
+4. `CANONICAL_QUERY`
+5. `BODY_SHA256`
+6. `TIMESTAMP`
+7. `NONCE`
+
+其中：
+
+- `CANONICAL_QUERY` 按 query key/value 排序，并以 RFC3986 编码后拼接。
+- `BODY_SHA256` 为原始请求体字节数组的 SHA256 十六进制摘要；空 body 也必须参与计算。
+- 最终签名算法固定为 `HMAC-SHA256(secretKey, canonicalRequest)`，输出 64 位小写十六进制字符串。
 
 ## 5. 权限与菜单模型
 
@@ -159,7 +181,7 @@
   - 查询按钮支持列表刷新。
   - 创建、编辑使用抽屉。
   - 只允许从已订阅 OpenAPI 中多选。
-  - 创建成功后仅一次展示 Secret Key。
+  - 创建成功后仅一次展示 Secret Key，并明确提示“只用于本地签名，不可明文传输”。
 
 ## 8. 关键设计取舍
 
@@ -180,8 +202,15 @@
 - 可以集中做 Redis 并发与配额控制。
 - 下游业务服务只消费统一上下文，不再感知 AppKey 校验细节。
 
+### 8.4 为什么服务端仍需保存可解密 Secret Key
+
+- HMAC 验签必须重新得到原始 Secret Key，单向哈希无法直接完成验签。
+- 因此服务端保留 `secret_key_hash + secret_key_ciphertext` 双字段：前者用于指纹校验，后者用于 AES-GCM 解密后参与验签。
+- 出于安全收口考虑，Secret Key 只在创建成功时返回给租户一次，之后不再回显。
+
 ## 9. 风险与后续项
 
 - 目前 AppKey 调用日志查询接口仍沿用既有能力，若要形成完整审计闭环，需要确保网关侧访问日志事件持续投递。
 - Redis 配额键依赖网关时间窗口，跨时区部署时应统一服务时区。
+- `V28` 之前创建的历史 AppKey 没有 `secret_key_ciphertext`，升级后必须重新创建，不能继续沿用旧凭证。
 - 若历史数据库中有手工补录的旧 `api-key` 菜单或权限脏数据，应按新模型清理，避免继续展示旧入口。
