@@ -1,7 +1,10 @@
 package com.songhg.firefly.iot.connector.protocol.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.songhg.firefly.iot.api.dto.DeviceLocatorInputDTO;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
+import com.songhg.firefly.iot.connector.protocol.downstream.DeviceIdentityResolveService;
+import com.songhg.firefly.iot.connector.protocol.downstream.ResolvedDeviceIdentity;
 import com.songhg.firefly.iot.connector.parser.model.KnownDeviceContext;
 import com.songhg.firefly.iot.connector.parser.model.ProtocolParseOutcome;
 import com.songhg.firefly.iot.connector.parser.service.ProtocolParseEngine;
@@ -13,7 +16,10 @@ import org.springframework.web.socket.*;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
+import java.net.URLDecoder;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -31,6 +37,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final DeviceMessageProducer messageProducer;
     private final ProtocolParseEngine protocolParseEngine;
+    private final DeviceIdentityResolveService deviceIdentityResolveService;
 
     /** sessionId → SessionInfo */
     private final Map<String, SessionInfo> sessions = new ConcurrentHashMap<>();
@@ -44,6 +51,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         String productId = params.getOrDefault("productId", "");
         String tenantId = params.getOrDefault("tenantId", "");
         String deviceName = params.getOrDefault("deviceName", "");
+        String productKey = params.getOrDefault("productKey", "");
 
         SessionInfo info = new SessionInfo();
         info.setSessionId(session.getId());
@@ -51,12 +59,25 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         info.setProductId(parseLong(productId));
         info.setTenantId(parseLong(tenantId));
         info.setDeviceName(deviceName);
+        info.setProductKey(productKey);
         info.setRemoteAddress(session.getRemoteAddress() != null ? session.getRemoteAddress().toString() : "unknown");
         info.setConnectedAt(System.currentTimeMillis());
         info.setSession(session);
 
+        // WebSocket devices may connect with business identifiers only, so we
+        // resolve the platform device once and keep the route on the session.
+        ResolvedDeviceIdentity resolvedIdentity = resolveSessionIdentity(info, params.get("locators"));
+        if (resolvedIdentity != null) {
+            info.setDeviceId(resolvedIdentity.getDeviceId());
+            info.setTenantId(firstNonNull(info.getTenantId(), resolvedIdentity.getTenantId()));
+            info.setProductId(firstNonNull(info.getProductId(), resolvedIdentity.getProductId()));
+            info.setProductKey(firstNonBlank(info.getProductKey(), resolvedIdentity.getProductKey()));
+            info.setDeviceName(firstNonBlank(info.getDeviceName(), resolvedIdentity.getDeviceName()));
+        }
+
         sessions.put(session.getId(), info);
-        log.info("WebSocket connected: sessionId={}, deviceId={}, remote={}", session.getId(), deviceId, info.getRemoteAddress());
+        log.info("WebSocket connected: sessionId={}, deviceId={}, remote={}",
+                session.getId(), info.getDeviceId(), info.getRemoteAddress());
 
         // Publish DEVICE_ONLINE event
         if (info.getDeviceId() != null) {
@@ -156,6 +177,22 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         return sessions.get(sessionId);
     }
 
+    public List<SessionInfo> listSessionsByDeviceId(Long deviceId) {
+        if (deviceId == null) {
+            return List.of();
+        }
+        List<SessionInfo> matched = new ArrayList<>();
+        for (SessionInfo sessionInfo : sessions.values()) {
+            if (sessionInfo != null
+                    && deviceId.equals(sessionInfo.getDeviceId())
+                    && sessionInfo.getSession() != null
+                    && sessionInfo.getSession().isOpen()) {
+                matched.add(sessionInfo);
+            }
+        }
+        return matched;
+    }
+
     public int getSessionCount() {
         return sessions.size();
     }
@@ -228,7 +265,10 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         for (String pair : uri.getQuery().split("&")) {
             int idx = pair.indexOf('=');
             if (idx > 0) {
-                params.put(pair.substring(0, idx), pair.substring(idx + 1));
+                params.put(
+                        URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8),
+                        URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8)
+                );
             }
         }
         return params;
@@ -239,6 +279,51 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         try { return Long.parseLong(value); } catch (NumberFormatException e) { return null; }
     }
 
+    private ResolvedDeviceIdentity resolveSessionIdentity(SessionInfo info, String locatorJson) {
+        if (info.getDeviceId() != null) {
+            ResolvedDeviceIdentity resolved = deviceIdentityResolveService.loadByDeviceId(info.getDeviceId());
+            if (resolved != null) {
+                return resolved;
+            }
+        }
+        if (info.getProductKey() == null || info.getProductKey().isBlank()) {
+            return null;
+        }
+        return deviceIdentityResolveService.resolveByProductKey(
+                info.getProductKey(),
+                info.getDeviceName(),
+                parseLocators(locatorJson)
+        );
+    }
+
+    private List<DeviceLocatorInputDTO> parseLocators(String locatorJson) {
+        if (locatorJson == null || locatorJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            DeviceLocatorInputDTO[] locators = objectMapper.readValue(locatorJson, DeviceLocatorInputDTO[].class);
+            return locators == null ? List.of() : Arrays.asList(locators);
+        } catch (Exception ex) {
+            log.warn("Failed to parse WebSocket locator payload: {}", ex.getMessage());
+            return List.of();
+        }
+    }
+
+    private Long firstNonNull(Long currentValue, Long fallbackValue) {
+        return currentValue != null ? currentValue : fallbackValue;
+    }
+
+    private String firstNonBlank(String currentValue, String fallbackValue) {
+        String normalizedCurrent = currentValue == null ? null : currentValue.trim();
+        if (normalizedCurrent != null && !normalizedCurrent.isEmpty()) {
+            return normalizedCurrent;
+        }
+        if (fallbackValue == null || fallbackValue.isBlank()) {
+            return currentValue;
+        }
+        return fallbackValue.trim();
+    }
+
     // ==================== SessionInfo DTO ====================
 
     @lombok.Data
@@ -246,6 +331,7 @@ public class DeviceWebSocketHandler extends TextWebSocketHandler {
         private String sessionId;
         private Long deviceId;
         private Long productId;
+        private String productKey;
         private Long tenantId;
         private String deviceName;
         private String remoteAddress;

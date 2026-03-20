@@ -1,5 +1,6 @@
 package com.songhg.firefly.iot.connector.protocol.lorawan;
 
+import com.songhg.firefly.iot.common.message.DeviceMessage;
 import com.songhg.firefly.iot.connector.config.LoRaWanProperties;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -7,7 +8,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -25,6 +29,7 @@ public class LoRaWanServer {
     /** 已知设备 (devEui -> info) */
     @Getter
     private final Map<String, LoRaWanDeviceInfo> devices = new ConcurrentHashMap<>();
+    private final Map<String, List<DownlinkRecord>> downlinkRecords = new ConcurrentHashMap<>();
 
     @PostConstruct
     public void init() {
@@ -125,6 +130,75 @@ public class LoRaWanServer {
         log.warn("LoRaWAN error event: devEui={}, data={}", msg.getDevEui(), msg.getData());
     }
 
+    /**
+     * The current LoRaWAN connector queues downlink commands locally so the
+     * simulator and operators can verify what the platform attempted to send.
+     */
+    public boolean queueDownlink(String devEui,
+                                 Integer fPort,
+                                 String data,
+                                 Boolean confirmed,
+                                 String displayPayload,
+                                 DeviceMessage message) {
+        LoRaWanDeviceInfo info = getDevice(devEui);
+        if (info == null) {
+            return false;
+        }
+
+        DownlinkRecord record = new DownlinkRecord();
+        record.setMessageId(message == null ? null : message.getMessageId());
+        record.setDeviceId(message == null ? null : message.getDeviceId());
+        record.setDeviceName(message == null ? null : message.getDeviceName());
+        record.setMessageType(message == null || message.getType() == null ? null : message.getType().name());
+        record.setDevEui(devEui);
+        record.setFPort(fPort != null && fPort > 0 ? fPort : properties.getDownlinkFPort());
+        record.setConfirmed(confirmed != null ? confirmed : properties.isDownlinkConfirmed());
+        record.setData(data);
+        record.setDisplayPayload(displayPayload);
+        record.setQueuedAt(System.currentTimeMillis());
+
+        List<DownlinkRecord> history = downlinkRecords.computeIfAbsent(devEui, key -> Collections.synchronizedList(new ArrayList<>()));
+        history.add(record);
+        synchronized (history) {
+            while (history.size() > 200) {
+                history.remove(0);
+            }
+        }
+
+        info.getDownlinkCount().incrementAndGet();
+        info.setLastDownlinkTime(record.getQueuedAt());
+        log.info("LoRaWAN downlink queued: devEui={}, fPort={}, confirmed={}, deviceId={}",
+                devEui, record.getFPort(), record.isConfirmed(), record.getDeviceId());
+        return true;
+    }
+
+    public List<DownlinkRecord> listDownlinks(String devEui, Long sinceTs) {
+        List<DownlinkRecord> history = downlinkRecords.get(devEui);
+        if (history == null || history.isEmpty()) {
+            return List.of();
+        }
+        long cursor = sinceTs == null ? 0L : sinceTs;
+        synchronized (history) {
+            return history.stream()
+                    .filter(record -> record.getQueuedAt() > cursor)
+                    .map(record -> {
+                        DownlinkRecord copy = new DownlinkRecord();
+                        copy.setMessageId(record.getMessageId());
+                        copy.setDeviceId(record.getDeviceId());
+                        copy.setDeviceName(record.getDeviceName());
+                        copy.setMessageType(record.getMessageType());
+                        copy.setDevEui(record.getDevEui());
+                        copy.setFPort(record.getFPort());
+                        copy.setConfirmed(record.isConfirmed());
+                        copy.setData(record.getData());
+                        copy.setDisplayPayload(record.getDisplayPayload());
+                        copy.setQueuedAt(record.getQueuedAt());
+                        return copy;
+                    })
+                    .toList();
+        }
+    }
+
     // ==================== Query Methods ====================
 
     public int getDeviceCount() {
@@ -145,5 +219,19 @@ public class LoRaWanServer {
 
     public long getTotalDownlinks() {
         return devices.values().stream().mapToInt(d -> d.getDownlinkCount().get()).sum();
+    }
+
+    @lombok.Data
+    public static class DownlinkRecord {
+        private String messageId;
+        private Long deviceId;
+        private String deviceName;
+        private String messageType;
+        private String devEui;
+        private int fPort;
+        private boolean confirmed;
+        private String data;
+        private String displayPayload;
+        private long queuedAt;
     }
 }

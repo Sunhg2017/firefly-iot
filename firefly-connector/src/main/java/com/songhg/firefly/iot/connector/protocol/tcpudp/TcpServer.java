@@ -26,6 +26,8 @@ import org.springframework.stereotype.Component;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -116,11 +118,22 @@ public class TcpServer {
     }
 
     public boolean sendToSession(String sessionId, String message) {
+        return sendToSession(sessionId, message == null ? new byte[0] : message.getBytes(StandardCharsets.UTF_8), true);
+    }
+
+    public boolean sendToSession(String sessionId, byte[] payload, boolean appendLineDelimiter) {
         TcpSessionInfo info = sessions.get(sessionId);
         if (info == null || info.getChannel() == null || !info.getChannel().isActive()) {
             return false;
         }
-        info.getChannel().writeAndFlush(Unpooled.copiedBuffer(message + "\n", StandardCharsets.UTF_8));
+        byte[] outgoing = payload == null ? new byte[0] : payload;
+        if (appendLineDelimiter) {
+            byte[] withDelimiter = new byte[outgoing.length + 1];
+            System.arraycopy(outgoing, 0, withDelimiter, 0, outgoing.length);
+            withDelimiter[outgoing.length] = '\n';
+            outgoing = withDelimiter;
+        }
+        info.getChannel().writeAndFlush(Unpooled.wrappedBuffer(outgoing));
         info.incrementSentMessages();
         return true;
     }
@@ -147,6 +160,24 @@ public class TcpServer {
             }
         }
         return count;
+    }
+
+    public List<TcpSessionInfo> listSessionsByDeviceId(Long deviceId) {
+        if (deviceId == null) {
+            return List.of();
+        }
+        List<TcpSessionInfo> matched = new ArrayList<>();
+        for (TcpSessionInfo sessionInfo : sessions.values()) {
+            if (sessionInfo == null
+                    || sessionInfo.getBinding() == null
+                    || !deviceId.equals(sessionInfo.getBinding().getDeviceId())
+                    || sessionInfo.getChannel() == null
+                    || !sessionInfo.getChannel().isActive()) {
+                continue;
+            }
+            matched.add(sessionInfo);
+        }
+        return matched;
     }
 
     private class TcpChannelHandler extends SimpleChannelInboundHandler<ByteBuf> {

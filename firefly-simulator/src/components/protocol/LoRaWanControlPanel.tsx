@@ -11,7 +11,6 @@ export interface LoRaMsg {
   payload: string;
   ts: number;
 }
-
 interface Props {
   device: SimDevice;
   loraMessages: LoRaMsg[];
@@ -38,25 +37,25 @@ export default function LoRaWanControlPanel({ device, loraMessages, setLoraMessa
       );
       if (res.success) {
         setLoraMessages((prev) => [...prev.slice(-199), { dir: 'tx', payload: sendPayload.trim(), ts: Date.now() }]);
-        addLog(device.id, device.name, 'success', `LoRaWAN 上行: ${sendPayload.trim().slice(0, 100)}`);
+        addLog(device.id, device.name, 'success', `LoRaWAN 涓婅: ${sendPayload.trim().slice(0, 100)}`);
       } else {
-        addLog(device.id, device.name, 'error', `LoRaWAN 发送失败: ${res.message}`);
+        addLog(device.id, device.name, 'error', `LoRaWAN 鍙戦€佸け璐? ${res.message}`);
       }
     } catch (err: any) {
-      addLog(device.id, device.name, 'error', `LoRaWAN 发送异常: ${err?.message}`);
+      addLog(device.id, device.name, 'error', `LoRaWAN 鍙戦€佸紓甯? ${err?.message}`);
     } finally {
       setSending(false);
     }
   };
 
   return (
-    <Card title={<Space><WifiOutlined /> LoRaWAN 上行模拟</Space>} size="small" style={{ marginBottom: 16 }}>
+    <Card title={<Space><WifiOutlined /> LoRaWAN 涓婅妯℃嫙</Space>} size="small" style={{ marginBottom: 16 }}>
       <Space direction="vertical" style={{ width: '100%' }} size={8}>
         <div style={{ fontSize: 11, color: '#8c8c8c', marginBottom: 4 }}>
-          DevEUI: <code>{device.loraDevEui}</code> | fPort: {device.loraFPort} | 应用: {device.loraAppId || '-'}
+          DevEUI: <code>{device.loraDevEui}</code> | fPort: {device.loraFPort} | 搴旂敤: {device.loraAppId || '-'}
         </div>
         <div>
-          <Text style={{ fontSize: 12 }} type="secondary">上行载荷 (JSON):</Text>
+          <Text style={{ fontSize: 12 }} type="secondary">涓婅杞借嵎 (JSON):</Text>
           <Input.TextArea
             rows={3}
             value={sendPayload}
@@ -68,31 +67,35 @@ export default function LoRaWanControlPanel({ device, loraMessages, setLoraMessa
         <Space>
           <Button type="primary" size="small" icon={<SendOutlined />} onClick={handleSend}
             loading={sending}>
-            模拟上行
+            妯℃嫙涓婅
           </Button>
           <Button size="small" icon={<ClearOutlined />} onClick={() => setLoraMessages([])}>
-            清空
+            娓呯┖
           </Button>
           <Text style={{ fontSize: 11 }} type="secondary">
-            已发送: {loraMessages.filter(m => m.dir === 'tx').length}
+            宸插彂閫? {loraMessages.filter(m => m.dir === 'tx').length}
           </Text>
         </Space>
         {loraMessages.length > 0 ? (
-          <Table size="small" pagination={{ pageSize: 10, size: 'small' }}
+          <Table size="small" pagination={{ pageSize: 10, size: 'small' }} scroll={{ x: 720 }}
             dataSource={[...loraMessages].reverse().map((m, i) => ({ key: i, ...m }))}
             columns={[
-              { title: '方向', dataIndex: 'dir', width: 60,
+              { title: '鏂瑰悜', dataIndex: 'dir', width: 60,
                 render: (v: string) => v === 'tx'
-                  ? <Tag color="blue">上行</Tag>
-                  : <Tag color="green">下行</Tag> },
-              { title: '内容', dataIndex: 'payload', ellipsis: true,
-                render: (v: string) => <code style={{ fontSize: 11 }}>{v}</code> },
-              { title: '时间', dataIndex: 'ts', width: 90,
+                  ? <Tag color="blue">涓婅</Tag>
+                  : <Tag color="green">涓嬭</Tag> },
+              { title: '鍐呭', dataIndex: 'payload',
+                render: (v: string) => (
+                  <div style={{ fontFamily: 'monospace', fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                    {v}
+                  </div>
+                ) },
+              { title: '鏃堕棿', dataIndex: 'ts', width: 90,
                 render: (v: number) => <Text style={{ fontSize: 11 }} type="secondary">{new Date(v).toLocaleTimeString('zh-CN', { hour12: false })}</Text> },
             ]}
           />
         ) : (
-          <Empty description="暂无消息" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ margin: '8px 0' }} />
+          <Empty description="鏆傛棤娑堟伅" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ margin: '8px 0' }} />
         )}
       </Space>
     </Card>

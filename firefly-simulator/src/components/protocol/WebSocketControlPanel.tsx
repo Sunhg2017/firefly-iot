@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Card, Space, Input, Button, Tag, Table, Empty, Typography } from 'antd';
 import { SendOutlined, ClearOutlined, WifiOutlined } from '@ant-design/icons';
 import type { SimDevice } from '../../store';
@@ -66,21 +66,38 @@ export default function WebSocketControlPanel({ device, wsMessages, setWsMessage
             清空
           </Button>
           <Text style={{ fontSize: 11 }} type="secondary">
-            收: {wsMessages.filter(m => m.dir === 'rx').length} / 发: {wsMessages.filter(m => m.dir === 'tx').length}
+            收: {wsMessages.filter((m) => m.dir === 'rx').length} / 发: {wsMessages.filter((m) => m.dir === 'tx').length}
           </Text>
         </Space>
         {wsMessages.length > 0 ? (
-          <Table size="small" pagination={{ pageSize: 10, size: 'small' }}
+          <Table size="small" pagination={{ pageSize: 10, size: 'small' }} scroll={{ x: 720 }}
             dataSource={[...wsMessages].reverse().map((m, i) => ({ key: i, ...m }))}
             columns={[
-              { title: '方向', dataIndex: 'dir', width: 60,
-                render: (v: string) => v === 'tx'
-                  ? <Tag color="blue">发送</Tag>
-                  : <Tag color="green">接收</Tag> },
-              { title: '内容', dataIndex: 'payload', ellipsis: true,
-                render: (v: string) => <code style={{ fontSize: 11 }}>{v}</code> },
-              { title: '时间', dataIndex: 'ts', width: 90,
-                render: (v: number) => <Text style={{ fontSize: 11 }} type="secondary">{new Date(v).toLocaleTimeString('zh-CN', { hour12: false })}</Text> },
+              {
+                title: '方向',
+                dataIndex: 'dir',
+                width: 60,
+                render: (v: string) => (v === 'tx' ? <Tag color="blue">发送</Tag> : <Tag color="green">接收</Tag>),
+              },
+              {
+                title: '内容',
+                dataIndex: 'payload',
+                render: (v: string) => (
+                  <div style={{ fontFamily: 'monospace', fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                    {v}
+                  </div>
+                ),
+              },
+              {
+                title: '时间',
+                dataIndex: 'ts',
+                width: 90,
+                render: (v: number) => (
+                  <Text style={{ fontSize: 11 }} type="secondary">
+                    {new Date(v).toLocaleTimeString('zh-CN', { hour12: false })}
+                  </Text>
+                ),
+              },
             ]}
           />
         ) : (

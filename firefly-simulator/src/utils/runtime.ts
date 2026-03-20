@@ -10,6 +10,7 @@ import {
 } from './mqtt';
 import { getDeviceAccessValidationError } from './deviceAccess';
 import { buildLifecycleEventPayload, invokeHttpLifecycle } from './httpLifecycle';
+import { buildTransportBindingPayload, buildWebSocketConnectParams } from './transportBinding';
 
 const RESTORABLE_PROTOCOLS: Protocol[] = [
   'HTTP',
@@ -208,12 +209,7 @@ export async function connectSimDevice(
     }
 
     if (device.protocol === 'WebSocket') {
-      const result = await window.electronAPI.wsConnect(device.id, device.wsEndpoint, {
-        deviceId: device.wsDeviceId,
-        productId: device.wsProductId,
-        tenantId: device.wsTenantId,
-        deviceName: device.name,
-      });
+      const result = await window.electronAPI.wsConnect(device.id, device.wsEndpoint, buildWebSocketConnectParams(device));
       if (result.success) {
         store.updateDevice(device.id, { status: 'online', restoreOnLaunch: true });
         if (!options?.silent) {
@@ -227,6 +223,11 @@ export async function connectSimDevice(
     if (device.protocol === 'TCP') {
       const result = await window.electronAPI.tcpConnect(device.id, device.tcpHost, device.tcpPort);
       if (result.success) {
+        const bindingResult = await window.electronAPI.tcpSend(device.id, buildTransportBindingPayload(device));
+        if (!bindingResult.success) {
+          await window.electronAPI.tcpDisconnect(device.id);
+          throw new Error(bindingResult.message || 'TCP binding bootstrap failed');
+        }
         store.updateDevice(device.id, { status: 'online', restoreOnLaunch: true });
         if (!options?.silent) {
           store.addLog(device.id, device.name, 'success', `TCP connected: ${device.tcpHost}:${device.tcpPort}`);
@@ -237,6 +238,15 @@ export async function connectSimDevice(
     }
 
     if (device.protocol === 'UDP') {
+      const result = await window.electronAPI.udpConnect(device.id, device.udpHost, device.udpPort);
+      if (!result.success) {
+        throw new Error(result.message || 'UDP connect failed');
+      }
+      const bindingResult = await window.electronAPI.udpSend(device.id, buildTransportBindingPayload(device));
+      if (!bindingResult.success) {
+        await window.electronAPI.udpDisconnect(device.id);
+        throw new Error(bindingResult.message || 'UDP binding bootstrap failed');
+      }
       store.updateDevice(device.id, { status: 'online', restoreOnLaunch: true });
       if (!options?.silent) {
         store.addLog(device.id, device.name, 'success', `UDP ready: ${device.udpHost}:${device.udpPort}`);
@@ -401,6 +411,9 @@ export async function disconnectSimDevice(deviceId: string, options?: { silent?:
     }
     if (device.protocol === 'TCP') {
       await window.electronAPI.tcpDisconnect(device.id);
+    }
+    if (device.protocol === 'UDP') {
+      await window.electronAPI.udpDisconnect(device.id);
     }
     if (device.protocol === 'Video' && device.streamMode === 'GB28181') {
       await window.electronAPI.sipStop(device.id);

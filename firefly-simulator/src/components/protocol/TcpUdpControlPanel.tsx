@@ -35,7 +35,7 @@ export default function TcpUdpControlPanel({ device, tcpMessages, setTcpMessages
       if (isTcp) {
         res = await window.electronAPI.tcpSend(device.id, sendPayload.trim());
       } else {
-        res = await window.electronAPI.udpSend(device.udpHost, device.udpPort, sendPayload.trim());
+        res = await window.electronAPI.udpSend(device.id, sendPayload.trim());
       }
       if (res.success) {
         setTcpMessages((prev) => [...prev.slice(-199), { dir: 'tx', payload: sendPayload.trim(), ts: Date.now() }]);
@@ -65,28 +65,45 @@ export default function TcpUdpControlPanel({ device, tcpMessages, setTcpMessages
         </div>
         <Space>
           <Button type="primary" size="small" icon={<SendOutlined />} onClick={handleSend}
-            loading={sending} disabled={isTcp ? !isOnline : false}>
+            loading={sending} disabled={!isOnline}>
             发送
           </Button>
           <Button size="small" icon={<ClearOutlined />} onClick={() => setTcpMessages([])}>
             清空
           </Button>
           <Text style={{ fontSize: 11 }} type="secondary">
-            收: {tcpMessages.filter(m => m.dir === 'rx').length} / 发: {tcpMessages.filter(m => m.dir === 'tx').length}
+            收: {tcpMessages.filter((m) => m.dir === 'rx').length} / 发: {tcpMessages.filter((m) => m.dir === 'tx').length}
           </Text>
         </Space>
         {tcpMessages.length > 0 ? (
-          <Table size="small" pagination={{ pageSize: 10, size: 'small' }}
+          <Table size="small" pagination={{ pageSize: 10, size: 'small' }} scroll={{ x: 720 }}
             dataSource={[...tcpMessages].reverse().map((m, i) => ({ key: i, ...m }))}
             columns={[
-              { title: '方向', dataIndex: 'dir', width: 60,
-                render: (v: string) => v === 'tx'
-                  ? <Tag color="blue">发送</Tag>
-                  : <Tag color="green">接收</Tag> },
-              { title: '内容', dataIndex: 'payload', ellipsis: true,
-                render: (v: string) => <code style={{ fontSize: 11 }}>{v}</code> },
-              { title: '时间', dataIndex: 'ts', width: 90,
-                render: (v: number) => <Text style={{ fontSize: 11 }} type="secondary">{new Date(v).toLocaleTimeString('zh-CN', { hour12: false })}</Text> },
+              {
+                title: '方向',
+                dataIndex: 'dir',
+                width: 60,
+                render: (v: string) => (v === 'tx' ? <Tag color="blue">发送</Tag> : <Tag color="green">接收</Tag>),
+              },
+              {
+                title: '内容',
+                dataIndex: 'payload',
+                render: (v: string) => (
+                  <div style={{ fontFamily: 'monospace', fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                    {v}
+                  </div>
+                ),
+              },
+              {
+                title: '时间',
+                dataIndex: 'ts',
+                width: 90,
+                render: (v: number) => (
+                  <Text style={{ fontSize: 11 }} type="secondary">
+                    {new Date(v).toLocaleTimeString('zh-CN', { hour12: false })}
+                  </Text>
+                ),
+              },
             ]}
           />
         ) : (

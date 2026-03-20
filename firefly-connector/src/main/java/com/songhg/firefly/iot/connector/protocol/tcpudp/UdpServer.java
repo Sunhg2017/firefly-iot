@@ -21,6 +21,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -97,13 +99,33 @@ public class UdpServer {
     }
 
     public boolean sendTo(String address, int port, String message) {
+        return sendTo(address, port, message == null ? new byte[0] : message.getBytes(CharsetUtil.UTF_8));
+    }
+
+    public boolean sendTo(String address, int port, byte[] payload) {
         if (serverChannel == null || !serverChannel.isActive()) {
             return false;
         }
         InetSocketAddress target = new InetSocketAddress(address, port);
-        ByteBuf buf = Unpooled.copiedBuffer(message, CharsetUtil.UTF_8);
+        ByteBuf buf = Unpooled.wrappedBuffer(payload == null ? new byte[0] : payload);
         serverChannel.writeAndFlush(new DatagramPacket(buf, target));
         return true;
+    }
+
+    public List<UdpPeerInfo> listPeersByDeviceId(Long deviceId) {
+        if (deviceId == null) {
+            return List.of();
+        }
+        List<UdpPeerInfo> matched = new ArrayList<>();
+        for (UdpPeerInfo peerInfo : peers.values()) {
+            if (peerInfo == null
+                    || peerInfo.getBinding() == null
+                    || !deviceId.equals(peerInfo.getBinding().getDeviceId())) {
+                continue;
+            }
+            matched.add(peerInfo);
+        }
+        return matched;
     }
 
     private String buildPeerKey(String address, int port) {

@@ -18,9 +18,46 @@ const mqttClients = new Map<string, MqttClient>();
 const sipClients = new Map<string, Gb28181Client>();
 const wsClients = new Map<string, WebSocket>();
 const tcpClients = new Map<string, net.Socket>();
+const udpClients = new Map<string, dgram.Socket>();
 // Dev mode is bootstrapped by vite-plugin-electron, so we guard against accidental
 // duplicate launches from stale scripts or manual `electron .` commands.
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+function isMostlyText(buffer: Buffer) {
+  if (buffer.length === 0) {
+    return true;
+  }
+  let printable = 0;
+  for (const byte of buffer.values()) {
+    if (byte === 0x0a || byte === 0x0d || byte === 0x09) {
+      printable += 1;
+      continue;
+    }
+    if (byte >= 0x20 && byte <= 0x7e) {
+      printable += 1;
+      continue;
+    }
+    if (byte >= 0xc2) {
+      printable += 1;
+    }
+  }
+  return printable * 10 >= buffer.length * 8;
+}
+
+function formatPayloadForRenderer(payload: Buffer | string) {
+  const buffer = typeof payload === 'string' ? Buffer.from(payload) : payload;
+  if (isMostlyText(buffer)) {
+    return buffer.toString('utf-8').replace(/\r\n/g, '\n').trimEnd();
+  }
+  return `base64:${buffer.toString('base64')}`;
+}
+
+function resolveLoRaApiBaseUrl(webhookUrl: string) {
+  const parsed = new URL(webhookUrl);
+  const matched = parsed.pathname.match(/^(.*\/api\/v1\/lorawan)(?:\/.*)?$/);
+  const basePath = matched?.[1] || '/api/v1/lorawan';
+  return `${parsed.origin}${basePath}`;
+}
 
 function getSimulatorStoreFilePath() {
   return path.join(app.getPath('userData'), 'simulator-store.json');
@@ -113,6 +150,8 @@ app.on('window-all-closed', () => {
   wsClients.clear();
   tcpClients.forEach((sock) => sock.destroy());
   tcpClients.clear();
+  udpClients.forEach((socket) => socket.close());
+  udpClients.clear();
   if (process.platform !== 'darwin') app.quit();
 });
 
@@ -726,7 +765,14 @@ ipcMain.handle('modbus:writeMultipleCoils', async (_e, connectorUrl: string, pay
 // WebSocket Protocol IPC Handlers
 // ============================================================
 
-ipcMain.handle('ws:connect', async (_e, id: string, endpoint: string, params?: { deviceId?: string; productId?: string; tenantId?: string; deviceName?: string }) => {
+ipcMain.handle('ws:connect', async (_e, id: string, endpoint: string, params?: {
+  deviceId?: string;
+  productId?: string;
+  tenantId?: string;
+  deviceName?: string;
+  productKey?: string;
+  locators?: string;
+}) => {
   try {
     // Close existing connection
     const existing = wsClients.get(id);
@@ -741,6 +787,8 @@ ipcMain.handle('ws:connect', async (_e, id: string, endpoint: string, params?: {
     if (params?.productId) url.searchParams.set('productId', params.productId);
     if (params?.tenantId) url.searchParams.set('tenantId', params.tenantId);
     if (params?.deviceName) url.searchParams.set('deviceName', params.deviceName);
+    if (params?.productKey) url.searchParams.set('productKey', params.productKey);
+    if (params?.locators) url.searchParams.set('locators', params.locators);
 
     const ws = new WebSocket(url.toString());
 
@@ -755,7 +803,7 @@ ipcMain.handle('ws:connect', async (_e, id: string, endpoint: string, params?: {
         wsClients.set(id, ws);
 
         ws.on('message', (data: WebSocket.Data) => {
-          const payload = data.toString();
+          const payload = formatPayloadForRenderer(Buffer.isBuffer(data) ? data : Buffer.from(data.toString()));
           mainWindow?.webContents.send('ws:message', id, payload);
         });
 
@@ -832,16 +880,10 @@ ipcMain.handle('tcp:connect', async (_e, id: string, host: string, port: number)
         clearTimeout(timeout);
         tcpClients.set(id, socket);
 
-        let buffer = '';
         socket.on('data', (data: Buffer) => {
-          buffer += data.toString();
-          let idx: number;
-          while ((idx = buffer.indexOf('\n')) !== -1) {
-            const line = buffer.substring(0, idx).trim();
-            buffer = buffer.substring(idx + 1);
-            if (line) {
-              mainWindow?.webContents.send('tcp:message', id, line);
-            }
+          const payload = formatPayloadForRenderer(data);
+          if (payload) {
+            mainWindow?.webContents.send('tcp:message', id, payload);
           }
         });
 
@@ -898,13 +940,57 @@ ipcMain.handle('tcp:disconnect', async (_e, id: string) => {
 // UDP Protocol IPC Handlers
 // ============================================================
 
-ipcMain.handle('udp:send', async (_e, host: string, port: number, message: string) => {
+ipcMain.handle('udp:connect', async (_e, id: string, host: string, port: number) => {
   try {
     return new Promise((resolve) => {
-      const client = dgram.createSocket('udp4');
-      const buf = Buffer.from(message);
-      client.send(buf, 0, buf.length, port, host, (err) => {
-        client.close();
+      const existing = udpClients.get(id);
+      if (existing) {
+        existing.close();
+        udpClients.delete(id);
+      }
+
+      const socket = dgram.createSocket('udp4');
+      const timeout = setTimeout(() => {
+        socket.close();
+        resolve({ success: false, message: '连接超时 (10s)' });
+      }, 10000);
+
+      socket.on('message', (message: Buffer) => {
+        const payload = formatPayloadForRenderer(message);
+        if (payload) {
+          mainWindow?.webContents.send('udp:message', id, payload);
+        }
+      });
+
+      socket.on('close', () => {
+        mainWindow?.webContents.send('udp:disconnected', id);
+        udpClients.delete(id);
+      });
+
+      socket.on('error', (err: Error) => {
+        mainWindow?.webContents.send('udp:error', id, err.message);
+      });
+
+      socket.connect(port, host, () => {
+        clearTimeout(timeout);
+        udpClients.set(id, socket);
+        resolve({ success: true });
+      });
+    });
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('udp:send', async (_e, id: string, message: string) => {
+  try {
+    const socket = udpClients.get(id);
+    if (!socket) {
+      return { success: false, message: 'UDP socket not connected' };
+    }
+    return new Promise((resolve) => {
+      const buffer = Buffer.from(message);
+      socket.send(buffer, (err) => {
         if (err) {
           resolve({ success: false, message: err.message });
         } else {
@@ -912,6 +998,19 @@ ipcMain.handle('udp:send', async (_e, host: string, port: number, message: strin
         }
       });
     });
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('udp:disconnect', async (_e, id: string) => {
+  try {
+    const socket = udpClients.get(id);
+    if (socket) {
+      socket.close();
+      udpClients.delete(id);
+    }
+    return { success: true };
   } catch (err: any) {
     return { success: false, message: err.message };
   }
@@ -981,6 +1080,26 @@ ipcMain.handle('lorawan:send', async (_e, webhookUrl: string, devEui: string, ap
       req.write(postData);
       req.end();
     });
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('lorawan:listDownlinks', async (_e, webhookUrl: string, devEui: string, sinceTs?: number) => {
+  try {
+    const apiUrl = new URL(`${resolveLoRaApiBaseUrl(webhookUrl)}/devices/${encodeURIComponent(devEui)}/downlinks`);
+    if (typeof sinceTs === 'number' && Number.isFinite(sinceTs) && sinceTs > 0) {
+      apiUrl.searchParams.set('sinceTs', String(sinceTs));
+    }
+    const res = await httpRequest(apiUrl.toString(), 'GET', {});
+    const parsed = JSON.parse(res.data);
+    return {
+      success: true,
+      ...parsed,
+      _status: res.status,
+      _headers: res.headers,
+      _elapsed: res.elapsed,
+    };
   } catch (err: any) {
     return { success: false, message: err.message };
   }

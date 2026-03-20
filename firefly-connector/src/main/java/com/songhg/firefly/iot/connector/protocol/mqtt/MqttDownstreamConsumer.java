@@ -3,10 +3,11 @@ package com.songhg.firefly.iot.connector.protocol.mqtt;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
 import com.songhg.firefly.iot.common.message.KafkaTopics;
+import com.songhg.firefly.iot.connector.config.MqttProperties;
+import com.songhg.firefly.iot.connector.protocol.downstream.NonMqttDownstreamDispatcher;
 import com.songhg.firefly.iot.connector.protocol.dto.MqttSessionRoute;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -15,15 +16,16 @@ import java.util.Optional;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "firefly.mqtt", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class MqttDownstreamConsumer {
 
     private final ObjectMapper objectMapper;
-    private final MqttSessionRouteRegistry routeRegistry;
-    private final EmbeddedMqttBroker embeddedMqttBroker;
-    private final EmbeddedMqttConnectionManager connectionManager;
-    private final MqttNodeRegistry nodeRegistry;
-    private final MqttRedisDownstreamRelay downstreamRelay;
+    private final MqttProperties mqttProperties;
+    private final NonMqttDownstreamDispatcher nonMqttDownstreamDispatcher;
+    private final Optional<MqttSessionRouteRegistry> routeRegistry;
+    private final Optional<EmbeddedMqttBroker> embeddedMqttBroker;
+    private final Optional<EmbeddedMqttConnectionManager> connectionManager;
+    private final Optional<MqttNodeRegistry> nodeRegistry;
+    private final Optional<MqttRedisDownstreamRelay> downstreamRelay;
 
     @KafkaListener(
             topics = KafkaTopics.DEVICE_MESSAGE_DOWN,
@@ -37,39 +39,83 @@ public class MqttDownstreamConsumer {
                 return;
             }
 
-            Optional<MqttSessionRoute> routeOptional = routeRegistry.findByDeviceId(message.getDeviceId());
-            if (routeOptional.isEmpty()) {
-                log.debug("Skip MQTT downstream message because device route is offline: deviceId={}", message.getDeviceId());
+            if (tryDispatchByMqtt(payload, message)) {
                 return;
             }
 
-            MqttSessionRoute route = routeOptional.get();
-            if (embeddedMqttBroker.isLocalOwner(route)) {
-                if (!embeddedMqttBroker.publishDownstream(message, route)) {
-                    log.warn("Failed to publish MQTT downstream message locally: deviceId={}, clientId={}",
-                            message.getDeviceId(), route.getClientId());
-                }
+            if (nonMqttDownstreamDispatcher.dispatch(message)) {
+                log.debug("Delivered downstream message through non-MQTT transport: deviceId={}", message.getDeviceId());
                 return;
             }
 
-            if (!nodeRegistry.isNodeAlive(route.getNodeId())) {
-                log.warn("Detected stale MQTT route on offline node, cleaning route: deviceId={}, nodeId={}",
-                        message.getDeviceId(), route.getNodeId());
-                routeRegistry.unregister(route);
-
-                connectionManager.getLocalRoute(message.getDeviceId()).ifPresent(localRoute -> {
-                    routeRegistry.register(localRoute);
-                    if (!embeddedMqttBroker.publishDownstream(message, localRoute)) {
-                        log.warn("Failed to publish MQTT downstream message after stale-route recovery: deviceId={}, clientId={}",
-                                message.getDeviceId(), localRoute.getClientId());
-                    }
-                });
-                return;
-            }
-
-            downstreamRelay.forward(route.getNodeId(), payload, message);
+            log.debug("Skip downstream message because no transport route is online: deviceId={}", message.getDeviceId());
         } catch (Exception ex) {
             log.error("Failed to consume MQTT downstream message: {}", ex.getMessage(), ex);
         }
+    }
+
+    private boolean tryDispatchByMqtt(String payload, DeviceMessage message) {
+        if (!mqttProperties.isEnabled()) {
+            return false;
+        }
+
+        MqttSessionRouteRegistry registry = routeRegistry.orElse(null);
+        EmbeddedMqttBroker broker = embeddedMqttBroker.orElse(null);
+        EmbeddedMqttConnectionManager localConnectionManager = connectionManager.orElse(null);
+        MqttNodeRegistry localNodeRegistry = nodeRegistry.orElse(null);
+        MqttRedisDownstreamRelay relay = downstreamRelay.orElse(null);
+        if (registry == null || broker == null || localConnectionManager == null || localNodeRegistry == null || relay == null) {
+            return false;
+        }
+
+        Optional<MqttSessionRoute> routeOptional = registry.findByDeviceId(message.getDeviceId());
+        if (routeOptional.isEmpty()) {
+            return false;
+        }
+
+        MqttSessionRoute route = routeOptional.get();
+        if (broker.isLocalOwner(route)) {
+            if (broker.publishDownstream(message, route)) {
+                return true;
+            }
+
+            // A local publish failure usually means the in-memory route is stale, so
+            // we clear it and let the generic downstream dispatcher try other transports.
+            log.warn("Failed to publish MQTT downstream message locally, cleaning route: deviceId={}, clientId={}",
+                    message.getDeviceId(), route.getClientId());
+            registry.unregister(route);
+            return tryRecoverLocalRoute(message, registry, broker, localConnectionManager);
+        }
+
+        if (!localNodeRegistry.isNodeAlive(route.getNodeId())) {
+            log.warn("Detected stale MQTT route on offline node, cleaning route: deviceId={}, nodeId={}",
+                    message.getDeviceId(), route.getNodeId());
+            registry.unregister(route);
+            return tryRecoverLocalRoute(message, registry, broker, localConnectionManager);
+        }
+
+        relay.forward(route.getNodeId(), payload, message);
+        return true;
+    }
+
+    private boolean tryRecoverLocalRoute(DeviceMessage message,
+                                         MqttSessionRouteRegistry registry,
+                                         EmbeddedMqttBroker broker,
+                                         EmbeddedMqttConnectionManager localConnectionManager) {
+        Optional<MqttSessionRoute> localRouteOptional = localConnectionManager.getLocalRoute(message.getDeviceId());
+        if (localRouteOptional.isEmpty()) {
+            return false;
+        }
+
+        MqttSessionRoute localRoute = localRouteOptional.get();
+        registry.register(localRoute);
+        if (broker.publishDownstream(message, localRoute)) {
+            return true;
+        }
+
+        log.warn("Failed to publish MQTT downstream message after stale-route recovery: deviceId={}, clientId={}",
+                message.getDeviceId(), localRoute.getClientId());
+        registry.unregister(localRoute);
+        return false;
     }
 }

@@ -1,7 +1,10 @@
 package com.songhg.firefly.iot.connector.protocol.tcpudp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.songhg.firefly.iot.api.dto.DeviceLocatorInputDTO;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
+import com.songhg.firefly.iot.connector.protocol.downstream.DeviceIdentityResolveService;
+import com.songhg.firefly.iot.connector.protocol.downstream.ResolvedDeviceIdentity;
 import com.songhg.firefly.iot.connector.parser.model.FrameDecodeResult;
 import com.songhg.firefly.iot.connector.parser.model.KnownDeviceContext;
 import com.songhg.firefly.iot.connector.parser.model.ParseContext;
@@ -16,8 +19,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -30,6 +35,7 @@ public class TcpUdpProtocolAdapter implements ProtocolAdapter {
     private final DeviceMessageProducer messageProducer;
     private final ProtocolParseEngine protocolParseEngine;
     private final FrameDecodeEngine frameDecodeEngine;
+    private final DeviceIdentityResolveService deviceIdentityResolveService;
 
     @Override
     public String getProtocol() {
@@ -102,6 +108,15 @@ public class TcpUdpProtocolAdapter implements ProtocolAdapter {
 
     public void handleTcpMessage(String sessionId, TcpSessionInfo info, byte[] payload) {
         try {
+            // The simulator sends one reserved binding frame right after connect so
+            // downstream routing can resolve this raw socket back to a platform device.
+            if (tryBootstrapBinding(payload, binding -> {
+                if (info != null) {
+                    info.setBinding(binding);
+                }
+            }, "TCP", sessionId, info != null ? info.getRemoteAddress() : null)) {
+                return;
+            }
             Map<String, String> headers = buildHeaders(sessionId, "TCP", info);
             KnownDeviceContext knownDeviceContext = buildKnownDeviceContext(headers);
             ParseContext rawContext = buildParseContext(
@@ -131,6 +146,15 @@ public class TcpUdpProtocolAdapter implements ProtocolAdapter {
 
     public void handleUdpMessage(String sender, UdpServer.UdpPeerInfo peerInfo, byte[] payload) {
         try {
+            // UDP uses the same reserved binding frame because there is no long-lived
+            // application-layer session handshake we can rely on from the protocol itself.
+            if (tryBootstrapBinding(payload, binding -> {
+                if (peerInfo != null) {
+                    peerInfo.setBinding(binding);
+                }
+            }, "UDP", sender, sender)) {
+                return;
+            }
             Map<String, String> headers = buildHeaders(sender, "UDP", peerInfo == null ? null : peerInfo.getBinding(), sender);
             KnownDeviceContext knownDeviceContext = buildKnownDeviceContext(headers);
             processInboundFrame("/udp/data", "UDP", payload, headers, sender, sender, knownDeviceContext);
@@ -249,5 +273,77 @@ public class TcpUdpProtocolAdapter implements ProtocolAdapter {
         } catch (NumberFormatException ex) {
             return null;
         }
+    }
+
+    private boolean tryBootstrapBinding(byte[] payload,
+                                        java.util.function.Consumer<TcpUdpBindingContext> bindingConsumer,
+                                        String protocol,
+                                        String sessionId,
+                                        String remoteAddress) {
+        Map<String, Object> bindingPayload = readBindingPayload(payload);
+        if (bindingPayload == null) {
+            return false;
+        }
+
+        String productKey = textValue(bindingPayload.get("productKey"));
+        String deviceName = textValue(bindingPayload.get("deviceName"));
+        List<DeviceLocatorInputDTO> locators = readLocatorInputs(bindingPayload.get("locators"));
+        ResolvedDeviceIdentity resolvedIdentity = deviceIdentityResolveService.resolveByProductKey(productKey, deviceName, locators);
+        if (resolvedIdentity == null || resolvedIdentity.getDeviceId() == null) {
+            log.warn("Skip {} bootstrap binding because device identity cannot be resolved: sessionId={}, remoteAddress={}, productKey={}",
+                    protocol, sessionId, remoteAddress, productKey);
+            return true;
+        }
+
+        bindingConsumer.accept(TcpUdpBindingContext.builder()
+                .tenantId(resolvedIdentity.getTenantId())
+                .productId(resolvedIdentity.getProductId())
+                .productKey(productKey != null ? productKey : resolvedIdentity.getProductKey())
+                .deviceId(resolvedIdentity.getDeviceId())
+                .deviceName(resolvedIdentity.getDeviceName())
+                .bindTime(System.currentTimeMillis())
+                .build());
+        log.info("{} bootstrap binding established: sessionId={}, remoteAddress={}, deviceId={}, deviceName={}",
+                protocol, sessionId, remoteAddress, resolvedIdentity.getDeviceId(), resolvedIdentity.getDeviceName());
+        return true;
+    }
+
+    private Map<String, Object> readBindingPayload(byte[] payload) {
+        if (payload == null || payload.length == 0) {
+            return null;
+        }
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> parsed = objectMapper.readValue(payload, LinkedHashMap.class);
+            Object binding = parsed.get("_fireflyBinding");
+            if (!(binding instanceof Map<?, ?> bindingMap)) {
+                return null;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> converted = objectMapper.convertValue(bindingMap, LinkedHashMap.class);
+            return converted;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private List<DeviceLocatorInputDTO> readLocatorInputs(Object rawLocators) {
+        if (rawLocators == null) {
+            return List.of();
+        }
+        try {
+            DeviceLocatorInputDTO[] locators = objectMapper.convertValue(rawLocators, DeviceLocatorInputDTO[].class);
+            return locators == null ? List.of() : Arrays.asList(locators);
+        } catch (IllegalArgumentException ex) {
+            return List.of();
+        }
+    }
+
+    private String textValue(Object rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+        String text = String.valueOf(rawValue).trim();
+        return text.isEmpty() ? null : text;
     }
 }

@@ -156,7 +156,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('modbus:writeMultipleCoils', connectorUrl, payload),
 
   // WebSocket Protocol
-  wsConnect: (id: string, endpoint: string, params?: { deviceId?: string; productId?: string; tenantId?: string; deviceName?: string }) =>
+  wsConnect: (
+    id: string,
+    endpoint: string,
+    params?: { deviceId?: string; productId?: string; tenantId?: string; deviceName?: string; productKey?: string; locators?: string },
+  ) =>
     ipcRenderer.invoke('ws:connect', id, endpoint, params),
 
   wsSend: (id: string, message: string) =>
@@ -212,12 +216,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // UDP Protocol
-  udpSend: (host: string, port: number, message: string) =>
-    ipcRenderer.invoke('udp:send', host, port, message),
+  udpConnect: (id: string, host: string, port: number) =>
+    ipcRenderer.invoke('udp:connect', id, host, port),
+
+  udpSend: (id: string, message: string) =>
+    ipcRenderer.invoke('udp:send', id, message),
+
+  udpDisconnect: (id: string) =>
+    ipcRenderer.invoke('udp:disconnect', id),
+
+  onUdpMessage: (callback: (id: string, payload: string) => void) => {
+    const handler = (_e: any, id: string, payload: string) => callback(id, payload);
+    ipcRenderer.on('udp:message', handler);
+    return () => ipcRenderer.removeListener('udp:message', handler);
+  },
+
+  onUdpDisconnected: (callback: (id: string) => void) => {
+    const handler = (_e: any, id: string) => callback(id);
+    ipcRenderer.on('udp:disconnected', handler);
+    return () => ipcRenderer.removeListener('udp:disconnected', handler);
+  },
+
+  onUdpError: (callback: (id: string, error: string) => void) => {
+    const handler = (_e: any, id: string, error: string) => callback(id, error);
+    ipcRenderer.on('udp:error', handler);
+    return () => ipcRenderer.removeListener('udp:error', handler);
+  },
 
   // LoRaWAN Protocol (simulate network server webhook POST)
   lorawanSend: (webhookUrl: string, devEui: string, appId: string, fPort: number, payload: string) =>
     ipcRenderer.invoke('lorawan:send', webhookUrl, devEui, appId, fPort, payload),
+
+  lorawanListDownlinks: (webhookUrl: string, devEui: string, sinceTs?: number) =>
+    ipcRenderer.invoke('lorawan:listDownlinks', webhookUrl, devEui, sinceTs),
 
   // MQTT Protocol
   mqttConnect: (id: string, brokerUrl: string, clientId: string, username: string, password: string, opts?: {

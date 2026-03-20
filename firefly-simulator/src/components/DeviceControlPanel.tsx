@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -51,6 +51,7 @@ import {
 } from '../utils/mqtt';
 import { getDeviceAccessOverviewItems, getDeviceAccessValidationError } from '../utils/deviceAccess';
 import { buildLifecycleEventPayload, invokeHttpLifecycle } from '../utils/httpLifecycle';
+import { buildTransportBindingPayload, buildWebSocketConnectParams } from '../utils/transportBinding';
 import {
   buildRandomEventPayload,
   buildDefaultFixedValue,
@@ -165,6 +166,8 @@ export default function DeviceControlPanel() {
 
   const autoTimerRef = useRef<number | null>(null);
   const coapPollRef = useRef<number | null>(null);
+  const loraPollRef = useRef<number | null>(null);
+  const loraDownlinkCursorRef = useRef(0);
 
   function stopAutoReportForDevice(deviceId: string, options?: { silent?: boolean; reason?: string }) {
     const current = useSimStore.getState().devices.find((item) => item.id === deviceId);
@@ -353,6 +356,7 @@ export default function DeviceControlPanel() {
   useEffect(() => () => {
     if (autoTimerRef.current) clearInterval(autoTimerRef.current);
     if (coapPollRef.current) clearInterval(coapPollRef.current);
+    if (loraPollRef.current) clearInterval(loraPollRef.current);
   }, []);
 
   useEffect(() => {
@@ -360,6 +364,11 @@ export default function DeviceControlPanel() {
       clearInterval(coapPollRef.current);
       coapPollRef.current = null;
     }
+    if (loraPollRef.current) {
+      clearInterval(loraPollRef.current);
+      loraPollRef.current = null;
+    }
+    loraDownlinkCursorRef.current = 0;
     setCoapShadowPolling(false);
     setCoapShadowData('');
     setHttpHistory([]);
@@ -440,6 +449,84 @@ export default function DeviceControlPanel() {
     });
     return () => { unsubMsg(); unsubDc(); unsubErr(); };
   }, [selectedDeviceId]);
+
+  useEffect(() => {
+    if (!window.electronAPI) return undefined;
+    const unsubMsg = window.electronAPI.onUdpMessage((id, payload) => {
+      if (id === selectedDeviceId) {
+        setTcpMessages((prev) => [...prev.slice(-199), { dir: 'rx', payload, ts: Date.now() }]);
+      }
+    });
+    const unsubDc = window.electronAPI.onUdpDisconnected((id) => {
+      const current = useSimStore.getState().devices.find((item) => item.id === id);
+      if (!current) return;
+      stopAutoReportForDevice(id, { reason: '设备断开，已停止自动上报' });
+      useSimStore.getState().updateDevice(id, { status: 'offline' });
+      useSimStore.getState().addLog(id, current.name, 'info', 'UDP 已断开连接');
+    });
+    const unsubErr = window.electronAPI.onUdpError((id, errorText) => {
+      const current = useSimStore.getState().devices.find((item) => item.id === id);
+      if (!current) return;
+      useSimStore.getState().addLog(id, current.name, 'error', `UDP 异常：${errorText}`);
+    });
+    return () => { unsubMsg(); unsubDc(); unsubErr(); };
+  }, [selectedDeviceId]);
+
+  useEffect(() => {
+    if (!window.electronAPI) return undefined;
+    if (!device || device.protocol !== 'LoRaWAN' || device.status !== 'online') {
+      if (loraPollRef.current) {
+        clearInterval(loraPollRef.current);
+        loraPollRef.current = null;
+      }
+      return undefined;
+    }
+
+    let cancelled = false;
+    const pollDownlinks = async () => {
+      const current = useSimStore.getState().devices.find((item) => item.id === device.id);
+      if (!current || current.protocol !== 'LoRaWAN' || current.status !== 'online') {
+        return;
+      }
+      const result = await window.electronAPI.lorawanListDownlinks(
+        current.loraWebhookUrl,
+        current.loraDevEui,
+        loraDownlinkCursorRef.current || undefined,
+      );
+      if (!result?.success || (typeof result.code === 'number' && result.code !== 0) || cancelled) {
+        return;
+      }
+      const records = Array.isArray(result.data) ? result.data : [];
+      if (records.length === 0) {
+        return;
+      }
+      loraDownlinkCursorRef.current = records.reduce(
+        (maxValue: number, item: any) => Math.max(maxValue, Number(item?.queuedAt) || 0),
+        loraDownlinkCursorRef.current,
+      );
+      setLoraMessages((prev) => [
+        ...prev.slice(Math.max(0, prev.length + records.length - 200)),
+        ...records.map((item: any) => ({
+          dir: 'rx' as const,
+          payload: item?.displayPayload || item?.data || '',
+          ts: Number(item?.queuedAt) || Date.now(),
+        })),
+      ]);
+    };
+
+    void pollDownlinks();
+    loraPollRef.current = window.setInterval(() => {
+      void pollDownlinks();
+    }, 1500);
+
+    return () => {
+      cancelled = true;
+      if (loraPollRef.current) {
+        clearInterval(loraPollRef.current);
+        loraPollRef.current = null;
+      }
+    };
+  }, [selectedDeviceId, device?.id, device?.protocol, device?.status, device?.loraWebhookUrl, device?.loraDevEui]);
 
   useEffect(() => {
     if (!window.electronAPI) return undefined;
@@ -880,9 +967,7 @@ export default function DeviceControlPanel() {
       }
 
       if (device.protocol === 'WebSocket') {
-        const result = await window.electronAPI.wsConnect(device.id, device.wsEndpoint, {
-          deviceId: device.wsDeviceId, productId: device.wsProductId, tenantId: device.wsTenantId, deviceName: device.name,
-        });
+        const result = await window.electronAPI.wsConnect(device.id, device.wsEndpoint, buildWebSocketConnectParams(device));
         if (result.success) {
           updateDevice(device.id, { status: 'online', restoreOnLaunch: true });
           addLog(device.id, device.name, 'success', `WebSocket 已连接：${device.wsEndpoint}`);
@@ -896,6 +981,13 @@ export default function DeviceControlPanel() {
       if (device.protocol === 'TCP') {
         const result = await window.electronAPI.tcpConnect(device.id, device.tcpHost, device.tcpPort);
         if (result.success) {
+          const bindingResult = await window.electronAPI.tcpSend(device.id, buildTransportBindingPayload(device));
+          if (!bindingResult.success) {
+            await window.electronAPI.tcpDisconnect(device.id);
+            updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
+            addLog(device.id, device.name, 'error', `TCP 绑定失败：${bindingResult.message || '未知错误'}`);
+            return;
+          }
           updateDevice(device.id, { status: 'online', restoreOnLaunch: true });
           addLog(device.id, device.name, 'success', `TCP 已连接：${device.tcpHost}:${device.tcpPort}`);
         } else {
@@ -906,8 +998,21 @@ export default function DeviceControlPanel() {
       }
 
       if (device.protocol === 'UDP') {
-        updateDevice(device.id, { status: 'online', restoreOnLaunch: true });
-        addLog(device.id, device.name, 'success', `UDP 已就绪：${device.udpHost}:${device.udpPort}`);
+        const result = await window.electronAPI.udpConnect(device.id, device.udpHost, device.udpPort);
+        if (result.success) {
+          const bindingResult = await window.electronAPI.udpSend(device.id, buildTransportBindingPayload(device));
+          if (!bindingResult.success) {
+            await window.electronAPI.udpDisconnect(device.id);
+            updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
+            addLog(device.id, device.name, 'error', `UDP 绑定失败：${bindingResult.message || '未知错误'}`);
+            return;
+          }
+          updateDevice(device.id, { status: 'online', restoreOnLaunch: true });
+          addLog(device.id, device.name, 'success', `UDP 已连接：${device.udpHost}:${device.udpPort}`);
+        } else {
+          updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
+          addLog(device.id, device.name, 'error', `UDP 连接失败：${result.message}`);
+        }
         return;
       }
 
@@ -955,6 +1060,7 @@ export default function DeviceControlPanel() {
       if (device.protocol === 'MQTT') await window.electronAPI.mqttDisconnect(device.id);
       if (device.protocol === 'WebSocket') await window.electronAPI.wsDisconnect(device.id);
       if (device.protocol === 'TCP') await window.electronAPI.tcpDisconnect(device.id);
+      if (device.protocol === 'UDP') await window.electronAPI.udpDisconnect(device.id);
       if (device.protocol === 'Video' && device.streamMode === 'GB28181') await window.electronAPI.sipStop(device.id);
       updateDevice(device.id, { status: 'offline', token: '', videoDeviceId: null, streamUrl: '', sipRegistered: false, restoreOnLaunch: false, heartbeatTimerId: null });
       addLog(device.id, device.name, 'info', '已断开连接');

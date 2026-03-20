@@ -81,7 +81,11 @@ interface ElectronAPI {
   modbusWriteMultipleRegisters: (connectorUrl: string, payload: any) => Promise<any>;
   modbusWriteMultipleCoils: (connectorUrl: string, payload: any) => Promise<any>;
 
-  wsConnect: (id: string, endpoint: string, params?: { deviceId?: string; productId?: string; tenantId?: string; deviceName?: string }) => Promise<any>;
+  wsConnect: (
+    id: string,
+    endpoint: string,
+    params?: { deviceId?: string; productId?: string; tenantId?: string; deviceName?: string; productKey?: string; locators?: string }
+  ) => Promise<any>;
   wsSend: (id: string, message: string) => Promise<any>;
   wsDisconnect: (id: string) => Promise<any>;
   onWsMessage: (callback: (id: string, payload: string) => void) => () => void;
@@ -95,9 +99,15 @@ interface ElectronAPI {
   onTcpDisconnected: (callback: (id: string) => void) => () => void;
   onTcpError: (callback: (id: string, error: string) => void) => () => void;
 
-  udpSend: (host: string, port: number, message: string) => Promise<any>;
+  udpConnect: (id: string, host: string, port: number) => Promise<any>;
+  udpSend: (id: string, message: string) => Promise<any>;
+  udpDisconnect: (id: string) => Promise<any>;
+  onUdpMessage: (callback: (id: string, payload: string) => void) => () => void;
+  onUdpDisconnected: (callback: (id: string) => void) => () => void;
+  onUdpError: (callback: (id: string, error: string) => void) => () => void;
 
   lorawanSend: (webhookUrl: string, devEui: string, appId: string, fPort: number, payload: string) => Promise<any>;
+  lorawanListDownlinks: (webhookUrl: string, devEui: string, sinceTs?: number) => Promise<any>;
 
   mqttConnect: (id: string, brokerUrl: string, clientId: string, username: string, password: string, opts?: {
     clean?: boolean; keepalive?: number; reconnectPeriod?: number;

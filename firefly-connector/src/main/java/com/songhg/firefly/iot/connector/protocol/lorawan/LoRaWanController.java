@@ -10,15 +10,27 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
- * LoRaWAN 管理接口 — Webhook 回调、设备管理、下行消息、统计
+ * LoRaWAN management endpoints:
+ * - webhook callbacks
+ * - runtime device inspection
+ * - simulated downlink queue
  */
 @Slf4j
-@Tag(name = "LoRaWAN 设备接入", description = "LoRaWAN 网络服务器集成、Webhook 回调、下行消息推送")
+@Tag(name = "LoRaWAN Device Access", description = "LoRaWAN network server integration and downlink verification")
 @RestController
 @RequestMapping("/api/v1/lorawan")
 @RequiredArgsConstructor
@@ -30,7 +42,7 @@ public class LoRaWanController {
 
     // ==================== Webhook Callbacks ====================
 
-    @Operation(summary = "接收 LoRaWAN 上行数据 (ChirpStack/TTN webhook)")
+    @Operation(summary = "Receive LoRaWAN uplink webhook")
     @PostMapping("/webhook/up")
     public R<Boolean> webhookUplink(
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -46,7 +58,7 @@ public class LoRaWanController {
         }
     }
 
-    @Operation(summary = "接收 LoRaWAN Join 事件")
+    @Operation(summary = "Receive LoRaWAN join webhook")
     @PostMapping("/webhook/join")
     public R<Boolean> webhookJoin(
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -62,7 +74,7 @@ public class LoRaWanController {
         }
     }
 
-    @Operation(summary = "接收 LoRaWAN ACK 事件")
+    @Operation(summary = "Receive LoRaWAN ACK webhook")
     @PostMapping("/webhook/ack")
     public R<Boolean> webhookAck(
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -78,7 +90,7 @@ public class LoRaWanController {
         }
     }
 
-    @Operation(summary = "接收 LoRaWAN 状态事件")
+    @Operation(summary = "Receive LoRaWAN status webhook")
     @PostMapping("/webhook/status")
     public R<Boolean> webhookStatus(
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -94,7 +106,7 @@ public class LoRaWanController {
         }
     }
 
-    @Operation(summary = "接收 LoRaWAN 错误事件")
+    @Operation(summary = "Receive LoRaWAN error webhook")
     @PostMapping("/webhook/error")
     public R<Boolean> webhookError(
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -112,48 +124,54 @@ public class LoRaWanController {
 
     // ==================== Device Management ====================
 
-    @Operation(summary = "查看 LoRaWAN 已知设备列表")
+    @Operation(summary = "List known LoRaWAN devices")
     @GetMapping("/devices")
     public R<Collection<LoRaWanDeviceInfo>> listDevices() {
         return R.ok(loRaWanServer.listDevices());
     }
 
-    @Operation(summary = "查看 LoRaWAN 设备数量")
+    @Operation(summary = "Count known LoRaWAN devices")
     @GetMapping("/devices/count")
     public R<Integer> deviceCount() {
         return R.ok(loRaWanServer.getDeviceCount());
     }
 
-    @Operation(summary = "查看指定设备详情")
+    @Operation(summary = "Get a known LoRaWAN device")
     @GetMapping("/devices/{devEui}")
     public R<LoRaWanDeviceInfo> getDevice(
-            @Parameter(description = "设备唯一标识", required = true, example = "0102030405060708")
+            @Parameter(description = "Unique device EUI", required = true, example = "0102030405060708")
             @PathVariable String devEui) {
         LoRaWanDeviceInfo info = loRaWanServer.getDevice(devEui);
         if (info == null) {
-            return R.fail(404, "设备不存在: " + devEui);
+            return R.fail(404, "Device not found: " + devEui);
         }
         return R.ok(info);
     }
 
     // ==================== Downlink ====================
 
-    @Operation(summary = "发送下行消息 (模拟)")
+    @Operation(summary = "Queue a simulated LoRaWAN downlink")
     @PostMapping("/downlink")
     public R<Boolean> sendDownlink(@RequestBody DownlinkDTO dto) {
-        LoRaWanDeviceInfo info = loRaWanServer.getDevice(dto.getDevEui());
-        if (info == null) {
-            return R.fail(404, "设备不存在: " + dto.getDevEui());
+        if (!loRaWanServer.queueDownlink(dto.getDevEui(), dto.getFPort(), dto.getData(), dto.isConfirmed(), dto.getData(), null)) {
+            return R.fail(404, "Device not found: " + dto.getDevEui());
         }
-        info.getDownlinkCount().incrementAndGet();
-        info.setLastDownlinkTime(System.currentTimeMillis());
-        log.info("LoRaWAN downlink queued: devEui={}, fPort={}, data={}", dto.getDevEui(), dto.getFPort(), dto.getData());
         return R.ok(true);
+    }
+
+    @Operation(summary = "List queued LoRaWAN downlinks")
+    @GetMapping("/devices/{devEui}/downlinks")
+    public R<List<LoRaWanServer.DownlinkRecord>> listDownlinks(
+            @Parameter(description = "Unique device EUI", required = true, example = "0102030405060708")
+            @PathVariable String devEui,
+            @Parameter(description = "Only return records queued after this timestamp")
+            @RequestParam(required = false) Long sinceTs) {
+        return R.ok(loRaWanServer.listDownlinks(devEui, sinceTs));
     }
 
     // ==================== Stats ====================
 
-    @Operation(summary = "查看 LoRaWAN 综合统计")
+    @Operation(summary = "Get LoRaWAN runtime statistics")
     @GetMapping("/stats")
     public R<Map<String, Object>> stats() {
         Map<String, Object> stats = new LinkedHashMap<>();
@@ -166,7 +184,7 @@ public class LoRaWanController {
         return R.ok(stats);
     }
 
-    @Operation(summary = "查看 LoRaWAN 配置")
+    @Operation(summary = "Get LoRaWAN configuration")
     @GetMapping("/config")
     public R<Map<String, Object>> config() {
         Map<String, Object> cfg = new LinkedHashMap<>();
@@ -185,26 +203,19 @@ public class LoRaWanController {
 
     // ==================== DTOs ====================
 
-    /**
-     * Downlink message request DTO.
-     */
     @Data
-    @Schema(description = "下行消息请求")
+    @Schema(description = "LoRaWAN downlink request")
     public static class DownlinkDTO {
-        /** Target device EUI (hex string, 16 chars, e.g. "0102030405060708") */
-        @Schema(description = "目标设备唯一标识", example = "0102030405060708")
+        @Schema(description = "Target device EUI", example = "0102030405060708")
         private String devEui;
 
-        /** LoRaWAN frame port (1-255, default 1) */
-        @Schema(description = "帧端口", example = "1")
+        @Schema(description = "Frame port", example = "1")
         private int fPort = 1;
 
-        /** Payload data (Base64 encoded or plain text) */
-        @Schema(description = "负载数据", example = "eyJ0ZW1wIjoyNX0=")
+        @Schema(description = "Payload data (plain text or Base64)", example = "eyJ0ZW1wIjoyNX0=")
         private String data;
 
-        /** Whether to request downlink confirmation from the device */
-        @Schema(description = "是否需要确认", example = "false")
+        @Schema(description = "Whether the downlink is confirmed", example = "false")
         private boolean confirmed = false;
     }
 
@@ -215,7 +226,6 @@ public class LoRaWanController {
         LoRaWanMessage msg = new LoRaWanMessage();
         msg.setEventType(eventType);
 
-        // ChirpStack v4 format
         Map<String, Object> deviceInfo = (Map<String, Object>) body.get("deviceInfo");
         if (deviceInfo != null) {
             msg.setDevEui((String) deviceInfo.get("devEui"));
@@ -224,10 +234,11 @@ public class LoRaWanController {
             msg.setApplicationName((String) deviceInfo.get("applicationName"));
         }
 
-        // Direct fields (TTN / simplified)
         if (msg.getDevEui() == null) {
             msg.setDevEui((String) body.get("devEUI"));
-            if (msg.getDevEui() == null) msg.setDevEui((String) body.get("devEui"));
+            if (msg.getDevEui() == null) {
+                msg.setDevEui((String) body.get("devEui"));
+            }
         }
         if (msg.getDeviceName() == null) {
             msg.setDeviceName((String) body.get("deviceName"));
@@ -236,20 +247,15 @@ public class LoRaWanController {
             msg.setApplicationId(String.valueOf(body.getOrDefault("applicationID", body.getOrDefault("applicationId", ""))));
         }
 
-        // fCnt, fPort
         msg.setFCnt(toLong(body.get("fCnt")));
         msg.setFPort(toInt(body.get("fPort")));
-
-        // data
         msg.setData((String) body.get("data"));
 
-        // object (decoded payload)
         Object obj = body.get("object");
         if (obj instanceof Map) {
             msg.setObject((Map<String, Object>) obj);
         }
 
-        // rxInfo
         Object rxInfoObj = body.get("rxInfo");
         if (rxInfoObj instanceof List) {
             try {
@@ -260,7 +266,6 @@ public class LoRaWanController {
             }
         }
 
-        // txInfo
         Object txInfoObj = body.get("txInfo");
         if (txInfoObj instanceof Map) {
             try {
@@ -273,19 +278,34 @@ public class LoRaWanController {
 
         msg.setDeduplicationId((String) body.get("deduplicationId"));
         msg.setTime((String) body.get("time"));
-
         return msg;
     }
 
-    private long toLong(Object v) {
-        if (v == null) return 0;
-        if (v instanceof Number) return ((Number) v).longValue();
-        try { return Long.parseLong(v.toString()); } catch (Exception e) { return 0; }
+    private long toLong(Object value) {
+        if (value == null) {
+            return 0L;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return Long.parseLong(value.toString());
+        } catch (Exception ex) {
+            return 0L;
+        }
     }
 
-    private int toInt(Object v) {
-        if (v == null) return 0;
-        if (v instanceof Number) return ((Number) v).intValue();
-        try { return Integer.parseInt(v.toString()); } catch (Exception e) { return 0; }
+    private int toInt(Object value) {
+        if (value == null) {
+            return 0;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return Integer.parseInt(value.toString());
+        } catch (Exception ex) {
+            return 0;
+        }
     }
 }
