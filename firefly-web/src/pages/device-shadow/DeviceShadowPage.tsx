@@ -6,6 +6,7 @@ import {
   Col,
   Descriptions,
   Empty,
+  Modal,
   Popconfirm,
   Row,
   Select,
@@ -18,6 +19,7 @@ import {
   ClearOutlined,
   DeleteOutlined,
   EditOutlined,
+  FullscreenOutlined,
   LockOutlined,
   ReloadOutlined,
   SaveOutlined,
@@ -53,6 +55,8 @@ interface DeviceOption {
   label: string;
   meta: DeviceOptionRecord;
 }
+
+type ShadowPanelKey = 'desired' | 'reported' | 'delta' | 'metadata';
 
 const surfaceCardStyle = {
   borderRadius: 20,
@@ -116,6 +120,20 @@ const readOnlyTitle = (title: string) => (
   </Space>
 );
 
+const desiredEditorDescription = (
+  <>
+    平台期望设备最终达到的目标状态。点击“编辑”时会先根据产品物模型自动补齐可写属性，再叠加当前
+    <code> desired </code>
+    内容；保存时会按字段合并，属性值设为
+    <code> null </code>
+    可删除对应属性。
+  </>
+);
+
+const reportedEditorDescription = '设备当前实际确认并上报的状态，仅用于查看和比对，不支持人工修改。';
+const deltaEditorDescription = '系统根据 desired 与 reported 自动计算出的差异项，用于判断设备还有哪些目标状态尚未追平。';
+const metadataEditorDescription = '字段更新时间、来源等元数据由系统自动维护，主要用于定位属性变更来源。';
+
 const DeviceShadowPage: React.FC = () => {
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
   const [deviceSearchText, setDeviceSearchText] = useState('');
@@ -127,6 +145,7 @@ const DeviceShadowPage: React.FC = () => {
   const [prefillingDesired, setPrefillingDesired] = useState(false);
   const [desiredText, setDesiredText] = useState('{}');
   const [thingModel, setThingModel] = useState<unknown>(null);
+  const [fullscreenPanelKey, setFullscreenPanelKey] = useState<ShadowPanelKey | null>(null);
 
   const selectedDevice = useMemo(
     () => deviceOptions.find((item) => item.value === selectedDeviceId),
@@ -136,6 +155,16 @@ const DeviceShadowPage: React.FC = () => {
   const deltaCount = countKeys(delta);
   const desiredCount = countKeys(shadow?.desired);
   const reportedCount = countKeys(shadow?.reported);
+
+  const closeFullscreenPanel = () => {
+    setFullscreenPanelKey(null);
+  };
+
+  const renderFullscreenTrigger = (panelKey: ShadowPanelKey) => (
+    <Button size="small" icon={<FullscreenOutlined />} onClick={() => setFullscreenPanelKey(panelKey)}>
+      全屏
+    </Button>
+  );
 
   const loadDeviceOptions = async (keyword = '') => {
     try {
@@ -182,7 +211,7 @@ const DeviceShadowPage: React.FC = () => {
       setShadow(nextShadow);
       setDesiredText(formatJson(nextShadow.desired));
       setDelta((deltaRes.data.data || {}) as Record<string, unknown>);
-      // 物模型缺失时仍允许编辑既有 desired，只是不再补齐模板默认值。
+      // Keep the latest thing model in memory so entering desired edit mode can prefill immediately.
       setThingModel(thingModelRes?.data?.data ?? null);
       setEditingDesired(false);
     } catch {
@@ -204,10 +233,10 @@ const DeviceShadowPage: React.FC = () => {
       return payload;
     } catch {
       if (thingModel) {
-        message.warning('最新物模型加载失败，已按已加载的物模型生成期望属性草稿');
+        message.warning('最新物模型加载失败，已按当前缓存的物模型生成 desired 草稿');
         return thingModel;
       }
-      message.warning('加载产品物模型失败，已按当前期望属性打开编辑器');
+      message.warning('加载产品物模型失败，已按当前 desired 打开编辑器');
       return null;
     }
   };
@@ -270,10 +299,82 @@ const DeviceShadowPage: React.FC = () => {
       setDelta(null);
       setDesiredText('{}');
       setEditingDesired(false);
+      closeFullscreenPanel();
     } catch {
       message.error('删除设备影子失败');
     }
   };
+
+  const renderEditorPane = ({
+    description,
+    path,
+    value,
+    onChange,
+    readOnly = false,
+    readOnlyLabel,
+    height,
+  }: {
+    description: React.ReactNode;
+    path: string;
+    value: string;
+    onChange?: (value: string) => void;
+    readOnly?: boolean;
+    readOnlyLabel?: string;
+    height: number;
+  }) => (
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Paragraph style={{ margin: 0, color: '#64748b' }}>{description}</Paragraph>
+      <CodeEditorField
+        language="json"
+        path={path}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        readOnlyLabel={readOnlyLabel}
+        height={height}
+      />
+    </Space>
+  );
+
+  const renderDesiredActions = (includeFullscreen = false) => (
+    <Space size={8}>
+      {!editingDesired ? (
+        <Button
+          size="small"
+          icon={<EditOutlined />}
+          loading={prefillingDesired}
+          onClick={() => void handleEditDesired()}
+        >
+          编辑
+        </Button>
+      ) : (
+        <>
+          <Button size="small" type="primary" icon={<SaveOutlined />} onClick={() => void handleSaveDesired()}>
+            保存
+          </Button>
+          <Button
+            size="small"
+            onClick={() => {
+              setEditingDesired(false);
+              setDesiredText(formatJson(shadow?.desired));
+            }}
+          >
+            取消
+          </Button>
+        </>
+      )}
+      <Popconfirm
+        title="确认清空 desired 吗？"
+        description="清空后设备将不再有待同步的目标状态。"
+        onConfirm={() => void handleClearDesired()}
+      >
+        <Button size="small" danger icon={<ClearOutlined />}>
+          清空
+        </Button>
+      </Popconfirm>
+      {includeFullscreen ? renderFullscreenTrigger('desired') : null}
+    </Space>
+  );
 
   const overviewItems = [
     {
@@ -310,6 +411,80 @@ const DeviceShadowPage: React.FC = () => {
     },
   ];
 
+  const fullscreenPanelTitle = useMemo(() => {
+    switch (fullscreenPanelKey) {
+      case 'desired':
+        return 'Desired / 期望值';
+      case 'reported':
+        return 'Reported / 上报值';
+      case 'delta':
+        return 'Delta / 差异';
+      case 'metadata':
+        return 'Metadata / 元数据';
+      default:
+        return '';
+    }
+  }, [fullscreenPanelKey]);
+
+  const renderFullscreenPanelExtra = () => {
+    if (fullscreenPanelKey === 'desired') {
+      return renderDesiredActions(false);
+    }
+    if (fullscreenPanelKey === 'delta') {
+      return (
+        <Tag color={deltaCount > 0 ? 'warning' : 'success'} style={{ marginInlineEnd: 0 }}>
+          {deltaCount > 0 ? `${deltaCount} 项待同步` : '已同步'}
+        </Tag>
+      );
+    }
+    return null;
+  };
+
+  const renderFullscreenPanelBody = () => {
+    // Reuse the same desired draft state in both the card and modal so edits never diverge.
+    switch (fullscreenPanelKey) {
+      case 'desired':
+        return renderEditorPane({
+          description: desiredEditorDescription,
+          path: 'file:///device-shadow/desired-fullscreen.json',
+          value: desiredText,
+          onChange: setDesiredText,
+          readOnly: !editingDesired,
+          readOnlyLabel: editingDesired ? undefined : '查看态',
+          height: 640,
+        });
+      case 'reported':
+        return renderEditorPane({
+          description: reportedEditorDescription,
+          path: 'file:///device-shadow/reported-fullscreen.json',
+          value: formatJson(shadow?.reported),
+          readOnly: true,
+          readOnlyLabel: '只读',
+          height: 640,
+        });
+      case 'delta':
+        return renderEditorPane({
+          description: deltaEditorDescription,
+          path: 'file:///device-shadow/delta-fullscreen.json',
+          value: formatJson(delta || {}),
+          readOnly: true,
+          readOnlyLabel: '只读',
+          height: 560,
+        });
+      case 'metadata':
+        return renderEditorPane({
+          description: metadataEditorDescription,
+          path: 'file:///device-shadow/metadata-fullscreen.json',
+          value: formatJson(shadow?.metadata),
+          readOnly: true,
+          readOnlyLabel: '只读',
+          height: 560,
+        });
+      default:
+        return null;
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -331,13 +506,13 @@ const DeviceShadowPage: React.FC = () => {
               先选择设备，再查看影子状态
             </Title>
             <Paragraph style={{ margin: 0, color: '#64748b' }}>
-              这里优先用设备名称和别名定位设备，避免用户手工输入数据库主键。查询后可以直接维护 desired，
-              同时查看设备实际上报状态、同步差异和元数据。
+              这里优先用设备名称和别名定位设备，避免用户手工输入数据库主键。查询后可以直接维护
+              desired，同时查看设备实际上报状态、同步差异和元数据。
             </Paragraph>
           </Space>
 
           <Space wrap style={{ width: '100%' }} size={12}>
-            <Select
+            <Select<number>
               showSearch
               allowClear
               filterOption={false}
@@ -354,6 +529,7 @@ const DeviceShadowPage: React.FC = () => {
               }}
               onChange={(value) => {
                 setSelectedDeviceId(value);
+                closeFullscreenPanel();
                 if (!value) {
                   setShadow(null);
                   setDelta(null);
@@ -371,7 +547,7 @@ const DeviceShadowPage: React.FC = () => {
               刷新
             </Button>
             <Popconfirm
-              title="确认删除当前设备影子？"
+              title="确认删除当前设备影子吗？"
               description="删除后 desired、reported、metadata 会一起清空。"
               onConfirm={() => void handleDeleteShadow()}
               disabled={!selectedDeviceId}
@@ -447,7 +623,10 @@ const DeviceShadowPage: React.FC = () => {
 
       {!shadow && !loading ? (
         <Card style={surfaceCardStyle} styles={{ body: { padding: 48 } }}>
-          <Empty description="选择设备后即可查看影子、差异和元数据。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <Empty
+            description="选择设备后即可查看影子、差异和元数据。"
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
         </Card>
       ) : null}
 
@@ -496,80 +675,37 @@ const DeviceShadowPage: React.FC = () => {
             <Col xs={24} xl={12}>
               <Card
                 title="Desired / 期望值"
-                extra={
-                  <Space size={8}>
-                    {!editingDesired ? (
-                      <Button
-                        size="small"
-                        icon={<EditOutlined />}
-                        loading={prefillingDesired}
-                        onClick={() => void handleEditDesired()}
-                      >
-                        编辑
-                      </Button>
-                    ) : (
-                      <>
-                        <Button size="small" type="primary" icon={<SaveOutlined />} onClick={() => void handleSaveDesired()}>
-                          保存
-                        </Button>
-                        <Button
-                          size="small"
-                          onClick={() => {
-                            setEditingDesired(false);
-                            setDesiredText(formatJson(shadow.desired));
-                          }}
-                        >
-                          取消
-                        </Button>
-                      </>
-                    )}
-                    <Popconfirm
-                      title="确认清空 desired？"
-                      description="清空后设备将不再有待同步的目标状态。"
-                      onConfirm={() => void handleClearDesired()}
-                    >
-                      <Button size="small" danger icon={<ClearOutlined />}>
-                        清空
-                      </Button>
-                    </Popconfirm>
-                  </Space>
-                }
+                extra={renderDesiredActions(true)}
                 style={editorCardStyle}
                 styles={{ body: { padding: 18 } }}
               >
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Paragraph style={{ margin: 0, color: '#64748b' }}>
-                    平台希望设备最终达到的目标状态。点击“编辑”时会先根据产品物模型自动填充可写属性的初始值，再叠加当前 desired。保存时会合并字段，属性值设为 <code>null</code> 可删除对应属性。
-                  </Paragraph>
-                  <CodeEditorField
-                    language="json"
-                    path={`file:///device-shadow/desired-${editingDesired ? 'draft' : 'view'}.json`}
-                    value={desiredText}
-                    onChange={setDesiredText}
-                    readOnly={!editingDesired}
-                    readOnlyLabel={editingDesired ? undefined : '查看态'}
-                    height={360}
-                  />
-                </Space>
+                {renderEditorPane({
+                  description: desiredEditorDescription,
+                  path: `file:///device-shadow/desired-${editingDesired ? 'draft' : 'view'}.json`,
+                  value: desiredText,
+                  onChange: setDesiredText,
+                  readOnly: !editingDesired,
+                  readOnlyLabel: editingDesired ? undefined : '查看态',
+                  height: 360,
+                })}
               </Card>
             </Col>
 
             <Col xs={24} xl={12}>
-              <Card title={readOnlyTitle('Reported / 上报值')} style={editorCardStyle} styles={{ body: { padding: 18 } }}>
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Paragraph style={{ margin: 0, color: '#64748b' }}>
-                    设备当前实际确认并上报的状态，由设备运行时写入。这里仅用于查看和比对，不支持人工修改。
-                  </Paragraph>
-                  <CodeEditorField
-                    language="json"
-                    path="file:///device-shadow/reported.json"
-                    value={formatJson(shadow.reported)}
-                    onChange={() => undefined}
-                    readOnly
-                    readOnlyLabel="只读"
-                    height={360}
-                  />
-                </Space>
+              <Card
+                title={readOnlyTitle('Reported / 上报值')}
+                extra={renderFullscreenTrigger('reported')}
+                style={editorCardStyle}
+                styles={{ body: { padding: 18 } }}
+              >
+                {renderEditorPane({
+                  description: reportedEditorDescription,
+                  path: 'file:///device-shadow/reported.json',
+                  value: formatJson(shadow.reported),
+                  readOnly: true,
+                  readOnlyLabel: '只读',
+                  height: 360,
+                })}
               </Card>
             </Col>
 
@@ -583,47 +719,60 @@ const DeviceShadowPage: React.FC = () => {
                     </Tag>
                   </Space>
                 }
+                extra={renderFullscreenTrigger('delta')}
                 style={editorCardStyle}
                 styles={{ body: { padding: 18 } }}
               >
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Paragraph style={{ margin: 0, color: '#64748b' }}>
-                    系统根据 desired 与 reported 自动计算出的差异项，用来判断设备还有哪些目标状态尚未追平。
-                  </Paragraph>
-                  <CodeEditorField
-                    language="json"
-                    path="file:///device-shadow/delta.json"
-                    value={formatJson(delta || {})}
-                    onChange={() => undefined}
-                    readOnly
-                    readOnlyLabel="只读"
-                    height={260}
-                  />
-                </Space>
+                {renderEditorPane({
+                  description: deltaEditorDescription,
+                  path: 'file:///device-shadow/delta.json',
+                  value: formatJson(delta || {}),
+                  readOnly: true,
+                  readOnlyLabel: '只读',
+                  height: 260,
+                })}
               </Card>
             </Col>
 
             <Col xs={24} xl={12}>
-              <Card title={readOnlyTitle('Metadata / 元数据')} style={editorCardStyle} styles={{ body: { padding: 18 } }}>
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Paragraph style={{ margin: 0, color: '#64748b' }}>
-                    字段更新时间、来源等元数据由系统自动维护，主要用于定位字段是由平台下发还是设备上报。
-                  </Paragraph>
-                  <CodeEditorField
-                    language="json"
-                    path="file:///device-shadow/metadata.json"
-                    value={formatJson(shadow.metadata)}
-                    onChange={() => undefined}
-                    readOnly
-                    readOnlyLabel="只读"
-                    height={260}
-                  />
-                </Space>
+              <Card
+                title={readOnlyTitle('Metadata / 元数据')}
+                extra={renderFullscreenTrigger('metadata')}
+                style={editorCardStyle}
+                styles={{ body: { padding: 18 } }}
+              >
+                {renderEditorPane({
+                  description: metadataEditorDescription,
+                  path: 'file:///device-shadow/metadata.json',
+                  value: formatJson(shadow.metadata),
+                  readOnly: true,
+                  readOnlyLabel: '只读',
+                  height: 260,
+                })}
               </Card>
             </Col>
           </Row>
         </>
       ) : null}
+
+      <Modal
+        title={fullscreenPanelTitle}
+        open={!!shadow && !!fullscreenPanelKey}
+        onCancel={closeFullscreenPanel}
+        footer={null}
+        destroyOnHidden
+        width="calc(100vw - 48px)"
+        style={{ top: 24, paddingBottom: 0 }}
+        styles={{
+          header: { paddingInlineEnd: 72 },
+          body: { paddingTop: 8, paddingBottom: 20 },
+        }}
+      >
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          {renderFullscreenPanelExtra()}
+          {renderFullscreenPanelBody()}
+        </Space>
+      </Modal>
     </div>
   );
 };
