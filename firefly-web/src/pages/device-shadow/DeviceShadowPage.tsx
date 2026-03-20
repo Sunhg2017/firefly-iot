@@ -116,6 +116,15 @@ const statusTextMap: Record<string, string> = {
   DISABLED: '已禁用',
 };
 
+const formatSelectedDeviceLabel = (device: DeviceOptionRecord) => {
+  const display = device.nickname?.trim();
+  const value = device.deviceName?.trim();
+  if (!display || display === value) {
+    return value;
+  }
+  return `${display}（${value}）`;
+};
+
 const renderDeviceOption = (device: DeviceOptionRecord) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
     <span style={{ fontWeight: 600, color: '#0f172a' }}>{device.nickname || device.deviceName}</span>
@@ -189,7 +198,7 @@ const DeviceShadowPage: React.FC = () => {
       setDeviceOptions(
         records.map((item) => ({
           value: item.id,
-          label: item.nickname ? `${item.nickname} / ${item.deviceName}` : item.deviceName,
+          label: formatSelectedDeviceLabel(item),
           meta: item,
         })),
       );
