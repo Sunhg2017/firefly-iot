@@ -196,10 +196,12 @@ const parseThingModel = (rawThingModel: unknown): ThingModelRoot | null => {
 };
 
 const shouldIncludeProperty = (item: ThingModelPropertyItem) => {
+  if (item.system === true) {
+    return typeof item.identifier === 'string' && item.identifier.trim().length > 0;
+  }
   if (item.readonly === true) {
     return false;
   }
-  // System built-in properties should also be prefilled into desired when they are writable.
   return typeof item.identifier === 'string' && item.identifier.trim().length > 0;
 };
 
