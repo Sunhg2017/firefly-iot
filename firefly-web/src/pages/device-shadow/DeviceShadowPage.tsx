@@ -74,6 +74,18 @@ const editorCardStyle = {
   boxShadow: '0 14px 32px rgba(15,23,42,0.05)',
 } as const;
 
+const inlineEditorHeight = 320;
+const editorDescriptionMinHeight = 88;
+const editorColStyle = {
+  display: 'flex',
+} as const;
+const editorCardBodyStyle = {
+  padding: 18,
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+} as const;
+
 const formatJson = (value: Record<string, unknown> | null | undefined) =>
   JSON.stringify(value || {}, null, 2);
 
@@ -322,8 +334,11 @@ const DeviceShadowPage: React.FC = () => {
     readOnlyLabel?: string;
     height: number;
   }) => (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <Paragraph style={{ margin: 0, color: '#64748b' }}>{description}</Paragraph>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', height: '100%' }}>
+      {/* Keep the four cards visually aligned even when descriptions wrap to different line counts. */}
+      <Paragraph style={{ margin: 0, color: '#64748b', minHeight: editorDescriptionMinHeight, lineHeight: 1.6 }}>
+        {description}
+      </Paragraph>
       <CodeEditorField
         language="json"
         path={path}
@@ -333,7 +348,7 @@ const DeviceShadowPage: React.FC = () => {
         readOnlyLabel={readOnlyLabel}
         height={height}
       />
-    </Space>
+    </div>
   );
 
   const renderDesiredActions = (includeExpand = false) => (
@@ -672,12 +687,12 @@ const DeviceShadowPage: React.FC = () => {
           />
 
           <Row gutter={[16, 16]}>
-            <Col xs={24} xl={12}>
+            <Col xs={24} xl={12} style={editorColStyle}>
               <Card
                 title="Desired / 期望值"
                 extra={renderDesiredActions(true)}
-                style={editorCardStyle}
-                styles={{ body: { padding: 18 } }}
+                style={{ ...editorCardStyle, width: '100%' }}
+                styles={{ body: editorCardBodyStyle }}
               >
                 {renderEditorPane({
                   description: desiredEditorDescription,
@@ -686,17 +701,17 @@ const DeviceShadowPage: React.FC = () => {
                   onChange: setDesiredText,
                   readOnly: !editingDesired,
                   readOnlyLabel: editingDesired ? undefined : '查看态',
-                  height: 360,
+                  height: inlineEditorHeight,
                 })}
               </Card>
             </Col>
 
-            <Col xs={24} xl={12}>
+            <Col xs={24} xl={12} style={editorColStyle}>
               <Card
                 title={readOnlyTitle('Reported / 上报值')}
                 extra={renderExpandTrigger('reported')}
-                style={editorCardStyle}
-                styles={{ body: { padding: 18 } }}
+                style={{ ...editorCardStyle, width: '100%' }}
+                styles={{ body: editorCardBodyStyle }}
               >
                 {renderEditorPane({
                   description: reportedEditorDescription,
@@ -704,12 +719,12 @@ const DeviceShadowPage: React.FC = () => {
                   value: formatJson(shadow.reported),
                   readOnly: true,
                   readOnlyLabel: '只读',
-                  height: 360,
+                  height: inlineEditorHeight,
                 })}
               </Card>
             </Col>
 
-            <Col xs={24} xl={12}>
+            <Col xs={24} xl={12} style={editorColStyle}>
               <Card
                 title={
                   <Space size={8}>
@@ -720,8 +735,8 @@ const DeviceShadowPage: React.FC = () => {
                   </Space>
                 }
                 extra={renderExpandTrigger('delta')}
-                style={editorCardStyle}
-                styles={{ body: { padding: 18 } }}
+                style={{ ...editorCardStyle, width: '100%' }}
+                styles={{ body: editorCardBodyStyle }}
               >
                 {renderEditorPane({
                   description: deltaEditorDescription,
@@ -729,17 +744,17 @@ const DeviceShadowPage: React.FC = () => {
                   value: formatJson(delta || {}),
                   readOnly: true,
                   readOnlyLabel: '只读',
-                  height: 260,
+                  height: inlineEditorHeight,
                 })}
               </Card>
             </Col>
 
-            <Col xs={24} xl={12}>
+            <Col xs={24} xl={12} style={editorColStyle}>
               <Card
                 title={readOnlyTitle('Metadata / 元数据')}
                 extra={renderExpandTrigger('metadata')}
-                style={editorCardStyle}
-                styles={{ body: { padding: 18 } }}
+                style={{ ...editorCardStyle, width: '100%' }}
+                styles={{ body: editorCardBodyStyle }}
               >
                 {renderEditorPane({
                   description: metadataEditorDescription,
@@ -747,7 +762,7 @@ const DeviceShadowPage: React.FC = () => {
                   value: formatJson(shadow.metadata),
                   readOnly: true,
                   readOnlyLabel: '只读',
-                  height: 260,
+                  height: inlineEditorHeight,
                 })}
               </Card>
             </Col>
