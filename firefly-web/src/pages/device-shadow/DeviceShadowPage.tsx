@@ -6,7 +6,6 @@ import {
   Col,
   Descriptions,
   Empty,
-  Modal,
   Popconfirm,
   Row,
   Select,
@@ -27,6 +26,7 @@ import {
 } from '@ant-design/icons';
 import CodeEditorField from '../../components/CodeEditorField';
 import PageHeader from '../../components/PageHeader';
+import ShadowPanelFullscreenDrawer from '../../components/ShadowPanelFullscreenDrawer';
 import { deviceApi, productApi } from '../../services/api';
 import { buildDesiredTemplateFromThingModel } from '../../utils/deviceShadowThingModel';
 
@@ -145,7 +145,7 @@ const DeviceShadowPage: React.FC = () => {
   const [prefillingDesired, setPrefillingDesired] = useState(false);
   const [desiredText, setDesiredText] = useState('{}');
   const [thingModel, setThingModel] = useState<unknown>(null);
-  const [fullscreenPanelKey, setFullscreenPanelKey] = useState<ShadowPanelKey | null>(null);
+  const [expandedPanelKey, setExpandedPanelKey] = useState<ShadowPanelKey | null>(null);
 
   const selectedDevice = useMemo(
     () => deviceOptions.find((item) => item.value === selectedDeviceId),
@@ -156,12 +156,12 @@ const DeviceShadowPage: React.FC = () => {
   const desiredCount = countKeys(shadow?.desired);
   const reportedCount = countKeys(shadow?.reported);
 
-  const closeFullscreenPanel = () => {
-    setFullscreenPanelKey(null);
+  const closeExpandedPanel = () => {
+    setExpandedPanelKey(null);
   };
 
-  const renderFullscreenTrigger = (panelKey: ShadowPanelKey) => (
-    <Button size="small" icon={<FullscreenOutlined />} onClick={() => setFullscreenPanelKey(panelKey)}>
+  const renderExpandTrigger = (panelKey: ShadowPanelKey) => (
+    <Button size="small" icon={<FullscreenOutlined />} onClick={() => setExpandedPanelKey(panelKey)}>
       全屏
     </Button>
   );
@@ -211,7 +211,7 @@ const DeviceShadowPage: React.FC = () => {
       setShadow(nextShadow);
       setDesiredText(formatJson(nextShadow.desired));
       setDelta((deltaRes.data.data || {}) as Record<string, unknown>);
-      // Keep the latest thing model in memory so entering desired edit mode can prefill immediately.
+      // Cache the latest thing model so desired editing and drawer expansion share one source of truth.
       setThingModel(thingModelRes?.data?.data ?? null);
       setEditingDesired(false);
     } catch {
@@ -299,7 +299,7 @@ const DeviceShadowPage: React.FC = () => {
       setDelta(null);
       setDesiredText('{}');
       setEditingDesired(false);
-      closeFullscreenPanel();
+      closeExpandedPanel();
     } catch {
       message.error('删除设备影子失败');
     }
@@ -336,7 +336,7 @@ const DeviceShadowPage: React.FC = () => {
     </Space>
   );
 
-  const renderDesiredActions = (includeFullscreen = false) => (
+  const renderDesiredActions = (includeExpand = false) => (
     <Space size={8}>
       {!editingDesired ? (
         <Button
@@ -372,7 +372,7 @@ const DeviceShadowPage: React.FC = () => {
           清空
         </Button>
       </Popconfirm>
-      {includeFullscreen ? renderFullscreenTrigger('desired') : null}
+      {includeExpand ? renderExpandTrigger('desired') : null}
     </Space>
   );
 
@@ -411,8 +411,8 @@ const DeviceShadowPage: React.FC = () => {
     },
   ];
 
-  const fullscreenPanelTitle = useMemo(() => {
-    switch (fullscreenPanelKey) {
+  const expandedPanelTitle = useMemo(() => {
+    switch (expandedPanelKey) {
       case 'desired':
         return 'Desired / 期望值';
       case 'reported':
@@ -424,13 +424,13 @@ const DeviceShadowPage: React.FC = () => {
       default:
         return '';
     }
-  }, [fullscreenPanelKey]);
+  }, [expandedPanelKey]);
 
-  const renderFullscreenPanelExtra = () => {
-    if (fullscreenPanelKey === 'desired') {
+  const renderExpandedPanelExtra = () => {
+    if (expandedPanelKey === 'desired') {
       return renderDesiredActions(false);
     }
-    if (fullscreenPanelKey === 'delta') {
+    if (expandedPanelKey === 'delta') {
       return (
         <Tag color={deltaCount > 0 ? 'warning' : 'success'} style={{ marginInlineEnd: 0 }}>
           {deltaCount > 0 ? `${deltaCount} 项待同步` : '已同步'}
@@ -440,13 +440,13 @@ const DeviceShadowPage: React.FC = () => {
     return null;
   };
 
-  const renderFullscreenPanelBody = () => {
-    // Reuse the same desired draft state in both the card and modal so edits never diverge.
-    switch (fullscreenPanelKey) {
+  const renderExpandedPanelBody = () => {
+    // Both the page cards and the 75vw drawer share the same draft state so edits never drift.
+    switch (expandedPanelKey) {
       case 'desired':
         return renderEditorPane({
           description: desiredEditorDescription,
-          path: 'file:///device-shadow/desired-fullscreen.json',
+          path: 'file:///device-shadow/desired-expanded.json',
           value: desiredText,
           onChange: setDesiredText,
           readOnly: !editingDesired,
@@ -456,7 +456,7 @@ const DeviceShadowPage: React.FC = () => {
       case 'reported':
         return renderEditorPane({
           description: reportedEditorDescription,
-          path: 'file:///device-shadow/reported-fullscreen.json',
+          path: 'file:///device-shadow/reported-expanded.json',
           value: formatJson(shadow?.reported),
           readOnly: true,
           readOnlyLabel: '只读',
@@ -465,7 +465,7 @@ const DeviceShadowPage: React.FC = () => {
       case 'delta':
         return renderEditorPane({
           description: deltaEditorDescription,
-          path: 'file:///device-shadow/delta-fullscreen.json',
+          path: 'file:///device-shadow/delta-expanded.json',
           value: formatJson(delta || {}),
           readOnly: true,
           readOnlyLabel: '只读',
@@ -474,7 +474,7 @@ const DeviceShadowPage: React.FC = () => {
       case 'metadata':
         return renderEditorPane({
           description: metadataEditorDescription,
-          path: 'file:///device-shadow/metadata-fullscreen.json',
+          path: 'file:///device-shadow/metadata-expanded.json',
           value: formatJson(shadow?.metadata),
           readOnly: true,
           readOnlyLabel: '只读',
@@ -529,7 +529,7 @@ const DeviceShadowPage: React.FC = () => {
               }}
               onChange={(value) => {
                 setSelectedDeviceId(value);
-                closeFullscreenPanel();
+                closeExpandedPanel();
                 if (!value) {
                   setShadow(null);
                   setDelta(null);
@@ -694,7 +694,7 @@ const DeviceShadowPage: React.FC = () => {
             <Col xs={24} xl={12}>
               <Card
                 title={readOnlyTitle('Reported / 上报值')}
-                extra={renderFullscreenTrigger('reported')}
+                extra={renderExpandTrigger('reported')}
                 style={editorCardStyle}
                 styles={{ body: { padding: 18 } }}
               >
@@ -719,7 +719,7 @@ const DeviceShadowPage: React.FC = () => {
                     </Tag>
                   </Space>
                 }
-                extra={renderFullscreenTrigger('delta')}
+                extra={renderExpandTrigger('delta')}
                 style={editorCardStyle}
                 styles={{ body: { padding: 18 } }}
               >
@@ -737,7 +737,7 @@ const DeviceShadowPage: React.FC = () => {
             <Col xs={24} xl={12}>
               <Card
                 title={readOnlyTitle('Metadata / 元数据')}
-                extra={renderFullscreenTrigger('metadata')}
+                extra={renderExpandTrigger('metadata')}
                 style={editorCardStyle}
                 styles={{ body: { padding: 18 } }}
               >
@@ -755,24 +755,14 @@ const DeviceShadowPage: React.FC = () => {
         </>
       ) : null}
 
-      <Modal
-        title={fullscreenPanelTitle}
-        open={!!shadow && !!fullscreenPanelKey}
-        onCancel={closeFullscreenPanel}
-        footer={null}
-        destroyOnHidden
-        width="calc(100vw - 48px)"
-        style={{ top: 24, paddingBottom: 0 }}
-        styles={{
-          header: { paddingInlineEnd: 72 },
-          body: { paddingTop: 8, paddingBottom: 20 },
-        }}
+      <ShadowPanelFullscreenDrawer
+        title={expandedPanelTitle}
+        open={!!shadow && !!expandedPanelKey}
+        onClose={closeExpandedPanel}
+        extra={renderExpandedPanelExtra()}
       >
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          {renderFullscreenPanelExtra()}
-          {renderFullscreenPanelBody()}
-        </Space>
-      </Modal>
+        {renderExpandedPanelBody()}
+      </ShadowPanelFullscreenDrawer>
     </div>
   );
 };

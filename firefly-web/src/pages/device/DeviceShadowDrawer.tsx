@@ -18,11 +18,13 @@ import {
   ClearOutlined,
   DeleteOutlined,
   EditOutlined,
+  FullscreenOutlined,
   LockOutlined,
   ReloadOutlined,
   SaveOutlined,
 } from '@ant-design/icons';
 import CodeEditorField from '../../components/CodeEditorField';
+import ShadowPanelFullscreenDrawer from '../../components/ShadowPanelFullscreenDrawer';
 import { deviceApi, productApi } from '../../services/api';
 import { buildDesiredTemplateFromThingModel } from '../../utils/deviceShadowThingModel';
 
@@ -48,6 +50,8 @@ interface Props {
   onClose: () => void;
 }
 
+type ShadowPanelKey = 'desired' | 'reported' | 'delta' | 'metadata';
+
 const cardStyle = {
   borderRadius: 18,
   border: '1px solid rgba(148,163,184,0.16)',
@@ -69,6 +73,20 @@ const readOnlyTitle = (title: string) => (
   </Space>
 );
 
+const desiredEditorDescription = (
+  <>
+    维护平台期望设备达到的目标状态。点击“编辑”时会先根据产品物模型自动补齐可写属性，再叠加当前
+    <code> desired </code>
+    内容；保存时会按字段合并，属性值设为
+    <code> null </code>
+    可删除对应属性。
+  </>
+);
+
+const reportedEditorDescription = '设备当前已经确认并上报的状态，用于与 desired 做同步差异比对，不支持人工修改。';
+const deltaEditorDescription = '系统自动计算 desired 与 reported 的差异项，便于快速判断设备还有哪些属性未同步。';
+const metadataEditorDescription = '字段来源和更新时间等元信息由系统自动维护，用于判断状态来自平台下发还是设备上报。';
+
 const DeviceShadowDrawer: React.FC<Props> = ({
   deviceId,
   productId,
@@ -86,6 +104,8 @@ const DeviceShadowDrawer: React.FC<Props> = ({
   const [prefillingDesired, setPrefillingDesired] = useState(false);
   const [desiredJson, setDesiredJson] = useState('{}');
   const [thingModel, setThingModel] = useState<unknown>(null);
+  const [expandedPanelKey, setExpandedPanelKey] = useState<ShadowPanelKey | null>(null);
+
   const displayName = nickname || deviceName || '未命名设备';
   const productDisplay = productName
     ? productKey
@@ -96,6 +116,16 @@ const DeviceShadowDrawer: React.FC<Props> = ({
   const desiredCount = countKeys(shadow?.desired);
   const reportedCount = countKeys(shadow?.reported);
   const deltaCount = countKeys(delta);
+
+  const closeExpandedPanel = () => {
+    setExpandedPanelKey(null);
+  };
+
+  const renderExpandTrigger = (panelKey: ShadowPanelKey) => (
+    <Button size="small" icon={<FullscreenOutlined />} onClick={() => setExpandedPanelKey(panelKey)}>
+      全屏
+    </Button>
+  );
 
   const overviewItems = useMemo(
     () => [
@@ -146,7 +176,7 @@ const DeviceShadowDrawer: React.FC<Props> = ({
       setShadow(nextShadow);
       setDelta((deltaRes.data.data || {}) as Record<string, unknown>);
       setDesiredJson(formatJson(nextShadow.desired));
-      // 物模型缺失时仍允许编辑已有 desired，只是不再额外补齐默认值。
+      // Cache the latest thing model so the card and the nested drawer reuse the same desired draft source.
       setThingModel(thingModelRes?.data?.data ?? null);
       setEditingDesired(false);
     } catch {
@@ -163,6 +193,7 @@ const DeviceShadowDrawer: React.FC<Props> = ({
     if (!open) {
       setEditingDesired(false);
       setThingModel(null);
+      closeExpandedPanel();
     }
   }, [open, deviceId, productId]);
 
@@ -177,10 +208,10 @@ const DeviceShadowDrawer: React.FC<Props> = ({
       return payload;
     } catch {
       if (thingModel) {
-        message.warning('最新物模型加载失败，已按已加载的物模型生成期望属性草稿');
+        message.warning('最新物模型加载失败，已按当前缓存的物模型生成 desired 草稿');
         return thingModel;
       }
-      message.warning('加载产品物模型失败，已按当前期望属性打开编辑器');
+      message.warning('加载产品物模型失败，已按当前 desired 打开编辑器');
       return null;
     }
   };
@@ -242,306 +273,413 @@ const DeviceShadowDrawer: React.FC<Props> = ({
       setDelta({});
       setDesiredJson('{}');
       setEditingDesired(false);
+      closeExpandedPanel();
     } catch {
       message.error('删除设备影子失败');
     }
   };
 
-  return (
-    <Drawer
-      title={
-        <Space direction="vertical" size={2}>
-          <Typography.Text style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>
-            设备影子
-          </Typography.Text>
-          <Space size={8} wrap>
-            <Typography.Text style={{ color: '#334155' }}>{displayName}</Typography.Text>
-            {deviceName && nickname ? (
-              <Typography.Text code style={{ fontSize: 12 }}>
-                {deviceName}
-              </Typography.Text>
-            ) : null}
-            {productName || productKey ? <Tag color="blue">{productDisplay}</Tag> : null}
-          </Space>
-        </Space>
-      }
-      open={open}
-      onClose={onClose}
-      width={860}
-      extra={
-        <Space>
-          <Button icon={<ReloadOutlined />} size="small" loading={loading} onClick={() => void fetchShadow()}>
-            刷新
+  const renderEditorPane = ({
+    description,
+    path,
+    value,
+    onChange,
+    readOnly = false,
+    readOnlyLabel,
+    height,
+  }: {
+    description: React.ReactNode;
+    path: string;
+    value: string;
+    onChange?: (value: string) => void;
+    readOnly?: boolean;
+    readOnlyLabel?: string;
+    height: number;
+  }) => (
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Paragraph style={{ margin: 0, color: '#64748b' }}>{description}</Paragraph>
+      <CodeEditorField
+        language="json"
+        path={path}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        readOnlyLabel={readOnlyLabel}
+        height={height}
+      />
+    </Space>
+  );
+
+  const renderDesiredActions = (includeExpand = false) => (
+    <Space size={8}>
+      {!editingDesired ? (
+        <Button
+          size="small"
+          icon={<EditOutlined />}
+          loading={prefillingDesired}
+          onClick={() => void handleEditDesired()}
+        >
+          编辑
+        </Button>
+      ) : (
+        <>
+          <Button size="small" type="primary" icon={<SaveOutlined />} onClick={() => void handleUpdateDesired()}>
+            保存
           </Button>
-          <Popconfirm
-            title="确认删除当前影子？"
-            description="删除后 desired、reported、metadata 会一起清空。"
-            onConfirm={() => void handleDeleteShadow()}
-          >
-            <Button danger icon={<DeleteOutlined />} size="small">
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      }
-      styles={{
-        body: {
-          padding: 20,
-          background: 'linear-gradient(180deg, #f8fbff 0%, #f5f8fc 100%)',
-        },
-      }}
-    >
-      {!shadow && !loading ? (
-        <Card style={cardStyle} styles={{ body: { padding: 40 } }}>
-          <Empty description="当前设备还没有影子数据。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-        </Card>
-      ) : null}
-
-      {shadow ? (
-        <Space direction="vertical" size={18} style={{ width: '100%' }}>
-          <Card
-            style={{
-              ...cardStyle,
-              background: 'linear-gradient(135deg, #ffffff 0%, #f8fbff 50%, #eef6ff 100%)',
+          <Button
+            size="small"
+            onClick={() => {
+              setEditingDesired(false);
+              setDesiredJson(formatJson(shadow?.desired));
             }}
-            styles={{ body: { padding: 20 } }}
           >
-            <Space direction="vertical" size={16} style={{ width: '100%' }}>
-              <Descriptions
-                size="small"
-                column={3}
-                items={[
-                  {
-                    key: 'device',
-                    label: '设备',
-                    children: displayName,
-                  },
-                  {
-                    key: 'deviceName',
-                    label: '设备编码',
-                    children: deviceName || '-',
-                  },
-                  {
-                    key: 'product',
-                    label: '所属产品',
-                    children: productDisplay,
-                  },
-                  {
-                    key: 'updatedAt',
-                    label: '最近更新时间',
-                    children: shadow.updatedAt || '-',
-                  },
-                  {
-                    key: 'sync',
-                    label: '同步状态',
-                    children:
-                      deltaCount > 0 ? (
-                        <Tag color="warning">{deltaCount} 项待同步</Tag>
-                      ) : (
-                        <Tag color="success">已同步</Tag>
-                      ),
-                  },
-                ]}
-              />
+            取消
+          </Button>
+        </>
+      )}
+      <Popconfirm
+        title="确认清空 desired 吗？"
+        description="清空后设备将不再存在待同步的目标状态。"
+        onConfirm={() => void handleClearDesired()}
+      >
+        <Button danger size="small" icon={<ClearOutlined />}>
+          清空
+        </Button>
+      </Popconfirm>
+      {includeExpand ? renderExpandTrigger('desired') : null}
+    </Space>
+  );
 
-              <Row gutter={[12, 12]}>
-                {overviewItems.map((item) => (
-                  <Col xs={12} lg={6} key={item.key}>
-                    <Card
-                      size="small"
-                      style={{
-                        borderRadius: 16,
-                        border: '1px solid rgba(148,163,184,0.12)',
-                        background: '#fff',
-                      }}
-                      styles={{ body: { padding: 14 } }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <div
-                          style={{
-                            width: 40,
-                            height: 40,
-                            borderRadius: 14,
-                            background: item.bg,
-                            color: item.color,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontWeight: 700,
-                            fontSize: 16,
-                          }}
-                        >
-                          {item.value}
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 12, color: '#64748b' }}>{item.label}</div>
-                        </div>
-                      </div>
-                    </Card>
-                  </Col>
-                ))}
-              </Row>
+  const expandedPanelTitle = useMemo(() => {
+    switch (expandedPanelKey) {
+      case 'desired':
+        return 'Desired / 期望属性';
+      case 'reported':
+        return 'Reported / 上报属性';
+      case 'delta':
+        return 'Delta / 差异';
+      case 'metadata':
+        return 'Metadata / 元数据';
+      default:
+        return '';
+    }
+  }, [expandedPanelKey]);
 
-              {deltaCount > 0 ? (
-                <Alert
-                  type="warning"
-                  showIcon
-                  message="设备当前尚未完全同步 desired"
-                  description="可在下方查看 delta 差异项，判断设备还有哪些目标状态尚未追平。"
-                />
-              ) : (
-                <Alert
-                  type="success"
-                  showIcon
-                  message="当前设备影子已同步"
-                  description="desired 与 reported 没有差异，设备状态已经与平台期望一致。"
-                />
-              )}
+  const renderExpandedPanelExtra = () => {
+    if (expandedPanelKey === 'desired') {
+      return renderDesiredActions(false);
+    }
+    if (expandedPanelKey === 'delta') {
+      return (
+        <Tag color={deltaCount > 0 ? 'warning' : 'success'} style={{ marginInlineEnd: 0 }}>
+          {deltaCount > 0 ? `${deltaCount} 项待同步` : '已同步'}
+        </Tag>
+      );
+    }
+    return null;
+  };
 
-              <Alert
-                type="info"
-                showIcon
-                message="编辑说明"
-                description="抽屉里只有 Desired 可以编辑。Reported、Delta、Metadata 都是设备或系统维护的数据，页面仅提供查看与复制。"
-              />
+  const renderExpandedPanelBody = () => {
+    switch (expandedPanelKey) {
+      case 'desired':
+        return renderEditorPane({
+          description: desiredEditorDescription,
+          path: `file:///device-shadow/${deviceName || deviceId || 'unknown'}/desired-expanded.json`,
+          value: desiredJson,
+          onChange: setDesiredJson,
+          readOnly: !editingDesired,
+          readOnlyLabel: editingDesired ? undefined : '查看态',
+          height: 640,
+        });
+      case 'reported':
+        return renderEditorPane({
+          description: reportedEditorDescription,
+          path: `file:///device-shadow/${deviceName || deviceId || 'unknown'}/reported-expanded.json`,
+          value: formatJson(shadow?.reported),
+          readOnly: true,
+          readOnlyLabel: '只读',
+          height: 640,
+        });
+      case 'delta':
+        return renderEditorPane({
+          description: deltaEditorDescription,
+          path: `file:///device-shadow/${deviceName || deviceId || 'unknown'}/delta-expanded.json`,
+          value: formatJson(delta),
+          readOnly: true,
+          readOnlyLabel: '只读',
+          height: 560,
+        });
+      case 'metadata':
+        return renderEditorPane({
+          description: metadataEditorDescription,
+          path: `file:///device-shadow/${deviceName || deviceId || 'unknown'}/metadata-expanded.json`,
+          value: formatJson(shadow?.metadata),
+          readOnly: true,
+          readOnlyLabel: '只读',
+          height: 560,
+        });
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <>
+      <Drawer
+        title={
+          <Space direction="vertical" size={2}>
+            <Typography.Text style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>
+              设备影子
+            </Typography.Text>
+            <Space size={8} wrap>
+              <Typography.Text style={{ color: '#334155' }}>{displayName}</Typography.Text>
+              {deviceName && nickname ? (
+                <Typography.Text code style={{ fontSize: 12 }}>
+                  {deviceName}
+                </Typography.Text>
+              ) : null}
+              {productName || productKey ? <Tag color="blue">{productDisplay}</Tag> : null}
             </Space>
+          </Space>
+        }
+        open={open}
+        onClose={onClose}
+        width={860}
+        extra={
+          <Space>
+            <Button icon={<ReloadOutlined />} size="small" loading={loading} onClick={() => void fetchShadow()}>
+              刷新
+            </Button>
+            <Popconfirm
+              title="确认删除当前影子吗？"
+              description="删除后 desired、reported、metadata 会一起清空。"
+              onConfirm={() => void handleDeleteShadow()}
+            >
+              <Button danger icon={<DeleteOutlined />} size="small">
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        }
+        styles={{
+          body: {
+            padding: 20,
+            background: 'linear-gradient(180deg, #f8fbff 0%, #f5f8fc 100%)',
+          },
+        }}
+      >
+        {!shadow && !loading ? (
+          <Card style={cardStyle} styles={{ body: { padding: 40 } }}>
+            <Empty description="当前设备还没有影子数据。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           </Card>
+        ) : null}
 
-          <Row gutter={[16, 16]}>
-            <Col xs={24} xl={12}>
-              <Card
-                title="Desired / 期望属性"
-                extra={
-                  <Space size={8}>
-                    {!editingDesired ? (
-                      <Button
+        {shadow ? (
+          <Space direction="vertical" size={18} style={{ width: '100%' }}>
+            <Card
+              style={{
+                ...cardStyle,
+                background: 'linear-gradient(135deg, #ffffff 0%, #f8fbff 50%, #eef6ff 100%)',
+              }}
+              styles={{ body: { padding: 20 } }}
+            >
+              <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                <Descriptions
+                  size="small"
+                  column={3}
+                  items={[
+                    {
+                      key: 'device',
+                      label: '设备',
+                      children: displayName,
+                    },
+                    {
+                      key: 'deviceName',
+                      label: '设备编码',
+                      children: deviceName || '-',
+                    },
+                    {
+                      key: 'product',
+                      label: '所属产品',
+                      children: productDisplay,
+                    },
+                    {
+                      key: 'updatedAt',
+                      label: '最近更新时间',
+                      children: shadow.updatedAt || '-',
+                    },
+                    {
+                      key: 'sync',
+                      label: '同步状态',
+                      children:
+                        deltaCount > 0 ? (
+                          <Tag color="warning">{deltaCount} 项待同步</Tag>
+                        ) : (
+                          <Tag color="success">已同步</Tag>
+                        ),
+                    },
+                  ]}
+                />
+
+                <Row gutter={[12, 12]}>
+                  {overviewItems.map((item) => (
+                    <Col xs={12} lg={6} key={item.key}>
+                      <Card
                         size="small"
-                        icon={<EditOutlined />}
-                        loading={prefillingDesired}
-                        onClick={() => void handleEditDesired()}
+                        style={{
+                          borderRadius: 16,
+                          border: '1px solid rgba(148,163,184,0.12)',
+                          background: '#fff',
+                        }}
+                        styles={{ body: { padding: 14 } }}
                       >
-                        编辑
-                      </Button>
-                    ) : (
-                      <>
-                        <Button size="small" type="primary" icon={<SaveOutlined />} onClick={() => void handleUpdateDesired()}>
-                          保存
-                        </Button>
-                        <Button
-                          size="small"
-                          onClick={() => {
-                            setEditingDesired(false);
-                            setDesiredJson(formatJson(shadow.desired));
-                          }}
-                        >
-                          取消
-                        </Button>
-                      </>
-                    )}
-                    <Popconfirm
-                      title="确认清空 desired？"
-                      description="清空后设备将不再存在待同步的目标状态。"
-                      onConfirm={() => void handleClearDesired()}
-                    >
-                      <Button danger size="small" icon={<ClearOutlined />}>
-                        清空
-                      </Button>
-                    </Popconfirm>
-                  </Space>
-                }
-                style={cardStyle}
-                styles={{ body: { padding: 16 } }}
-              >
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Paragraph style={{ margin: 0, color: '#64748b' }}>
-                    维护平台期望设备达到的目标状态。点击“编辑”时会先根据产品物模型自动填充可写属性的初始值，再叠加当前 desired。保存时会合并字段，属性值设为 <code>null</code> 可删除对应属性。
-                  </Paragraph>
-                  <CodeEditorField
-                    language="json"
-                    path={`file:///device-shadow/${deviceName || deviceId || 'unknown'}/desired-${editingDesired ? 'draft' : 'view'}.json`}
-                    value={desiredJson}
-                    onChange={setDesiredJson}
-                    readOnly={!editingDesired}
-                    readOnlyLabel={editingDesired ? undefined : '查看态'}
-                    height={320}
-                  />
-                </Space>
-              </Card>
-            </Col>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div
+                            style={{
+                              width: 40,
+                              height: 40,
+                              borderRadius: 14,
+                              background: item.bg,
+                              color: item.color,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 700,
+                              fontSize: 16,
+                            }}
+                          >
+                            {item.value}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, color: '#64748b' }}>{item.label}</div>
+                          </div>
+                        </div>
+                      </Card>
+                    </Col>
+                  ))}
+                </Row>
 
-            <Col xs={24} xl={12}>
-              <Card title={readOnlyTitle('Reported / 上报属性')} style={cardStyle} styles={{ body: { padding: 16 } }}>
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Paragraph style={{ margin: 0, color: '#64748b' }}>
-                    设备当前已经确认并上报的状态，用于与 desired 做同步差异比对，不支持人工修改。
-                  </Paragraph>
-                  <CodeEditorField
-                    language="json"
-                    path={`file:///device-shadow/${deviceName || deviceId || 'unknown'}/reported.json`}
-                    value={formatJson(shadow.reported)}
-                    onChange={() => undefined}
-                    readOnly
-                    readOnlyLabel="只读"
-                    height={320}
+                {deltaCount > 0 ? (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message="设备当前尚未完全同步 desired"
+                    description="可在下方查看 delta 差异项，判断设备还有哪些目标状态尚未追平。"
                   />
-                </Space>
-              </Card>
-            </Col>
-          </Row>
+                ) : (
+                  <Alert
+                    type="success"
+                    showIcon
+                    message="当前设备影子已同步"
+                    description="desired 与 reported 没有差异，设备状态已经与平台期望一致。"
+                  />
+                )}
 
-          <Row gutter={[16, 16]}>
-            <Col xs={24} xl={12}>
-              <Card
-                title={
-                  <Space size={8}>
-                    {readOnlyTitle('Delta / 差异')}
-                    <Tag color={deltaCount > 0 ? 'warning' : 'success'}>
-                      {deltaCount > 0 ? `${deltaCount} 项待同步` : '已同步'}
-                    </Tag>
-                  </Space>
-                }
-                style={cardStyle}
-                styles={{ body: { padding: 16 } }}
-              >
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Paragraph style={{ margin: 0, color: '#64748b' }}>
-                    系统自动计算 desired 与 reported 的差异项，便于快速判断设备还有哪些属性未同步。
-                  </Paragraph>
-                  <CodeEditorField
-                    language="json"
-                    path={`file:///device-shadow/${deviceName || deviceId || 'unknown'}/delta.json`}
-                    value={formatJson(delta)}
-                    onChange={() => undefined}
-                    readOnly
-                    readOnlyLabel="只读"
-                    height={240}
-                  />
-                </Space>
-              </Card>
-            </Col>
+                <Alert
+                  type="info"
+                  showIcon
+                  message="编辑说明"
+                  description="抽屉里只有 Desired 可以编辑。Reported、Delta、Metadata 都是设备或系统维护的数据，页面仅提供查看与复制。"
+                />
+              </Space>
+            </Card>
 
-            <Col xs={24} xl={12}>
-              <Card title={readOnlyTitle('Metadata / 元数据')} style={cardStyle} styles={{ body: { padding: 16 } }}>
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Paragraph style={{ margin: 0, color: '#64748b' }}>
-                    字段来源和更新时间等元信息由系统自动维护，用于判断状态来自平台下发还是设备上报。
-                  </Paragraph>
-                  <CodeEditorField
-                    language="json"
-                    path={`file:///device-shadow/${deviceName || deviceId || 'unknown'}/metadata.json`}
-                    value={formatJson(shadow.metadata)}
-                    onChange={() => undefined}
-                    readOnly
-                    readOnlyLabel="只读"
-                    height={240}
-                  />
-                </Space>
-              </Card>
-            </Col>
-          </Row>
-        </Space>
-      ) : null}
-    </Drawer>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} xl={12}>
+                <Card
+                  title="Desired / 期望属性"
+                  extra={renderDesiredActions(true)}
+                  style={cardStyle}
+                  styles={{ body: { padding: 16 } }}
+                >
+                  {renderEditorPane({
+                    description: desiredEditorDescription,
+                    path: `file:///device-shadow/${deviceName || deviceId || 'unknown'}/desired-${editingDesired ? 'draft' : 'view'}.json`,
+                    value: desiredJson,
+                    onChange: setDesiredJson,
+                    readOnly: !editingDesired,
+                    readOnlyLabel: editingDesired ? undefined : '查看态',
+                    height: 320,
+                  })}
+                </Card>
+              </Col>
+
+              <Col xs={24} xl={12}>
+                <Card
+                  title={readOnlyTitle('Reported / 上报属性')}
+                  extra={renderExpandTrigger('reported')}
+                  style={cardStyle}
+                  styles={{ body: { padding: 16 } }}
+                >
+                  {renderEditorPane({
+                    description: reportedEditorDescription,
+                    path: `file:///device-shadow/${deviceName || deviceId || 'unknown'}/reported.json`,
+                    value: formatJson(shadow.reported),
+                    readOnly: true,
+                    readOnlyLabel: '只读',
+                    height: 320,
+                  })}
+                </Card>
+              </Col>
+            </Row>
+
+            <Row gutter={[16, 16]}>
+              <Col xs={24} xl={12}>
+                <Card
+                  title={
+                    <Space size={8}>
+                      {readOnlyTitle('Delta / 差异')}
+                      <Tag color={deltaCount > 0 ? 'warning' : 'success'}>
+                        {deltaCount > 0 ? `${deltaCount} 项待同步` : '已同步'}
+                      </Tag>
+                    </Space>
+                  }
+                  extra={renderExpandTrigger('delta')}
+                  style={cardStyle}
+                  styles={{ body: { padding: 16 } }}
+                >
+                  {renderEditorPane({
+                    description: deltaEditorDescription,
+                    path: `file:///device-shadow/${deviceName || deviceId || 'unknown'}/delta.json`,
+                    value: formatJson(delta),
+                    readOnly: true,
+                    readOnlyLabel: '只读',
+                    height: 240,
+                  })}
+                </Card>
+              </Col>
+
+              <Col xs={24} xl={12}>
+                <Card
+                  title={readOnlyTitle('Metadata / 元数据')}
+                  extra={renderExpandTrigger('metadata')}
+                  style={cardStyle}
+                  styles={{ body: { padding: 16 } }}
+                >
+                  {renderEditorPane({
+                    description: metadataEditorDescription,
+                    path: `file:///device-shadow/${deviceName || deviceId || 'unknown'}/metadata.json`,
+                    value: formatJson(shadow.metadata),
+                    readOnly: true,
+                    readOnlyLabel: '只读',
+                    height: 240,
+                  })}
+                </Card>
+              </Col>
+            </Row>
+          </Space>
+        ) : null}
+      </Drawer>
+
+      <ShadowPanelFullscreenDrawer
+        title={expandedPanelTitle}
+        open={!!shadow && !!expandedPanelKey}
+        onClose={closeExpandedPanel}
+        extra={renderExpandedPanelExtra()}
+      >
+        {renderExpandedPanelBody()}
+      </ShadowPanelFullscreenDrawer>
+    </>
   );
 };
 
