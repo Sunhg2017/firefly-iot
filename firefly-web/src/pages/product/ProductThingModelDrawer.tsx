@@ -1715,6 +1715,16 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
     }
   };
 
+  useEffect(() => {
+    if (!itemEditor) {
+      itemForm.resetFields();
+      return;
+    }
+
+    // Sync form values after the editor state is committed so edit dialogs always backfill current item data.
+    itemForm.setFieldsValue(itemToFormValues(itemEditor.section, itemEditor.original));
+  }, [itemEditor, itemForm]);
+
   const openItemEditor = (section: SectionKey, index?: number) => {
     if (index !== undefined && isBuiltinItemAt(section, index)) {
       message.warning(`${getBuiltinItemLabel(section)}不可编辑，请保留平台默认物模型项`);
@@ -1732,7 +1742,6 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
       index: index ?? null,
       original: currentItem,
     });
-    itemForm.setFieldsValue(itemToFormValues(section, currentItem));
   };
 
   const closeItemEditor = () => {
@@ -1776,7 +1785,6 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
       index: null,
       original: duplicated,
     });
-    itemForm.setFieldsValue(itemToFormValues(section, duplicated));
   };
 
   const mergeTemplateModel = (template: TemplateDefinition, replaceSections: boolean) => {
