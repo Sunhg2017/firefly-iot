@@ -87,7 +87,7 @@ const readOnlyTitle = (title: string) => (
 
 const desiredEditorDescription = (
   <>
-    维护平台期望设备达到的目标状态。点击“编辑”时会先根据产品物模型自动补齐可写属性，再叠加当前
+    维护平台期望设备达到的目标状态。点击“编辑”时会先根据产品物模型自动补齐属性，再叠加当前
     <code> desired </code>
     内容；保存时会按字段合并，属性值设为
     <code> null </code>
@@ -128,9 +128,30 @@ const DeviceShadowDrawer: React.FC<Props> = ({
   const desiredCount = countKeys(shadow?.desired);
   const reportedCount = countKeys(shadow?.reported);
   const deltaCount = countKeys(delta);
+  const desiredInlineEditorPath = `file:///device-shadow/${deviceName || deviceId || 'unknown'}/desired.json`;
 
   const closeExpandedPanel = () => {
     setExpandedPanelKey(null);
+  };
+
+  const applyShadowSnapshot = (nextShadow: ShadowData) => {
+    setShadow(nextShadow);
+    setDesiredJson(formatJson(nextShadow.desired));
+    setEditingDesired(false);
+  };
+
+  const refreshDelta = async (warningMessage?: string) => {
+    if (!deviceId) {
+      return;
+    }
+    try {
+      const deltaRes = await deviceApi.getDelta(deviceId);
+      setDelta((deltaRes.data.data || {}) as Record<string, unknown>);
+    } catch {
+      if (warningMessage) {
+        message.warning(warningMessage);
+      }
+    }
   };
 
   const renderExpandTrigger = (panelKey: ShadowPanelKey) => (
@@ -185,12 +206,10 @@ const DeviceShadowDrawer: React.FC<Props> = ({
         productId ? productApi.getThingModel(productId).catch(() => null) : Promise.resolve(null),
       ]);
       const nextShadow = shadowRes.data.data as ShadowData;
-      setShadow(nextShadow);
+      applyShadowSnapshot(nextShadow);
       setDelta((deltaRes.data.data || {}) as Record<string, unknown>);
-      setDesiredJson(formatJson(nextShadow.desired));
       // Cache the latest thing model so the card and the nested drawer reuse the same desired draft source.
       setThingModel(thingModelRes?.data?.data ?? null);
-      setEditingDesired(false);
     } catch {
       message.error('加载设备影子失败');
     } finally {
@@ -249,9 +268,10 @@ const DeviceShadowDrawer: React.FC<Props> = ({
     }
     try {
       const parsed = JSON.parse(desiredJson);
-      await deviceApi.updateDesired(deviceId, parsed);
+      const updateRes = await deviceApi.updateDesired(deviceId, parsed);
+      applyShadowSnapshot(updateRes.data.data as ShadowData);
       message.success('期望属性已更新');
-      await fetchShadow();
+      await refreshDelta('期望属性已更新，但差异刷新失败，请手动点击刷新');
     } catch (error) {
       if (error instanceof SyntaxError) {
         message.error('Desired JSON 格式错误');
@@ -266,9 +286,10 @@ const DeviceShadowDrawer: React.FC<Props> = ({
       return;
     }
     try {
-      await deviceApi.clearDesired(deviceId);
+      const clearRes = await deviceApi.clearDesired(deviceId);
+      applyShadowSnapshot(clearRes.data.data as ShadowData);
+      setDelta({});
       message.success('期望属性已清空');
-      await fetchShadow();
     } catch {
       message.error('清空期望属性失败');
     }
@@ -609,7 +630,8 @@ const DeviceShadowDrawer: React.FC<Props> = ({
                 >
                   {renderEditorPane({
                     description: desiredEditorDescription,
-                    path: `file:///device-shadow/${deviceName || deviceId || 'unknown'}/desired-${editingDesired ? 'draft' : 'view'}.json`,
+                    // Keep one stable Monaco model so saving does not switch into an empty cached view model.
+                    path: desiredInlineEditorPath,
                     value: desiredJson,
                     onChange: setDesiredJson,
                     readOnly: !editingDesired,
