@@ -11,6 +11,11 @@ export type WorkspaceType = 'platform' | 'tenant';
 export const WORKSPACE_STORAGE_KEY = 'firefly_workspace';
 
 type RoutePermission = RouteItem['permission'];
+type UserHomeContext = {
+  userType?: string | null;
+  permissions?: readonly string[] | null;
+  authorizedMenuPaths?: readonly string[] | null;
+};
 
 const SHARED_PATHS = new Set<string>();
 const ROUTE_PERMISSION_MAP = new Map<string, RoutePermission>();
@@ -189,4 +194,12 @@ export function getWorkspaceHomePath(
   const uniquePaths = [...new Set(candidates)];
   const nonDashboard = uniquePaths.filter((path) => path !== '/dashboard');
   return nonDashboard[0] || uniquePaths[0] || '/403';
+}
+
+export function getUserHomePath(user?: UserHomeContext | null): string {
+  return getWorkspaceHomePath(
+    resolveWorkspaceByUserType(user?.userType),
+    Array.isArray(user?.permissions) ? user.permissions : [],
+    Array.isArray(user?.authorizedMenuPaths) ? user.authorizedMenuPaths : [],
+  );
 }

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Form, Input, Button, Tabs, message, Checkbox } from 'antd';
 import { UserOutlined, LockOutlined, MobileOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import useAuthStore from '../../store/useAuthStore';
-import { getWorkspaceHomePath, resolveWorkspaceByUserType } from '../../config/workspaceRoutes';
+import { getUserHomePath } from '../../config/workspaceRoutes';
 
 const loginInputStyle: React.CSSProperties = {
   height: 42,
@@ -60,14 +60,9 @@ const LoginPage: React.FC = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      const homePath = getWorkspaceHomePath(
-        resolveWorkspaceByUserType(user?.userType),
-        Array.isArray(user?.permissions) ? user.permissions : [],
-        Array.isArray(user?.authorizedMenuPaths) ? user.authorizedMenuPaths : [],
-      );
-      navigate(homePath, { replace: true });
+      navigate(getUserHomePath(user), { replace: true });
     }
-  }, [isAuthenticated, navigate, user?.authorizedMenuPaths, user?.permissions, user?.userType]);
+  }, [isAuthenticated, navigate, user]);
 
   const handlePasswordLogin = async (values: { username: string; password: string }) => {
     setLoading(true);
@@ -75,12 +70,7 @@ const LoginPage: React.FC = () => {
       await login('PASSWORD', { username: values.username, password: values.password });
       message.success('登录成功');
       const currentUser = useAuthStore.getState().user;
-      const homePath = getWorkspaceHomePath(
-        resolveWorkspaceByUserType(currentUser?.userType),
-        Array.isArray(currentUser?.permissions) ? currentUser.permissions : [],
-        Array.isArray(currentUser?.authorizedMenuPaths) ? currentUser.authorizedMenuPaths : [],
-      );
-      navigate(homePath);
+      navigate(getUserHomePath(currentUser));
     } catch (err: unknown) {
       const error = err as { response?: { data?: { message?: string } } };
       message.error(error.response?.data?.message || '登录失败');
@@ -95,12 +85,7 @@ const LoginPage: React.FC = () => {
       await login('SMS', { phone: values.phone, smsCode: values.smsCode });
       message.success('登录成功');
       const currentUser = useAuthStore.getState().user;
-      const homePath = getWorkspaceHomePath(
-        resolveWorkspaceByUserType(currentUser?.userType),
-        Array.isArray(currentUser?.permissions) ? currentUser.permissions : [],
-        Array.isArray(currentUser?.authorizedMenuPaths) ? currentUser.authorizedMenuPaths : [],
-      );
-      navigate(homePath);
+      navigate(getUserHomePath(currentUser));
     } catch (err: unknown) {
       const error = err as { response?: { data?: { message?: string } } };
       message.error(error.response?.data?.message || '登录失败');

@@ -4,6 +4,8 @@ import { Spin } from 'antd';
 import BasicLayout from './layouts/BasicLayout';
 import PrivateRoute from './components/PrivateRoute';
 import LoginPage from './pages/login';
+import useAuthStore from './store/useAuthStore';
+import { getUserHomePath } from './config/workspaceRoutes';
 
 const Dashboard = React.lazy(() => import('./pages/dashboard/DashboardPage'));
 const TenantList = React.lazy(() => import('./pages/tenant/TenantList'));
@@ -57,6 +59,14 @@ const Loading = () => (
   </div>
 );
 
+const HomeRedirect: React.FC = () => {
+  const { user } = useAuthStore();
+
+  // Root and in-app wildcard routes must resolve against the current user's accessible menu set,
+  // otherwise roles without dashboard access will be sent to /403 by a hard-coded fallback.
+  return <Navigate to={getUserHomePath(user)} replace />;
+};
+
 const App: React.FC = () => {
   return (
     <Suspense fallback={<Loading />}>
@@ -64,7 +74,7 @@ const App: React.FC = () => {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/" element={<PrivateRoute />}>
           <Route element={<BasicLayout />}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route index element={<HomeRedirect />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="tenant" element={<TenantList />} />
             <Route path="user" element={<UserList />} />
@@ -110,7 +120,7 @@ const App: React.FC = () => {
             <Route path="tcp-udp" element={<TcpUdpPage />} />
             <Route path="lorawan" element={<LoRaWanPage />} />
             <Route path="403" element={<ForbiddenPage />} />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<HomeRedirect />} />
           </Route>
         </Route>
       </Routes>
