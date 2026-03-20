@@ -135,6 +135,7 @@ flowchart LR
 
 ```text
 /{SHORTNAME}/api/v1/**  ->  lb://firefly-{shortName}
+/open/{SHORTNAME}/api/v1/**  ->  lb://firefly-{shortName}  (AppKey OpenAPI)
 ```
 
 典型映射：
@@ -148,6 +149,18 @@ flowchart LR
 | `/DATA/api/v1/**` | `firefly-data` |
 | `/SUPPORT/api/v1/**` | `firefly-support` |
 | `/CONNECTOR/api/v1/**` | `firefly-connector` |
+
+OpenAPI 外部调用统一收口为：
+
+| 外部前缀 | 目标服务 |
+| --- | --- |
+| `/open/SYSTEM/api/v1/**` | `firefly-system` |
+| `/open/DEVICE/api/v1/**` | `firefly-device` |
+| `/open/RULE/api/v1/**` | `firefly-rule` |
+| `/open/MEDIA/api/v1/**` | `firefly-media` |
+| `/open/DATA/api/v1/**` | `firefly-data` |
+| `/open/SUPPORT/api/v1/**` | `firefly-support` |
+| `/open/CONNECTOR/api/v1/**` | `firefly-connector` |
 
 ## 8. Docker 部署
 

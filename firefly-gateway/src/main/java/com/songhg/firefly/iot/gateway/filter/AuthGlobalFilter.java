@@ -50,6 +50,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
+    private static final String OPEN_API_GATEWAY_PREFIX = "/open/";
+
     private static final List<String> WHITE_LIST = List.of(
             "/SYSTEM/api/v1/auth/login",
             "/SYSTEM/api/v1/auth/sms/send",
@@ -106,20 +108,17 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             }
         }
 
+        if (isOpenApiGatewayPath(path)) {
+            String appKey = request.getHeaders().getFirst(AuthConstants.HEADER_APP_KEY);
+            String timestamp = request.getHeaders().getFirst(AuthConstants.HEADER_APP_TIMESTAMP);
+            String nonce = request.getHeaders().getFirst(AuthConstants.HEADER_APP_NONCE);
+            String signature = request.getHeaders().getFirst(AuthConstants.HEADER_APP_SIGNATURE);
+            return authenticateAppKey(exchange, chain, path, appKey, timestamp, nonce, signature);
+        }
+
         String authHeader = request.getHeaders().getFirst(AuthConstants.HEADER_AUTHORIZATION);
         if (StringUtils.hasText(authHeader) && authHeader.startsWith(AuthConstants.TOKEN_PREFIX)) {
             return authenticateJwt(exchange, chain, authHeader.substring(AuthConstants.TOKEN_PREFIX.length()));
-        }
-
-        String appKey = request.getHeaders().getFirst(AuthConstants.HEADER_APP_KEY);
-        String timestamp = request.getHeaders().getFirst(AuthConstants.HEADER_APP_TIMESTAMP);
-        String nonce = request.getHeaders().getFirst(AuthConstants.HEADER_APP_NONCE);
-        String signature = request.getHeaders().getFirst(AuthConstants.HEADER_APP_SIGNATURE);
-        if (StringUtils.hasText(appKey)
-                || StringUtils.hasText(timestamp)
-                || StringUtils.hasText(nonce)
-                || StringUtils.hasText(signature)) {
-            return authenticateAppKey(exchange, chain, path, appKey, timestamp, nonce, signature);
         }
 
         return unauthorized(exchange);
@@ -360,13 +359,20 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         if (!StringUtils.hasText(gatewayPath) || !gatewayPath.startsWith("/")) {
             return null;
         }
-        String[] parts = gatewayPath.split("/", 4);
-        if (parts.length < 3 || !StringUtils.hasText(parts[1]) || !"api".equalsIgnoreCase(parts[2])) {
+        String[] parts = gatewayPath.split("/", 5);
+        if (parts.length < 4
+                || !"open".equalsIgnoreCase(parts[1])
+                || !StringUtils.hasText(parts[2])
+                || !"api".equalsIgnoreCase(parts[3])) {
             return null;
         }
-        String serviceCode = parts[1].toUpperCase(Locale.ROOT);
-        String requestPath = parts.length >= 4 ? "/api/" + parts[3] : "/api";
+        String serviceCode = parts[2].toUpperCase(Locale.ROOT);
+        String requestPath = parts.length >= 5 ? "/api/" + parts[4] : "/api";
         return new ServiceRequest(serviceCode, requestPath);
+    }
+
+    private boolean isOpenApiGatewayPath(String path) {
+        return StringUtils.hasText(path) && path.startsWith(OPEN_API_GATEWAY_PREFIX);
     }
 
     private JwtContext parseJwtPayload(String token) {

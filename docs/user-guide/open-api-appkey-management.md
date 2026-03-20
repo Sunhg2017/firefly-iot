@@ -2,7 +2,8 @@
 
 ## 1. 适用角色
 
-- 系统运维管理员：维护 OpenAPI 目录
+- 研发人员：在 Controller 方法上标注 `@OpenApi`
+- 系统运维管理员：查看自动注册的 OpenAPI 目录
 - 平台管理员：为租户配置 OpenAPI 订阅与调用限制
 - 租户管理员：为外部系统创建和维护 AppKey
 
@@ -15,28 +16,35 @@
 可执行操作：
 
 - 查询 OpenAPI
-- 新建 OpenAPI
-- 编辑 OpenAPI
-- 删除 OpenAPI
 - 查看 OpenAPI 详情
 
-创建时需要填写：
+研发标注方式：
 
-- OpenAPI 编码
-- OpenAPI 名称
-- 所属服务
-- HTTP 方法
-- 下游路径模板
-- 透传权限编码
-- 排序值
-- 启用状态
-- 说明
+```java
+@OpenApi(
+    code = "product.thing-model.by-product-key",
+    name = "按 ProductKey 获取产品物模型"
+)
+@GetMapping("/thing-model/by-product-key")
+@RequiresPermission("product:read")
+public R<String> getThingModelByProductKey(@RequestParam String productKey) {
+    return R.ok(productService.getThingModelByProductKeyForCurrentTenant(productKey));
+}
+```
+
+标注规则：
+
+- `@OpenApi` 只能标在实际对外开放的 Controller 方法上
+- 方法必须只有一个 HTTP Method 和一个确定的请求路径
+- `permissionCode` 可以显式填写；如果不填，方法上必须存在单值 `@RequiresPermission`
+- 服务发布完成后，目录会自动同步到系统运维空间，不需要再到页面手工新建
+- 当前首个已落地示例路径为 `/open/DEVICE/api/v1/products/thing-model/by-product-key?productKey=pk_xxx`
 
 使用建议：
 
-- 编码尽量采用稳定、可读的业务编码，例如 `device.read.detail`
+- 编码尽量采用稳定、可读的业务编码，例如 `product.thing-model.by-product-key`
 - 路径模板统一按 `/api/v1/...` 口径填写
-- 若下游接口仍需动作级权限控制，请补全透传权限编码
+- 若下游接口仍需动作级权限控制，请确保 `permissionCode` 与实际鉴权口径一致
 
 ## 3. 平台租户管理：OpenAPI 订阅
 
@@ -123,8 +131,8 @@
 
 调用路径使用网关路径，例如：
 
-- `/DEVICE/api/v1/...`
-- `/SYSTEM/api/v1/...`
+- `/open/DEVICE/api/v1/...`
+- `/open/SYSTEM/api/v1/...`
 
 签名规则：
 
@@ -161,6 +169,7 @@ pageNum=1&pageSize=20
 - `X-Timestamp` 使用毫秒级 Unix 时间戳。
 - `X-Nonce` 需保证单次请求唯一，推荐使用 8 到 128 位字母、数字、下划线或中划线组合。
 - `Secret Key` 只在本地参与签名计算，服务端不会要求你传输明文 Secret Key。
+- 外部调用必须走 `/open/{SERVICE}/api/...`，不要复用平台前端使用的 `/{SERVICE}/api/...` JWT 路径。
 - 如果 AppKey 是升级前创建的旧数据，重新创建后再联调。
 
 是否能成功调用，取决于：

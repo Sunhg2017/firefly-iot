@@ -23,12 +23,13 @@ spring:
 
     gateway:
       # ====================================================================
-      # 鍔ㄦ€佽矾鐢憋細DynamicServiceRouteLocator 鑷姩浠?Nacos 鍙戠幇 firefly-* 鏈嶅姟
-      # 绾﹀畾: /{SHORTNAME}/api/v1/** 鈫?lb://firefly-{shortName}
-      # 渚嬪: /DEVICE/api/v1/devices 鈫?lb://firefly-device 鈫?/api/v1/devices
-      #
-      # SHORTNAME 涓烘湇鍔＄煭鍚嶅叏澶у啓 (SYSTEM, DEVICE, RULE, SUPPORT, ...)
-      # 鏂板寰湇鍔″彧闇€娉ㄥ唽鍒?Nacos锛屾棤闇€淇敼姝ら厤缃枃浠躲€?      # 浠ヤ笅浠呬繚鐣欎笉閬靛惊绾﹀畾鐨勭壒娈婅矾鐢便€?      # ====================================================================
+      # Internal UI/JWT traffic keeps using /{SHORTNAME}/api/v1/**.
+      # External AppKey OpenAPI traffic is exposed as /open/{SHORTNAME}/api/v1/**.
+      # Example:
+      #   /DEVICE/api/v1/devices                               -> firefly-device /api/v1/devices
+      #   /open/DEVICE/api/v1/products/thing-model/by-product-key
+      #                                                      -> firefly-device /api/v1/products/thing-model/by-product-key
+      # ====================================================================
       discovery:
         locator:
           enabled: false
@@ -39,42 +40,84 @@ spring:
             - Path=/SYSTEM/api/**
           filters:
             - RewritePath=/SYSTEM/api/(?<segment>.*), /api/${segment}
+        - id: open-system-route
+          uri: http://127.0.0.1:8081
+          predicates:
+            - Path=/open/SYSTEM/api/**
+          filters:
+            - RewritePath=/open/SYSTEM/api/(?<segment>.*), /api/${segment}
         - id: data-route
           uri: http://127.0.0.1:9050
           predicates:
             - Path=/DATA/api/**
           filters:
             - RewritePath=/DATA/api/(?<segment>.*), /api/${segment}
+        - id: open-data-route
+          uri: http://127.0.0.1:9050
+          predicates:
+            - Path=/open/DATA/api/**
+          filters:
+            - RewritePath=/open/DATA/api/(?<segment>.*), /api/${segment}
         - id: media-route
           uri: http://127.0.0.1:9040
           predicates:
             - Path=/MEDIA/api/**
           filters:
             - RewritePath=/MEDIA/api/(?<segment>.*), /api/${segment}
+        - id: open-media-route
+          uri: http://127.0.0.1:9040
+          predicates:
+            - Path=/open/MEDIA/api/**
+          filters:
+            - RewritePath=/open/MEDIA/api/(?<segment>.*), /api/${segment}
         - id: support-route
           uri: http://127.0.0.1:9060
           predicates:
             - Path=/SUPPORT/api/**
           filters:
             - RewritePath=/SUPPORT/api/(?<segment>.*), /api/${segment}
+        - id: open-support-route
+          uri: http://127.0.0.1:9060
+          predicates:
+            - Path=/open/SUPPORT/api/**
+          filters:
+            - RewritePath=/open/SUPPORT/api/(?<segment>.*), /api/${segment}
         - id: rule-route
           uri: http://127.0.0.1:9030
           predicates:
             - Path=/RULE/api/**
           filters:
             - RewritePath=/RULE/api/(?<segment>.*), /api/${segment}
+        - id: open-rule-route
+          uri: http://127.0.0.1:9030
+          predicates:
+            - Path=/open/RULE/api/**
+          filters:
+            - RewritePath=/open/RULE/api/(?<segment>.*), /api/${segment}
         - id: device-route
           uri: http://127.0.0.1:9020
           predicates:
             - Path=/DEVICE/api/**
           filters:
             - RewritePath=/DEVICE/api/(?<segment>.*), /api/${segment}
+        - id: open-device-route
+          uri: http://127.0.0.1:9020
+          predicates:
+            - Path=/open/DEVICE/api/**
+          filters:
+            - RewritePath=/open/DEVICE/api/(?<segment>.*), /api/${segment}
         - id: connector-route
           uri: http://127.0.0.1:9070
           predicates:
             - Path=/CONNECTOR/api/**
           filters:
             - RewritePath=/CONNECTOR/api/(?<segment>.*), /api/${segment}
+        - id: open-connector-route
+          uri: http://127.0.0.1:9070
+          predicates:
+            - Path=/open/CONNECTOR/api/**
+          filters:
+            - RewritePath=/open/CONNECTOR/api/(?<segment>.*), /api/${segment}
       default-filters:
         - DedupeResponseHeader=Access-Control-Allow-Origin
 

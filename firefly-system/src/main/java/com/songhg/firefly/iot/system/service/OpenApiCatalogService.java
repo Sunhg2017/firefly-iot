@@ -3,13 +3,12 @@ package com.songhg.firefly.iot.system.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.api.dto.openapi.OpenApiRegistrationItemDTO;
+import com.songhg.firefly.iot.api.dto.openapi.OpenApiRegistrationSyncDTO;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
-import com.songhg.firefly.iot.system.dto.openapi.OpenApiCreateDTO;
 import com.songhg.firefly.iot.system.dto.openapi.OpenApiOptionVO;
 import com.songhg.firefly.iot.system.dto.openapi.OpenApiQueryDTO;
-import com.songhg.firefly.iot.system.dto.openapi.OpenApiUpdateDTO;
 import com.songhg.firefly.iot.system.dto.openapi.OpenApiVO;
 import com.songhg.firefly.iot.system.entity.OpenApiCatalog;
 import com.songhg.firefly.iot.system.mapper.OpenApiCatalogMapper;
@@ -20,10 +19,13 @@ import org.springframework.util.AntPathMatcher;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -89,42 +91,6 @@ public class OpenApiCatalogService {
                 .toList());
     }
 
-    @Transactional
-    public OpenApiVO createOpenApi(OpenApiCreateDTO dto) {
-        String code = normalizeCode(dto.getCode());
-        Long count = openApiCatalogMapper.selectCount(new LambdaQueryWrapper<OpenApiCatalog>()
-                .eq(OpenApiCatalog::getCode, code));
-        if (count != null && count > 0) {
-            throw new BizException(ResultCode.CONFLICT, "open api code already exists");
-        }
-
-        OpenApiCatalog entity = new OpenApiCatalog();
-        entity.setCode(code);
-        applyChanges(entity, dto.getName(), dto.getServiceCode(), dto.getHttpMethod(), dto.getPathPattern(),
-                dto.getPermissionCode(), dto.getEnabled(), dto.getSortOrder(), dto.getDescription());
-        entity.setCreatedBy(AppContextHolder.getUserId());
-        entity.setCreatedAt(LocalDateTime.now());
-        entity.setUpdatedAt(LocalDateTime.now());
-        openApiCatalogMapper.insert(entity);
-        return toVO(entity);
-    }
-
-    @Transactional
-    public OpenApiVO updateOpenApi(String code, OpenApiUpdateDTO dto) {
-        OpenApiCatalog entity = requireOpenApi(code);
-        applyChanges(entity, dto.getName(), dto.getServiceCode(), dto.getHttpMethod(), dto.getPathPattern(),
-                dto.getPermissionCode(), dto.getEnabled(), dto.getSortOrder(), dto.getDescription());
-        entity.setUpdatedAt(LocalDateTime.now());
-        openApiCatalogMapper.updateById(entity);
-        return toVO(entity);
-    }
-
-    @Transactional
-    public void deleteOpenApi(String code) {
-        OpenApiCatalog entity = requireOpenApi(code);
-        openApiCatalogMapper.deleteById(entity.getId());
-    }
-
     public OpenApiCatalog requireOpenApi(String code) {
         OpenApiCatalog entity = openApiCatalogMapper.selectOne(new LambdaQueryWrapper<OpenApiCatalog>()
                 .eq(OpenApiCatalog::getCode, normalizeCode(code))
@@ -147,11 +113,56 @@ public class OpenApiCatalogService {
                 .filter(item -> pathMatches(item.getPathPattern(), normalizedPath))
                 .max(Comparator
                         .comparingInt((OpenApiCatalog item) -> normalizePathPattern(item.getPathPattern()).length())
-                        .thenComparing(item -> item.getSortOrder() == null ? 0 : item.getSortOrder()))
+                .thenComparing(item -> item.getSortOrder() == null ? 0 : item.getSortOrder()))
                 .orElseThrow(() -> new BizException(ResultCode.NOT_FOUND, "open api not published"));
     }
 
-    private void applyChanges(
+    @Transactional
+    public void syncRegisteredOpenApis(OpenApiRegistrationSyncDTO request) {
+        String serviceCode = normalizeServiceCode(request.getServiceCode());
+        List<OpenApiCatalog> currentRows = openApiCatalogMapper.selectList(new LambdaQueryWrapper<OpenApiCatalog>()
+                .eq(OpenApiCatalog::getServiceCode, serviceCode));
+        Map<String, OpenApiCatalog> staleByCode = new HashMap<>();
+        for (OpenApiCatalog item : currentRows) {
+            staleByCode.put(item.getCode(), item);
+        }
+
+        Set<String> incomingCodes = new LinkedHashSet<>();
+        List<OpenApiRegistrationItemDTO> items = request.getItems() == null ? new ArrayList<>() : request.getItems();
+        for (OpenApiRegistrationItemDTO item : items) {
+            String code = normalizeCode(item.getCode());
+            if (!incomingCodes.add(code)) {
+                throw new BizException(ResultCode.PARAM_ERROR, "duplicate open api code in sync payload: " + code);
+            }
+
+            OpenApiCatalog entity = openApiCatalogMapper.selectOne(new LambdaQueryWrapper<OpenApiCatalog>()
+                    .eq(OpenApiCatalog::getCode, code)
+                    .last("LIMIT 1"));
+            boolean isNew = entity == null;
+            if (isNew) {
+                entity = new OpenApiCatalog();
+                entity.setCode(code);
+                entity.setCreatedAt(LocalDateTime.now());
+            }
+
+            boolean changed = applyChanges(entity, item.getName(), serviceCode, item.getHttpMethod(), item.getPathPattern(),
+                    item.getPermissionCode(), item.getEnabled(), item.getSortOrder(), item.getDescription());
+            if (isNew) {
+                entity.setUpdatedAt(LocalDateTime.now());
+                openApiCatalogMapper.insert(entity);
+            } else if (changed) {
+                entity.setUpdatedAt(LocalDateTime.now());
+                openApiCatalogMapper.updateById(entity);
+            }
+            staleByCode.remove(code);
+        }
+
+        for (OpenApiCatalog stale : staleByCode.values()) {
+            openApiCatalogMapper.deleteById(stale.getId());
+        }
+    }
+
+    private boolean applyChanges(
             OpenApiCatalog entity,
             String name,
             String serviceCode,
@@ -162,14 +173,25 @@ public class OpenApiCatalogService {
             Integer sortOrder,
             String description
     ) {
-        entity.setName(trimRequired(name, "open api name is required"));
-        entity.setServiceCode(normalizeServiceCode(serviceCode));
-        entity.setHttpMethod(normalizeHttpMethod(httpMethod));
-        entity.setPathPattern(normalizePathPattern(pathPattern));
-        entity.setPermissionCode(trimToNull(permissionCode));
-        entity.setEnabled(Boolean.TRUE.equals(enabled));
-        entity.setSortOrder(sortOrder == null ? 0 : sortOrder);
-        entity.setDescription(trimToNull(description));
+        String normalizedName = trimRequired(name, "open api name is required");
+        String normalizedServiceCode = normalizeServiceCode(serviceCode);
+        String normalizedHttpMethod = normalizeHttpMethod(httpMethod);
+        String normalizedPathPattern = normalizePathPattern(pathPattern);
+        String normalizedPermissionCode = trimRequired(permissionCode, "open api permission code is required");
+        Boolean normalizedEnabled = Boolean.TRUE.equals(enabled);
+        Integer normalizedSortOrder = sortOrder == null ? 0 : sortOrder;
+        String normalizedDescription = trimToNull(description);
+
+        boolean changed = false;
+        changed |= applyField(entity.getName(), normalizedName, entity::setName);
+        changed |= applyField(entity.getServiceCode(), normalizedServiceCode, entity::setServiceCode);
+        changed |= applyField(entity.getHttpMethod(), normalizedHttpMethod, entity::setHttpMethod);
+        changed |= applyField(entity.getPathPattern(), normalizedPathPattern, entity::setPathPattern);
+        changed |= applyField(entity.getPermissionCode(), normalizedPermissionCode, entity::setPermissionCode);
+        changed |= applyField(entity.getEnabled(), normalizedEnabled, entity::setEnabled);
+        changed |= applyField(entity.getSortOrder(), normalizedSortOrder, entity::setSortOrder);
+        changed |= applyField(entity.getDescription(), normalizedDescription, entity::setDescription);
+        return changed;
     }
 
     private OpenApiVO toVO(OpenApiCatalog entity) {
@@ -202,7 +224,7 @@ public class OpenApiCatalogService {
     }
 
     public String buildGatewayPath(String serviceCode, String pathPattern) {
-        return "/" + normalizeServiceCode(serviceCode) + normalizePathPattern(pathPattern);
+        return "/open/" + normalizeServiceCode(serviceCode) + normalizePathPattern(pathPattern);
     }
 
     private boolean pathMatches(String configuredPattern, String requestPath) {
@@ -245,5 +267,13 @@ public class OpenApiCatalogService {
             return null;
         }
         return value.trim();
+    }
+
+    private <T> boolean applyField(T currentValue, T nextValue, java.util.function.Consumer<T> setter) {
+        if (java.util.Objects.equals(currentValue, nextValue)) {
+            return false;
+        }
+        setter.accept(nextValue);
+        return true;
     }
 }

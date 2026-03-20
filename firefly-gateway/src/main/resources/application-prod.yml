@@ -26,42 +26,84 @@ spring:
             - Path=/SYSTEM/api/**
           filters:
             - RewritePath=/SYSTEM/api/(?<segment>.*), /api/${segment}
+        - id: open-system-route
+          uri: lb://firefly-system
+          predicates:
+            - Path=/open/SYSTEM/api/**
+          filters:
+            - RewritePath=/open/SYSTEM/api/(?<segment>.*), /api/${segment}
         - id: data-route
           uri: lb://firefly-data
           predicates:
             - Path=/DATA/api/**
           filters:
             - RewritePath=/DATA/api/(?<segment>.*), /api/${segment}
+        - id: open-data-route
+          uri: lb://firefly-data
+          predicates:
+            - Path=/open/DATA/api/**
+          filters:
+            - RewritePath=/open/DATA/api/(?<segment>.*), /api/${segment}
         - id: media-route
           uri: lb://firefly-media
           predicates:
             - Path=/MEDIA/api/**
           filters:
             - RewritePath=/MEDIA/api/(?<segment>.*), /api/${segment}
+        - id: open-media-route
+          uri: lb://firefly-media
+          predicates:
+            - Path=/open/MEDIA/api/**
+          filters:
+            - RewritePath=/open/MEDIA/api/(?<segment>.*), /api/${segment}
         - id: support-route
           uri: lb://firefly-support
           predicates:
             - Path=/SUPPORT/api/**
           filters:
             - RewritePath=/SUPPORT/api/(?<segment>.*), /api/${segment}
+        - id: open-support-route
+          uri: lb://firefly-support
+          predicates:
+            - Path=/open/SUPPORT/api/**
+          filters:
+            - RewritePath=/open/SUPPORT/api/(?<segment>.*), /api/${segment}
         - id: rule-route
           uri: lb://firefly-rule
           predicates:
             - Path=/RULE/api/**
           filters:
             - RewritePath=/RULE/api/(?<segment>.*), /api/${segment}
+        - id: open-rule-route
+          uri: lb://firefly-rule
+          predicates:
+            - Path=/open/RULE/api/**
+          filters:
+            - RewritePath=/open/RULE/api/(?<segment>.*), /api/${segment}
         - id: device-route
           uri: lb://firefly-device
           predicates:
             - Path=/DEVICE/api/**
           filters:
             - RewritePath=/DEVICE/api/(?<segment>.*), /api/${segment}
+        - id: open-device-route
+          uri: lb://firefly-device
+          predicates:
+            - Path=/open/DEVICE/api/**
+          filters:
+            - RewritePath=/open/DEVICE/api/(?<segment>.*), /api/${segment}
         - id: connector-route
           uri: lb://firefly-connector
           predicates:
             - Path=/CONNECTOR/api/**
           filters:
             - RewritePath=/CONNECTOR/api/(?<segment>.*), /api/${segment}
+        - id: open-connector-route
+          uri: lb://firefly-connector
+          predicates:
+            - Path=/open/CONNECTOR/api/**
+          filters:
+            - RewritePath=/open/CONNECTOR/api/(?<segment>.*), /api/${segment}
 
     sentinel:
       transport:

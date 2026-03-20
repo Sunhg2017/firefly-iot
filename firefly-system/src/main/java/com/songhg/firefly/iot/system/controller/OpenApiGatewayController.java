@@ -1,9 +1,11 @@
 package com.songhg.firefly.iot.system.controller;
 
+import com.songhg.firefly.iot.api.dto.openapi.OpenApiRegistrationSyncDTO;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.system.dto.openapi.InternalOpenApiAuthRequest;
 import com.songhg.firefly.iot.system.dto.openapi.InternalOpenApiAuthVO;
 import com.songhg.firefly.iot.system.service.ApiKeyService;
+import com.songhg.firefly.iot.system.service.OpenApiCatalogService;
 import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,9 +21,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class OpenApiGatewayController {
 
     private final ApiKeyService apiKeyService;
+    private final OpenApiCatalogService openApiCatalogService;
 
     @PostMapping("/authorize")
     public R<InternalOpenApiAuthVO> authorize(@Valid @RequestBody InternalOpenApiAuthRequest request) {
         return R.ok(apiKeyService.authorizeOpenApiCall(request));
+    }
+
+    @PostMapping("/sync")
+    public R<Void> sync(@Valid @RequestBody OpenApiRegistrationSyncDTO request) {
+        openApiCatalogService.syncRegisteredOpenApis(request);
+        return R.ok();
     }
 }

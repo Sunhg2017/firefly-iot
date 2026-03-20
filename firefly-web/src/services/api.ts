@@ -1056,10 +1056,6 @@ export const openApiApi = {
   list: (data: Record<string, unknown> = {}) => request.post('/platform/open-apis/list', data),
   get: (code: string) => request.get(`/platform/open-apis/${encodeURIComponent(code)}`),
   options: () => request.get('/platform/open-apis/options'),
-  create: (data: Record<string, unknown>) => request.post('/platform/open-apis', data),
-  update: (code: string, data: Record<string, unknown>) =>
-    request.put(`/platform/open-apis/${encodeURIComponent(code)}`, data),
-  delete: (code: string) => request.delete(`/platform/open-apis/${encodeURIComponent(code)}`),
 };
 
 // ==================== App Key API ====================

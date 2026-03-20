@@ -1,6 +1,7 @@
 package com.songhg.firefly.iot.device.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.songhg.firefly.iot.common.openapi.OpenApi;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresPermission;
 import com.songhg.firefly.iot.device.dto.product.ProductCreateDTO;
@@ -28,7 +29,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Map;
 
-@Tag(name = "产品管理", description = "产品 CRUD")
+@Tag(name = "Product Management", description = "Product CRUD APIs")
 @RestController
 @RequestMapping("/api/v1/products")
 @RequiredArgsConstructor
@@ -39,92 +40,105 @@ public class ProductController {
 
     @PostMapping
     @RequiresPermission("product:create")
-    @Operation(summary = "创建产品")
+    @Operation(summary = "Create product")
     public R<ProductVO> createProduct(@Valid @RequestBody ProductCreateDTO dto) {
         return R.ok(productService.createProduct(dto));
     }
 
     @PostMapping("/list")
     @RequiresPermission("product:read")
-    @Operation(summary = "分页查询产品")
+    @Operation(summary = "List products")
     public R<IPage<ProductVO>> listProducts(@RequestBody ProductQueryDTO query) {
         return R.ok(productService.listProducts(query));
     }
 
     @GetMapping("/{id}")
     @RequiresPermission("product:read")
-    @Operation(summary = "获取产品详情")
+    @Operation(summary = "Get product detail")
     public R<ProductVO> getProduct(
-            @Parameter(description = "产品编号", required = true) @PathVariable Long id) {
+            @Parameter(description = "Product ID", required = true) @PathVariable Long id) {
         return R.ok(productService.getProductById(id));
     }
 
     @PutMapping("/{id}")
     @RequiresPermission("product:update")
-    @Operation(summary = "更新产品")
+    @Operation(summary = "Update product")
     public R<ProductVO> updateProduct(
-            @Parameter(description = "产品编号", required = true) @PathVariable Long id,
+            @Parameter(description = "Product ID", required = true) @PathVariable Long id,
             @Valid @RequestBody ProductUpdateDTO dto) {
         return R.ok(productService.updateProduct(id, dto));
     }
 
     @PostMapping("/upload-image")
     @RequiresPermission(value = {"product:create", "product:update"}, logical = RequiresPermission.Logical.OR)
-    @Operation(summary = "上传产品图片")
+    @Operation(summary = "Upload product image")
     public R<Map<String, String>> uploadProductImage(
-            @Parameter(description = "产品图片文件", required = true)
+            @Parameter(description = "Product image file", required = true)
             @RequestParam("file") MultipartFile file) {
         return R.ok(productService.uploadProductImage(file));
     }
 
     @PutMapping("/{id}/publish")
     @RequiresPermission("product:publish")
-    @Operation(summary = "发布产品")
+    @Operation(summary = "Publish product")
     public R<Void> publishProduct(
-            @Parameter(description = "产品编号", required = true) @PathVariable Long id) {
+            @Parameter(description = "Product ID", required = true) @PathVariable Long id) {
         productService.publishProduct(id);
         return R.ok();
     }
 
     @DeleteMapping("/{id}")
     @RequiresPermission("product:delete")
-    @Operation(summary = "删除产品")
+    @Operation(summary = "Delete product")
     public R<Void> deleteProduct(
-            @Parameter(description = "产品编号", required = true) @PathVariable Long id) {
+            @Parameter(description = "Product ID", required = true) @PathVariable Long id) {
         productService.deleteProduct(id);
         return R.ok();
     }
 
     @PutMapping("/{id}/thing-model")
     @RequiresPermission("product:update")
-    @Operation(summary = "更新物模型")
+    @Operation(summary = "Update thing model")
     public R<ProductVO> updateThingModel(
-            @Parameter(description = "产品编号", required = true) @PathVariable Long id,
+            @Parameter(description = "Product ID", required = true) @PathVariable Long id,
             @RequestBody String thingModelJson) {
         return R.ok(productService.updateThingModel(id, thingModelJson));
     }
 
     @GetMapping("/{id}/thing-model")
     @RequiresPermission("product:read")
-    @Operation(summary = "获取物模型")
+    @Operation(summary = "Get thing model")
     public R<String> getThingModel(
-            @Parameter(description = "产品编号", required = true) @PathVariable Long id) {
+            @Parameter(description = "Product ID", required = true) @PathVariable Long id) {
         return R.ok(productService.getThingModel(id));
+    }
+
+    @GetMapping("/thing-model/by-product-key")
+    @RequiresPermission("product:read")
+    @OpenApi(
+            code = "product.thing-model.by-product-key",
+            name = "Get Product Thing Model By ProductKey",
+            description = "Read the current tenant product thing model through the business key productKey"
+    )
+    @Operation(summary = "Get product thing model by ProductKey")
+    public R<String> getThingModelByProductKey(
+            @Parameter(description = "Product productKey", required = true) @RequestParam String productKey) {
+        return R.ok(productService.getThingModelByProductKeyForCurrentTenant(productKey));
     }
 
     @GetMapping("/{id}/secret")
     @RequiresPermission("product:read")
-    @Operation(summary = "获取产品密钥")
+    @Operation(summary = "Get product secret")
     public R<String> getProductSecret(
-            @Parameter(description = "产品编号", required = true) @PathVariable Long id) {
+            @Parameter(description = "Product ID", required = true) @PathVariable Long id) {
         return R.ok(productService.getProductSecret(id));
     }
 
     @PostMapping("/{id}/thing-model/import")
     @RequiresPermission("product:update")
-    @Operation(summary = "异步导入物模型", description = "前端上传文件到MinIO后，使用fileKey注册异步导入任务")
+    @Operation(summary = "Register async thing model import", description = "Upload the source file to MinIO first and then register the import task with fileKey")
     public R<Long> importThingModel(
-            @Parameter(description = "产品编号", required = true) @PathVariable Long id,
+            @Parameter(description = "Product ID", required = true) @PathVariable Long id,
             @Valid @RequestBody ThingModelImportDTO dto) {
         Long taskId = thingModelImportService.registerImportTask(id, dto);
         return R.ok(taskId);

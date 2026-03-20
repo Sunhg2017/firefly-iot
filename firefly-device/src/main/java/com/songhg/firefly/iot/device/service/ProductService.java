@@ -198,6 +198,27 @@ public class ProductService {
         return writeThingModel(parseThingModel(product.getThingModel()));
     }
 
+    public String getThingModelByProductKeyForCurrentTenant(String productKey) {
+        String normalizedProductKey = trimToNull(productKey);
+        if (normalizedProductKey == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "productKey 涓嶈兘涓虹┖");
+        }
+
+        Long tenantId = AppContextHolder.getTenantId();
+        if (tenantId == null) {
+            throw new BizException(ResultCode.UNAUTHORIZED);
+        }
+
+        Product product = productMapper.selectOne(new LambdaQueryWrapper<Product>()
+                .eq(Product::getTenantId, tenantId)
+                .eq(Product::getProductKey, normalizedProductKey)
+                .last("LIMIT 1"));
+        if (product == null) {
+            throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
+        }
+        return writeThingModel(parseThingModel(product.getThingModel()));
+    }
+
     public String getThingModelByProductKey(String productKey) {
         String normalizedProductKey = trimToNull(productKey);
         if (normalizedProductKey == null) {

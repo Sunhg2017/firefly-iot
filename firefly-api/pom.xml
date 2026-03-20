@@ -27,6 +27,12 @@
             <artifactId>spring-cloud-starter-openfeign</artifactId>
         </dependency>
 
+        <!-- Spring MVC types used by OpenAPI auto-registration scanner -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-webmvc</artifactId>
+        </dependency>
+
         <!-- Validation annotations for DTOs -->
         <dependency>
             <groupId>jakarta.validation</groupId>

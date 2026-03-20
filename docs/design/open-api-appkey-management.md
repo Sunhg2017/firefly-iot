@@ -4,7 +4,7 @@
 
 平台需要把对外开放接口从“单纯发放 API Key”升级为“平台统一编目、租户按接口订阅、租户内 AppKey 再次细分授权”的三层模型，满足以下目标：
 
-- 系统运维空间统一维护当前所有可开放的 OpenAPI。
+- 研发在微服务 Controller 方法上标注 `@OpenApi` 后，系统自动汇总当前所有可开放的 OpenAPI。
 - 平台租户管理页面可以明确某个租户订阅了哪些 OpenAPI，并给每个 OpenAPI 配置调用限制。
 - 租户空间可以维护 AppKey，并限制每个 AppKey 只能调用已订阅 OpenAPI 的子集。
 - 网关必须在真正转发前完成 AppKey 签名验签、租户订阅校验和限流，避免后端服务重复实现一套鉴权。
@@ -18,6 +18,7 @@
 - 建立 OpenAPI 目录表，使用业务唯一键 `code` 标识接口。
 - 建立租户 OpenAPI 订阅表，支持 IP 白名单、并发限制、日调用限制。
 - 复用现有 `api_keys` 作为租户空间 AppKey 存储，并将授权范围收口为 OpenAPI 编码列表。
+- 新增 `@OpenApi` 注解和自动注册机制，所有被标注的接口按服务启动自动同步到 `open_api_catalog`。
 - 网关支持 `X-App-Key + X-Timestamp + X-Nonce + X-Signature` 固定签名认证，并透传租户、AppKey、OpenAPI、权限上下文。
 - 提供系统运维空间、平台租户管理、租户空间三处前端管理能力。
 
@@ -26,6 +27,7 @@
 - 本次不新增单独的 AppKey-OpenAPI 绑定表，继续复用 `api_keys.scopes` JSONB。
 - 本次不保留旧 `/api-keys` 管理入口和旧 `apikey:*` 平台菜单。
 - 本次不保留 `X-App-Secret` 明文传输方案，也不做多算法兼容，只采用固定的 `HMAC-SHA256` 签名方案。
+- 本次不再保留 OpenAPI 目录的页面手工创建、编辑、删除逻辑，目录源头直接收口为代码标注。
 
 ## 3. 核心模型
 
@@ -41,6 +43,12 @@
 - `path_pattern`：下游服务路径模板，统一以 `/api/v1/...` 口径维护。
 - `permission_code`：命中接口后向下游透传的权限码。
 - `enabled`：是否允许订阅和对外开放。
+
+注册来源：
+
+- 各微服务在 Controller 方法上标注 `@OpenApi(code = "...")`。
+- 服务启动后通过内部同步接口将注解元数据写入 `open_api_catalog`。
+- 同一 `service_code` 下已不存在于本次同步结果中的目录项会被自动删除，避免手工目录与代码脱节。
 
 ### 3.2 租户订阅
 
@@ -69,15 +77,15 @@
 
 ### 4.1 管理面链路
 
-1. 系统运维空间维护 `open_api_catalog`。
+1. 各微服务启动后扫描自身 `@OpenApi` 标注的方法并同步到 `open_api_catalog`。
 2. 平台管理员在租户管理页为指定租户配置订阅项和限制。
 3. 租户空间在 AppKey 页面创建或编辑 AppKey，选择当前租户已订阅的 OpenAPI 子集。
 
 ### 4.2 运行时链路
 
-1. 调用方通过网关访问 `/{SERVICE}/api/v1/...`。
+1. 调用方通过网关访问 `/open/{SERVICE}/api/v1/...`。
 2. 调用方本地按固定规范计算签名，请求头携带 `X-App-Key`、`X-Timestamp`、`X-Nonce`、`X-Signature`，不会传输 Secret Key 本身。
-3. 网关缓存原始请求体，按访问路径反解 `serviceCode + requestPath + httpMethod`，并生成规范化 query/body 摘要。
+3. 网关只对 `/open/**` 路径启用 AppKey 鉴权，缓存原始请求体后按访问路径反解 `serviceCode + requestPath + httpMethod`，并生成规范化 query/body 摘要。
 4. 网关调用系统服务内部接口 `/api/v1/internal/open-apis/authorize` 做统一鉴权。
 5. 系统服务依次校验：
    - AppKey 是否存在、未删除、未停用、未过期。
@@ -119,11 +127,32 @@
 - `BODY_SHA256` 为原始请求体字节数组的 SHA256 十六进制摘要；空 body 也必须参与计算。
 - 最终签名算法固定为 `HMAC-SHA256(secretKey, canonicalRequest)`，输出 64 位小写十六进制字符串。
 
+### 4.4 自动注册链路
+
+1. 微服务启动完成后扫描 Spring MVC `RequestMappingHandlerMapping`。
+2. 找到所有被 `@OpenApi` 标注的方法，自动解析：
+   - `code`
+   - `serviceCode`
+   - `httpMethod`
+   - `pathPattern`
+   - `permissionCode`
+   - `enabled`
+   - `sortOrder`
+   - `description`
+3. 服务通过内部接口 `POST /api/v1/internal/open-apis/sync` 向系统服务全量同步本服务目录。
+4. 系统服务按 `serviceCode` 对当前目录做幂等 upsert，并删除当前服务已下线的旧目录项。
+
+约束：
+
+- `@OpenApi` 必须落在具备且仅具备一个 HTTP Method 的 Controller 方法上。
+- 若注解未显式填写 `permissionCode`，则方法上必须存在单权限值的 `@RequiresPermission` 以便自动回填透传权限。
+- 页面展示的外部访问路径固定为 `/open/{SERVICE}{pathPattern}`。
+
 ## 5. 权限与菜单模型
 
 本次新增并收口以下权限：
 
-- 平台：`openapi:read/create/update/delete`
+- 平台：`openapi:read`
 - 租户：`appkey:read/create/update/delete`
 
 本次同步通过 Flyway 维护：
@@ -147,9 +176,6 @@
 - `POST /api/v1/platform/open-apis/list`
 - `GET /api/v1/platform/open-apis/{code}`
 - `GET /api/v1/platform/open-apis/options`
-- `POST /api/v1/platform/open-apis`
-- `PUT /api/v1/platform/open-apis/{code}`
-- `DELETE /api/v1/platform/open-apis/{code}`
 
 ### 6.2 平台租户管理
 
@@ -169,12 +195,14 @@
 ### 6.4 网关内部接口
 
 - `POST /api/v1/internal/open-apis/authorize`
+- `POST /api/v1/internal/open-apis/sync`
 
 ## 7. 前端交互设计
 
 - 系统运维空间新增 `OpenAPI 管理` 页面。
   - 列表支持关键字、服务、状态查询。
-  - 创建、编辑使用抽屉，不再使用弹窗。
+  - 页面改为只读目录，直接展示 `@OpenApi` 自动注册结果。
+  - 页面显式提示“变更目录请改代码并重新部署”，不再保留手工录入抽屉。
 - 平台租户管理在更多操作中新增 `OpenAPI订阅` 抽屉。
   - 逐条配置订阅开关、IP 白名单、并发上限、日调用上限。
 - 租户空间将旧 API Key 页替换为 `AppKey 管理`。
@@ -208,9 +236,16 @@
 - 因此服务端保留 `secret_key_hash + secret_key_ciphertext` 双字段：前者用于指纹校验，后者用于 AES-GCM 解密后参与验签。
 - 出于安全收口考虑，Secret Key 只在创建成功时返回给租户一次，之后不再回显。
 
+### 8.5 为什么改为注解自动注册
+
+- OpenAPI 是否对外开放本质上属于代码行为，手工维护目录很容易与真实接口脱节。
+- 用 `@OpenApi` 标注后，路径、HTTP 方法、透传权限和目录项来自同一份源码，能直接避免页面配置和后端实现不一致。
+- 系统运维空间仍保留目录查看能力，但不再承担“手工录入真实接口”的职责。
+
 ## 9. 风险与后续项
 
 - 目前 AppKey 调用日志查询接口仍沿用既有能力，若要形成完整审计闭环，需要确保网关侧访问日志事件持续投递。
 - Redis 配额键依赖网关时间窗口，跨时区部署时应统一服务时区。
 - `V28` 之前创建的历史 AppKey 没有 `secret_key_ciphertext`，升级后必须重新创建，不能继续沿用旧凭证。
+- 历史手工录入的 OpenAPI 目录会在对应服务下一次自动同步时被覆盖或删除；如存在试运行数据，应提前清理对应订阅和 AppKey 授权。
 - 若历史数据库中有手工补录的旧 `api-key` 菜单或权限脏数据，应按新模型清理，避免继续展示旧入口。
