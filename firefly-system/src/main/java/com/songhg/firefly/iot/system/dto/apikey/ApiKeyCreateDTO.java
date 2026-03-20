@@ -2,34 +2,33 @@ package com.songhg.firefly.iot.system.dto.apikey;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * API key creation request.
- */
 @Data
-@Schema(description = "API key creation request")
+@Schema(description = "AppKey create request")
 public class ApiKeyCreateDTO {
 
-    @Schema(description = "API key name", example = "My Integration")
-    @NotBlank(message = "API Key名称不能为空")
+    @Schema(description = "AppKey name", example = "Data Integration")
+    @NotBlank(message = "appKey name is required")
     @Size(max = 128)
     private String name;
 
     @Schema(description = "Description")
     private String description;
 
-    @Schema(description = "Permission scopes")
-    private List<String> scopes;
+    @NotEmpty(message = "please select at least one subscribed OpenAPI")
+    @Schema(description = "Granted OpenAPI codes")
+    private List<String> openApiCodes;
 
-    @Schema(description = "Rate limit per minute")
+    @Schema(description = "Per-appKey minute limit")
     private Integer rateLimitPerMin;
 
-    @Schema(description = "Rate limit per day")
+    @Schema(description = "Per-appKey day limit")
     private Integer rateLimitPerDay;
 
     @Schema(description = "Expiration time")

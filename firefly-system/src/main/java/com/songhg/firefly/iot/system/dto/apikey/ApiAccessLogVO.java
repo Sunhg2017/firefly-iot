@@ -24,6 +24,9 @@ public class ApiAccessLogVO {
     @Schema(description = "Request path")
     private String path;
 
+    @Schema(description = "Matched OpenAPI code")
+    private String openApiCode;
+
     @Schema(description = "HTTP status code")
     private Integer statusCode;
 

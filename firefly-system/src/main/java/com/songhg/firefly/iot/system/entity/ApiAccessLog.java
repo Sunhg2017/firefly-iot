@@ -17,6 +17,7 @@ public class ApiAccessLog {
     private Long tenantId;
     private String method;
     private String path;
+    private String openApiCode;
     private Integer statusCode;
     private Integer latencyMs;
     private String clientIp;

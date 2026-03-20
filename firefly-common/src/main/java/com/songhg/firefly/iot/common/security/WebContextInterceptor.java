@@ -8,6 +8,10 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.servlet.HandlerInterceptor;
 
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.Set;
+
 /**
  * Web 上下文拦截器：从网关转发的请求头中解析用户和租户信息，
  * 填充到统一的 {@link AppContextHolder} 中。
@@ -21,6 +25,9 @@ public class WebContextInterceptor implements HandlerInterceptor {
         String tenantIdStr = request.getHeader(AuthConstants.HEADER_TENANT_ID);
         String username = request.getHeader(AuthConstants.HEADER_USERNAME);
         String platform = request.getHeader(AuthConstants.HEADER_PLATFORM);
+        String appKeyIdStr = request.getHeader(AuthConstants.HEADER_APP_KEY_ID);
+        String openApiCode = request.getHeader(AuthConstants.HEADER_OPEN_API_CODE);
+        String grantedPermissions = request.getHeader(AuthConstants.HEADER_GRANTED_PERMISSIONS);
 
         AppContext ctx = new AppContext();
 
@@ -36,6 +43,22 @@ public class WebContextInterceptor implements HandlerInterceptor {
             ctx.setPlatform(platform);
         }
 
+        if (appKeyIdStr != null && !appKeyIdStr.isBlank()) {
+            ctx.setAppKeyId(Long.parseLong(appKeyIdStr));
+            if (ctx.getPlatform() == null || ctx.getPlatform().isBlank()) {
+                ctx.setPlatform(AuthConstants.PLATFORM_OPEN_API);
+            }
+        }
+
+        if (openApiCode != null && !openApiCode.isBlank()) {
+            ctx.setOpenApiCode(openApiCode.trim());
+        }
+
+        Set<String> permissions = parsePermissions(grantedPermissions);
+        if (!permissions.isEmpty()) {
+            ctx.setPermissions(permissions);
+        }
+
         AppContextHolder.set(ctx);
         return true;
     }
@@ -43,5 +66,17 @@ public class WebContextInterceptor implements HandlerInterceptor {
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
         AppContextHolder.clear();
+    }
+
+    private Set<String> parsePermissions(String rawPermissions) {
+        if (rawPermissions == null || rawPermissions.isBlank()) {
+            return Set.of();
+        }
+        Set<String> result = new LinkedHashSet<>();
+        Arrays.stream(rawPermissions.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isEmpty())
+                .forEach(result::add);
+        return result;
     }
 }

@@ -12,6 +12,9 @@ public final class AuthConstants {
     public static final String HEADER_PLATFORM = "X-Platform";
     public static final String HEADER_DEVICE_FINGERPRINT = "X-Device-Fingerprint";
     public static final String HEADER_AUTHORIZATION = "Authorization";
+    public static final String HEADER_APP_KEY_ID = "X-App-Key-Id";
+    public static final String HEADER_OPEN_API_CODE = "X-Open-Api-Code";
+    public static final String HEADER_GRANTED_PERMISSIONS = "X-Granted-Permissions";
     public static final String TOKEN_PREFIX = "Bearer ";
 
     // Token types
@@ -45,6 +48,7 @@ public final class AuthConstants {
     public static final String PLATFORM_APP_ANDROID = "APP_ANDROID";
     public static final String PLATFORM_MINI_WECHAT = "MINI_WECHAT";
     public static final String PLATFORM_MINI_ALIPAY = "MINI_ALIPAY";
+    public static final String PLATFORM_OPEN_API = "OPEN_API";
 
     // Login methods
     public static final String LOGIN_METHOD_PASSWORD = "PASSWORD";

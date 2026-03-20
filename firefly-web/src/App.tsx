@@ -41,6 +41,7 @@ const NotificationRecordPage = React.lazy(() => import('./pages/notification/Not
 const SharePage = React.lazy(() => import('./pages/share/SharePage'));
 const DataAnalysisPage = React.lazy(() => import('./pages/analysis/DataAnalysisPage'));
 const OperationLogPage = React.lazy(() => import('./pages/operation-log/OperationLogPage'));
+const OpenApiPage = React.lazy(() => import('./pages/open-api/OpenApiPage'));
 const ApiKeyPage = React.lazy(() => import('./pages/api-key/ApiKeyPage'));
 const SecurityPage = React.lazy(() => import('./pages/security/SecurityPage'));
 const DeviceShadowPage = React.lazy(() => import('./pages/device-shadow/DeviceShadowPage'));
@@ -104,12 +105,13 @@ const App: React.FC = () => {
             <Route path="video" element={<VideoList />} />
             <Route path="audit-log" element={<AuditLogPage />} />
             <Route path="settings" element={<SystemSettingsPage />} />
+            <Route path="open-api" element={<OpenApiPage />} />
             <Route path="notification" element={<NotificationPage />} />
             <Route path="notification-records" element={<NotificationRecordPage />} />
             <Route path="share" element={<SharePage />} />
             <Route path="analysis" element={<DataAnalysisPage />} />
             <Route path="operation-log" element={<OperationLogPage />} />
-            <Route path="api-key" element={<ApiKeyPage />} />
+            <Route path="app-key" element={<ApiKeyPage />} />
             <Route path="security" element={<SecurityPage />} />
             <Route path="device-shadow" element={<DeviceShadowPage />} />
             <Route path="device-message" element={<DeviceMessagePage />} />

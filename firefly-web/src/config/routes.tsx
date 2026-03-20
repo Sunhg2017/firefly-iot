@@ -112,6 +112,7 @@ const routeConfigs: RouteEntry[] = [
     workspace: 'platform',
     children: [
       { path: '/settings', label: '系统设置', icon: <SettingOutlined />, permission: 'system:read', workspace: 'platform' },
+      { path: '/open-api', label: 'OpenAPI 管理', icon: <ApiOutlined />, permission: 'openapi:read', workspace: 'platform' },
       { path: '/notification', label: '通知渠道', icon: <BellOutlined />, permission: 'notification:read', workspace: 'platform' },
       { path: '/scheduled-task', label: '定时任务', icon: <ScheduleOutlined />, permission: 'system:read', workspace: 'platform' },
       { path: '/monitor', label: '系统监控', icon: <MonitorOutlined />, permission: 'monitor:read', workspace: 'platform' },
@@ -124,7 +125,6 @@ const routeConfigs: RouteEntry[] = [
     workspace: 'platform',
     children: [
       { path: '/security', label: '安全管理', icon: <LockOutlined />, permission: 'user:read', workspace: 'platform' },
-      { path: '/api-key', label: 'API Key', icon: <ApiOutlined />, permission: 'apikey:read', workspace: 'platform' },
       { path: '/audit-log', label: '审计日志', icon: <FileSearchOutlined />, permission: 'audit:read', workspace: 'platform' },
       { path: '/operation-log', label: '操作日志', icon: <FileTextOutlined />, permission: 'operation-log:read', workspace: 'platform' },
     ],
@@ -138,6 +138,7 @@ const routeConfigs: RouteEntry[] = [
     children: [
       { path: '/user', label: '用户管理', icon: <TeamOutlined />, permission: 'user:read', workspace: 'tenant' },
       { path: '/role', label: '角色管理', icon: <SafetyOutlined />, permission: 'role:read', workspace: 'tenant' },
+      { path: '/app-key', label: 'AppKey 管理', icon: <KeyOutlined />, permission: 'appkey:read', workspace: 'tenant' },
       { path: '/menu-customization', label: '菜单配置', icon: <MenuOutlined />, permission: 'menu-customization:read', workspace: 'tenant' },
     ],
   },

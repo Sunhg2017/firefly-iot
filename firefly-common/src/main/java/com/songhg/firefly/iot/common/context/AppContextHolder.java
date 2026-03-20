@@ -113,6 +113,24 @@ public final class AppContextHolder {
         return ctx != null ? ctx.getPlatform() : null;
     }
 
+    public static Long getAppKeyId() {
+        AppContext ctx = CONTEXT.get();
+        return ctx != null ? ctx.getAppKeyId() : null;
+    }
+
+    public static void setAppKeyId(Long appKeyId) {
+        getOrCreate().setAppKeyId(appKeyId);
+    }
+
+    public static String getOpenApiCode() {
+        AppContext ctx = CONTEXT.get();
+        return ctx != null ? ctx.getOpenApiCode() : null;
+    }
+
+    public static void setOpenApiCode(String openApiCode) {
+        getOrCreate().setOpenApiCode(openApiCode);
+    }
+
     public static Set<String> getRoles() {
         AppContext ctx = CONTEXT.get();
         return ctx != null ? ctx.getRoles() : null;

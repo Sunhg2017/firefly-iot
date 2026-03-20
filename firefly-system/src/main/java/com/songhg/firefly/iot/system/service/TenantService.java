@@ -19,6 +19,8 @@ import com.songhg.firefly.iot.common.enums.UserStatus;
 import com.songhg.firefly.iot.common.enums.UserType;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
+import com.songhg.firefly.iot.system.dto.openapi.TenantOpenApiSubscriptionSaveDTO;
+import com.songhg.firefly.iot.system.dto.openapi.TenantOpenApiSubscriptionVO;
 import com.songhg.firefly.iot.system.dto.tenant.*;
 import com.songhg.firefly.iot.system.entity.Tenant;
 import com.songhg.firefly.iot.system.entity.TenantQuota;
@@ -76,6 +78,7 @@ public class TenantService {
     private final EventPublisher eventPublisher;
     private final UserDomainService userDomainService;
     private final TenantMenuConfigService tenantMenuConfigService;
+    private final TenantOpenApiSubscriptionService tenantOpenApiSubscriptionService;
     private final PermissionService permissionService;
     private final WorkspacePermissionCatalogService workspacePermissionCatalogService;
 
@@ -547,6 +550,21 @@ public class TenantService {
         return menuTree;
     }
 
+    public List<TenantOpenApiSubscriptionVO> getTenantOpenApiSubscriptions(Long tenantId) {
+        assertSystemOpsOperator();
+        Tenant tenant = requireTenant(tenantId);
+        ensureTenantSupportsOpenApiSubscription(tenant);
+        return tenantOpenApiSubscriptionService.listSubscriptions(tenantId);
+    }
+
+    @Transactional
+    public List<TenantOpenApiSubscriptionVO> updateTenantOpenApiSubscriptions(Long tenantId, TenantOpenApiSubscriptionSaveDTO dto) {
+        assertSystemOpsOperator();
+        Tenant tenant = requireTenant(tenantId);
+        ensureTenantSupportsOpenApiSubscription(tenant);
+        return tenantOpenApiSubscriptionService.replaceSubscriptions(tenantId, dto);
+    }
+
     private Long createTenantAdmin(Tenant tenant, TenantCreateDTO.AdminUserDTO adminUser, Long operatorId) {
         Long tenantId = tenant.getId();
         Role adminRole = ensureTenantAdminRole(tenant);
@@ -608,6 +626,12 @@ public class TenantService {
     private void ensureTenantSupportsSpaceAuthorization(Tenant tenant) {
         if (userDomainService.isPlatformTenant(tenant.getId())) {
             throw new BizException(ResultCode.PARAM_ERROR, "系统运维租户不支持租户空间授权");
+        }
+    }
+
+    private void ensureTenantSupportsOpenApiSubscription(Tenant tenant) {
+        if (userDomainService.isPlatformTenant(tenant.getId())) {
+            throw new BizException(ResultCode.PARAM_ERROR, "system operations tenant does not support open api subscription");
         }
     }
 

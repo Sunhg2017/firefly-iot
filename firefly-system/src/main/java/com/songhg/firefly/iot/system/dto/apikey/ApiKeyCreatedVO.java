@@ -7,40 +7,37 @@ import lombok.Data;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * 创建 API Key 后返回的 VO，包含 secretKey（仅此一次返回）。
- */
 @Data
-@Schema(description = "接口密钥创建响应")
+@Schema(description = "AppKey create response")
 public class ApiKeyCreatedVO {
 
-    @Schema(description = "接口密钥编号")
+    @Schema(description = "AppKey ID")
     private Long id;
 
-    @Schema(description = "名称")
+    @Schema(description = "AppKey name")
     private String name;
 
-    @Schema(description = "访问密钥")
+    @Schema(description = "Access key")
     private String accessKey;
 
-    @Schema(description = "密钥")
+    @Schema(description = "Secret key, returned only once")
     private String secretKey;
 
-    @Schema(description = "权限范围")
-    private List<String> scopes;
+    @Schema(description = "Granted OpenAPI codes")
+    private List<String> openApiCodes;
 
-    @Schema(description = "每分钟限流")
+    @Schema(description = "Per-appKey minute limit")
     private Integer rateLimitPerMin;
 
-    @Schema(description = "每日限流")
+    @Schema(description = "Per-appKey day limit")
     private Integer rateLimitPerDay;
 
-    @Schema(description = "状态")
+    @Schema(description = "Status")
     private ApiKeyStatus status;
 
-    @Schema(description = "过期时间")
+    @Schema(description = "Expiration time")
     private LocalDateTime expireAt;
 
-    @Schema(description = "创建时间")
+    @Schema(description = "Created time")
     private LocalDateTime createdAt;
 }

@@ -44,6 +44,7 @@ import type { MenuProps } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import PageHeader from '../../components/PageHeader';
 import { tenantApi } from '../../services/api';
+import TenantOpenApiSubscriptionDrawer from './TenantOpenApiSubscriptionDrawer';
 import TenantWebhookDrawer from './TenantWebhookDrawer';
 import { generateRandomPassword } from '../../utils/password';
 
@@ -320,6 +321,7 @@ const TenantList: React.FC = () => {
   const [quotaOpen, setQuotaOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [spaceOpen, setSpaceOpen] = useState(false);
+  const [openApiOpen, setOpenApiOpen] = useState(false);
   const [webhookOpen, setWebhookOpen] = useState(false);
   const [currentTenant, setCurrentTenant] = useState<TenantItem | null>(null);
 
@@ -614,6 +616,11 @@ const TenantList: React.FC = () => {
     setWebhookOpen(true);
   };
 
+  const openOpenApiDrawer = (record: TenantItem) => {
+    setCurrentTenant(record);
+    setOpenApiOpen(true);
+  };
+
   const handleSaveSpaceMenus = async () => {
     if (!currentTenant) return;
     if (checkedSpaceKeys.length === 0) {
@@ -669,6 +676,12 @@ const TenantList: React.FC = () => {
 
     if (!isSystemOpsTenant(record)) {
       items.push(
+        {
+          key: 'open-api-subscription',
+          icon: <ApiOutlined />,
+          label: 'OpenAPI订阅',
+          onClick: () => openOpenApiDrawer(record),
+        },
         {
           key: 'space-menus',
           icon: <AppstoreOutlined />,
@@ -1056,6 +1069,11 @@ const TenantList: React.FC = () => {
         tenantId={currentTenant?.id}
         tenantName={currentTenant?.name}
         onClose={() => setWebhookOpen(false)}
+      />
+      <TenantOpenApiSubscriptionDrawer
+        open={openApiOpen}
+        tenant={currentTenant ? { id: currentTenant.id, name: currentTenant.name, code: currentTenant.code } : null}
+        onClose={() => setOpenApiOpen(false)}
       />
     </div>
   );

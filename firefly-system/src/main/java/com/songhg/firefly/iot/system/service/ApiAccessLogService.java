@@ -3,13 +3,18 @@ package com.songhg.firefly.iot.system.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.exception.BizException;
+import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.system.dto.apikey.ApiAccessLogQueryDTO;
 import com.songhg.firefly.iot.system.dto.apikey.ApiAccessLogVO;
 import com.songhg.firefly.iot.system.dto.apikey.ApiCallStatsVO;
 import com.songhg.firefly.iot.system.entity.ApiAccessLog;
 import com.songhg.firefly.iot.system.entity.ApiCallStatsDaily;
+import com.songhg.firefly.iot.system.entity.ApiKey;
 import com.songhg.firefly.iot.system.mapper.ApiAccessLogMapper;
 import com.songhg.firefly.iot.system.mapper.ApiCallStatsDailyMapper;
+import com.songhg.firefly.iot.system.mapper.ApiKeyMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,8 +30,10 @@ public class ApiAccessLogService {
 
     private final ApiAccessLogMapper apiAccessLogMapper;
     private final ApiCallStatsDailyMapper apiCallStatsDailyMapper;
+    private final ApiKeyMapper apiKeyMapper;
 
     public IPage<ApiAccessLogVO> queryLogs(Long apiKeyId, ApiAccessLogQueryDTO query) {
+        requireCurrentTenantApiKey(apiKeyId);
         Page<ApiAccessLog> page = new Page<>(query.getPageNum(), query.getPageSize());
 
         LambdaQueryWrapper<ApiAccessLog> wrapper = new LambdaQueryWrapper<>();
@@ -53,6 +60,7 @@ public class ApiAccessLogService {
     }
 
     public List<ApiCallStatsVO> queryStats(Long apiKeyId, LocalDate startDate, LocalDate endDate) {
+        requireCurrentTenantApiKey(apiKeyId);
         LambdaQueryWrapper<ApiCallStatsDaily> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ApiCallStatsDaily::getApiKeyId, apiKeyId);
         if (startDate != null) {
@@ -74,6 +82,7 @@ public class ApiAccessLogService {
         vo.setApiKeyId(entity.getApiKeyId());
         vo.setMethod(entity.getMethod());
         vo.setPath(entity.getPath());
+        vo.setOpenApiCode(entity.getOpenApiCode());
         vo.setStatusCode(entity.getStatusCode());
         vo.setLatencyMs(entity.getLatencyMs());
         vo.setClientIp(entity.getClientIp());
@@ -94,5 +103,13 @@ public class ApiAccessLogService {
         vo.setMaxLatencyMs(entity.getMaxLatencyMs());
         vo.setP99LatencyMs(entity.getP99LatencyMs());
         return vo;
+    }
+
+    private void requireCurrentTenantApiKey(Long apiKeyId) {
+        ApiKey apiKey = apiKeyMapper.selectById(apiKeyId);
+        Long tenantId = AppContextHolder.getTenantId();
+        if (apiKey == null || apiKey.getDeletedAt() != null || tenantId == null || !tenantId.equals(apiKey.getTenantId())) {
+            throw new BizException(ResultCode.APIKEY_NOT_FOUND);
+        }
     }
 }

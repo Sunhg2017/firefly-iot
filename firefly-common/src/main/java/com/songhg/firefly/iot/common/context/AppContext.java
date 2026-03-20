@@ -28,6 +28,8 @@ public class AppContext implements Serializable {
     private Long userId;
     private String username;
     private String platform;
+    private Long appKeyId;
+    private String openApiCode;
     private Set<String> roles;
     private Set<String> permissions;
 }

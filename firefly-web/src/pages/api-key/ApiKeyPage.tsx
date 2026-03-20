@@ -1,170 +1,354 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, message, Modal, Form, Input, Select, Tag, Popconfirm, InputNumber, DatePicker, Drawer, Descriptions, Tooltip, Typography, Card } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, StopOutlined, CheckCircleOutlined, BarChartOutlined } from '@ant-design/icons';
-import { apiKeyApi } from '../../services/api';
+import {
+  Button,
+  Card,
+  DatePicker,
+  Descriptions,
+  Drawer,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import dayjs from 'dayjs';
+import dayjs, { Dayjs } from 'dayjs';
+import {
+  CheckCircleOutlined,
+  EyeOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  StopOutlined,
+} from '@ant-design/icons';
 import PageHeader from '../../components/PageHeader';
+import { apiKeyApi } from '../../services/api';
 
-const { Text, Paragraph } = Typography;
+interface OpenApiOptionItem {
+  code: string;
+  name: string;
+  serviceCode: string;
+  httpMethod: string;
+  pathPattern: string;
+  gatewayPath: string;
+  permissionCode?: string;
+}
 
-interface ApiKeyItem {
+interface AppKeyItem {
   id: number;
   name: string;
-  description: string;
+  description?: string;
   accessKey: string;
-  scopes: string[];
+  openApiCodes: string[];
+  rateLimitPerMin: number;
+  rateLimitPerDay: number;
+  status: 'ACTIVE' | 'DISABLED' | 'DELETED';
+  expireAt?: string;
+  lastUsedAt?: string;
+  createdAt?: string;
+}
+
+interface AppKeyCreatedResult {
+  id: number;
+  name: string;
+  accessKey: string;
+  secretKey: string;
+  openApiCodes: string[];
   rateLimitPerMin: number;
   rateLimitPerDay: number;
   status: string;
-  expireAt: string;
-  lastUsedAt: string;
-  createdAt: string;
+  expireAt?: string;
+  createdAt?: string;
 }
 
-interface CreatedKey {
-  accessKey: string;
-  secretKey: string;
+interface QueryValues {
+  keyword?: string;
+  status?: 'ACTIVE' | 'DISABLED';
+}
+
+interface FormValues {
   name: string;
+  description?: string;
+  openApiCodes: string[];
+  rateLimitPerMin?: number;
+  rateLimitPerDay?: number;
+  expireAt?: Dayjs;
 }
 
-const statusMap: Record<string, { color: string; label: string }> = {
-  ACTIVE: { color: 'success', label: '活跃' },
-  DISABLED: { color: 'default', label: '禁用' },
-  EXPIRED: { color: 'warning', label: '过期' },
-  DELETED: { color: 'error', label: '已删除' },
+const statusColorMap: Record<string, string> = {
+  ACTIVE: 'success',
+  DISABLED: 'default',
+  DELETED: 'error',
+};
+
+const statusLabelMap: Record<string, string> = {
+  ACTIVE: '启用',
+  DISABLED: '停用',
+  DELETED: '已删除',
+};
+
+const methodColorMap: Record<string, string> = {
+  GET: 'blue',
+  POST: 'green',
+  PUT: 'orange',
+  DELETE: 'red',
+  PATCH: 'purple',
+};
+
+const getErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
 };
 
 const ApiKeyPage: React.FC = () => {
-  const [data, setData] = useState<ApiKeyItem[]>([]);
+  const [queryForm] = Form.useForm<QueryValues>();
+  const [editForm] = Form.useForm<FormValues>();
+  const selectedOpenApiCodes = Form.useWatch('openApiCodes', editForm) ?? [];
+
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [items, setItems] = useState<AppKeyItem[]>([]);
+  const [openApiOptions, setOpenApiOptions] = useState<OpenApiOptionItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
-  const [keyword, setKeyword] = useState('');
-
+  const [pageNum, setPageNum] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [filters, setFilters] = useState<QueryValues>({});
+  const [editingRecord, setEditingRecord] = useState<AppKeyItem | null>(null);
+  const [detailRecord, setDetailRecord] = useState<AppKeyItem | null>(null);
+  const [createdResult, setCreatedResult] = useState<AppKeyCreatedResult | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [editRecord, setEditRecord] = useState<ApiKeyItem | null>(null);
-  const [form] = Form.useForm();
-
-  const [createdKey, setCreatedKey] = useState<CreatedKey | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [detailRecord, setDetailRecord] = useState<ApiKeyItem | null>(null);
 
-  const fetchData = async () => {
+  const findOpenApiOption = (code: string): OpenApiOptionItem | undefined =>
+    openApiOptions.find((item) => item.code === code);
+
+  const fetchList = async () => {
     setLoading(true);
     try {
-      const query: Record<string, unknown> = { ...params };
-      if (keyword) query.keyword = keyword;
-      const res = await apiKeyApi.list(query);
-      const page = res.data.data;
-      setData(page.records || []);
-      setTotal(page.total || 0);
-    } catch { message.error('加载失败'); } finally { setLoading(false); }
-  };
-
-  useEffect(() => { fetchData(); }, [params.pageNum, params.pageSize]);
-
-  const handleEdit = (record: ApiKeyItem | null) => {
-    setEditRecord(record);
-    if (record) {
-      form.setFieldsValue({
-        ...record,
-        expireAt: record.expireAt ? dayjs(record.expireAt) : null,
+      const res = await apiKeyApi.list({
+        pageNum,
+        pageSize,
+        keyword: filters.keyword,
+        status: filters.status,
       });
-    } else {
-      form.resetFields();
-      form.setFieldsValue({ rateLimitPerMin: 600, rateLimitPerDay: 100000, scopes: ['*'] });
+      const page = (res.data?.data ?? {}) as { records?: AppKeyItem[]; total?: number };
+      setItems(page.records ?? []);
+      setTotal(page.total ?? 0);
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载 AppKey 列表失败'));
+    } finally {
+      setLoading(false);
     }
-    setEditOpen(true);
   };
 
-  const handleSave = async (values: Record<string, unknown>) => {
+  const fetchOpenApiOptions = async () => {
+    setOptionsLoading(true);
     try {
-      const payload = {
-        ...values,
-        expireAt: values.expireAt ? (values.expireAt as dayjs.Dayjs).format('YYYY-MM-DDTHH:mm:ss') : null,
-      };
-      if (editRecord) {
-        await apiKeyApi.update(editRecord.id, payload);
-        message.success('更新成功');
-      } else {
-        const res = await apiKeyApi.create(payload);
-        const created = res.data.data;
-        setCreatedKey({ accessKey: created.accessKey, secretKey: created.secretKey, name: created.name });
-        message.success('创建成功');
-      }
-      setEditOpen(false);
-      fetchData();
-    } catch { message.error('保存失败'); }
+      const res = await apiKeyApi.listOpenApiOptions();
+      setOpenApiOptions((res.data?.data ?? []) as OpenApiOptionItem[]);
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载可授权 OpenAPI 失败'));
+    } finally {
+      setOptionsLoading(false);
+    }
   };
 
-  const handleDelete = (record: ApiKeyItem) => {
-    Modal.confirm({
-      title: '确认删除 API Key？',
-      content: `删除「${record.name}」(${record.accessKey})？此操作不可恢复。`,
-      onOk: async () => { await apiKeyApi.delete(record.id); message.success('删除成功'); fetchData(); },
+  useEffect(() => {
+    void fetchList();
+  }, [pageNum, pageSize, filters]);
+
+  useEffect(() => {
+    void fetchOpenApiOptions();
+  }, []);
+
+  const handleSearch = async () => {
+    const values = await queryForm.validateFields();
+    setPageNum(1);
+    setFilters({
+      keyword: values.keyword?.trim() || undefined,
+      status: values.status,
     });
   };
 
-  const handleToggleStatus = async (record: ApiKeyItem) => {
-    const newStatus = record.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
-    await apiKeyApi.updateStatus(record.id, newStatus);
-    message.success(newStatus === 'ACTIVE' ? '已启用' : '已禁用');
-    fetchData();
+  const handleReset = () => {
+    queryForm.resetFields();
+    setPageNum(1);
+    setFilters({});
   };
 
-  const handleDetail = (record: ApiKeyItem) => {
-    setDetailRecord(record);
-    setDetailOpen(true);
+  const openCreateDrawer = () => {
+    setEditingRecord(null);
+    editForm.resetFields();
+    editForm.setFieldsValue({
+      openApiCodes: [],
+      rateLimitPerMin: 600,
+      rateLimitPerDay: 100000,
+    });
+    setEditOpen(true);
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    message.success('已复制');
+  const openEditDrawer = (record: AppKeyItem) => {
+    setEditingRecord(record);
+    editForm.setFieldsValue({
+      name: record.name,
+      description: record.description,
+      openApiCodes: record.openApiCodes ?? [],
+      rateLimitPerMin: record.rateLimitPerMin,
+      rateLimitPerDay: record.rateLimitPerDay,
+      expireAt: record.expireAt ? dayjs(record.expireAt) : undefined,
+    });
+    setEditOpen(true);
   };
 
-  const columns: ColumnsType<ApiKeyItem> = [
-    { title: '名称', dataIndex: 'name', width: 160, ellipsis: true },
+  const handleSubmit = async () => {
+    try {
+      const values = await editForm.validateFields();
+      setSubmitting(true);
+
+      const payload = {
+        name: values.name.trim(),
+        description: values.description?.trim() || undefined,
+        openApiCodes: values.openApiCodes,
+        rateLimitPerMin: values.rateLimitPerMin,
+        rateLimitPerDay: values.rateLimitPerDay,
+        expireAt: values.expireAt ? values.expireAt.format('YYYY-MM-DDTHH:mm:ss') : undefined,
+      };
+
+      if (editingRecord) {
+        await apiKeyApi.update(editingRecord.id, payload);
+        message.success('AppKey 已更新');
+      } else {
+        const res = await apiKeyApi.create(payload);
+        setCreatedResult((res.data?.data ?? null) as AppKeyCreatedResult | null);
+        message.success('AppKey 已创建');
+      }
+
+      setEditOpen(false);
+      await fetchList();
+    } catch (error) {
+      message.error(getErrorMessage(error, '保存 AppKey 失败'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleToggleStatus = async (record: AppKeyItem) => {
+    const nextStatus = record.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
+    try {
+      await apiKeyApi.updateStatus(record.id, nextStatus);
+      message.success(nextStatus === 'ACTIVE' ? 'AppKey 已启用' : 'AppKey 已停用');
+      await fetchList();
+    } catch (error) {
+      message.error(getErrorMessage(error, '更新 AppKey 状态失败'));
+    }
+  };
+
+  const handleDelete = (record: AppKeyItem) => {
+    Modal.confirm({
+      title: '确认删除 AppKey',
+      content: `删除 ${record.name}（${record.accessKey}）后，该密钥将立即失效且不可恢复。`,
+      okText: '删除',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await apiKeyApi.delete(record.id);
+          message.success('AppKey 已删除');
+          await fetchList();
+        } catch (error) {
+          message.error(getErrorMessage(error, '删除 AppKey 失败'));
+          throw error;
+        }
+      },
+    });
+  };
+
+  const renderOpenApiTags = (codes: string[]) => {
+    if (!codes || codes.length === 0) {
+      return '-';
+    }
+    return (
+      <Space size={[4, 4]} wrap>
+        {codes.map((code) => {
+          const option = findOpenApiOption(code);
+          return (
+            <Tag key={code} color="blue">
+              {option ? option.name : code}
+            </Tag>
+          );
+        })}
+      </Space>
+    );
+  };
+
+  const columns: ColumnsType<AppKeyItem> = [
+    { title: '名称', dataIndex: 'name', width: 180 },
     {
-      title: 'Access Key', dataIndex: 'accessKey', width: 200,
-      render: (v: string) => (
-        <Space>
-          <Text code style={{ fontSize: 12 }}>{v}</Text>
-          <Tooltip title="复制"><CopyOutlined style={{ cursor: 'pointer', color: '#1890ff' }} onClick={() => copyToClipboard(v)} /></Tooltip>
+      title: 'Access Key',
+      dataIndex: 'accessKey',
+      width: 260,
+      render: (value: string) => (
+        <Typography.Text code copyable={{ text: value }}>
+          {value}
+        </Typography.Text>
+      ),
+    },
+    {
+      title: '授权 OpenAPI',
+      dataIndex: 'openApiCodes',
+      width: 320,
+      render: (value: string[]) => renderOpenApiTags(value),
+    },
+    {
+      title: '限流',
+      width: 220,
+      render: (_value: unknown, record) => (
+        <Space direction="vertical" size={0}>
+          <Typography.Text>{record.rateLimitPerMin} 次 / 分钟</Typography.Text>
+          <Typography.Text type="secondary">{record.rateLimitPerDay} 次 / 日</Typography.Text>
         </Space>
       ),
     },
     {
-      title: '权限范围', dataIndex: 'scopes', width: 140,
-      render: (v: string[]) => (v || []).map((s: string) => <Tag key={s}>{s}</Tag>),
+      title: '状态',
+      dataIndex: 'status',
+      width: 110,
+      render: (value: string) => <Tag color={statusColorMap[value] ?? 'default'}>{statusLabelMap[value] ?? value}</Tag>,
     },
+    { title: '过期时间', dataIndex: 'expireAt', width: 180, render: (value?: string) => value || '永不过期' },
+    { title: '最近使用', dataIndex: 'lastUsedAt', width: 180, render: (value?: string) => value || '-' },
+    { title: '创建时间', dataIndex: 'createdAt', width: 180 },
     {
-      title: '状态', dataIndex: 'status', width: 80,
-      render: (v: string) => <Tag color={statusMap[v]?.color || 'default'}>{statusMap[v]?.label || v}</Tag>,
-    },
-    {
-      title: '限流', width: 150,
-      render: (_: unknown, record: ApiKeyItem) => (
-        <span style={{ fontSize: 12 }}>{record.rateLimitPerMin}/min · {record.rateLimitPerDay}/day</span>
-      ),
-    },
-    { title: '过期时间', dataIndex: 'expireAt', width: 170, render: (v: string) => v || '永不过期' },
-    { title: '最后使用', dataIndex: 'lastUsedAt', width: 170, render: (v: string) => v || '-' },
-    { title: '创建时间', dataIndex: 'createdAt', width: 170 },
-    {
-      title: '操作', width: 200, fixed: 'right',
-      render: (_: unknown, record: ApiKeyItem) => (
+      title: '操作',
+      key: 'action',
+      fixed: 'right',
+      width: 220,
+      render: (_value: unknown, record) => (
         <Space size="small">
-          <Button type="link" size="small" icon={<BarChartOutlined />} onClick={() => handleDetail(record)}>详情</Button>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
-          <Button type="link" size="small"
-            icon={record.status === 'ACTIVE' ? <StopOutlined /> : <CheckCircleOutlined />}
-            onClick={() => handleToggleStatus(record)}>
-            {record.status === 'ACTIVE' ? '禁用' : '启用'}
+          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => { setDetailRecord(record); setDetailOpen(true); }}>
+            详情
           </Button>
-          <Popconfirm title="确认删除？" onConfirm={() => handleDelete(record)}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
-          </Popconfirm>
+          <Button type="link" size="small" onClick={() => openEditDrawer(record)}>
+            编辑
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            icon={record.status === 'ACTIVE' ? <StopOutlined /> : <CheckCircleOutlined />}
+            onClick={() => void handleToggleStatus(record)}
+          >
+            {record.status === 'ACTIVE' ? '停用' : '启用'}
+          </Button>
+          <Button type="link" size="small" danger onClick={() => handleDelete(record)}>
+            删除
+          </Button>
         </Space>
       ),
     },
@@ -173,83 +357,261 @@ const ApiKeyPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        title="API Key 管理"
-        description={`共 ${total} 个 API Key`}
-        extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => handleEdit(null)}>创建 API Key</Button>}
+        title="AppKey 管理"
+        description="租户空间为外部应用维护独立 AppKey，并明确每个 AppKey 允许调用的订阅 OpenAPI 范围。"
+        extra={(
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={() => { void fetchList(); void fetchOpenApiOptions(); }}>
+              刷新
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateDrawer} disabled={openApiOptions.length === 0}>
+              新建 AppKey
+            </Button>
+          </Space>
+        )}
       />
 
-      {/* Filters */}
-      <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Input.Search placeholder="搜索名称/AccessKey" allowClear enterButton="查询" style={{ width: 260 }}
-          onSearch={(v: string) => { setKeyword(v); setParams({ ...params, pageNum: 1 }); fetchData(); }} />
-      </Card>
-
-      {/* Table */}
-      <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} size="small" scroll={{ x: 1400 }}
-          pagination={{ current: params.pageNum, pageSize: params.pageSize, total, showSizeChanger: true,
-            showTotal: (t: number) => `共 ${t} 条`,
-            onChange: (page: number, size: number) => setParams({ pageNum: page, pageSize: size }) }} />
-      </Card>
-
-      <Modal title={editRecord ? '编辑 API Key' : '创建 API Key'} open={editOpen} onCancel={() => setEditOpen(false)} onOk={() => form.submit()} destroyOnClose width={520}>
-        <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
-            <Input placeholder="如：生产环境集成密钥" />
+      <Card>
+        <Form form={queryForm} layout="inline" onFinish={() => void handleSearch()}>
+          <Form.Item name="keyword" label="关键字">
+            <Input allowClear placeholder="名称 / Access Key" style={{ width: 240 }} />
           </Form.Item>
-          <Form.Item name="description" label="描述"><Input.TextArea rows={2} /></Form.Item>
-          <Form.Item name="scopes" label="权限范围">
-            <Select mode="tags" placeholder="输入权限范围，* 表示全部">
-              <Select.Option value="*">* (全部)</Select.Option>
-              <Select.Option value="device:read">device:read</Select.Option>
-              <Select.Option value="device:write">device:write</Select.Option>
-              <Select.Option value="data:read">data:read</Select.Option>
-            </Select>
+          <Form.Item name="status" label="状态">
+            <Select
+              allowClear
+              placeholder="全部状态"
+              style={{ width: 160 }}
+              options={[
+                { value: 'ACTIVE', label: '启用' },
+                { value: 'DISABLED', label: '停用' },
+              ]}
+            />
           </Form.Item>
-          <Space>
-            <Form.Item name="rateLimitPerMin" label="每分钟限流"><InputNumber min={1} style={{ width: 140 }} /></Form.Item>
-            <Form.Item name="rateLimitPerDay" label="每日限流"><InputNumber min={1} style={{ width: 140 }} /></Form.Item>
-          </Space>
-          <Form.Item name="expireAt" label="过期时间">
-            <DatePicker showTime placeholder="留空则永不过期" style={{ width: '100%' }} />
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit">查询</Button>
+              <Button onClick={handleReset}>重置</Button>
+            </Space>
           </Form.Item>
         </Form>
-      </Modal>
 
-      <Modal title="API Key 创建成功" open={!!createdKey} onCancel={() => setCreatedKey(null)} onOk={() => setCreatedKey(null)}
-        footer={[<Button key="ok" type="primary" onClick={() => setCreatedKey(null)}>我已保存</Button>]}>
-        {createdKey && (
-          <div>
-            <Paragraph type="danger" strong>请立即复制并安全保存 Secret Key，关闭后将无法再次查看！</Paragraph>
-            <Descriptions column={1} bordered size="small">
-              <Descriptions.Item label="名称">{createdKey.name}</Descriptions.Item>
+        <Table<AppKeyItem>
+          rowKey="id"
+          style={{ marginTop: 16 }}
+          loading={loading}
+          dataSource={items}
+          columns={columns}
+          scroll={{ x: 1760 }}
+          pagination={{
+            current: pageNum,
+            pageSize,
+            total,
+            showSizeChanger: true,
+            onChange: (nextPage, nextPageSize) => {
+              setPageNum(nextPage);
+              setPageSize(nextPageSize);
+            },
+          }}
+        />
+      </Card>
+
+      <Drawer
+        destroyOnClose
+        title={editingRecord ? `编辑 AppKey - ${editingRecord.name}` : '新建 AppKey'}
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        width={920}
+        styles={{ body: { paddingBottom: 24 } }}
+        footer={(
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={() => setEditOpen(false)}>取消</Button>
+            <Button type="primary" loading={submitting} onClick={() => void handleSubmit()}>
+              {editingRecord ? '保存修改' : '创建 AppKey'}
+            </Button>
+          </Space>
+        )}
+      >
+        <Form form={editForm} layout="vertical">
+          <Card size="small" style={{ marginBottom: 16 }}>
+            <Typography.Text type="secondary">
+              只能选择当前租户已经订阅且处于启用状态的 OpenAPI。Secret Key 仅在创建成功时展示一次。
+            </Typography.Text>
+          </Card>
+
+          <Form.Item
+            name="name"
+            label="AppKey 名称"
+            rules={[
+              { required: true, message: '请输入 AppKey 名称' },
+              { max: 128, message: '名称长度不能超过 128 位' },
+            ]}
+          >
+            <Input placeholder="例如 数据集成服务" />
+          </Form.Item>
+          <Form.Item name="description" label="说明">
+            <Input.TextArea rows={3} placeholder="说明该 AppKey 对应的系统、业务方或使用场景" />
+          </Form.Item>
+          <Form.Item
+            name="openApiCodes"
+            label="授权 OpenAPI"
+            rules={[{ required: true, message: '请至少选择一个 OpenAPI' }]}
+          >
+            <Select
+              mode="multiple"
+              allowClear
+              loading={optionsLoading}
+              placeholder={openApiOptions.length > 0 ? '请选择允许该 AppKey 调用的 OpenAPI' : '当前租户暂无已订阅 OpenAPI'}
+              options={openApiOptions.map((item) => ({
+                value: item.code,
+                label: `${item.name} (${item.code})`,
+              }))}
+            />
+          </Form.Item>
+
+          {selectedOpenApiCodes.length > 0 ? (
+            <Card size="small" title="已选接口预览" style={{ marginBottom: 16 }}>
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                {selectedOpenApiCodes.map((code) => {
+                  const option = findOpenApiOption(code);
+                  return (
+                    <Card key={code} size="small" bodyStyle={{ padding: 12 }}>
+                      <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                        <Space wrap>
+                          <Typography.Text strong>{option?.name || code}</Typography.Text>
+                          <Tag color={methodColorMap[option?.httpMethod ?? ''] ?? 'default'}>
+                            {option?.httpMethod || '-'}
+                          </Tag>
+                          <Tag color="blue">{option?.serviceCode || '-'}</Tag>
+                        </Space>
+                        <Typography.Text code>{option?.gatewayPath || option?.pathPattern || code}</Typography.Text>
+                        {option?.permissionCode ? (
+                          <Typography.Text type="secondary">透传权限：{option.permissionCode}</Typography.Text>
+                        ) : null}
+                      </Space>
+                    </Card>
+                  );
+                })}
+              </Space>
+            </Card>
+          ) : null}
+
+          <Space size={16} style={{ display: 'flex' }}>
+            <Form.Item
+              name="rateLimitPerMin"
+              label="每分钟调用上限"
+              rules={[{ required: true, message: '请输入每分钟调用上限' }]}
+              style={{ flex: 1 }}
+            >
+              <InputNumber min={1} precision={0} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item
+              name="rateLimitPerDay"
+              label="每日调用上限"
+              rules={[{ required: true, message: '请输入每日调用上限' }]}
+              style={{ flex: 1 }}
+            >
+              <InputNumber min={1} precision={0} style={{ width: '100%' }} />
+            </Form.Item>
+          </Space>
+          <Form.Item name="expireAt" label="过期时间">
+            <DatePicker
+              showTime
+              style={{ width: '100%' }}
+              placeholder="留空表示永不过期"
+              format="YYYY-MM-DD HH:mm:ss"
+            />
+          </Form.Item>
+        </Form>
+      </Drawer>
+
+      <Drawer
+        destroyOnClose
+        title={`AppKey 详情${detailRecord ? ` - ${detailRecord.name}` : ''}`}
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        width={760}
+      >
+        {detailRecord ? (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <Descriptions column={1} bordered>
+              <Descriptions.Item label="名称">{detailRecord.name}</Descriptions.Item>
               <Descriptions.Item label="Access Key">
-                <Space><Text code>{createdKey.accessKey}</Text><CopyOutlined style={{ cursor: 'pointer', color: '#1890ff' }} onClick={() => copyToClipboard(createdKey.accessKey)} /></Space>
+                <Typography.Text code copyable={{ text: detailRecord.accessKey }}>
+                  {detailRecord.accessKey}
+                </Typography.Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="状态">
+                <Tag color={statusColorMap[detailRecord.status] ?? 'default'}>
+                  {statusLabelMap[detailRecord.status] ?? detailRecord.status}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="说明">{detailRecord.description || '-'}</Descriptions.Item>
+              <Descriptions.Item label="每分钟调用上限">{detailRecord.rateLimitPerMin}</Descriptions.Item>
+              <Descriptions.Item label="每日调用上限">{detailRecord.rateLimitPerDay}</Descriptions.Item>
+              <Descriptions.Item label="过期时间">{detailRecord.expireAt || '永不过期'}</Descriptions.Item>
+              <Descriptions.Item label="最近使用">{detailRecord.lastUsedAt || '-'}</Descriptions.Item>
+              <Descriptions.Item label="创建时间">{detailRecord.createdAt || '-'}</Descriptions.Item>
+            </Descriptions>
+
+            <Card size="small" title="已授权 OpenAPI">
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                {detailRecord.openApiCodes?.length ? detailRecord.openApiCodes.map((code) => {
+                  const option = findOpenApiOption(code);
+                  return (
+                    <Card key={code} size="small" bodyStyle={{ padding: 12 }}>
+                      <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                        <Space wrap>
+                          <Typography.Text strong>{option?.name || code}</Typography.Text>
+                          <Tag color={methodColorMap[option?.httpMethod ?? ''] ?? 'default'}>
+                            {option?.httpMethod || '-'}
+                          </Tag>
+                          <Tag color="blue">{option?.serviceCode || '-'}</Tag>
+                        </Space>
+                        <Typography.Text code>{option?.gatewayPath || option?.pathPattern || code}</Typography.Text>
+                        {option?.permissionCode ? (
+                          <Typography.Text type="secondary">透传权限：{option.permissionCode}</Typography.Text>
+                        ) : null}
+                      </Space>
+                    </Card>
+                  );
+                }) : <Typography.Text type="secondary">暂无已授权 OpenAPI</Typography.Text>}
+              </Space>
+            </Card>
+          </Space>
+        ) : null}
+      </Drawer>
+
+      <Modal
+        open={!!createdResult}
+        title="AppKey 创建成功"
+        onCancel={() => setCreatedResult(null)}
+        footer={[
+          <Button key="ok" type="primary" onClick={() => setCreatedResult(null)}>
+            我已保存
+          </Button>,
+        ]}
+      >
+        {createdResult ? (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <Typography.Text type="danger">
+              Secret Key 只会展示这一次，请立即复制并妥善保管。
+            </Typography.Text>
+            <Descriptions column={1} bordered size="small">
+              <Descriptions.Item label="名称">{createdResult.name}</Descriptions.Item>
+              <Descriptions.Item label="Access Key">
+                <Typography.Text code copyable={{ text: createdResult.accessKey }}>
+                  {createdResult.accessKey}
+                </Typography.Text>
               </Descriptions.Item>
               <Descriptions.Item label="Secret Key">
-                <Space><Text code type="danger">{createdKey.secretKey}</Text><CopyOutlined style={{ cursor: 'pointer', color: '#1890ff' }} onClick={() => copyToClipboard(createdKey.secretKey)} /></Space>
+                <Typography.Text code copyable={{ text: createdResult.secretKey }}>
+                  {createdResult.secretKey}
+                </Typography.Text>
               </Descriptions.Item>
             </Descriptions>
-          </div>
-        )}
+          </Space>
+        ) : null}
       </Modal>
-
-      <Drawer title={`API Key 详情 - ${detailRecord?.name || ''}`} open={detailOpen} onClose={() => setDetailOpen(false)} width={520}>
-        {detailRecord && (
-          <Descriptions column={1} bordered size="small">
-            <Descriptions.Item label="ID">{detailRecord.id}</Descriptions.Item>
-            <Descriptions.Item label="名称">{detailRecord.name}</Descriptions.Item>
-            <Descriptions.Item label="描述">{detailRecord.description || '-'}</Descriptions.Item>
-            <Descriptions.Item label="Access Key"><Text code>{detailRecord.accessKey}</Text></Descriptions.Item>
-            <Descriptions.Item label="权限范围">{(detailRecord.scopes || []).join(', ')}</Descriptions.Item>
-            <Descriptions.Item label="状态"><Tag color={statusMap[detailRecord.status]?.color}>{statusMap[detailRecord.status]?.label}</Tag></Descriptions.Item>
-            <Descriptions.Item label="限流">{detailRecord.rateLimitPerMin}/min · {detailRecord.rateLimitPerDay}/day</Descriptions.Item>
-            <Descriptions.Item label="过期时间">{detailRecord.expireAt || '永不过期'}</Descriptions.Item>
-            <Descriptions.Item label="最后使用">{detailRecord.lastUsedAt || '-'}</Descriptions.Item>
-            <Descriptions.Item label="创建时间">{detailRecord.createdAt}</Descriptions.Item>
-          </Descriptions>
-        )}
-      </Drawer>
     </div>
   );
 };

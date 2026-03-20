@@ -14,7 +14,7 @@ public interface ApiKeyConvert {
 
     ApiKeyConvert INSTANCE = Mappers.getMapper(ApiKeyConvert.class);
 
-    @Mapping(target = "scopes", ignore = true)
+    @Mapping(target = "openApiCodes", ignore = true)
     ApiKeyVO toVO(ApiKey entity);
 
     @Mapping(target = "scopes", ignore = true)

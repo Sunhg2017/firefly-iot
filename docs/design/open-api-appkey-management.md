@@ -1,0 +1,187 @@
+# OpenAPI / 租户订阅 / AppKey 管理设计
+
+## 1. 背景
+
+平台需要把对外开放接口从“单纯发放 API Key”升级为“平台统一编目、租户按接口订阅、租户内 AppKey 再次细分授权”的三层模型，满足以下目标：
+
+- 系统运维空间统一维护当前所有可开放的 OpenAPI。
+- 平台租户管理页面可以明确某个租户订阅了哪些 OpenAPI，并给每个 OpenAPI 配置调用限制。
+- 租户空间可以维护 AppKey，并限制每个 AppKey 只能调用已订阅 OpenAPI 的子集。
+- 网关必须在真正转发前完成 AppKey 认证、租户订阅校验和限流，避免后端服务重复实现一套鉴权。
+
+根据仓库规则，本次实现直接收口到新模型，不再保留旧的“平台 API Key 管理页 / 旧权限点 / 旧菜单入口”双轨逻辑。
+
+## 2. 目标与范围
+
+### 2.1 目标
+
+- 建立 OpenAPI 目录表，使用业务唯一键 `code` 标识接口。
+- 建立租户 OpenAPI 订阅表，支持 IP 白名单、并发限制、日调用限制。
+- 复用现有 `api_keys` 作为租户空间 AppKey 存储，并将授权范围收口为 OpenAPI 编码列表。
+- 网关支持 `X-App-Key` + `X-App-Secret` 认证，并透传租户、AppKey、OpenAPI、权限上下文。
+- 提供系统运维空间、平台租户管理、租户空间三处前端管理能力。
+
+### 2.2 非目标
+
+- 本次不新增单独的 AppKey-OpenAPI 绑定表，继续复用 `api_keys.scopes` JSONB。
+- 本次不保留旧 `/api-keys` 管理入口和旧 `apikey:*` 平台菜单。
+- 本次不实现新的第三方签名算法，只采用 AppKey/AppSecret 认证。
+
+## 3. 核心模型
+
+### 3.1 OpenAPI 目录
+
+表：`open_api_catalog`
+
+关键字段：
+
+- `code`：OpenAPI 业务编码，系统内唯一。
+- `service_code`：网关服务短码，如 `SYSTEM`、`DEVICE`。
+- `http_method`：HTTP 方法。
+- `path_pattern`：下游服务路径模板，统一以 `/api/v1/...` 口径维护。
+- `permission_code`：命中接口后向下游透传的权限码。
+- `enabled`：是否允许订阅和对外开放。
+
+### 3.2 租户订阅
+
+表：`tenant_open_api_subscriptions`
+
+关键字段：
+
+- `tenant_id`
+- `open_api_code`
+- `ip_whitelist`：JSONB 数组。
+- `concurrency_limit`：单租户对单 OpenAPI 的并发限制，`-1` 表示不限。
+- `daily_limit`：单租户对单 OpenAPI 的单日总量限制，`-1` 表示不限。
+
+### 3.3 AppKey
+
+复用表：`api_keys`
+
+调整点：
+
+- 业务语义从旧 `API Key` 收口为租户空间的 `AppKey`。
+- `scopes` 字段不再表示通用权限范围，而是存储 `openApiCodes` JSON 数组。
+- 前端和接口统一改为 `/api/v1/app-keys`。
+
+## 4. 鉴权与转发链路
+
+### 4.1 管理面链路
+
+1. 系统运维空间维护 `open_api_catalog`。
+2. 平台管理员在租户管理页为指定租户配置订阅项和限制。
+3. 租户空间在 AppKey 页面创建或编辑 AppKey，选择当前租户已订阅的 OpenAPI 子集。
+
+### 4.2 运行时链路
+
+1. 调用方通过网关访问 `/{SERVICE}/api/v1/...`。
+2. 网关读取 `X-App-Key`、`X-App-Secret`。
+3. 网关根据访问路径反解 `serviceCode + requestPath + httpMethod`。
+4. 网关调用系统服务内部接口 `/api/v1/internal/open-apis/authorize` 做统一鉴权。
+5. 系统服务依次校验：
+   - AppKey 是否存在、未删除、未停用、未过期。
+   - 请求路径是否命中已启用 OpenAPI。
+   - AppKey 是否被授予该 OpenAPI。
+   - 租户是否订阅该 OpenAPI。
+   - 请求 IP 是否在订阅白名单内。
+6. 网关在 Redis 上执行并发与配额控制：
+   - 单 OpenAPI 并发限制
+   - AppKey 每分钟限制
+   - AppKey 每日限制
+   - 租户订阅每日限制
+7. 网关向下游透传上下文：
+   - `X-Tenant-Id`
+   - `X-Platform=open-api`
+   - `X-App-Key-Id`
+   - `X-Open-Api-Code`
+   - `X-Granted-Permissions`
+8. 下游服务通过 `firefly-common` 的上下文解析和安全切面识别 AppKey 调用。
+
+## 5. 权限与菜单模型
+
+本次新增并收口以下权限：
+
+- 平台：`openapi:read/create/update/delete`
+- 租户：`appkey:read/create/update/delete`
+
+本次同步通过 Flyway 维护：
+
+- `workspace_menu_catalog`
+- `workspace_menu_permission_catalog`
+- `permission_resources`
+- `role_permissions`
+
+菜单归属：
+
+- 系统运维空间：`open-api`
+- 租户空间：`app-key`
+
+旧 `api-key` 菜单、旧 `apikey:*` 平台菜单权限全部删除，不保留兼容入口。
+
+## 6. 前后端接口
+
+### 6.1 系统运维空间
+
+- `POST /api/v1/platform/open-apis/list`
+- `GET /api/v1/platform/open-apis/{code}`
+- `GET /api/v1/platform/open-apis/options`
+- `POST /api/v1/platform/open-apis`
+- `PUT /api/v1/platform/open-apis/{code}`
+- `DELETE /api/v1/platform/open-apis/{code}`
+
+### 6.2 平台租户管理
+
+- `GET /api/v1/platform/tenants/{id}/open-api-subscriptions`
+- `PUT /api/v1/platform/tenants/{id}/open-api-subscriptions`
+
+### 6.3 租户空间
+
+- `POST /api/v1/app-keys/list`
+- `GET /api/v1/app-keys/{id}`
+- `POST /api/v1/app-keys`
+- `PUT /api/v1/app-keys/{id}`
+- `PUT /api/v1/app-keys/{id}/status`
+- `DELETE /api/v1/app-keys/{id}`
+- `GET /api/v1/app-keys/open-api-options`
+
+### 6.4 网关内部接口
+
+- `POST /api/v1/internal/open-apis/authorize`
+
+## 7. 前端交互设计
+
+- 系统运维空间新增 `OpenAPI 管理` 页面。
+  - 列表支持关键字、服务、状态查询。
+  - 创建、编辑使用抽屉，不再使用弹窗。
+- 平台租户管理在更多操作中新增 `OpenAPI订阅` 抽屉。
+  - 逐条配置订阅开关、IP 白名单、并发上限、日调用上限。
+- 租户空间将旧 API Key 页替换为 `AppKey 管理`。
+  - 查询按钮支持列表刷新。
+  - 创建、编辑使用抽屉。
+  - 只允许从已订阅 OpenAPI 中多选。
+  - 创建成功后仅一次展示 Secret Key。
+
+## 8. 关键设计取舍
+
+### 8.1 为什么复用 `api_keys`
+
+- 数据结构已经具备租户、密钥、限流、过期时间等核心字段。
+- 只需调整语义和授权范围即可承载 AppKey，不必引入额外迁移复杂度。
+
+### 8.2 为什么不单独建 AppKey-OpenAPI 关系表
+
+- 当前授权模型是“每个 AppKey 对若干 OpenAPI 编码的静态列表”。
+- 继续使用 JSONB 可以减少表数量和管理复杂度。
+- 若后续出现单 AppKey 级别更细粒度限额，再评估拆表。
+
+### 8.3 为什么把鉴权放在网关
+
+- 可以在最前置位置统一拒绝未授权请求。
+- 可以集中做 Redis 并发与配额控制。
+- 下游业务服务只消费统一上下文，不再感知 AppKey 校验细节。
+
+## 9. 风险与后续项
+
+- 目前 AppKey 调用日志查询接口仍沿用既有能力，若要形成完整审计闭环，需要确保网关侧访问日志事件持续投递。
+- Redis 配额键依赖网关时间窗口，跨时区部署时应统一服务时区。
+- 若历史数据库中有手工补录的旧 `api-key` 菜单或权限脏数据，应按新模型清理，避免继续展示旧入口。

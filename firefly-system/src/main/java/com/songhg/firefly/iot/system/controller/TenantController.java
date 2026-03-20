@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.songhg.firefly.iot.common.enums.TenantStatus;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresPermission;
+import com.songhg.firefly.iot.system.dto.openapi.TenantOpenApiSubscriptionSaveDTO;
+import com.songhg.firefly.iot.system.dto.openapi.TenantOpenApiSubscriptionVO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantCreateDTO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantAdminPasswordResetDTO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantOverviewVO;
@@ -114,6 +116,25 @@ public class TenantController {
                                         @Valid @RequestBody TenantQuotaUpdateDTO dto) {
         userDomainService.assertCurrentUserIsSystemOps();
         return R.ok(tenantService.updateQuota(id, dto));
+    }
+
+    @GetMapping("/{id}/open-api-subscriptions")
+    @RequiresPermission("tenant:manage")
+    @Operation(summary = "Get tenant OpenAPI subscriptions")
+    public R<List<TenantOpenApiSubscriptionVO>> getTenantOpenApiSubscriptions(
+            @Parameter(description = "Tenant ID", required = true) @PathVariable Long id) {
+        userDomainService.assertCurrentUserIsSystemOps();
+        return R.ok(tenantService.getTenantOpenApiSubscriptions(id));
+    }
+
+    @PutMapping("/{id}/open-api-subscriptions")
+    @RequiresPermission("tenant:manage")
+    @Operation(summary = "Update tenant OpenAPI subscriptions")
+    public R<List<TenantOpenApiSubscriptionVO>> updateTenantOpenApiSubscriptions(
+            @Parameter(description = "Tenant ID", required = true) @PathVariable Long id,
+            @Valid @RequestBody TenantOpenApiSubscriptionSaveDTO dto) {
+        userDomainService.assertCurrentUserIsSystemOps();
+        return R.ok(tenantService.updateTenantOpenApiSubscriptions(id, dto));
     }
 
     @GetMapping("/{id}/space-menus")

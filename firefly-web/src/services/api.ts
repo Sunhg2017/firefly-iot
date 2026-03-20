@@ -62,6 +62,17 @@ interface TenantSpaceMenuPayload {
   menuKeys: string[];
 }
 
+interface TenantOpenApiSubscriptionItemPayload {
+  openApiCode: string;
+  ipWhitelist?: string[];
+  concurrencyLimit?: number;
+  dailyLimit?: number;
+}
+
+interface TenantOpenApiSubscriptionSavePayload {
+  items: TenantOpenApiSubscriptionItemPayload[];
+}
+
 const TENANT_PLAN_VALUES = new Set<TenantPlan>(['FREE', 'STANDARD', 'ENTERPRISE']);
 const TENANT_STATUS_VALUES = new Set<TenantStatus>([
   'PENDING',
@@ -165,6 +176,58 @@ const normalizeTenantSpaceMenuPayload = (payload: TenantSpaceMenuPayload): Tenan
   }
 
   return { menuKeys };
+};
+
+const normalizeLimitValue = (value: unknown, fieldName: string): number | undefined => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  const normalized = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(normalized) || normalized === 0 || normalized < -1) {
+    throw new Error(`invalid ${fieldName}`);
+  }
+  return normalized;
+};
+
+const normalizeTenantOpenApiSubscriptionPayload = (
+  payload: TenantOpenApiSubscriptionSavePayload,
+): TenantOpenApiSubscriptionSavePayload => {
+  if (!payload || !Array.isArray(payload.items)) {
+    throw new Error('tenant open api subscription payload is invalid');
+  }
+
+  const codes = new Set<string>();
+  const items = payload.items.map((item, index) => {
+    const openApiCode = trimOptionalString(item?.openApiCode);
+    if (!openApiCode) {
+      throw new Error(`tenant open api item[${index}] code is required`);
+    }
+    if (codes.has(openApiCode)) {
+      throw new Error(`duplicate tenant open api code: ${openApiCode}`);
+    }
+    codes.add(openApiCode);
+
+    const ipWhitelist = Array.isArray(item?.ipWhitelist)
+      ? item.ipWhitelist
+          .map((ip, ipIndex) => {
+            const normalizedIp = trimOptionalString(ip);
+            if (!normalizedIp) {
+              throw new Error(`tenant open api item[${index}] ipWhitelist[${ipIndex}] is invalid`);
+            }
+            return normalizedIp;
+          })
+          .filter((ip, ipIndex, list) => list.indexOf(ip) === ipIndex)
+      : [];
+
+    return {
+      openApiCode,
+      ipWhitelist,
+      concurrencyLimit: normalizeLimitValue(item?.concurrencyLimit, `concurrencyLimit for ${openApiCode}`),
+      dailyLimit: normalizeLimitValue(item?.dailyLimit, `dailyLimit for ${openApiCode}`),
+    };
+  });
+
+  return { items };
 };
 
 const normalizeTenantListParams = (params: TenantListParams = {}): TenantListParams => {
@@ -349,6 +412,12 @@ export const tenantApi = {
   getQuota: (id: number) => request.get(`/platform/tenants/${normalizeTenantId(id)}/quota`),
   updateQuota: (id: number, data: Record<string, unknown>) =>
     request.put(`/platform/tenants/${normalizeTenantId(id)}/quota`, normalizeTenantQuotaPayload(data)),
+  getOpenApiSubscriptions: (id: number) => request.get(`/platform/tenants/${normalizeTenantId(id)}/open-api-subscriptions`),
+  updateOpenApiSubscriptions: (id: number, payload: TenantOpenApiSubscriptionSavePayload) =>
+    request.put(
+      `/platform/tenants/${normalizeTenantId(id)}/open-api-subscriptions`,
+      normalizeTenantOpenApiSubscriptionPayload(payload),
+    ),
   getSpaceMenus: (id: number) => request.get(`/platform/tenants/${normalizeTenantId(id)}/space-menus`),
   updateSpaceMenus: (id: number, payload: TenantSpaceMenuPayload) =>
     request.put(`/platform/tenants/${normalizeTenantId(id)}/space-menus`, normalizeTenantSpaceMenuPayload(payload)),
@@ -983,15 +1052,28 @@ export const loginLogApi = {
 };
 
 // ==================== API Key API ====================
+export const openApiApi = {
+  list: (data: Record<string, unknown> = {}) => request.post('/platform/open-apis/list', data),
+  get: (code: string) => request.get(`/platform/open-apis/${encodeURIComponent(code)}`),
+  options: () => request.get('/platform/open-apis/options'),
+  create: (data: Record<string, unknown>) => request.post('/platform/open-apis', data),
+  update: (code: string, data: Record<string, unknown>) =>
+    request.put(`/platform/open-apis/${encodeURIComponent(code)}`, data),
+  delete: (code: string) => request.delete(`/platform/open-apis/${encodeURIComponent(code)}`),
+};
+
+// ==================== App Key API ====================
 export const apiKeyApi = {
-  list: (data: Record<string, unknown> = {}) => request.post('/api-keys/list', data),
-  get: (id: number) => request.get(`/api-keys/${id}`),
-  create: (data: Record<string, unknown>) => request.post('/api-keys', data),
-  update: (id: number, data: Record<string, unknown>) => request.put(`/api-keys/${id}`, data),
-  updateStatus: (id: number, status: string) => request.put(`/api-keys/${id}/status?status=${status}`),
-  delete: (id: number) => request.delete(`/api-keys/${id}`),
-  queryLogs: (id: number, data?: Record<string, unknown>) => request.post(`/api-keys/${id}/logs`, data),
-  queryStats: (id: number, startDate: string, endDate: string) => request.get(`/api-keys/${id}/stats`, { params: { startDate, endDate } }),
+  list: (data: Record<string, unknown> = {}) => request.post('/app-keys/list', data),
+  get: (id: number) => request.get(`/app-keys/${id}`),
+  create: (data: Record<string, unknown>) => request.post('/app-keys', data),
+  update: (id: number, data: Record<string, unknown>) => request.put(`/app-keys/${id}`, data),
+  updateStatus: (id: number, status: string) => request.put(`/app-keys/${id}/status?status=${status}`),
+  delete: (id: number) => request.delete(`/app-keys/${id}`),
+  listOpenApiOptions: () => request.get('/app-keys/open-api-options'),
+  queryLogs: (id: number, data?: Record<string, unknown>) => request.post(`/app-keys/${id}/logs`, data),
+  queryStats: (id: number, startDate: string, endDate: string) =>
+    request.get(`/app-keys/${id}/stats`, { params: { startDate, endDate } }),
 };
 
 // ==================== Device Message API ====================

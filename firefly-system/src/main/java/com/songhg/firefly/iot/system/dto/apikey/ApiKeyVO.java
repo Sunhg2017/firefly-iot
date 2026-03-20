@@ -7,43 +7,40 @@ import lombok.Data;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * API key view object.
- */
 @Data
-@Schema(description = "接口密钥视图对象")
+@Schema(description = "AppKey view object")
 public class ApiKeyVO {
 
-    @Schema(description = "接口密钥编号")
+    @Schema(description = "AppKey ID")
     private Long id;
 
-    @Schema(description = "名称")
+    @Schema(description = "AppKey name")
     private String name;
 
-    @Schema(description = "描述")
+    @Schema(description = "Description")
     private String description;
 
-    @Schema(description = "访问密钥")
+    @Schema(description = "Access key")
     private String accessKey;
 
-    @Schema(description = "权限范围")
-    private List<String> scopes;
+    @Schema(description = "Granted OpenAPI codes")
+    private List<String> openApiCodes;
 
-    @Schema(description = "每分钟限流")
+    @Schema(description = "Per-appKey minute limit")
     private Integer rateLimitPerMin;
 
-    @Schema(description = "每日限流")
+    @Schema(description = "Per-appKey day limit")
     private Integer rateLimitPerDay;
 
-    @Schema(description = "状态")
+    @Schema(description = "Status")
     private ApiKeyStatus status;
 
-    @Schema(description = "过期时间")
+    @Schema(description = "Expiration time")
     private LocalDateTime expireAt;
 
-    @Schema(description = "最近使用时间")
+    @Schema(description = "Last used time")
     private LocalDateTime lastUsedAt;
 
-    @Schema(description = "创建时间")
+    @Schema(description = "Created time")
     private LocalDateTime createdAt;
 }

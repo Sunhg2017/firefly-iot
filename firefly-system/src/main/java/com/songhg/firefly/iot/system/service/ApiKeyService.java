@@ -11,28 +11,37 @@ import com.songhg.firefly.iot.common.enums.ApiKeyStatus;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.system.convert.ApiKeyConvert;
-import com.songhg.firefly.iot.system.dto.apikey.*;
+import com.songhg.firefly.iot.system.dto.apikey.ApiKeyCreateDTO;
+import com.songhg.firefly.iot.system.dto.apikey.ApiKeyCreatedVO;
+import com.songhg.firefly.iot.system.dto.apikey.ApiKeyQueryDTO;
+import com.songhg.firefly.iot.system.dto.apikey.ApiKeyUpdateDTO;
+import com.songhg.firefly.iot.system.dto.apikey.ApiKeyVO;
+import com.songhg.firefly.iot.system.dto.openapi.InternalOpenApiAuthVO;
+import com.songhg.firefly.iot.system.dto.openapi.OpenApiOptionVO;
 import com.songhg.firefly.iot.system.entity.ApiKey;
+import com.songhg.firefly.iot.system.entity.OpenApiCatalog;
+import com.songhg.firefly.iot.system.entity.TenantOpenApiSubscription;
 import com.songhg.firefly.iot.system.mapper.ApiKeyMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ApiKeyService {
-
-    private final ApiKeyMapper apiKeyMapper;
-    private final PasswordEncoder passwordEncoder;
-    private final ObjectMapper objectMapper;
 
     private static final int MAX_KEYS_PER_TENANT = 50;
     private static final int DEFAULT_RATE_LIMIT_PER_MIN = 600;
@@ -42,29 +51,35 @@ public class ApiKeyService {
     private static final String CHARS = "abcdefghijklmnopqrstuvwxyz0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
 
+    private final ApiKeyMapper apiKeyMapper;
+    private final PasswordEncoder passwordEncoder;
+    private final ObjectMapper objectMapper;
+    private final OpenApiCatalogService openApiCatalogService;
+    private final TenantOpenApiSubscriptionService tenantOpenApiSubscriptionService;
+
     @Transactional
     public ApiKeyCreatedVO createApiKey(ApiKeyCreateDTO dto) {
-        Long tenantId = AppContextHolder.getTenantId();
+        Long tenantId = requireTenantId();
         Long userId = AppContextHolder.getUserId();
 
-        // 检查配额
         Long count = apiKeyMapper.selectCount(new LambdaQueryWrapper<ApiKey>()
                 .eq(ApiKey::getTenantId, tenantId)
                 .isNull(ApiKey::getDeletedAt));
-        if (count >= MAX_KEYS_PER_TENANT) {
+        if (count != null && count >= MAX_KEYS_PER_TENANT) {
             throw new BizException(ResultCode.QUOTA_EXCEEDED);
         }
 
         String accessKey = AK_PREFIX + randomString(32);
         String secretKey = SK_PREFIX + randomString(48);
+        List<String> openApiCodes = normalizeOpenApiCodes(tenantId, dto.getOpenApiCodes());
 
         ApiKey entity = new ApiKey();
         entity.setTenantId(tenantId);
-        entity.setName(dto.getName());
-        entity.setDescription(dto.getDescription());
+        entity.setName(normalizeName(dto.getName()));
+        entity.setDescription(trimToNull(dto.getDescription()));
         entity.setAccessKey(accessKey);
         entity.setSecretKeyHash(passwordEncoder.encode(secretKey));
-        entity.setScopes(toJson(dto.getScopes() != null ? dto.getScopes() : List.of("*")));
+        entity.setScopes(toJson(openApiCodes));
         entity.setRateLimitPerMin(dto.getRateLimitPerMin() != null ? dto.getRateLimitPerMin() : DEFAULT_RATE_LIMIT_PER_MIN);
         entity.setRateLimitPerDay(dto.getRateLimitPerDay() != null ? dto.getRateLimitPerDay() : DEFAULT_RATE_LIMIT_PER_DAY);
         entity.setStatus(ApiKeyStatus.ACTIVE);
@@ -72,15 +87,12 @@ public class ApiKeyService {
         entity.setCreatedBy(userId);
         apiKeyMapper.insert(entity);
 
-        log.info("API Key created: id={}, accessKey={}, tenantId={}", entity.getId(), accessKey, tenantId);
-
-        // 构建返回（含 secretKey，仅此一次）
         ApiKeyCreatedVO vo = new ApiKeyCreatedVO();
         vo.setId(entity.getId());
         vo.setName(entity.getName());
         vo.setAccessKey(accessKey);
         vo.setSecretKey(secretKey);
-        vo.setScopes(dto.getScopes() != null ? dto.getScopes() : List.of("*"));
+        vo.setOpenApiCodes(openApiCodes);
         vo.setRateLimitPerMin(entity.getRateLimitPerMin());
         vo.setRateLimitPerDay(entity.getRateLimitPerDay());
         vo.setStatus(entity.getStatus());
@@ -90,55 +102,43 @@ public class ApiKeyService {
     }
 
     public ApiKeyVO getApiKeyById(Long id) {
-        ApiKey entity = apiKeyMapper.selectById(id);
-        if (entity == null || entity.getDeletedAt() != null) {
-            throw new BizException(ResultCode.APIKEY_NOT_FOUND);
-        }
-        return toVO(entity);
+        return toVO(requireCurrentTenantApiKey(id));
     }
 
     public IPage<ApiKeyVO> listApiKeys(ApiKeyQueryDTO query) {
-        Long tenantId = AppContextHolder.getTenantId();
+        Long tenantId = requireTenantId();
         Page<ApiKey> page = new Page<>(query.getPageNum(), query.getPageSize());
-
         LambdaQueryWrapper<ApiKey> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(ApiKey::getTenantId, tenantId);
-        wrapper.isNull(ApiKey::getDeletedAt);
-        if (query.getKeyword() != null && !query.getKeyword().isBlank()) {
-            wrapper.and(w -> w.like(ApiKey::getName, query.getKeyword())
-                    .or().like(ApiKey::getAccessKey, query.getKeyword()));
+        wrapper.eq(ApiKey::getTenantId, tenantId)
+                .isNull(ApiKey::getDeletedAt);
+        if (StringUtils.hasText(query.getKeyword())) {
+            String keyword = query.getKeyword().trim();
+            wrapper.and(item -> item.like(ApiKey::getName, keyword)
+                    .or().like(ApiKey::getAccessKey, keyword));
         }
         if (query.getStatus() != null) {
             wrapper.eq(ApiKey::getStatus, query.getStatus());
         }
         wrapper.orderByDesc(ApiKey::getCreatedAt);
-
-        IPage<ApiKey> result = apiKeyMapper.selectPage(page, wrapper);
-        return result.convert(this::toVO);
+        return apiKeyMapper.selectPage(page, wrapper).convert(this::toVO);
     }
 
     @Transactional
     public ApiKeyVO updateApiKey(Long id, ApiKeyUpdateDTO dto) {
-        ApiKey entity = apiKeyMapper.selectById(id);
-        if (entity == null || entity.getDeletedAt() != null) {
-            throw new BizException(ResultCode.APIKEY_NOT_FOUND);
-        }
+        ApiKey entity = requireCurrentTenantApiKey(id);
+        List<String> openApiCodes = normalizeOpenApiCodes(entity.getTenantId(), dto.getOpenApiCodes());
         ApiKeyConvert.INSTANCE.updateEntity(dto, entity);
-        if (dto.getScopes() != null) {
-            entity.setScopes(toJson(dto.getScopes()));
-        }
+        entity.setName(normalizeName(dto.getName()));
+        entity.setDescription(trimToNull(dto.getDescription()));
+        entity.setScopes(toJson(openApiCodes));
         entity.setUpdatedAt(LocalDateTime.now());
         apiKeyMapper.updateById(entity);
-
         return toVO(entity);
     }
 
     @Transactional
     public void updateApiKeyStatus(Long id, ApiKeyStatus status) {
-        ApiKey entity = apiKeyMapper.selectById(id);
-        if (entity == null || entity.getDeletedAt() != null) {
-            throw new BizException(ResultCode.APIKEY_NOT_FOUND);
-        }
+        ApiKey entity = requireCurrentTenantApiKey(id);
         entity.setStatus(status);
         entity.setUpdatedAt(LocalDateTime.now());
         apiKeyMapper.updateById(entity);
@@ -146,32 +146,165 @@ public class ApiKeyService {
 
     @Transactional
     public void deleteApiKey(Long id) {
-        ApiKey entity = apiKeyMapper.selectById(id);
-        if (entity == null || entity.getDeletedAt() != null) {
-            throw new BizException(ResultCode.APIKEY_NOT_FOUND);
-        }
+        ApiKey entity = requireCurrentTenantApiKey(id);
         entity.setStatus(ApiKeyStatus.DELETED);
+        entity.setUpdatedAt(LocalDateTime.now());
         apiKeyMapper.updateById(entity);
         apiKeyMapper.deleteById(entity.getId());
-        log.info("API Key deleted: id={}, accessKey={}", id, entity.getAccessKey());
+        log.info("AppKey deleted: id={}, accessKey={}", id, entity.getAccessKey());
+    }
+
+    public List<OpenApiOptionVO> listSubscribedOpenApiOptions() {
+        return tenantOpenApiSubscriptionService.listSubscribedEnabledOptions(requireTenantId());
+    }
+
+    public InternalOpenApiAuthVO authorizeOpenApiCall(
+            String appKey,
+            String appSecret,
+            String serviceCode,
+            String httpMethod,
+            String requestPath,
+            String clientIp
+    ) {
+        ApiKey entity = apiKeyMapper.findByAccessKey(trimRequired(appKey, "app key is required"));
+        if (entity == null || entity.getDeletedAt() != null) {
+            throw new BizException(ResultCode.UNAUTHORIZED, "invalid app key");
+        }
+        if (!passwordEncoder.matches(trimRequired(appSecret, "app secret is required"), entity.getSecretKeyHash())) {
+            throw new BizException(ResultCode.UNAUTHORIZED, "invalid app secret");
+        }
+        if (entity.getStatus() != ApiKeyStatus.ACTIVE) {
+            throw new BizException(ResultCode.PERMISSION_DENIED, "app key is disabled");
+        }
+        if (entity.getExpireAt() != null && entity.getExpireAt().isBefore(LocalDateTime.now())) {
+            throw new BizException(ResultCode.PERMISSION_DENIED, "app key is expired");
+        }
+
+        OpenApiCatalog openApi = openApiCatalogService.matchEnabledOpenApi(serviceCode, httpMethod, requestPath);
+        List<String> grantedOpenApiCodes = fromJson(entity.getScopes());
+        if (!grantedOpenApiCodes.contains(openApi.getCode())) {
+            throw new BizException(ResultCode.PERMISSION_DENIED, "app key is not allowed to call this open api");
+        }
+
+        TenantOpenApiSubscription subscription = tenantOpenApiSubscriptionService.requireSubscription(entity.getTenantId(), openApi.getCode());
+        if (!isIpAllowed(clientIp, tenantOpenApiSubscriptionService.getIpWhitelist(subscription))) {
+            throw new BizException(ResultCode.PERMISSION_DENIED, "client ip is not in whitelist");
+        }
+
+        InternalOpenApiAuthVO vo = new InternalOpenApiAuthVO();
+        vo.setTenantId(entity.getTenantId());
+        vo.setAppKeyId(entity.getId());
+        vo.setOpenApiCode(openApi.getCode());
+        vo.setPermissionCode(openApi.getPermissionCode());
+        vo.setRateLimitPerMin(entity.getRateLimitPerMin());
+        vo.setRateLimitPerDay(entity.getRateLimitPerDay());
+        vo.setConcurrencyLimit(subscription.getConcurrencyLimit());
+        vo.setSubscriptionDailyLimit(subscription.getDailyLimit());
+        return vo;
+    }
+
+    private ApiKey requireCurrentTenantApiKey(Long id) {
+        ApiKey entity = apiKeyMapper.selectById(id);
+        if (entity == null || entity.getDeletedAt() != null || !entity.getTenantId().equals(requireTenantId())) {
+            throw new BizException(ResultCode.APIKEY_NOT_FOUND);
+        }
+        return entity;
     }
 
     private ApiKeyVO toVO(ApiKey entity) {
         ApiKeyVO vo = ApiKeyConvert.INSTANCE.toVO(entity);
-        vo.setScopes(fromJson(entity.getScopes()));
+        vo.setOpenApiCodes(fromJson(entity.getScopes()));
         return vo;
     }
 
-    private String toJson(List<String> scopes) {
+    private List<String> normalizeOpenApiCodes(Long tenantId, List<String> requestedCodes) {
+        if (requestedCodes == null || requestedCodes.isEmpty()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "please select at least one subscribed open api");
+        }
+        Set<String> subscribedCodes = tenantOpenApiSubscriptionService.listSubscribedCodes(tenantId);
+        if (subscribedCodes.isEmpty()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "tenant has not subscribed any open api");
+        }
+
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String item : requestedCodes) {
+            if (!StringUtils.hasText(item)) {
+                continue;
+            }
+            String code = item.trim();
+            if (!subscribedCodes.contains(code)) {
+                throw new BizException(ResultCode.PARAM_ERROR, "open api is not subscribed: " + code);
+            }
+            OpenApiCatalog openApi = openApiCatalogService.requireOpenApi(code);
+            if (!Boolean.TRUE.equals(openApi.getEnabled())) {
+                throw new BizException(ResultCode.PARAM_ERROR, "open api is disabled: " + code);
+            }
+            normalized.add(code);
+        }
+        if (normalized.isEmpty()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "please select at least one subscribed open api");
+        }
+        return new ArrayList<>(normalized);
+    }
+
+    private boolean isIpAllowed(String clientIp, List<String> whitelist) {
+        if (whitelist == null || whitelist.isEmpty()) {
+            return true;
+        }
+        if (!StringUtils.hasText(clientIp)) {
+            return false;
+        }
+        String normalizedClientIp = clientIp.trim().toLowerCase(Locale.ROOT);
+        for (String item : whitelist) {
+            if (!StringUtils.hasText(item)) {
+                continue;
+            }
+            if (normalizedClientIp.equals(item.trim().toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Long requireTenantId() {
+        Long tenantId = AppContextHolder.getTenantId();
+        if (tenantId == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "tenant context required");
+        }
+        return tenantId;
+    }
+
+    private String normalizeName(String value) {
+        return trimRequired(value, "appKey name is required");
+    }
+
+    private String trimRequired(String value, String message) {
+        String normalized = trimToNull(value);
+        if (normalized == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, message);
+        }
+        return normalized;
+    }
+
+    private String trimToNull(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private String toJson(List<String> openApiCodes) {
         try {
-            return objectMapper.writeValueAsString(scopes);
+            return objectMapper.writeValueAsString(openApiCodes);
         } catch (JsonProcessingException e) {
-            return "[\"*\"]";
+            return "[]";
         }
     }
 
     private List<String> fromJson(String json) {
-        if (json == null || json.isBlank()) return Collections.emptyList();
+        if (!StringUtils.hasText(json)) {
+            return Collections.emptyList();
+        }
         try {
             return objectMapper.readValue(json, new TypeReference<>() {});
         } catch (JsonProcessingException e) {
