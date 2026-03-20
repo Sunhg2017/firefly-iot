@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.env.Environment;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
@@ -18,7 +19,8 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 public class OpenApiRegistrationAutoConfiguration {
 
     @Bean
-    public OpenApiEndpointScanner openApiEndpointScanner(RequestMappingHandlerMapping handlerMapping) {
+    public OpenApiEndpointScanner openApiEndpointScanner(
+            @Qualifier("requestMappingHandlerMapping") RequestMappingHandlerMapping handlerMapping) {
         return new OpenApiEndpointScanner(handlerMapping);
     }
 

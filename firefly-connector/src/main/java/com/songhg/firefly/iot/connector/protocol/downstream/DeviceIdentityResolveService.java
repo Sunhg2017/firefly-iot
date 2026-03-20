@@ -23,7 +23,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
-@Service
+@Service("downstreamDeviceIdentityResolveService")
 @RequiredArgsConstructor
 public class DeviceIdentityResolveService {
 

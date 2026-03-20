@@ -130,6 +130,7 @@
 ### 4.4 自动注册链路
 
 1. 微服务启动完成后扫描 Spring MVC `RequestMappingHandlerMapping`。
+   - 仅扫描业务 Controller 所在的 `requestMappingHandlerMapping`，不扫描 Actuator 的 `controllerEndpointHandlerMapping`，避免运维端点映射干扰 OpenAPI 自动注册。
 2. 找到所有被 `@OpenApi` 标注的方法，自动解析：
    - `code`
    - `serviceCode`

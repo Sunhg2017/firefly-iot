@@ -140,6 +140,7 @@ Flyway 脚本：
 重点检查：
 
 - 目标接口是否确实标注了 `@OpenApi`
+- 当前版本的 OpenAPI 自动扫描只读取业务 MVC 的 `requestMappingHandlerMapping`；若本地仍是旧包，请先升级到包含该修复的版本
 - 标注方法是否只有一个 HTTP Method 和一个有效路径
 - `permissionCode` 是否显式填写，或该方法是否具备单值 `@RequiresPermission`
 - 对应业务微服务是否启动成功并注册到 Nacos
