@@ -1,7 +1,7 @@
 import type { Protocol, SimDevice } from '../store';
 import { useSimStore } from '../store';
 import {
-  buildMqttServiceTopic,
+  buildDefaultMqttSubscriptions,
   dynamicRegisterDevice,
   resolveMqttIdentity,
   shouldDynamicRegister,
@@ -344,11 +344,10 @@ export async function connectSimDevice(
       throw new Error(result.message || 'MQTT connect failed');
     }
 
-    const serviceTopic = buildMqttServiceTopic(target);
-    if (serviceTopic) {
-      const subResult = await window.electronAPI.mqttSubscribe(target.id, serviceTopic, 1);
+    for (const subscription of buildDefaultMqttSubscriptions(target)) {
+      const subResult = await window.electronAPI.mqttSubscribe(target.id, subscription.topic, subscription.qos);
       if (!subResult.success) {
-        store.addLog(target.id, target.name, 'warn', `Subscribe failed: ${subResult.message}`);
+        store.addLog(target.id, target.name, 'warn', `自动订阅${subscription.label}主题失败：${subResult.message}`);
       }
     }
 

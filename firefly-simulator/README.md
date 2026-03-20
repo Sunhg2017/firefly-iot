@@ -21,7 +21,7 @@
 - **批量导入/导出** — JSON/CSV 文件批量导入设备，一键导出当前设备配置
 - **压力测试** — 并发 N 台设备×M 轮发送，实时统计 TPS/成功率/耗时
 - **配置持久化** — 设备配置和自定义模板自动保存到 localStorage，刷新后恢复
-- **实时日志** — 查看所有设备的连接、发送、错误日志
+- **实时日志** — 查看所有设备的连接、发送、错误日志，完整保留 MQTT 下行 payload
 - **分步创建设备** — 新建模拟设备采用抽屉式分步配置，先选协议，再填写最小必填项和高级参数
 - **设备管理器重构** — 左侧设备区采用总览卡片 + 搜索筛选 + 设备卡片目录，右侧补充更清晰的空态和状态摘要
 - **暗色主题** — 现代化深色 UI
@@ -73,7 +73,7 @@ npm run electron:build
 |------|------|
 | 1. 连接 | clientId/username/password 认证 |
 | 2. 发布 | Topic: `/sys/{productKey}/{deviceName}/thing/property/post` |
-| 3. 订阅 | Topic: `/sys/+/+/thing/service/+` (接收下行指令) |
+| 3. 订阅 | Topics: `/sys/{productKey}/{deviceName}/thing/property/set`、`/sys/{productKey}/{deviceName}/thing/service/+`、`/sys/{productKey}/{deviceName}/thing/downstream` |
 
 提示：
 - 一机一密产品可直接使用 `deviceName + deviceSecret` 建立连接。

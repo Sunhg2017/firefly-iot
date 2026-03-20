@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Layout } from 'antd';
 import { useSimStore } from './store';
+import { buildMqttInboundLogMessage } from './utils/mqtt';
 import { restorePersistedConnections } from './utils/runtime';
 import {
   DeviceListPanel, DeviceControlPanel, LogPanel,
@@ -59,7 +60,9 @@ export default function App() {
     const unsubMsg = window.electronAPI.onMqttMessage((id: string, topic: string, payload: string) => {
       const { addLog, devices } = useSimStore.getState();
       const dev = devices.find((d) => d.id === id);
-      addLog(id, dev?.name || id, 'info', `[收到] ${topic}: ${payload.slice(0, 200)}`);
+      // Keep the full MQTT payload in the global log so long downstream commands can be
+      // checked directly inside the simulator.
+      addLog(id, dev?.name || id, 'info', buildMqttInboundLogMessage(topic, payload));
     });
 
     const unsubDisconnect = window.electronAPI.onMqttDisconnected((id: string) => {

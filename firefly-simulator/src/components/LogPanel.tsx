@@ -57,14 +57,29 @@ export default function LogPanel() {
       <div ref={listRef} style={{ flex: 1, overflow: 'auto', padding: '4px 16px', fontFamily: 'Consolas, monospace', fontSize: 12, lineHeight: 1.8 }}>
         {filtered.length === 0 && <Text type="secondary" style={{ fontSize: 12 }}>暂无日志...</Text>}
         {displayLogs.map((log) => (
-          <div key={log.id}>
-            <Text style={{ color: '#595959' }}>{log.time}</Text>
-            {' '}
-            <Text style={{ color: levelColor[log.level] || '#8c8c8c' }}>[{log.level.toUpperCase()}]</Text>
-            {' '}
-            <Text style={{ color: '#4f46e5' }}>[{log.deviceName}]</Text>
-            {' '}
-            <Text>{log.message}</Text>
+          <div
+            key={log.id}
+            style={{
+              padding: '4px 0',
+              borderBottom: '1px solid rgba(255,255,255,0.04)',
+            }}
+          >
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+              <Text style={{ color: '#595959' }}>{log.time}</Text>
+              <Text style={{ color: levelColor[log.level] || '#8c8c8c' }}>[{log.level.toUpperCase()}]</Text>
+              <Text style={{ color: '#4f46e5' }}>[{log.deviceName}]</Text>
+            </div>
+            <Text
+              style={{
+                display: 'block',
+                marginTop: 2,
+                color: 'rgba(255,255,255,0.88)',
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+              }}
+            >
+              {log.message}
+            </Text>
           </div>
         ))}
       </div>

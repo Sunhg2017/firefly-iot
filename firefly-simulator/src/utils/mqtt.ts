@@ -14,6 +14,14 @@ export interface DynamicRegisterResult {
   deviceSecret: string;
 }
 
+export interface MqttSubscriptionPlan {
+  topic: string;
+  qos: 0 | 1 | 2;
+  label: string;
+}
+
+const MQTT_TOPIC_PATTERN = /^\/sys\/[^/]+\/[^/]+\/(.+)$/;
+
 type DeviceIdentitySource = Partial<Pick<
   SimDevice,
   'productKey' | 'deviceName' | 'deviceSecret' | 'mqttClientId' | 'mqttUsername' | 'mqttPassword'
@@ -91,9 +99,28 @@ export function buildMqttPublishTopic(device: DeviceIdentitySource, type: 'prope
   return productKey && deviceName ? `/sys/${productKey}/${deviceName}/thing/${type}/post` : '';
 }
 
+export function buildMqttPropertySetTopic(device: DeviceIdentitySource): string {
+  const { productKey, deviceName } = resolveMqttIdentity(device);
+  return productKey && deviceName ? `/sys/${productKey}/${deviceName}/thing/property/set` : '';
+}
+
 export function buildMqttServiceTopic(device: DeviceIdentitySource): string {
   const { productKey, deviceName } = resolveMqttIdentity(device);
   return productKey && deviceName ? `/sys/${productKey}/${deviceName}/thing/service/+` : '';
+}
+
+export function buildMqttDownstreamTopic(device: DeviceIdentitySource): string {
+  const { productKey, deviceName } = resolveMqttIdentity(device);
+  return productKey && deviceName ? `/sys/${productKey}/${deviceName}/thing/downstream` : '';
+}
+
+export function buildDefaultMqttSubscriptions(device: DeviceIdentitySource): MqttSubscriptionPlan[] {
+  const subscriptions: MqttSubscriptionPlan[] = [
+    { topic: buildMqttPropertySetTopic(device), qos: 1, label: '属性设置' },
+    { topic: buildMqttServiceTopic(device), qos: 1, label: '服务调用' },
+    { topic: buildMqttDownstreamTopic(device), qos: 1, label: '通用下行' },
+  ];
+  return subscriptions.filter((item) => Boolean(item.topic));
 }
 
 export function validateMqttDevice(device: Pick<
@@ -267,4 +294,34 @@ export async function unregisterDynamicDevice(device: DynamicCleanupSource, regi
   if (typeof response.code === 'number' && response.code !== 0) {
     throw new Error(response.message || 'Dynamic unregister failed');
   }
+}
+
+function extractAction(topic?: string | null): string {
+  const matches = MQTT_TOPIC_PATTERN.exec((topic ?? '').trim());
+  return matches?.[3] || '';
+}
+
+export function resolveMqttMessageLabel(topic: string): string {
+  switch (extractAction(topic)) {
+    case 'thing/property/set':
+      return '属性设置下行';
+    case 'thing/service/invoke':
+      return '服务调用下行';
+    case 'thing/downstream':
+      return '通用下行';
+    case 'thing/property/post':
+      return '属性上报';
+    case 'thing/event/post':
+      return '事件上报';
+    case 'thing/property/set/reply':
+      return '属性设置应答';
+    case 'thing/service/reply':
+      return '服务调用应答';
+    default:
+      return 'MQTT 消息';
+  }
+}
+
+export function buildMqttInboundLogMessage(topic: string, payload: string): string {
+  return `[${resolveMqttMessageLabel(topic)}] ${topic}\n${payload}`;
 }

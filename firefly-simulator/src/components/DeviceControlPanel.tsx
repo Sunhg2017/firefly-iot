@@ -41,8 +41,8 @@ import {
 } from './protocol';
 import type { HttpHistoryEntry, LoRaMsg, MqttMsg, SipMsg, TcpUdpMsg, WsMsg } from './protocol';
 import {
+  buildDefaultMqttSubscriptions,
   buildMqttPublishTopic,
-  buildMqttServiceTopic,
   dynamicRegisterDevice,
   resolveMqttIdentity,
   shouldDynamicRegister,
@@ -744,13 +744,18 @@ export default function DeviceControlPanel() {
     }
     if (!result.success) throw new Error(result.message || 'MQTT 连接失败');
 
-    const serviceTopic = buildMqttServiceTopic(target);
-    if (serviceTopic) {
-      const subResult = await window.electronAPI.mqttSubscribe(target.id, serviceTopic, 1);
+    // Subscribe to every platform-managed downstream topic family so the simulator can
+    // verify commands from the device message workbench without manual topic setup.
+    for (const subscription of buildDefaultMqttSubscriptions(target)) {
+      const subResult = await window.electronAPI.mqttSubscribe(target.id, subscription.topic, subscription.qos);
       if (subResult.success) {
-        setMqttSubs((prev) => prev.some((item) => item.topic === serviceTopic) ? prev : [...prev, { topic: serviceTopic, qos: 1 }]);
+        setMqttSubs((prev) => (
+          prev.some((item) => item.topic === subscription.topic)
+            ? prev
+            : [...prev, { topic: subscription.topic, qos: subscription.qos }]
+        ));
       } else {
-        addLog(target.id, target.name, 'warn', `主题订阅失败：${subResult.message}`);
+        addLog(target.id, target.name, 'warn', `自动订阅${subscription.label}主题失败：${subResult.message}`);
       }
     }
     updateDevice(target.id, { status: 'online', restoreOnLaunch: true });
