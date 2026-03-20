@@ -509,6 +509,226 @@ const THING_MODEL_TEMPLATES: TemplateDefinition[] = [
       ],
     },
   },
+  {
+    id: 'gps-tracker',
+    name: 'GPS定位仪模板',
+    description: '适用于车载定位、资产追踪、人员定位类终端，预置坐标、围栏告警和实时定位服务。',
+    tags: ['GPS', '定位', '轨迹'],
+    model: {
+      properties: [
+        {
+          identifier: 'latitude',
+          name: '纬度',
+          description: '设备当前纬度坐标',
+          accessMode: 'r',
+          required: true,
+          dataType: { type: 'float', unit: '°', min: -90, max: 90, precision: 6 },
+        },
+        {
+          identifier: 'longitude',
+          name: '经度',
+          description: '设备当前经度坐标',
+          accessMode: 'r',
+          required: true,
+          dataType: { type: 'float', unit: '°', min: -180, max: 180, precision: 6 },
+        },
+        {
+          identifier: 'altitude',
+          name: '海拔',
+          description: '设备当前海拔高度',
+          accessMode: 'r',
+          required: false,
+          dataType: { type: 'float', unit: 'm', min: -500, max: 10000, precision: 1 },
+        },
+        {
+          identifier: 'speed',
+          name: '速度',
+          description: '设备当前移动速度',
+          accessMode: 'r',
+          required: false,
+          dataType: { type: 'float', unit: 'km/h', min: 0, max: 300, precision: 1 },
+        },
+        {
+          identifier: 'heading',
+          name: '航向角',
+          description: '设备当前运动方向',
+          accessMode: 'r',
+          required: false,
+          dataType: { type: 'int', unit: '°', min: 0, max: 359 },
+        },
+        {
+          identifier: 'satelliteCount',
+          name: '卫星数',
+          description: '当前参与定位的卫星数量',
+          accessMode: 'r',
+          required: false,
+          dataType: { type: 'int', min: 0, max: 64 },
+        },
+        {
+          identifier: 'fixStatus',
+          name: '定位状态',
+          description: '当前 GPS 定位结果',
+          accessMode: 'r',
+          required: true,
+          dataType: {
+            type: 'enum',
+            values: {
+              '0': '无定位',
+              '1': '二维定位',
+              '2': '三维定位',
+            },
+          },
+        },
+        {
+          identifier: 'battery',
+          name: '电量',
+          description: '设备剩余电量',
+          accessMode: 'r',
+          required: false,
+          dataType: { type: 'int', unit: '%', min: 0, max: 100 },
+        },
+        {
+          identifier: 'reportInterval',
+          name: '上报间隔',
+          description: '设备定位数据上报间隔',
+          accessMode: 'rw',
+          required: false,
+          dataType: { type: 'int', unit: 's', min: 5, max: 86400 },
+        },
+      ],
+      events: [
+        {
+          identifier: 'sosAlarm',
+          name: 'SOS告警',
+          description: '设备触发紧急求助时上报',
+          type: 'alert',
+          outputData: [
+            {
+              identifier: 'timestamp',
+              name: '告警时间',
+              required: true,
+              dataType: { type: 'date' },
+            },
+            {
+              identifier: 'latitude',
+              name: '纬度',
+              required: true,
+              dataType: { type: 'float', unit: '°', min: -90, max: 90, precision: 6 },
+            },
+            {
+              identifier: 'longitude',
+              name: '经度',
+              required: true,
+              dataType: { type: 'float', unit: '°', min: -180, max: 180, precision: 6 },
+            },
+          ],
+        },
+        {
+          identifier: 'geofenceAlarm',
+          name: '围栏告警',
+          description: '设备进入或离开电子围栏时上报',
+          type: 'alert',
+          outputData: [
+            {
+              identifier: 'fenceName',
+              name: '围栏名称',
+              required: true,
+              dataType: { type: 'string', length: 128 },
+            },
+            {
+              identifier: 'transition',
+              name: '围栏动作',
+              required: true,
+              dataType: {
+                type: 'enum',
+                values: {
+                  '0': '进入',
+                  '1': '离开',
+                },
+              },
+            },
+            {
+              identifier: 'timestamp',
+              name: '告警时间',
+              required: true,
+              dataType: { type: 'date' },
+            },
+          ],
+        },
+        {
+          identifier: 'lowBattery',
+          name: '低电量告警',
+          description: '定位仪电量低于阈值时上报',
+          type: 'alert',
+          outputData: [
+            {
+              identifier: 'battery',
+              name: '当前电量',
+              required: true,
+              dataType: { type: 'int', unit: '%', min: 0, max: 100 },
+            },
+          ],
+        },
+      ],
+      services: [
+        {
+          identifier: 'queryLocation',
+          name: '实时定位',
+          description: '触发设备立即回传当前位置',
+          callType: 'sync',
+          inputData: [],
+          outputData: [
+            {
+              identifier: 'latitude',
+              name: '纬度',
+              required: true,
+              dataType: { type: 'float', unit: '°', min: -90, max: 90, precision: 6 },
+            },
+            {
+              identifier: 'longitude',
+              name: '经度',
+              required: true,
+              dataType: { type: 'float', unit: '°', min: -180, max: 180, precision: 6 },
+            },
+            {
+              identifier: 'speed',
+              name: '速度',
+              required: false,
+              dataType: { type: 'float', unit: 'km/h', min: 0, max: 300, precision: 1 },
+            },
+            {
+              identifier: 'timestamp',
+              name: '定位时间',
+              required: true,
+              dataType: { type: 'date' },
+            },
+          ],
+        },
+        {
+          identifier: 'setReportInterval',
+          name: '设置上报间隔',
+          description: '下发新的定位上报周期',
+          callType: 'sync',
+          inputData: [
+            {
+              identifier: 'interval',
+              name: '上报间隔',
+              required: true,
+              dataType: { type: 'int', unit: 's', min: 5, max: 86400 },
+            },
+          ],
+          outputData: [
+            {
+              identifier: 'accepted',
+              name: '是否生效',
+              required: true,
+              dataType: { type: 'bool' },
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];
 
 const PARAMETER_TEMPLATES: ParameterTemplateDefinition[] = [
