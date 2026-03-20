@@ -20,6 +20,7 @@ Flyway 脚本：
 - `firefly-system/src/main/resources/db/migration/V27__init_open_api_management.sql`
 - `firefly-system/src/main/resources/db/migration/V28__harden_appkey_signature_auth.sql`
 - `firefly-system/src/main/resources/db/migration/V29__open_api_registry_readonly.sql`
+- `firefly-system/src/main/resources/db/migration/V30__backfill_open_api_menu_catalog.sql`
 
 主要动作：
 
@@ -30,6 +31,7 @@ Flyway 脚本：
 - 删除 OpenAPI 页面手工增删改权限，仅保留目录查看
 - 删除旧 `api-key` 菜单、权限和台账
 - 新增 `open-api`、`app-key` 菜单与权限台账
+- 为已执行过旧版 OpenAPI 迁移的环境回填系统菜单管理基础数据，修复 `open-api` / `app-key` 在系统菜单管理中缺失的问题
 
 ### 2.2 应用变更
 
@@ -90,6 +92,7 @@ Flyway 脚本：
 - `workspace_menu_catalog` 中存在 `open-api`、`app-key`
 - `workspace_menu_permission_catalog` 中 `open-api` 仅保留 `openapi:read`
 - `permission_resources` 中保留 `openapi:read` 和 `appkey:*` 明细
+- 老环境需确认 `V30` 已执行，否则系统菜单管理仍可能缺少 `open-api` / `app-key` 台账
 
 确认以下旧数据已删除：
 
@@ -127,9 +130,10 @@ Flyway 脚本：
 1. 确认 Flyway `V27` 已执行。
 2. 确认 Flyway `V28` 已执行。
 3. 确认 Flyway `V29` 已执行。
-4. 确认当前角色已分配新权限。
-5. 确认租户空间授权未把 `app-key` 菜单取消。
-6. 确认浏览器重新登录后菜单缓存已刷新。
+4. 确认 Flyway `V30` 已执行，且 `workspace_menu_catalog` 中已经存在 `open-api` / `app-key`。
+5. 确认当前角色已分配新权限。
+6. 确认租户空间授权未把 `app-key` 菜单取消。
+7. 确认浏览器重新登录后菜单缓存已刷新。
 
 ### 6.2 OpenAPI 目录没有自动出现
 

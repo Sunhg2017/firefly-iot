@@ -162,6 +162,10 @@
 - `permission_resources`
 - `role_permissions`
 
+其中：
+
+- `V30__backfill_open_api_menu_catalog.sql` 用于修复历史环境遗漏的系统菜单管理基础数据，回填 `open-api`、`app-key` 对应的 `workspace_menu_catalog`、`workspace_menu_permission_catalog` 与权限资源，确保系统菜单管理可以为系统运维空间和租户空间分配权限。
+
 菜单归属：
 
 - 系统运维空间：`open-api`
@@ -249,3 +253,4 @@
 - `V28` 之前创建的历史 AppKey 没有 `secret_key_ciphertext`，升级后必须重新创建，不能继续沿用旧凭证。
 - 历史手工录入的 OpenAPI 目录会在对应服务下一次自动同步时被覆盖或删除；如存在试运行数据，应提前清理对应订阅和 AppKey 授权。
 - 若历史数据库中有手工补录的旧 `api-key` 菜单或权限脏数据，应按新模型清理，避免继续展示旧入口。
+- 若历史环境在较早版本执行过 OpenAPI 相关 Flyway，而未带上菜单目录种子数据，必须确认 `V30` 已执行，否则系统菜单管理中不会出现 `OpenAPI 管理` / `AppKey 管理`。

@@ -217,3 +217,14 @@ pageNum=1&pageSize=20
 - AppKey 每日上限
 - 租户订阅并发上限
 - 租户订阅单日上限
+
+### 6.5 系统菜单管理里看不到 OpenAPI 管理或 AppKey 管理
+
+常见原因：
+
+- 历史环境升级后，修复系统菜单管理基础数据的 `V30__backfill_open_api_menu_catalog.sql` 尚未执行
+
+处理方式：
+
+- 联系运维确认 `firefly-system` 的 Flyway 已执行到 `V30`
+- 确认 `workspace_menu_catalog` 中已经存在 `open-api` 与 `app-key`
