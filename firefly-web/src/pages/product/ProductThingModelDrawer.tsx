@@ -2734,7 +2734,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
         ) : null}
       </Drawer>
 
-      <Modal
+      <Drawer
         title={
           itemEditor
             ? `${itemEditor.index === null ? '新增' : '编辑'}${getSectionConfig(itemEditor.section).itemLabel}`
@@ -2744,16 +2744,27 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
         width={920}
         destroyOnClose
         forceRender
-        onCancel={closeItemEditor}
+        zIndex={1300}
+        onClose={closeItemEditor}
+        extra={
+          <Space>
+            <Button onClick={closeItemEditor}>取消</Button>
+            <Button type="primary" onClick={() => void handleSubmitItem()}>
+              {itemEditor?.index === null ? '新增' : '保存'}
+            </Button>
+          </Space>
+        }
         afterOpenChange={(visible) => {
           if (visible && itemEditorFormValues) {
-            // Modal content is lazily mounted, so sync after open to guarantee edit forms backfill current values.
+            // Drawer content is lazily mounted, so sync after open to guarantee edit forms backfill current values.
             itemForm.setFieldsValue(itemEditorFormValues);
           }
         }}
-        onOk={() => void handleSubmitItem()}
-        okText={itemEditor?.index === null ? '新增' : '保存'}
-        cancelText="取消"
+        styles={{
+          body: {
+            paddingBottom: 24,
+          },
+        }}
       >
         {itemEditor ? (
           <Form
@@ -2766,7 +2777,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
             {renderItemEditorForm()}
           </Form>
         ) : null}
-      </Modal>
+      </Drawer>
 
       <input
         ref={importInputRef}
