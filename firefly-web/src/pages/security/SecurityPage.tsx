@@ -69,7 +69,7 @@ const LoginLogTab: React.FC = () => {
   return (
     <div>
       <Space style={{ marginBottom: 16 }}>
-        <Input.Search placeholder="搜索用户名/IP" allowClear style={{ width: 200 }}
+        <Input.Search placeholder="搜索用户名/IP" allowClear enterButton="查询" style={{ width: 200 }}
           onSearch={(v: string) => setParams({ ...params, keyword: v || undefined, pageNum: 1 })} />
         <Select placeholder="登录结果" allowClear style={{ width: 120 }}
           onChange={(v: string) => setParams({ ...params, success: v, pageNum: 1 })}>

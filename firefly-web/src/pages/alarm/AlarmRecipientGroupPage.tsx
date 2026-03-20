@@ -246,6 +246,7 @@ const AlarmRecipientGroupPage: React.FC = () => {
           <Space wrap>
             <Input.Search
               allowClear
+              enterButton="查询"
               placeholder={ALARM_TEXT.recipientGroupSearch}
               style={{ width: 260 }}
               onSearch={(value) => {

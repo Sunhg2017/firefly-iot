@@ -358,7 +358,7 @@ const DeviceList: React.FC = () => {
 
       <Card style={{ marginBottom: 16 }}>
         <Space wrap>
-          <Search value={searchText} allowClear placeholder="搜索设备名称/别名" style={{ width: 240 }} onChange={(event) => { const nextValue = event.target.value; setSearchText(nextValue); if (!nextValue) { setKeyword(''); setParams((prev) => ({ ...prev, pageNum: 1 })); } }} onSearch={(value) => { setSearchText(value); setKeyword(value.trim()); setParams((prev) => ({ ...prev, pageNum: 1 })); }} />
+          <Search value={searchText} allowClear enterButton="查询" placeholder="搜索设备名称/别名" style={{ width: 240 }} onChange={(event) => { const nextValue = event.target.value; setSearchText(nextValue); if (!nextValue) { setKeyword(''); setParams((prev) => ({ ...prev, pageNum: 1 })); } }} onSearch={(value) => { setSearchText(value); setKeyword(value.trim()); setParams((prev) => ({ ...prev, pageNum: 1 })); }} />
           <Select allowClear placeholder="所属产品" style={{ width: 240 }} options={products.map((item) => ({ value: item.id, label: `${item.name} (${item.productKey})` }))} onChange={(value) => { setFilterProduct(value); setParams((prev) => ({ ...prev, pageNum: 1 })); }} />
           <Select allowClear placeholder="所属分组" style={{ width: 220 }} options={groupOptions} optionFilterProp="label" showSearch onChange={(value) => { setFilterGroup(value); setParams((prev) => ({ ...prev, pageNum: 1 })); }} />
           <Select allowClear placeholder="设备状态" style={{ width: 140 }} options={[{ value: 'INACTIVE', label: '未激活' }, { value: 'ACTIVE', label: '已激活' }, { value: 'DISABLED', label: '已禁用' }]} onChange={(value) => { setFilterStatus(value); setParams((prev) => ({ ...prev, pageNum: 1 })); }} />

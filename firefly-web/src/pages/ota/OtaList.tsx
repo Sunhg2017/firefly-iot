@@ -177,7 +177,7 @@ const FirmwareTab: React.FC = () => {
       {/* Filters */}
       <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Space wrap>
-          <Input.Search placeholder="搜索版本号/名称" allowClear style={{ width: 220 }}
+          <Input.Search placeholder="搜索版本号/名称" allowClear enterButton="查询" style={{ width: 220 }}
             onSearch={(v) => { setKeyword(v); setParams({ ...params, pageNum: 1 }); fetchData(); }} />
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>上传固件</Button>
         </Space>
@@ -358,7 +358,7 @@ const OtaTasksTab: React.FC = () => {
       {/* Filters */}
       <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Space wrap>
-          <Input.Search placeholder="搜索任务名称" allowClear style={{ width: 220 }}
+          <Input.Search placeholder="搜索任务名称" allowClear enterButton="查询" style={{ width: 220 }}
             onSearch={(v) => { setKeyword(v); setParams({ ...params, pageNum: 1 }); fetchData(); }} />
           <Select placeholder="状态" allowClear style={{ width: 120 }}
             options={[{ value: 'PENDING', label: '待执行' }, { value: 'IN_PROGRESS', label: '执行中' }, { value: 'COMPLETED', label: '已完成' }, { value: 'CANCELLED', label: '已取消' }]}

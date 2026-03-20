@@ -223,6 +223,7 @@ const DeviceTagPage: React.FC = () => {
       <Card style={{ marginBottom: 16 }}>
         <Input.Search
           allowClear
+          enterButton="查询"
           placeholder="搜索标签键 / 标签值"
           style={{ width: 280 }}
           onSearch={(value) => {

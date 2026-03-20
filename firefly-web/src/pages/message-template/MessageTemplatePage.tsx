@@ -141,7 +141,7 @@ const MessageTemplatePage: React.FC = () => {
       <Card bordered={false} style={{ borderRadius: 12, marginBottom: 16 }}>
         <Space wrap>
           <Select allowClear placeholder="按渠道筛选" style={{ width: 160 }} options={notificationChannelOptions as unknown as { value: string; label: string }[]} onChange={(value) => setParams((prev) => ({ ...prev, pageNum: 1, channel: value }))} />
-          <Input.Search allowClear placeholder="搜索模板编码或名称" style={{ width: 240 }} onSearch={(value) => setParams((prev) => ({ ...prev, pageNum: 1, keyword: value }))} />
+          <Input.Search allowClear enterButton="查询" placeholder="搜索模板编码或名称" style={{ width: 240 }} onSearch={(value) => setParams((prev) => ({ ...prev, pageNum: 1, keyword: value }))} />
         </Space>
       </Card>
 

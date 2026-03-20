@@ -950,6 +950,7 @@ const ProductList: React.FC = () => {
                 value={searchText}
                 placeholder="搜索产品名称 / 型号 / ProductKey"
                 allowClear
+                enterButton="查询"
                 style={{ width: '100%' }}
                 onChange={(event) => {
                   const nextValue = event.target.value;

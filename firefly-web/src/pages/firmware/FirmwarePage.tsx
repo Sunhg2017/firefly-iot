@@ -137,7 +137,7 @@ const FirmwarePage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader title="固件管理" extra={<Input.Search placeholder="搜索版本号/名称" allowClear style={{ width: 220 }} onSearch={(v) => { setKeyword(v); setParams({ ...params, pageNum: 1 }); fetchData(); }} />} />
+      <PageHeader title="固件管理" extra={<Input.Search placeholder="搜索版本号/名称" allowClear enterButton="查询" style={{ width: 220 }} onSearch={(v) => { setKeyword(v); setParams({ ...params, pageNum: 1 }); fetchData(); }} />} />
 
       <Table rowKey="id" columns={columns} dataSource={data} loading={loading} size="small" scroll={{ x: 1100 }} style={{ marginTop: 16 }}
         pagination={{ current: params.pageNum, pageSize: params.pageSize, total, showSizeChanger: true,

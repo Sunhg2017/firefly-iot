@@ -180,7 +180,7 @@ const ApiKeyPage: React.FC = () => {
 
       {/* Filters */}
       <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Input.Search placeholder="搜索名称/AccessKey" allowClear style={{ width: 260 }}
+        <Input.Search placeholder="搜索名称/AccessKey" allowClear enterButton="查询" style={{ width: 260 }}
           onSearch={(v: string) => { setKeyword(v); setParams({ ...params, pageNum: 1 }); fetchData(); }} />
       </Card>
 

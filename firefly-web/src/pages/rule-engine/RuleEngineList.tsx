@@ -213,7 +213,7 @@ const RuleEngineList: React.FC = () => {
       {/* Filters */}
       <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Space wrap>
-          <Input.Search placeholder="搜索规则名称" allowClear style={{ width: 220 }}
+          <Input.Search placeholder="搜索规则名称" allowClear enterButton="查询" style={{ width: 220 }}
             onSearch={(v) => { setKeyword(v); setParams({ ...params, pageNum: 1 }); fetchData(); }} />
           <Select placeholder="状态" allowClear style={{ width: 120 }}
             options={[{ value: 'ENABLED', label: '运行中' }, { value: 'DISABLED', label: '已停用' }]}

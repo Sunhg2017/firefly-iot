@@ -117,7 +117,7 @@ const AuditLogPage: React.FC = () => {
       {/* Filters */}
       <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Space wrap>
-          <Input.Search placeholder="搜索用户/描述/路径" allowClear style={{ width: 260 }}
+          <Input.Search placeholder="搜索用户/描述/路径" allowClear enterButton="查询" style={{ width: 260 }}
             onSearch={(v: string) => { setKeyword(v); setParams({ ...params, pageNum: 1 }); fetchData(); }} />
           <Select placeholder="模块" allowClear style={{ width: 130 }} options={moduleOptions}
             onChange={(v: string) => { setFilterModule(v); setParams({ ...params, pageNum: 1 }); }} />

@@ -947,6 +947,7 @@ export const AlarmRulesPanel: React.FC = () => {
           <Input.Search
             placeholder={ALARM_TEXT.searchRule}
             allowClear
+            enterButton="查询"
             style={{ width: 220 }}
             onSearch={(value) => {
               setKeyword(value);
@@ -1333,6 +1334,7 @@ export const AlarmRecordsPanel: React.FC = () => {
           <Input.Search
             placeholder={ALARM_TEXT.searchRecord}
             allowClear
+            enterButton="查询"
             style={{ width: 220 }}
             onSearch={(value) => {
               setKeyword(value);
