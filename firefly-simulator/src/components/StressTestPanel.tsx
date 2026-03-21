@@ -162,7 +162,9 @@ export default function StressTestPanel() {
   return (
     <>
       <Tooltip title="压力测试">
-        <Button size="small" icon={<ExperimentOutlined />} onClick={() => setOpen(true)} style={{ marginBottom: 8 }} />
+        <Button size="small" icon={<ExperimentOutlined />} onClick={() => setOpen(true)} style={{ minWidth: 96 }}>
+          压力测试
+        </Button>
       </Tooltip>
       <Modal
         title={<Space><DashboardOutlined />压力测试</Space>}

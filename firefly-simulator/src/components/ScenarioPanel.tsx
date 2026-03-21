@@ -134,7 +134,9 @@ export default function ScenarioPanel() {
   return (
     <>
       <Tooltip title="场景编排">
-        <Button size="small" icon={<PlayCircleOutlined />} onClick={() => setOpen(true)} style={{ marginBottom: 8, marginLeft: 4 }} />
+        <Button size="small" icon={<PlayCircleOutlined />} onClick={() => setOpen(true)} style={{ minWidth: 96 }}>
+          场景编排
+        </Button>
       </Tooltip>
       <Modal
         title={<Space><PlayCircleOutlined />场景编排</Space>}

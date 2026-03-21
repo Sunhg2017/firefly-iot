@@ -34,20 +34,6 @@ import { connectSimDevice, disconnectSimDevice } from '../utils/runtime';
 const { Search } = Input;
 const { Paragraph, Text, Title } = Typography;
 
-function parseCSV(content: string): Record<string, string>[] {
-  const lines = content.trim().split(/\r?\n/).filter((line) => line.trim());
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map((item) => item.trim());
-  return lines.slice(1).map((line) => {
-    const cols = line.split(',').map((item) => item.trim());
-    const row: Record<string, string> = {};
-    headers.forEach((header, index) => {
-      row[header] = cols[index] || '';
-    });
-    return row;
-  });
-}
-
 const STATUS_COLOR: Record<string, 'default' | 'processing' | 'success' | 'error'> = {
   offline: 'default',
   connecting: 'processing',
@@ -55,11 +41,11 @@ const STATUS_COLOR: Record<string, 'default' | 'processing' | 'success' | 'error
   error: 'error',
 };
 
-const STATUS_META: Record<string, { label: string; accent: string }> = {
-  offline: { label: '离线', accent: '#64748b' },
-  connecting: { label: '连接中', accent: '#38bdf8' },
-  online: { label: '在线', accent: '#22c55e' },
-  error: { label: '异常', accent: '#f87171' },
+const STATUS_META: Record<string, { label: string; accent: string; background: string }> = {
+  offline: { label: '离线', accent: '#64748b', background: '#f8fafc' },
+  connecting: { label: '连接中', accent: '#0ea5e9', background: '#f0f9ff' },
+  online: { label: '在线', accent: '#16a34a', background: '#f0fdf4' },
+  error: { label: '异常', accent: '#ef4444', background: '#fef2f2' },
 };
 
 const PROTOCOL_COLORS: Record<string, string> = {
@@ -75,23 +61,53 @@ const PROTOCOL_COLORS: Record<string, string> = {
   LoRaWAN: 'gold',
 };
 
-const OVERVIEW_META = [
-  { key: 'total', title: '设备总数', color: '#f59e0b', background: 'linear-gradient(135deg, rgba(245,158,11,0.20), rgba(251,191,36,0.05))' },
-  { key: 'online', title: '在线设备', color: '#22c55e', background: 'linear-gradient(135deg, rgba(34,197,94,0.20), rgba(74,222,128,0.05))' },
-  { key: 'offline', title: '离线设备', color: '#64748b', background: 'linear-gradient(135deg, rgba(100,116,139,0.22), rgba(148,163,184,0.06))' },
-  { key: 'error', title: '异常设备', color: '#ef4444', background: 'linear-gradient(135deg, rgba(239,68,68,0.20), rgba(248,113,113,0.05))' },
-] as const;
+const PROTOCOL_OPTIONS = [
+  { label: '全部协议', value: 'all' },
+  { label: 'HTTP', value: 'HTTP' },
+  { label: 'MQTT', value: 'MQTT' },
+  { label: 'CoAP', value: 'CoAP' },
+  { label: 'Video', value: 'Video' },
+  { label: 'SNMP', value: 'SNMP' },
+  { label: 'Modbus', value: 'Modbus' },
+  { label: 'WebSocket', value: 'WebSocket' },
+  { label: 'TCP', value: 'TCP' },
+  { label: 'UDP', value: 'UDP' },
+  { label: 'LoRaWAN', value: 'LoRaWAN' },
+];
+
+const STATUS_OPTIONS = [
+  { label: '全部状态', value: 'all' },
+  { label: '在线', value: 'online' },
+  { label: '离线', value: 'offline' },
+  { label: '异常', value: 'error' },
+];
+
+function parseCSV(content: string): Record<string, string>[] {
+  const lines = content.trim().split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map((item) => item.trim());
+  return lines.slice(1).map((line) => {
+    const cols = line.split(',').map((item) => item.trim());
+    const row: Record<string, string> = {};
+    headers.forEach((header, index) => {
+      row[header] = cols[index] || '';
+    });
+    return row;
+  });
+}
 
 function getDeviceSubtitle(device: SimDevice) {
   if (device.protocol === 'HTTP' || device.protocol === 'CoAP' || device.protocol === 'MQTT') {
     const missing = getDeviceAccessMissingFields(device);
     if (missing.length > 0) {
-      return `待补充 ${missing.join(' / ')}`;
+      return `待补齐 ${missing.join(' / ')}`;
     }
     return `${device.productKey || '-'} / ${device.deviceName || '-'}`;
   }
   if (device.protocol === 'Video') {
-    return device.streamMode === 'GB28181' ? device.gbDeviceId || '未设置国标设备 ID' : device.rtspUrl || '未设置 RTSP 地址';
+    return device.streamMode === 'GB28181'
+      ? device.gbDeviceId || '未配置国标设备 ID'
+      : device.rtspUrl || '未配置 RTSP 地址';
   }
   if (device.protocol === 'SNMP') {
     return `${device.snmpHost || '-'}:${device.snmpPort || '-'}`;
@@ -100,7 +116,7 @@ function getDeviceSubtitle(device: SimDevice) {
     return `${device.modbusHost || '-'}:${device.modbusPort || '-'}`;
   }
   if (device.protocol === 'WebSocket') {
-    return device.wsEndpoint || '未设置 WebSocket 地址';
+    return device.wsEndpoint || '未配置 WebSocket 地址';
   }
   if (device.protocol === 'TCP') {
     return `${device.tcpHost || '-'}:${device.tcpPort || '-'}`;
@@ -109,7 +125,7 @@ function getDeviceSubtitle(device: SimDevice) {
     return `${device.udpHost || '-'}:${device.udpPort || '-'}`;
   }
   if (device.protocol === 'LoRaWAN') {
-    return device.loraDevEui || '未设置 DevEUI';
+    return device.loraDevEui || '未配置 DevEUI';
   }
   return '等待配置接入参数';
 }
@@ -276,7 +292,7 @@ export default function DeviceListPanel() {
       }
 
       if (rows.length === 0) {
-        message.warning('导入文件里没有可识别的设备记录');
+        message.warning('导入文件中没有可识别的设备记录');
         return;
       }
 
@@ -442,30 +458,36 @@ export default function DeviceListPanel() {
     };
   }, [devices]);
 
-  const quickStats = OVERVIEW_META.map((item) => ({
-    ...item,
-    value: stats[item.key],
-  }));
-
   return (
-    <>
-      <div style={{ padding: 18, borderBottom: '1px solid rgba(148,163,184,0.12)' }}>
-        <Space direction="vertical" size={14} style={{ width: '100%' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-            <div>
-              <Title level={4} style={{ margin: 0, color: '#f8fafc', fontFamily: 'Georgia, Times New Roman, serif' }}>
-                设备管理器
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div style={{ padding: 20, borderBottom: '1px solid rgba(226,232,240,0.9)' }}>
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 0 }}>
+              <Title
+                level={4}
+                style={{
+                  margin: 0,
+                  color: '#0f172a',
+                  fontFamily: '"Noto Serif SC", "Source Han Serif SC", Georgia, serif',
+                }}
+              >
+                设备列表
               </Title>
-              <Paragraph style={{ margin: '6px 0 0', color: '#94a3b8', fontSize: 12 }}>
-                用更清晰的目录视图管理模拟设备、连接状态和协议分布。
+              <Paragraph style={{ margin: '6px 0 0', color: '#64748b', fontSize: 12 }}>
+                先定位设备，再进入主工作区操作。列表只保留检索、状态和关键标识，不再堆叠重复信息。
               </Paragraph>
             </div>
-            <Space size={6}>
+            <Space size={8} wrap>
               <Tooltip title="导入 JSON / CSV 模拟设备配置">
-                <Button size="small" icon={<ImportOutlined />} onClick={handleBatchImport} />
+                <Button size="small" icon={<ImportOutlined />} onClick={handleBatchImport}>
+                  导入
+                </Button>
               </Tooltip>
               <Tooltip title="导出当前模拟设备配置">
-                <Button size="small" icon={<ExportOutlined />} onClick={handleExport} disabled={devices.length === 0} />
+                <Button size="small" icon={<ExportOutlined />} onClick={handleExport} disabled={devices.length === 0}>
+                  导出
+                </Button>
               </Tooltip>
               <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
                 新建
@@ -473,30 +495,27 @@ export default function DeviceListPanel() {
             </Space>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-            {quickStats.map((item) => (
-              <div
-                key={item.key}
-                style={{
-                  padding: '12px 12px 10px',
-                  borderRadius: 18,
-                  border: '1px solid rgba(148,163,184,0.12)',
-                  background: item.background,
-                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
-                }}
-              >
-                <Text style={{ color: '#94a3b8', fontSize: 11 }}>{item.title}</Text>
-                <div style={{ marginTop: 8, fontSize: 20, fontWeight: 700, color: item.color }}>{item.value}</div>
-              </div>
-            ))}
-          </div>
+          <Space size={[8, 8]} wrap>
+            <Tag style={{ margin: 0, borderRadius: 999, paddingInline: 12, background: '#eff6ff', borderColor: '#dbeafe', color: '#1d4ed8' }}>
+              共 {stats.total} 台
+            </Tag>
+            <Tag style={{ margin: 0, borderRadius: 999, paddingInline: 12, background: '#f0fdf4', borderColor: '#dcfce7', color: '#15803d' }}>
+              在线 {stats.online}
+            </Tag>
+            <Tag style={{ margin: 0, borderRadius: 999, paddingInline: 12, background: '#f8fafc', borderColor: '#e2e8f0', color: '#475569' }}>
+              离线 {stats.offline}
+            </Tag>
+            <Tag style={{ margin: 0, borderRadius: 999, paddingInline: 12, background: '#fef2f2', borderColor: '#fee2e2', color: '#dc2626' }}>
+              异常 {stats.error}
+            </Tag>
+          </Space>
 
           <div
             style={{
-              padding: 12,
-              borderRadius: 18,
-              border: '1px solid rgba(148,163,184,0.12)',
-              background: 'linear-gradient(180deg, rgba(15,23,42,0.78) 0%, rgba(7,13,24,0.92) 100%)',
+              padding: 14,
+              borderRadius: 22,
+              border: '1px solid rgba(226,232,240,0.92)',
+              background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
             }}
           >
             <Space direction="vertical" size={10} style={{ width: '100%' }}>
@@ -506,66 +525,33 @@ export default function DeviceListPanel() {
                 onChange={(event) => setSearchKey(event.target.value)}
                 allowClear
               />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Select
-                  size="small"
-                  value={filterProto}
-                  onChange={setFilterProto}
-                  style={{ flex: 1 }}
-                  options={[
-                    { label: '全部协议', value: 'all' },
-                    { label: 'HTTP', value: 'HTTP' },
-                    { label: 'MQTT', value: 'MQTT' },
-                    { label: 'CoAP', value: 'CoAP' },
-                    { label: 'Video', value: 'Video' },
-                    { label: 'SNMP', value: 'SNMP' },
-                    { label: 'Modbus', value: 'Modbus' },
-                    { label: 'WebSocket', value: 'WebSocket' },
-                    { label: 'TCP', value: 'TCP' },
-                    { label: 'UDP', value: 'UDP' },
-                    { label: 'LoRaWAN', value: 'LoRaWAN' },
-                  ]}
-                />
-                <Select
-                  size="small"
-                  value={filterStatus}
-                  onChange={setFilterStatus}
-                  style={{ flex: 1 }}
-                  options={[
-                    { label: '全部状态', value: 'all' },
-                    { label: '在线', value: 'online' },
-                    { label: '离线', value: 'offline' },
-                    { label: '异常', value: 'error' },
-                  ]}
-                />
+              <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+                <Select size="small" value={filterProto} onChange={setFilterProto} options={PROTOCOL_OPTIONS} />
+                <Select size="small" value={filterStatus} onChange={setFilterStatus} options={STATUS_OPTIONS} />
               </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <Button
                   size="small"
-                  type="text"
                   icon={<ApiOutlined />}
                   onClick={handleBatchConnect}
                   loading={batchConnecting}
                   disabled={stats.offline === 0 || batchConnecting}
-                  style={{ color: '#4ade80', paddingInline: 4 }}
                 >
-                  全部连接
+                  批量连接
                 </Button>
                 <Button
                   size="small"
-                  type="text"
                   icon={<DisconnectOutlined />}
                   onClick={handleBatchDisconnect}
                   disabled={stats.online === 0}
-                  style={{ color: '#f87171', paddingInline: 4 }}
                 >
-                  全部断开
+                  批量断开
                 </Button>
                 {(filterProto !== 'all' || filterStatus !== 'all' || searchKey) ? (
                   <Button
                     size="small"
                     type="link"
-                    style={{ padding: 0, color: '#cbd5e1' }}
+                    style={{ paddingInline: 4 }}
                     onClick={() => {
                       setFilterProto('all');
                       setFilterStatus('all');
@@ -576,7 +562,7 @@ export default function DeviceListPanel() {
                   </Button>
                 ) : null}
                 <div style={{ flex: 1 }} />
-                <Text type="secondary" style={{ fontSize: 11 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>
                   当前可见 {filteredDevices.length} 台
                 </Text>
               </div>
@@ -589,15 +575,15 @@ export default function DeviceListPanel() {
         dataSource={filteredDevices}
         locale={{
           emptyText: (
-            <div style={{ padding: '40px 12px 24px' }}>
+            <div style={{ padding: '48px 12px 28px' }}>
               <Empty
-                description={searchKey || filterProto !== 'all' || filterStatus !== 'all' ? '没有匹配的模拟设备' : '先创建一个模拟设备开始联调'}
+                description={searchKey || filterProto !== 'all' || filterStatus !== 'all' ? '没有匹配的模拟设备' : '先创建一台模拟设备开始联调'}
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
               />
             </div>
           ),
         }}
-        style={{ padding: '12px 12px 0', overflow: 'auto', flex: 1 }}
+        style={{ padding: '14px 14px 0', overflow: 'auto', flex: 1, minHeight: 0 }}
         renderItem={(device) => {
           const selected = selectedDeviceId === device.id;
           const statusMeta = STATUS_META[device.status];
@@ -609,77 +595,105 @@ export default function DeviceListPanel() {
                 cursor: 'pointer',
                 padding: 0,
                 border: 'none',
-                marginBottom: 10,
+                marginBottom: 12,
               }}
             >
               <div
                 style={{
                   width: '100%',
-                  padding: '14px 14px 12px',
-                  borderRadius: 20,
-                  border: selected ? '1px solid rgba(96,165,250,0.45)' : '1px solid rgba(148,163,184,0.10)',
+                  padding: '16px 16px 14px',
+                  borderRadius: 24,
+                  border: selected ? '1px solid rgba(96,165,250,0.50)' : '1px solid rgba(226,232,240,0.92)',
                   background: selected
-                    ? 'linear-gradient(135deg, rgba(30,64,175,0.28), rgba(14,23,38,0.96))'
-                    : 'linear-gradient(180deg, rgba(15,23,42,0.74) 0%, rgba(8,15,29,0.92) 100%)',
-                  boxShadow: selected ? '0 12px 30px rgba(30,64,175,0.18)' : '0 8px 24px rgba(0,0,0,0.16)',
+                    ? 'linear-gradient(135deg, rgba(239,246,255,1) 0%, rgba(248,251,255,1) 100%)'
+                    : 'linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)',
+                  boxShadow: selected ? '0 18px 40px rgba(59,130,246,0.12)' : '0 10px 26px rgba(15,23,42,0.05)',
                   transition: 'all 0.2s ease',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
                   <div
                     style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 14,
-                      background: `linear-gradient(135deg, ${statusMeta.accent}22 0%, rgba(255,255,255,0.04) 100%)`,
+                      width: 42,
+                      height: 42,
+                      borderRadius: 16,
+                      background: `linear-gradient(135deg, ${statusMeta.accent}18 0%, #ffffff 100%)`,
                       border: `1px solid ${statusMeta.accent}33`,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       color: statusMeta.accent,
                       fontWeight: 700,
+                      flexShrink: 0,
                     }}
                   >
                     {device.protocol.slice(0, 2)}
                   </div>
+
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                       <Space size={8} wrap>
                         <Space size={6}>
                           <Badge status={STATUS_COLOR[device.status]} />
-                          <Text strong style={{ fontSize: 14, color: '#f8fafc' }}>
+                          <Text strong style={{ fontSize: 14, color: '#0f172a' }}>
                             {device.name}
                           </Text>
                         </Space>
                         <Tag color={PROTOCOL_COLORS[device.protocol] || 'default'} style={{ margin: 0 }}>
                           {device.protocol}
                         </Tag>
-                        <Tag style={{ margin: 0, borderColor: `${statusMeta.accent}55`, color: statusMeta.accent, background: `${statusMeta.accent}12` }}>
+                        <Tag
+                          style={{
+                            margin: 0,
+                            borderColor: `${statusMeta.accent}33`,
+                            color: statusMeta.accent,
+                            background: statusMeta.background,
+                          }}
+                        >
                           {statusMeta.label}
                         </Tag>
                       </Space>
+
                       <Space size={2}>
                         <Tooltip title="复制设备">
-                          <Button type="text" size="small" icon={<CopyOutlined />} onClick={(event) => { event.stopPropagation(); handleClone(device); }} />
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<CopyOutlined />}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleClone(device);
+                            }}
+                          />
                         </Tooltip>
                         <Popconfirm title="确认删除当前模拟设备吗？" onConfirm={() => handleRemove(device)}>
                           <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={(event) => event.stopPropagation()} />
                         </Popconfirm>
                       </Space>
                     </div>
+
                     <Paragraph
                       ellipsis={{ rows: 1 }}
-                      style={{ margin: '8px 0 10px', color: '#94a3b8', fontSize: 12 }}
+                      style={{ margin: '8px 0 12px', color: '#64748b', fontSize: 12 }}
                     >
                       {getDeviceSubtitle(device)}
                     </Paragraph>
+
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                       <Space size={12} wrap>
-                        <Text type="secondary" style={{ fontSize: 11 }}>已发送 {device.sentCount}</Text>
-                        <Text type="secondary" style={{ fontSize: 11 }}>错误 {device.errorCount}</Text>
-                        {device.autoReport ? <Tag color="processing" style={{ margin: 0 }}>自动上报中</Tag> : null}
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          已发送 {device.sentCount}
+                        </Text>
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          错误 {device.errorCount}
+                        </Text>
+                        {device.autoReport ? (
+                          <Tag color="processing" style={{ margin: 0 }}>
+                            自动上报中
+                          </Tag>
+                        ) : null}
                       </Space>
-                      {selected ? <Text style={{ fontSize: 11, color: '#93c5fd' }}>当前选中</Text> : null}
+                      {selected ? <Text style={{ fontSize: 11, color: '#2563eb' }}>当前选中</Text> : null}
                     </div>
                   </div>
                 </div>
@@ -690,6 +704,6 @@ export default function DeviceListPanel() {
       />
 
       <AddDeviceModal open={addOpen} onClose={() => setAddOpen(false)} />
-    </>
+    </div>
   );
 }

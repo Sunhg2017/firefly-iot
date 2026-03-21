@@ -620,10 +620,10 @@ export default function DeviceControlPanel() {
         <Card
           style={{
             width: 'min(560px, 100%)',
-            borderRadius: 28,
-            border: '1px solid rgba(148,163,184,0.14)',
-            background: 'linear-gradient(135deg, rgba(15,23,42,0.82) 0%, rgba(8,15,29,0.96) 100%)',
-            boxShadow: '0 18px 48px rgba(0,0,0,0.20)',
+            borderRadius: 32,
+            border: '1px solid rgba(226,232,240,0.92)',
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(243,248,255,0.95) 100%)',
+            boxShadow: '0 20px 48px rgba(15,23,42,0.08)',
           }}
           styles={{ body: { padding: 28 } }}
         >
@@ -634,12 +634,12 @@ export default function DeviceControlPanel() {
                 height: 76,
                 borderRadius: 24,
                 margin: '0 auto',
-                background: 'linear-gradient(135deg, rgba(59,130,246,0.28), rgba(245,158,11,0.18))',
-                border: '1px solid rgba(147,197,253,0.22)',
+                background: 'linear-gradient(135deg, rgba(59,130,246,0.14), rgba(14,165,233,0.08))',
+                border: '1px solid rgba(147,197,253,0.32)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#bfdbfe',
+                color: '#2563eb',
                 fontSize: 28,
                 fontWeight: 700,
               }}
@@ -647,11 +647,18 @@ export default function DeviceControlPanel() {
               IoT
             </div>
             <Space direction="vertical" size={6} style={{ width: '100%' }}>
-              <Title level={3} style={{ margin: 0, color: '#f8fafc', fontFamily: 'Georgia, Times New Roman, serif' }}>
+              <Title
+                level={3}
+                style={{
+                  margin: 0,
+                  color: '#0f172a',
+                  fontFamily: '"Noto Serif SC", "Source Han Serif SC", Georgia, serif',
+                }}
+              >
                 选择一台模拟设备开始控制
               </Title>
-              <Text type="secondary" style={{ fontSize: 14 }}>
-                左侧设备管理器支持创建、筛选、复制和批量连接设备。选中设备后，这里会展示接入信息、发送面板和协议专属控制区。
+              <Text type="secondary" style={{ fontSize: 14, lineHeight: 1.8 }}>
+                左侧列表先负责选设备，当前区域只负责展示设备摘要、上报工作区和协议调试内容，核心信息会保持在第一屏。
               </Text>
             </Space>
             <Empty description="当前还没有选中设备" image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -1282,16 +1289,16 @@ export default function DeviceControlPanel() {
         key={field.ruleKey}
         style={{
           padding: '12px 14px',
-          borderRadius: 14,
-          border: '1px solid rgba(148,163,184,0.12)',
-          background: 'linear-gradient(180deg, rgba(15,23,42,0.68) 0%, rgba(8,15,29,0.88) 100%)',
+          borderRadius: 16,
+          border: '1px solid rgba(226,232,240,0.9)',
+          background: '#ffffff',
           marginLeft: field.depth * 18,
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <Space direction="vertical" size={2} style={{ minWidth: 0 }}>
             <Space size={8} wrap>
-              <Text style={{ color: '#f8fafc', fontSize: 13 }}>{field.label}</Text>
+              <Text style={{ color: '#0f172a', fontSize: 13 }}>{field.label}</Text>
               <Tag color="blue" style={{ margin: 0 }}>{valueTypeLabel}</Tag>
               {field.category === 'property' ? (
                 <Tag style={{ margin: 0 }}>{field.itemName}</Tag>
@@ -1505,43 +1512,138 @@ export default function DeviceControlPanel() {
     );
   };
 
+  const statusToneMap = {
+    offline: { color: '#64748b', background: '#f8fafc', border: '#e2e8f0' },
+    connecting: { color: '#0ea5e9', background: '#f0f9ff', border: '#bae6fd' },
+    online: { color: '#15803d', background: '#f0fdf4', border: '#bbf7d0' },
+    error: { color: '#dc2626', background: '#fef2f2', border: '#fecaca' },
+  } as const;
+
+  const statusTone = statusToneMap[device.status];
+  const summaryItems = accessItems.slice(0, 4);
+  const identitySummary = showGenericReport
+    ? `${device.productKey || '未配置 ProductKey'} / ${device.deviceName || '未配置 DeviceName'}`
+    : accessItems.slice(0, 2).map((item) => `${item.label}: ${item.value}`).join(' / ');
+
+  const heroMetrics = [
+    { label: '发送次数', value: String(device.sentCount), color: '#2563eb', background: '#eff6ff' },
+    { label: '错误次数', value: String(device.errorCount), color: '#dc2626', background: '#fef2f2' },
+    { label: '自动上报', value: device.autoReport ? '已开启' : '未开启', color: device.autoReport ? '#15803d' : '#64748b', background: device.autoReport ? '#f0fdf4' : '#f8fafc' },
+    {
+      label: supportsThingModelReport(device.protocol) ? '心跳周期' : '认证状态',
+      value: supportsThingModelReport(device.protocol)
+        ? `${device.heartbeatIntervalSec || 30} 秒`
+        : device.token
+          ? '已认证'
+          : '待连接',
+      color: supportsThingModelReport(device.protocol) ? '#7c3aed' : '#0f766e',
+      background: supportsThingModelReport(device.protocol) ? '#f5f3ff' : '#ecfeff',
+    },
+  ];
+
   return (
-    <div style={{ padding: 24, height: '100%', overflow: 'auto' }}>
+    <div style={{ padding: 24, height: '100%', overflow: 'auto', background: 'linear-gradient(180deg, rgba(248,250,252,0.68) 0%, rgba(241,245,249,0.28) 100%)' }}>
       <div
         style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
           marginBottom: 18,
-          padding: '18px 20px',
-          borderRadius: 24,
-          border: '1px solid rgba(148,163,184,0.14)',
-          background: 'linear-gradient(135deg, rgba(30,41,59,0.88) 0%, rgba(8,15,29,0.96) 100%)',
-          boxShadow: '0 12px 30px rgba(0,0,0,0.16)',
+          padding: 22,
+          borderRadius: 28,
+          border: '1px solid rgba(226,232,240,0.92)',
+          background: 'linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(243,248,255,0.96) 100%)',
+          boxShadow: '0 18px 42px rgba(15,23,42,0.06)',
         }}
       >
-        <Space>
-          <Title level={4} style={{ margin: 0, color: '#f8fafc', fontFamily: 'Georgia, Times New Roman, serif' }}>{device.name}</Title>
-          <Tag color={PROTOCOL_COLORS[device.protocol] || 'default'}>{device.protocol}</Tag>
-          <Badge status={isOnline ? 'success' : device.status === 'connecting' ? 'processing' : device.status === 'error' ? 'error' : 'default'} text={STATUS_TEXT[device.status]} />
-        </Space>
-        {!isOnline ? (
-          <Button type="primary" icon={<ApiOutlined />} onClick={handleConnect} loading={device.status === 'connecting'}>连接</Button>
-        ) : (
-          <Button danger icon={<DisconnectOutlined />} onClick={handleDisconnect}>断开</Button>
-        )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 420px', minWidth: 260 }}>
+            <Space size={8} wrap>
+              <Title
+                level={3}
+                style={{
+                  margin: 0,
+                  color: '#0f172a',
+                  fontFamily: '"Noto Serif SC", "Source Han Serif SC", Georgia, serif',
+                }}
+              >
+                {device.name}
+              </Title>
+              <Tag color={PROTOCOL_COLORS[device.protocol] || 'default'} style={{ margin: 0 }}>
+                {device.protocol}
+              </Tag>
+              <Tag
+                style={{
+                  margin: 0,
+                  color: statusTone.color,
+                  background: statusTone.background,
+                  borderColor: statusTone.border,
+                  borderRadius: 999,
+                }}
+              >
+                {STATUS_TEXT[device.status]}
+              </Tag>
+            </Space>
+            <Text style={{ display: 'block', marginTop: 10, color: '#475569', fontSize: 14 }}>
+              {identitySummary || '当前设备还没有关键标识信息'}
+            </Text>
+            <Space size={[8, 8]} wrap style={{ marginTop: 14 }}>
+              {summaryItems.map((item) => (
+                <Tag
+                  key={item.label}
+                  style={{
+                    margin: 0,
+                    paddingInline: 12,
+                    borderRadius: 999,
+                    color: item.highlight ? '#4338ca' : '#475569',
+                    borderColor: item.highlight ? '#c7d2fe' : '#e2e8f0',
+                    background: item.highlight ? '#eef2ff' : '#f8fafc',
+                  }}
+                >
+                  {item.label}: {item.value}
+                </Tag>
+              ))}
+            </Space>
+          </div>
+          {!isOnline ? (
+            <Button type="primary" icon={<ApiOutlined />} onClick={handleConnect} loading={device.status === 'connecting'}>
+              连接设备
+            </Button>
+          ) : (
+            <Button danger icon={<DisconnectOutlined />} onClick={handleDisconnect}>
+              断开设备
+            </Button>
+          )}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginTop: 18 }}>
+          {heroMetrics.map((item) => (
+            <div
+              key={item.label}
+              style={{
+                padding: '14px 14px 12px',
+                borderRadius: 20,
+                border: '1px solid rgba(226,232,240,0.9)',
+                background: item.background,
+              }}
+            >
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {item.label}
+              </Text>
+              <div style={{ marginTop: 10, color: item.color, fontSize: 22, fontWeight: 700 }}>{item.value}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <Card
         size="small"
         style={{
           marginBottom: 18,
-          borderRadius: 22,
-          border: '1px solid rgba(148,163,184,0.12)',
-          background: 'linear-gradient(180deg, rgba(15,23,42,0.72) 0%, rgba(8,15,29,0.92) 100%)',
+          borderRadius: 24,
+          border: '1px solid rgba(226,232,240,0.92)',
+          background: 'linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)',
+          boxShadow: '0 14px 34px rgba(15,23,42,0.05)',
         }}
         title={<Space><ApiOutlined />接入概览</Space>}
-        styles={{ header: { borderBottom: '1px solid rgba(148,163,184,0.08)' } }}
+        styles={{ header: { borderBottom: '1px solid rgba(226,232,240,0.9)' }, body: { padding: 18 } }}
       >
         <Space direction="vertical" size={14} style={{ width: '100%' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
@@ -1550,28 +1652,26 @@ export default function DeviceControlPanel() {
                 key={item.label}
                 style={{
                   padding: '12px 14px',
-                  borderRadius: 16,
-                  border: `1px solid ${item.highlight ? 'rgba(99,102,241,0.32)' : 'rgba(148,163,184,0.12)'}`,
-                  background: item.highlight
-                    ? 'linear-gradient(135deg, rgba(79,70,229,0.20), rgba(15,23,42,0.88))'
-                    : 'linear-gradient(180deg, rgba(15,23,42,0.64) 0%, rgba(8,15,29,0.92) 100%)',
+                  borderRadius: 18,
+                  border: `1px solid ${item.highlight ? '#c7d2fe' : '#e2e8f0'}`,
+                  background: item.highlight ? '#eef2ff' : '#f8fafc',
                 }}
               >
                 <Text type="secondary" style={{ fontSize: 11 }}>{item.label}</Text>
-                <div style={{ marginTop: 6, color: '#f8fafc', fontSize: 13, wordBreak: 'break-all' }}>{item.value}</div>
+                <div style={{ marginTop: 6, color: '#0f172a', fontSize: 13, wordBreak: 'break-all' }}>{item.value}</div>
               </div>
             ))}
           </div>
 
           {device.protocol === 'MQTT' && mqttIdentity ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-              <div style={{ padding: '10px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.03)' }}>
+              <div style={{ padding: '10px 14px', borderRadius: 14, background: '#f8fafc', border: '1px solid rgba(226,232,240,0.9)' }}>
                 <Text type="secondary" style={{ fontSize: 11 }}>客户端 ID</Text>
-                <div style={{ marginTop: 4, color: '#cbd5e1', wordBreak: 'break-all' }}>{mqttIdentity.clientId || '自动生成'}</div>
+                <div style={{ marginTop: 4, color: '#0f172a', wordBreak: 'break-all' }}>{mqttIdentity.clientId || '自动生成'}</div>
               </div>
-              <div style={{ padding: '10px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.03)' }}>
+              <div style={{ padding: '10px 14px', borderRadius: 14, background: '#f8fafc', border: '1px solid rgba(226,232,240,0.9)' }}>
                 <Text type="secondary" style={{ fontSize: 11 }}>用户名</Text>
-                <div style={{ marginTop: 4, color: '#cbd5e1', wordBreak: 'break-all' }}>{mqttIdentity.username || '自动生成'}</div>
+                <div style={{ marginTop: 4, color: '#0f172a', wordBreak: 'break-all' }}>{mqttIdentity.username || '自动生成'}</div>
               </div>
             </div>
           ) : null}
@@ -1602,11 +1702,12 @@ export default function DeviceControlPanel() {
           size="small"
           style={{
             marginBottom: 16,
-            borderRadius: 22,
-            border: '1px solid rgba(148,163,184,0.12)',
-            background: 'linear-gradient(180deg, rgba(15,23,42,0.70) 0%, rgba(8,15,29,0.92) 100%)',
+            borderRadius: 24,
+            border: '1px solid rgba(226,232,240,0.92)',
+            background: 'linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)',
+            boxShadow: '0 14px 34px rgba(15,23,42,0.05)',
           }}
-          styles={{ header: { borderBottom: '1px solid rgba(148,163,184,0.08)' } }}
+          styles={{ header: { borderBottom: '1px solid rgba(226,232,240,0.9)' }, body: { padding: 18 } }}
         >
           <Space direction="vertical" style={{ width: '100%' }} size={12}>
             <Alert
@@ -1629,8 +1730,8 @@ export default function DeviceControlPanel() {
               />
             </div>
 
-            <Row gutter={12}>
-              <Col span={12}>
+            <Row gutter={[12, 12]}>
+              <Col xs={24} md={12}>
                 <Text type="secondary" style={{ fontSize: 12 }}>Access Key</Text>
                 <Input
                   size="small"
@@ -1640,7 +1741,7 @@ export default function DeviceControlPanel() {
                   placeholder="ak_xxx"
                 />
               </Col>
-              <Col span={12}>
+              <Col xs={24} md={12}>
                 <Text type="secondary" style={{ fontSize: 12 }}>Secret Key</Text>
                 <Input.Password
                   size="small"
@@ -1682,11 +1783,12 @@ export default function DeviceControlPanel() {
           size="small"
           style={{
             marginBottom: 16,
-            borderRadius: 22,
-            border: '1px solid rgba(148,163,184,0.12)',
-            background: 'linear-gradient(180deg, rgba(15,23,42,0.70) 0%, rgba(8,15,29,0.92) 100%)',
+            borderRadius: 24,
+            border: '1px solid rgba(226,232,240,0.92)',
+            background: 'linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)',
+            boxShadow: '0 14px 34px rgba(15,23,42,0.05)',
           }}
-          styles={{ header: { borderBottom: '1px solid rgba(148,163,184,0.08)' } }}
+          styles={{ header: { borderBottom: '1px solid rgba(226,232,240,0.9)' }, body: { padding: 18 } }}
         >
           <Space direction="vertical" style={{ width: '100%' }} size={12}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
@@ -1776,10 +1878,10 @@ export default function DeviceControlPanel() {
                     />
 
                     {activeRuleFields.length > 0 ? (
-                      <div style={{ padding: 12, background: 'rgba(255,255,255,0.04)', borderRadius: 12 }}>
+                      <div style={{ padding: 14, background: '#f8fafc', borderRadius: 18, border: '1px solid rgba(226,232,240,0.9)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
                           <Space direction="vertical" size={2}>
-                            <Text style={{ fontSize: 12, color: '#f8fafc' }}>字段模拟规则</Text>
+                            <Text style={{ fontSize: 12, color: '#0f172a' }}>字段模拟规则</Text>
                             <Text type="secondary" style={{ fontSize: 12 }}>
                               已生效自定义规则：{customizedRuleCount}
                             </Text>
@@ -1812,10 +1914,10 @@ export default function DeviceControlPanel() {
                       </div>
                     ) : null}
 
-                    <div style={{ padding: 12, background: 'rgba(255,255,255,0.04)', borderRadius: 12 }}>
+                    <div style={{ padding: 14, background: '#f8fafc', borderRadius: 18, border: '1px solid rgba(226,232,240,0.9)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 12 }}>
                         <Space size={6} wrap>
-                          <Text style={{ fontSize: 12, color: '#f8fafc' }}>字段预览</Text>
+                          <Text style={{ fontSize: 12, color: '#0f172a' }}>字段预览</Text>
                           {selectedModelIdentifier === ALL_PROPERTIES_VALUE
                             ? availableModelItems.map((item) => (
                               <Tag key={item.identifier} style={{ margin: 0 }}>{item.identifier}</Tag>
@@ -1894,16 +1996,44 @@ export default function DeviceControlPanel() {
         </Card>
       )}
 
-      <HttpControlPanel device={device} httpHistory={httpHistory} setHttpHistory={setHttpHistory} />
-      <MqttControlPanel device={device} mqttQos={mqttQos} setMqttQos={setMqttQos} mqttRetain={mqttRetain} setMqttRetain={setMqttRetain} mqttSubs={mqttSubs} setMqttSubs={setMqttSubs} mqttMessages={mqttMessages} setMqttMessages={setMqttMessages} />
-      <CoapControlPanel device={device} coapShadowPolling={coapShadowPolling} setCoapShadowPolling={setCoapShadowPolling} coapShadowData={coapShadowData} setCoapShadowData={setCoapShadowData} coapPollRef={coapPollRef} />
-      <SnmpControlPanel device={device} />
-      <ModbusControlPanel device={device} />
-      <WebSocketControlPanel device={device} wsMessages={wsMessages} setWsMessages={setWsMessages} />
-      <TcpUdpControlPanel device={device} tcpMessages={tcpMessages} setTcpMessages={setTcpMessages} />
-      <LoRaWanControlPanel device={device} loraMessages={loraMessages} setLoraMessages={setLoraMessages} />
-      <VideoControlPanel device={device} />
-      <SipControlPanel device={device} sipMessages={sipMessages} setSipMessages={setSipMessages} />
+      <Card
+        size="small"
+        style={{
+          marginBottom: 16,
+          borderRadius: 24,
+          border: '1px solid rgba(226,232,240,0.92)',
+          background: 'linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)',
+          boxShadow: '0 14px 34px rgba(15,23,42,0.05)',
+        }}
+        title={<Space><ApiOutlined />协议专属工具</Space>}
+        styles={{ header: { borderBottom: '1px solid rgba(226,232,240,0.9)' }, body: { padding: 18 } }}
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            把协议专属的历史、订阅、影子和报文工具集中到一个区域，避免它们和主上报区争抢第一屏空间。
+          </Text>
+          {!isOnline ? (
+            <Alert
+              type="info"
+              showIcon
+              message="连接设备后可查看更多协议调试能力"
+              description="当前仍可继续调整接入参数和物模型配置。"
+            />
+          ) : null}
+          <div>
+            <HttpControlPanel device={device} httpHistory={httpHistory} setHttpHistory={setHttpHistory} />
+            <MqttControlPanel device={device} mqttQos={mqttQos} setMqttQos={setMqttQos} mqttRetain={mqttRetain} setMqttRetain={setMqttRetain} mqttSubs={mqttSubs} setMqttSubs={setMqttSubs} mqttMessages={mqttMessages} setMqttMessages={setMqttMessages} />
+            <CoapControlPanel device={device} coapShadowPolling={coapShadowPolling} setCoapShadowPolling={setCoapShadowPolling} coapShadowData={coapShadowData} setCoapShadowData={setCoapShadowData} coapPollRef={coapPollRef} />
+            <SnmpControlPanel device={device} />
+            <ModbusControlPanel device={device} />
+            <WebSocketControlPanel device={device} wsMessages={wsMessages} setWsMessages={setWsMessages} />
+            <TcpUdpControlPanel device={device} tcpMessages={tcpMessages} setTcpMessages={setTcpMessages} />
+            <LoRaWanControlPanel device={device} loraMessages={loraMessages} setLoraMessages={setLoraMessages} />
+            <VideoControlPanel device={device} />
+            <SipControlPanel device={device} sipMessages={sipMessages} setSipMessages={setSipMessages} />
+          </div>
+        </Space>
+      </Card>
     </div>
   );
 }

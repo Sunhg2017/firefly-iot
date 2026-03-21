@@ -1,12 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Button, Space, Tag, Typography, Switch, Tooltip, message } from 'antd';
+import { Button, Empty, Space, Tag, Typography, Switch, Tooltip, message } from 'antd';
 import { BugOutlined, ClearOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useSimStore } from '../store';
 
 const { Text } = Typography;
 
-const levelColor: Record<string, string> = {
-  info: '#8c8c8c', success: '#52c41a', error: '#ff4d4f', warn: '#faad14',
+const LEVEL_META: Record<string, { color: string; background: string; label: string }> = {
+  info: { color: '#475569', background: '#f8fafc', label: '信息' },
+  success: { color: '#15803d', background: '#f0fdf4', label: '成功' },
+  error: { color: '#dc2626', background: '#fef2f2', label: '错误' },
+  warn: { color: '#b45309', background: '#fffbeb', label: '告警' },
 };
 
 export default function LogPanel() {
@@ -15,16 +18,15 @@ export default function LogPanel() {
   const [autoScroll, setAutoScroll] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const filtered = React.useMemo(() =>
-    filterDevice && selectedDeviceId
-      ? logs.filter((l) => l.deviceId === selectedDeviceId || l.deviceId === 'system')
-      : logs,
+  const filtered = React.useMemo(
+    () => (filterDevice && selectedDeviceId
+      ? logs.filter((item) => item.deviceId === selectedDeviceId || item.deviceId === 'system')
+      : logs),
     [logs, filterDevice, selectedDeviceId],
   );
 
   const displayLogs = React.useMemo(() => filtered.slice().reverse(), [filtered]);
 
-  // Logs are stored newest-first, but the panel displays them oldest-first so the latest entry stays at the bottom.
   useEffect(() => {
     if (autoScroll && listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -32,56 +34,148 @@ export default function LogPanel() {
   }, [displayLogs.length, autoScroll]);
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '6px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <Space>
-          <BugOutlined style={{ color: '#8c8c8c' }} />
-          <Text style={{ fontSize: 13, fontWeight: 500 }}>日志</Text>
-          <Tag>{filtered.length}</Tag>
-        </Space>
-        <Space size={8}>
-          <Switch size="small" checked={autoScroll} onChange={setAutoScroll} checkedChildren="自动滚动" unCheckedChildren="手动" />
-          <Switch size="small" checked={filterDevice} onChange={setFilterDevice} checkedChildren="当前设备" unCheckedChildren="全部" />
-          <Tooltip title="导出日志">
-            <Button type="text" size="small" icon={<DownloadOutlined />} onClick={async () => {
-              if (filtered.length === 0) { message.info('无日志可导出'); return; }
-              const text = displayLogs.map((l) => `${l.time} [${l.level.toUpperCase()}] [${l.deviceName}] ${l.message}`).join('\n');
-              await window.electronAPI.fileExport(text, `sim-logs-${Date.now()}.txt`);
-            }} disabled={filtered.length === 0} />
-          </Tooltip>
-          <Tooltip title="清空日志">
-            <Button type="text" size="small" icon={<ClearOutlined />} onClick={clearLogs} />
-          </Tooltip>
-        </Space>
-      </div>
-      <div ref={listRef} style={{ flex: 1, overflow: 'auto', padding: '4px 16px', fontFamily: 'Consolas, monospace', fontSize: 12, lineHeight: 1.8 }}>
-        {filtered.length === 0 && <Text type="secondary" style={{ fontSize: 12 }}>暂无日志...</Text>}
-        {displayLogs.map((log) => (
-          <div
-            key={log.id}
-            style={{
-              padding: '4px 0',
-              borderBottom: '1px solid rgba(255,255,255,0.04)',
-            }}
-          >
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-              <Text style={{ color: '#595959' }}>{log.time}</Text>
-              <Text style={{ color: levelColor[log.level] || '#8c8c8c' }}>[{log.level.toUpperCase()}]</Text>
-              <Text style={{ color: '#4f46e5' }}>[{log.deviceName}]</Text>
-            </div>
-            <Text
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div
+        style={{
+          padding: '14px 16px 12px',
+          borderBottom: '1px solid rgba(226,232,240,0.9)',
+          background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <Space size={8} wrap>
+            <div
               style={{
-                display: 'block',
-                marginTop: 2,
-                color: 'rgba(255,255,255,0.88)',
-                whiteSpace: 'pre-wrap',
-                overflowWrap: 'anywhere',
+                width: 30,
+                height: 30,
+                borderRadius: 10,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: '#eff6ff',
+                color: '#2563eb',
               }}
             >
-              {log.message}
-            </Text>
+              <BugOutlined />
+            </div>
+            <Space direction="vertical" size={0}>
+              <Text strong style={{ color: '#0f172a' }}>运行日志</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {filterDevice && selectedDeviceId ? '仅展示当前设备和系统日志' : '展示全部设备与系统日志'}
+              </Text>
+            </Space>
+            <Tag style={{ margin: 0, borderRadius: 999, paddingInline: 10 }}>{filtered.length}</Tag>
+          </Space>
+
+          <Space size={8} wrap>
+            <Switch
+              size="small"
+              checked={autoScroll}
+              onChange={setAutoScroll}
+              checkedChildren="跟随"
+              unCheckedChildren="手动"
+            />
+            <Switch
+              size="small"
+              checked={filterDevice}
+              onChange={setFilterDevice}
+              checkedChildren="当前"
+              unCheckedChildren="全部"
+            />
+            <Tooltip title="导出日志">
+              <Button
+                type="text"
+                size="small"
+                icon={<DownloadOutlined />}
+                onClick={async () => {
+                  if (filtered.length === 0) {
+                    message.info('没有可导出的日志');
+                    return;
+                  }
+                  const text = displayLogs
+                    .map((item) => `${item.time} [${item.level.toUpperCase()}] [${item.deviceName}] ${item.message}`)
+                    .join('\n');
+                  await window.electronAPI.fileExport(text, `sim-logs-${Date.now()}.txt`);
+                }}
+                disabled={filtered.length === 0}
+              />
+            </Tooltip>
+            <Tooltip title="清空日志">
+              <Button type="text" size="small" icon={<ClearOutlined />} onClick={clearLogs} />
+            </Tooltip>
+          </Space>
+        </div>
+      </div>
+
+      <div
+        ref={listRef}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: 'auto',
+          padding: 12,
+          background: '#f8fafc',
+        }}
+      >
+        {filtered.length === 0 ? (
+          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂时没有日志" />
           </div>
-        ))}
+        ) : (
+          <Space direction="vertical" size={10} style={{ width: '100%' }}>
+            {displayLogs.map((log) => {
+              const meta = LEVEL_META[log.level] || LEVEL_META.info;
+              return (
+                <div
+                  key={log.id}
+                  style={{
+                    padding: '12px 12px 10px',
+                    borderRadius: 18,
+                    border: '1px solid rgba(226,232,240,0.9)',
+                    background: '#ffffff',
+                    boxShadow: '0 8px 20px rgba(15,23,42,0.04)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <Space size={6} wrap>
+                      <Tag
+                        style={{
+                          margin: 0,
+                          borderRadius: 999,
+                          color: meta.color,
+                          borderColor: 'transparent',
+                          background: meta.background,
+                        }}
+                      >
+                        {meta.label}
+                      </Tag>
+                      <Tag style={{ margin: 0, borderRadius: 999, background: '#f8fafc', borderColor: '#e2e8f0', color: '#475569' }}>
+                        {log.deviceName}
+                      </Tag>
+                    </Space>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {log.time}
+                    </Text>
+                  </div>
+
+                  <Text
+                    style={{
+                      display: 'block',
+                      marginTop: 8,
+                      color: '#0f172a',
+                      whiteSpace: 'pre-wrap',
+                      overflowWrap: 'anywhere',
+                      lineHeight: 1.7,
+                      fontSize: 12,
+                    }}
+                  >
+                    {log.message}
+                  </Text>
+                </div>
+              );
+            })}
+          </Space>
+        )}
       </div>
     </div>
   );

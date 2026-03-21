@@ -83,7 +83,9 @@ export default function TemplateEditorPanel() {
   return (
     <>
       <Tooltip title="数据模板管理">
-        <Button size="small" icon={<EditOutlined />} onClick={() => setOpen(true)} style={{ marginBottom: 8, marginLeft: 4 }} />
+        <Button size="small" icon={<EditOutlined />} onClick={() => setOpen(true)} style={{ minWidth: 96 }}>
+          数据模板
+        </Button>
       </Tooltip>
       <Modal
         title={<Space><EditOutlined />{editTpl ? '编辑模板' : '数据模板管理'}</Space>}
