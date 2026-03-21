@@ -92,3 +92,9 @@ npm run build:vite
 cd firefly-simulator
 npm run build:vite
 ```
+
+## 8. 2026-03-22 主题收口补充
+
+- 模拟器基础控件主题已从 `darkAlgorithm` 切回浅色 `defaultAlgorithm`。
+- 如果发布后仍看到黑色输入框、黑色按钮或深色告警块，优先确认是否加载了旧版 renderer 资源。
+- 本次补充只改动 `firefly-simulator/src/main.tsx` 的主题配置，不涉及业务逻辑和接口链路。
