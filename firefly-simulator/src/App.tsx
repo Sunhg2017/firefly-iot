@@ -44,10 +44,10 @@ const SUMMARY_CARD_META = [
 const PANEL_SHELL_STYLE: CSSProperties = {
   minHeight: 0,
   overflow: 'hidden',
-  borderRadius: 28,
+  borderRadius: 24,
   border: '1px solid rgba(226,232,240,0.95)',
-  background: 'rgba(255,255,255,0.94)',
-  boxShadow: '0 18px 46px rgba(15,23,42,0.08)',
+  background: 'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(249,251,255,0.94) 100%)',
+  boxShadow: '0 12px 30px rgba(15,23,42,0.06)',
   backdropFilter: 'blur(12px)',
 };
 
@@ -55,9 +55,9 @@ const TOOL_CARD_ROW_STYLE: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  gap: 16,
-  padding: '14px 16px',
-  borderRadius: 18,
+  gap: 14,
+  padding: '12px 14px',
+  borderRadius: 16,
   border: '1px solid rgba(226,232,240,0.9)',
   background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
 };
@@ -155,6 +155,36 @@ export default function App() {
   // Medium-width windows place tools/logs on the second row. Keep that row capped so
   // it does not consume all remaining height and collapse the device list/control area.
   const compactRailHeight = 'clamp(220px, 30vh, 300px)';
+  const appShellStyle: CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: shellGap,
+    height: '100%',
+    minHeight: 0,
+    padding: shellGap,
+    borderRadius: 30,
+    border: '1px solid rgba(226,232,240,0.96)',
+    background: 'linear-gradient(180deg, rgba(248,251,255,0.98) 0%, rgba(243,247,252,0.96) 100%)',
+    boxShadow: '0 22px 54px rgba(15,23,42,0.08)',
+    overflow: 'hidden',
+  };
+  const desktopHeaderStyle: CSSProperties = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'stretch',
+    gap: 'clamp(16px, 1.8vw, 24px)',
+    padding: headerPadding,
+    borderRadius: 24,
+    border: '1px solid rgba(226,232,240,0.92)',
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,250,255,0.96) 100%)',
+    boxShadow: '0 10px 26px rgba(15,23,42,0.05)',
+  };
+  const shortcutTagStyle: CSSProperties = {
+    margin: 0,
+    borderRadius: 999,
+    paddingInline: 10,
+    fontSize: 12,
+  };
 
   const toolboxCard = (
     <Card
@@ -213,84 +243,103 @@ export default function App() {
   );
 
   return (
-    <div
+      <div
       style={{
         height: '100dvh',
         minHeight: '100dvh',
         overflow: 'hidden',
         padding: shellPadding,
         background:
-          'radial-gradient(circle at top left, rgba(59,130,246,0.12), transparent 22%), radial-gradient(circle at top right, rgba(16,185,129,0.12), transparent 20%), linear-gradient(180deg, #eff5f9 0%, #e7eef7 100%)',
+          'linear-gradient(180deg, #eef3f7 0%, #e6edf4 100%)',
       }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: shellGap, height: '100%', minHeight: 0 }}>
-        <Card
-          style={{
-            borderRadius: 32,
-            border: '1px solid rgba(226,232,240,0.92)',
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.96) 0%, rgba(245,249,255,0.94) 100%)',
-            boxShadow: '0 18px 46px rgba(15,23,42,0.08)',
-          }}
-          styles={{ body: { padding: headerPadding } }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'clamp(16px, 2vw, 24px)', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-            <div style={{ flex: '1 1 420px', minWidth: 280 }}>
-              <Title
-                level={2}
+      <div style={appShellStyle}>
+        <div style={desktopHeaderStyle}>
+          <div style={{ flex: '1 1 420px', minWidth: 280, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 14 }}>
+            <Space align="start" size={14}>
+              <div
                 style={{
-                  margin: 0,
-                  color: '#0f172a',
-                  fontFamily: '"Noto Serif SC", "Source Han Serif SC", Georgia, serif',
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  border: '1px solid rgba(191,219,254,0.9)',
+                  background: 'linear-gradient(135deg, rgba(239,246,255,0.96) 0%, rgba(224,242,254,0.86) 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#2563eb',
+                  fontWeight: 700,
+                  letterSpacing: 0.6,
                 }}
               >
-                设备模拟器
-              </Title>
-              <Text style={{ display: 'block', marginTop: 8, color: '#475569', fontSize: 14, lineHeight: 1.7 }}>
-                先在左侧选择设备，再连接、上报和调试。
-              </Text>
-              <Space size={[8, 8]} wrap style={{ marginTop: 12 }}>
-                <Tag style={{ margin: 0, borderRadius: 999, paddingInline: 12, borderColor: '#dbeafe', color: '#1d4ed8', background: '#eff6ff' }}>
-                  Ctrl+N 新建设备
-                </Tag>
-                <Tag style={{ margin: 0, borderRadius: 999, paddingInline: 12, borderColor: '#dcfce7', color: '#0f766e', background: '#f0fdf4' }}>
-                  Ctrl+Shift+C 批量连接
-                </Tag>
-                <Tag style={{ margin: 0, borderRadius: 999, paddingInline: 12, borderColor: '#fee2e2', color: '#b91c1c', background: '#fef2f2' }}>
-                  Ctrl+Shift+D 批量断开
-                </Tag>
-              </Space>
-            </div>
-
-            <div
-              style={{
-                flex: '0 1 520px',
-                width: 'min(100%, 500px)',
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(104px, 1fr))',
-                gap: 10,
-              }}
-            >
-              {SUMMARY_CARD_META.map((item) => (
-                <div
-                  key={item.key}
+                IoT
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <Title
+                  level={3}
                   style={{
-                    padding: '12px 12px 10px',
-                    borderRadius: 20,
-                    border: '1px solid rgba(226,232,240,0.86)',
-                    background: item.background,
+                    margin: 0,
+                    color: '#0f172a',
+                    fontFamily: '"Microsoft YaHei UI", "PingFang SC", sans-serif',
+                    fontSize: 28,
+                    lineHeight: 1.2,
                   }}
                 >
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {item.label}
-                  </Text>
-                  <div style={{ marginTop: 8, fontSize: 24, fontWeight: 700, color: item.valueColor }}>
-                    {summary[item.key]}
-                  </div>
-                </div>
-              ))}
-            </div>
+                  设备模拟器
+                </Title>
+                <Text style={{ display: 'block', marginTop: 6, color: '#64748b', fontSize: 13, lineHeight: 1.6 }}>
+                  选择设备后开始连接、上报和协议调试。
+                </Text>
+              </div>
+            </Space>
+
+            <Space size={[8, 8]} wrap>
+              <Tag style={{ ...shortcutTagStyle, borderColor: '#dbeafe', color: '#1d4ed8', background: '#eff6ff' }}>
+                Ctrl+N 新建设备
+              </Tag>
+              <Tag style={{ ...shortcutTagStyle, borderColor: '#dcfce7', color: '#0f766e', background: '#f0fdf4' }}>
+                Ctrl+Shift+C 批量连接
+              </Tag>
+              <Tag style={{ ...shortcutTagStyle, borderColor: '#fee2e2', color: '#b91c1c', background: '#fef2f2' }}>
+                Ctrl+Shift+D 批量断开
+              </Tag>
+            </Space>
           </div>
-        </Card>
+
+          <div
+            style={{
+              flex: '0 1 500px',
+              width: 'min(100%, 500px)',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
+              gap: 10,
+              alignContent: 'start',
+            }}
+          >
+            {SUMMARY_CARD_META.map((item) => (
+              <div
+                key={item.key}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 18,
+                  border: '1px solid rgba(226,232,240,0.88)',
+                  background: item.background,
+                  minHeight: 84,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {item.label}
+                </Text>
+                <div style={{ fontSize: 24, fontWeight: 700, color: item.valueColor, lineHeight: 1.1 }}>
+                  {summary[item.key]}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
 
         <div
           style={{
