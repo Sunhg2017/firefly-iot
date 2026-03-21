@@ -1,5 +1,5 @@
-import { useEffect, useMemo, type CSSProperties } from 'react';
-import { Card, Grid, Space, Tag, Typography } from 'antd';
+import { useEffect, type CSSProperties } from 'react';
+import { Card, Grid, Space, Typography } from 'antd';
 import { useSimStore } from './store';
 import { buildMqttInboundLogMessage } from './utils/mqtt';
 import { restorePersistedConnections } from './utils/runtime';
@@ -13,33 +13,6 @@ import {
 } from './components';
 
 const { Text, Title } = Typography;
-
-const SUMMARY_CARD_META = [
-  {
-    key: 'total',
-    label: '设备总数',
-    valueColor: '#1d4ed8',
-    background: 'linear-gradient(135deg, rgba(59,130,246,0.10), rgba(255,255,255,0.96))',
-  },
-  {
-    key: 'online',
-    label: '在线设备',
-    valueColor: '#0f766e',
-    background: 'linear-gradient(135deg, rgba(16,185,129,0.12), rgba(255,255,255,0.96))',
-  },
-  {
-    key: 'auto',
-    label: '自动上报',
-    valueColor: '#7c3aed',
-    background: 'linear-gradient(135deg, rgba(124,58,237,0.12), rgba(255,255,255,0.96))',
-  },
-  {
-    key: 'error',
-    label: '异常设备',
-    valueColor: '#dc2626',
-    background: 'linear-gradient(135deg, rgba(239,68,68,0.12), rgba(255,255,255,0.96))',
-  },
-] as const;
 
 const PANEL_SHELL_STYLE: CSSProperties = {
   minHeight: 0,
@@ -63,7 +36,6 @@ const TOOL_CARD_ROW_STYLE: CSSProperties = {
 };
 
 export default function App() {
-  const devices = useSimStore((state) => state.devices);
   const screens = Grid.useBreakpoint();
 
   useEffect(() => {
@@ -133,27 +105,16 @@ export default function App() {
   const showTwoColumnSecondary = Boolean(screens.md && !screens.lg);
   const shellGap = 'clamp(12px, 1.2vw, 16px)';
   const shellPadding = 'clamp(12px, 1.5vw, 20px)';
-  const headerPadding = 'clamp(16px, 1.7vw, 22px)';
   const railColumnWidth = 'minmax(292px, 332px)';
   const rightRailWidth = 'minmax(308px, 360px)';
-
-  const summary = useMemo(
-    () => ({
-      total: devices.length,
-      online: devices.filter((item) => item.status === 'online').length,
-      auto: devices.filter((item) => item.autoReport).length,
-      error: devices.filter((item) => item.status === 'error').length,
-    }),
-    [devices],
-  );
 
   const mainGridColumns = showRightRail
     ? `${railColumnWidth} minmax(0, 1fr) ${rightRailWidth}`
     : showTwoColumnSecondary
       ? `${railColumnWidth} minmax(0, 1fr)`
       : '1fr';
-  // Medium-width windows place tools/logs on the second row. Keep that row capped so
-  // it does not consume all remaining height and collapse the device list/control area.
+
+  // 中等宽度窗口会把工具区和日志区挪到第二行，需要限制高度，避免挤压主工作区。
   const compactRailHeight = 'clamp(220px, 30vh, 300px)';
   const appShellStyle: CSSProperties = {
     display: 'flex',
@@ -170,20 +131,15 @@ export default function App() {
   };
   const desktopHeaderStyle: CSSProperties = {
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'stretch',
-    gap: 'clamp(16px, 1.8vw, 24px)',
-    padding: headerPadding,
-    borderRadius: 24,
+    alignItems: 'center',
+    gap: 14,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    padding: '12px 16px',
+    borderRadius: 20,
     border: '1px solid rgba(226,232,240,0.92)',
     background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,250,255,0.96) 100%)',
-    boxShadow: '0 10px 26px rgba(15,23,42,0.05)',
-  };
-  const shortcutTagStyle: CSSProperties = {
-    margin: 0,
-    borderRadius: 999,
-    paddingInline: 10,
-    fontSize: 12,
+    boxShadow: '0 8px 22px rgba(15,23,42,0.05)',
   };
 
   const toolboxCard = (
@@ -243,101 +199,51 @@ export default function App() {
   );
 
   return (
-      <div
+    <div
       style={{
         height: '100dvh',
         minHeight: '100dvh',
         overflow: 'hidden',
         padding: shellPadding,
-        background:
-          'linear-gradient(180deg, #eef3f7 0%, #e6edf4 100%)',
+        background: 'linear-gradient(180deg, #eef3f7 0%, #e6edf4 100%)',
       }}
     >
       <div style={appShellStyle}>
         <div style={desktopHeaderStyle}>
-          <div style={{ flex: '1 1 420px', minWidth: 280, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 14 }}>
-            <Space align="start" size={14}>
-              <div
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 14,
-                  border: '1px solid rgba(191,219,254,0.9)',
-                  background: 'linear-gradient(135deg, rgba(239,246,255,0.96) 0%, rgba(224,242,254,0.86) 100%)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#2563eb',
-                  fontWeight: 700,
-                  letterSpacing: 0.6,
-                }}
-              >
-                IoT
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <Title
-                  level={3}
-                  style={{
-                    margin: 0,
-                    color: '#0f172a',
-                    fontFamily: '"Microsoft YaHei UI", "PingFang SC", sans-serif',
-                    fontSize: 28,
-                    lineHeight: 1.2,
-                  }}
-                >
-                  设备模拟器
-                </Title>
-                <Text style={{ display: 'block', marginTop: 6, color: '#64748b', fontSize: 13, lineHeight: 1.6 }}>
-                  选择设备后开始连接、上报和协议调试。
-                </Text>
-              </div>
-            </Space>
-
-            <Space size={[8, 8]} wrap>
-              <Tag style={{ ...shortcutTagStyle, borderColor: '#dbeafe', color: '#1d4ed8', background: '#eff6ff' }}>
-                Ctrl+N 新建设备
-              </Tag>
-              <Tag style={{ ...shortcutTagStyle, borderColor: '#dcfce7', color: '#0f766e', background: '#f0fdf4' }}>
-                Ctrl+Shift+C 批量连接
-              </Tag>
-              <Tag style={{ ...shortcutTagStyle, borderColor: '#fee2e2', color: '#b91c1c', background: '#fef2f2' }}>
-                Ctrl+Shift+D 批量断开
-              </Tag>
-            </Space>
-          </div>
-
           <div
             style={{
-              flex: '0 1 500px',
-              width: 'min(100%, 500px)',
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
-              gap: 10,
-              alignContent: 'start',
+              width: 40,
+              height: 40,
+              borderRadius: 14,
+              border: '1px solid rgba(191,219,254,0.9)',
+              background: 'linear-gradient(135deg, rgba(239,246,255,0.96) 0%, rgba(224,242,254,0.86) 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#2563eb',
+              fontWeight: 700,
+              letterSpacing: 0.6,
+              flexShrink: 0,
             }}
           >
-            {SUMMARY_CARD_META.map((item) => (
-              <div
-                key={item.key}
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: 18,
-                  border: '1px solid rgba(226,232,240,0.88)',
-                  background: item.background,
-                  minHeight: 84,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {item.label}
-                </Text>
-                <div style={{ fontSize: 24, fontWeight: 700, color: item.valueColor, lineHeight: 1.1 }}>
-                  {summary[item.key]}
-                </div>
-              </div>
-            ))}
+            IoT
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <Title
+              level={4}
+              style={{
+                margin: 0,
+                color: '#0f172a',
+                fontFamily: '"Microsoft YaHei UI", "PingFang SC", sans-serif',
+                fontSize: 24,
+                lineHeight: 1.2,
+              }}
+            >
+              设备模拟器
+            </Title>
+            <Text style={{ display: 'block', marginTop: 4, color: '#64748b', fontSize: 12, lineHeight: 1.5 }}>
+              设备联调工作台
+            </Text>
           </div>
         </div>
 
