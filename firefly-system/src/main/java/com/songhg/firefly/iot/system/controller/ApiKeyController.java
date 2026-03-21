@@ -12,7 +12,7 @@ import com.songhg.firefly.iot.system.dto.apikey.ApiKeyCreatedVO;
 import com.songhg.firefly.iot.system.dto.apikey.ApiKeyQueryDTO;
 import com.songhg.firefly.iot.system.dto.apikey.ApiKeyUpdateDTO;
 import com.songhg.firefly.iot.system.dto.apikey.ApiKeyVO;
-import com.songhg.firefly.iot.system.dto.openapi.OpenApiOptionVO;
+import com.songhg.firefly.iot.system.dto.openapi.TenantOpenApiOptionVO;
 import com.songhg.firefly.iot.system.dto.openapi.TenantOpenApiDocVO;
 import com.songhg.firefly.iot.system.service.ApiAccessLogService;
 import com.songhg.firefly.iot.system.service.ApiKeyService;
@@ -95,7 +95,7 @@ public class ApiKeyController {
     @GetMapping("/open-api-options")
     @RequiresPermission("appkey:read")
     @Operation(summary = "List subscribed OpenAPI options for current tenant")
-    public R<List<OpenApiOptionVO>> listOpenApiOptions() {
+    public R<List<TenantOpenApiOptionVO>> listOpenApiOptions() {
         return R.ok(apiKeyService.listSubscribedOpenApiOptions());
     }
 

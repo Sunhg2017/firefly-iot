@@ -115,26 +115,22 @@ public class TenantOpenApiDocService {
         item.setServiceCode(option.getServiceCode());
         item.setServiceName(resolveServiceDisplayName(option.getServiceCode()));
         item.setHttpMethod(option.getHttpMethod());
-        item.setPathPattern(option.getPathPattern());
         item.setGatewayPath(option.getGatewayPath());
-        item.setPermissionCode(option.getPermissionCode());
         item.setBodyRequired(false);
         item.setRequestContentTypes(List.of());
         item.setParameterFields(List.of());
         item.setRequestFields(List.of());
         item.setResponseFields(List.of());
-        item.setWarnings(new ArrayList<>());
         item.setCurlExample(buildCurlExample(option, List.of(), null, null));
 
         if (snapshot == null) {
-            item.getWarnings().add("当前服务最新 OpenAPI 文件尚未同步到系统，仅展示目录和网关地址。");
             return item;
         }
 
         JsonNode pathNode = snapshot.findPathNode(option.getPathPattern());
         JsonNode operationNode = snapshot.findOperationNode(option.getPathPattern(), option.getHttpMethod());
         if (operationNode.isMissingNode()) {
-            item.getWarnings().add("最近一次同步的 OpenAPI 文件中未匹配到该接口详细模型，可能是服务尚未重新同步或注解未补齐。");
+            item.setDescription("当前接口详情正在同步中，请稍后刷新文档查看。");
             return item;
         }
 
@@ -157,9 +153,6 @@ public class TenantOpenApiDocService {
         item.setResponseExample(responseBodyDoc.example());
 
         item.setCurlExample(buildCurlExample(option, parameterFields, requestBodyDoc.contentType(), requestBodyDoc.example()));
-        if (!StringUtils.hasText(item.getDescription())) {
-            item.getWarnings().add("当前接口未补充详细说明，建议在 Controller 的 Swagger 注解中补齐 summary/description。");
-        }
         return item;
     }
 
@@ -721,7 +714,7 @@ public class TenantOpenApiDocService {
     private ServiceOpenApiSnapshot loadPersistedServiceOpenApiSnapshot(String serviceCode, TenantOpenApiDocServiceVO serviceVO) {
         OpenApiServiceDoc snapshotEntity = openApiServiceDocService.getSnapshot(serviceCode);
         if (snapshotEntity == null || !StringUtils.hasText(snapshotEntity.getApiDocJson())) {
-            serviceVO.setErrorMessage("当前服务还没有同步过 OpenAPI 文件，请先等待服务完成一次自动注册。");
+            serviceVO.setErrorMessage("当前服务的接口详情正在同步中，请稍后刷新文档查看。");
             return null;
         }
         serviceVO.setDocSyncedAt(snapshotEntity.getSyncedAt());
@@ -729,7 +722,7 @@ public class TenantOpenApiDocService {
             return new ServiceOpenApiSnapshot(objectMapper.readTree(snapshotEntity.getApiDocJson()));
         } catch (JsonProcessingException ex) {
             log.warn("Failed to parse persisted OpenAPI file for serviceCode={}", serviceCode, ex);
-            serviceVO.setErrorMessage("系统中保存的 OpenAPI 文件解析失败，请让对应服务重新同步。");
+            serviceVO.setErrorMessage("当前服务的接口详情正在同步中，请稍后刷新文档查看。");
             return null;
         }
     }

@@ -19,6 +19,7 @@ import com.songhg.firefly.iot.system.dto.apikey.ApiKeyVO;
 import com.songhg.firefly.iot.system.dto.openapi.InternalOpenApiAuthRequest;
 import com.songhg.firefly.iot.system.dto.openapi.InternalOpenApiAuthVO;
 import com.songhg.firefly.iot.system.dto.openapi.OpenApiOptionVO;
+import com.songhg.firefly.iot.system.dto.openapi.TenantOpenApiOptionVO;
 import com.songhg.firefly.iot.system.entity.ApiKey;
 import com.songhg.firefly.iot.system.entity.OpenApiCatalog;
 import com.songhg.firefly.iot.system.entity.TenantOpenApiSubscription;
@@ -165,8 +166,19 @@ public class ApiKeyService {
         log.info("AppKey deleted: id={}, accessKey={}", id, entity.getAccessKey());
     }
 
-    public List<OpenApiOptionVO> listSubscribedOpenApiOptions() {
-        return tenantOpenApiSubscriptionService.listSubscribedEnabledOptions(requireTenantId());
+    public List<TenantOpenApiOptionVO> listSubscribedOpenApiOptions() {
+        List<OpenApiOptionVO> options = tenantOpenApiSubscriptionService.listSubscribedEnabledOptions(requireTenantId());
+        List<TenantOpenApiOptionVO> result = new ArrayList<>();
+        for (OpenApiOptionVO option : options) {
+            TenantOpenApiOptionVO vo = new TenantOpenApiOptionVO();
+            vo.setCode(option.getCode());
+            vo.setName(option.getName());
+            vo.setServiceCode(option.getServiceCode());
+            vo.setHttpMethod(option.getHttpMethod());
+            vo.setGatewayPath(option.getGatewayPath());
+            result.add(vo);
+        }
+        return result;
     }
 
     public InternalOpenApiAuthVO authorizeOpenApiCall(InternalOpenApiAuthRequest request) {

@@ -33,9 +33,7 @@ interface OpenApiOptionItem {
   name: string;
   serviceCode: string;
   httpMethod: string;
-  pathPattern: string;
   gatewayPath: string;
-  permissionCode?: string;
 }
 
 interface AppKeyItem {
@@ -396,10 +394,7 @@ const ApiKeyManagerTab: React.FC = () => {
                 </Tag>
                 <Tag color="blue">{option?.serviceCode || '-'}</Tag>
               </Space>
-              <Typography.Text code>{option?.gatewayPath || option?.pathPattern || code}</Typography.Text>
-              {option?.permissionCode ? (
-                <Typography.Text type="secondary">透传权限：{option.permissionCode}</Typography.Text>
-              ) : null}
+              <Typography.Text code>{option?.gatewayPath || code}</Typography.Text>
             </Space>
           </Card>
         );

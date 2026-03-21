@@ -361,6 +361,28 @@ body {
   margin-left: 16px;
 }
 
+.layout-header-action.ant-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  box-shadow: none !important;
+  color: #475569;
+  background: transparent;
+}
+
+.layout-header-action.ant-btn:hover,
+.layout-header-action.ant-btn:focus {
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.layout-header-action.ant-btn .anticon {
+  font-size: 16px;
+}
+
 .layout-user-inline {
   display: inline-flex;
   align-items: center;

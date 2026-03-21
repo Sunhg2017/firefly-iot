@@ -41,9 +41,7 @@ interface OpenApiDocItem {
   serviceCode: string;
   serviceName: string;
   httpMethod: string;
-  pathPattern: string;
   gatewayPath: string;
-  permissionCode?: string;
   requestContentTypes: string[];
   responseContentType?: string;
   successStatus?: string;
@@ -54,7 +52,6 @@ interface OpenApiDocItem {
   requestExample?: string;
   responseExample?: string;
   curlExample?: string;
-  warnings: string[];
 }
 
 interface OpenApiDocServiceGroup {
@@ -155,7 +152,6 @@ const OpenApiDocsTab: React.FC = () => {
             item.summary,
             item.description,
             item.gatewayPath,
-            item.permissionCode,
           ]
             .filter(Boolean)
             .join(' ')
@@ -267,11 +263,9 @@ const OpenApiDocsTab: React.FC = () => {
         <Descriptions.Item label="HTTP 方法">
           <Tag color={methodColorMap[record.httpMethod] ?? 'default'}>{record.httpMethod}</Tag>
         </Descriptions.Item>
-        <Descriptions.Item label="服务">{record.serviceName}</Descriptions.Item>
+        <Descriptions.Item label="所属服务">{record.serviceName}</Descriptions.Item>
         <Descriptions.Item label="成功状态码">{record.successStatus || '-'}</Descriptions.Item>
-        <Descriptions.Item label="下游路径">{record.pathPattern}</Descriptions.Item>
-        <Descriptions.Item label="网关地址">{record.gatewayPath}</Descriptions.Item>
-        <Descriptions.Item label="透传权限">{record.permissionCode || '-'}</Descriptions.Item>
+        <Descriptions.Item label="调用地址" span={2}>{record.gatewayPath}</Descriptions.Item>
         <Descriptions.Item label="请求体必填">{record.bodyRequired ? '是' : '否'}</Descriptions.Item>
         <Descriptions.Item label="请求类型">
           {record.requestContentTypes?.length ? record.requestContentTypes.join(' / ') : '-'}
@@ -280,21 +274,6 @@ const OpenApiDocsTab: React.FC = () => {
         <Descriptions.Item label="接口摘要" span={2}>{record.summary || '-'}</Descriptions.Item>
         <Descriptions.Item label="接口说明" span={2}>{record.description || '-'}</Descriptions.Item>
       </Descriptions>
-
-      {record.warnings?.length ? (
-        <Alert
-          type="warning"
-          showIcon
-          message="文档提示"
-          description={(
-            <Space direction="vertical" size={4}>
-              {record.warnings.map((item) => (
-                <span key={item}>{item}</span>
-              ))}
-            </Space>
-          )}
-        />
-      ) : null}
 
       {renderFieldSection('路径/查询/业务请求头参数', record.parameterFields ?? [])}
       {renderFieldSection('请求体字段', (record.requestFields ?? []).map((item) => ({ ...item, location: 'BODY' })))}
@@ -324,10 +303,11 @@ const OpenApiDocsTab: React.FC = () => {
           message="调用说明"
           description={(
             <Space direction="vertical" size={10} style={{ width: '100%' }}>
-              <span>页面只展示当前租户已订阅且已启用的 OpenAPI。接口统一通过网关 `/open/{'{SERVICE}'}/api/v1/...` 调用。</span>
-              <span>页面内容基于系统服务保存的最新 OpenAPI 文件快照生成，查看时不依赖目标服务当前是否在线。</span>
-              <span>调用方需要在本地使用 Secret Key 按固定 Canonical Request 计算 HMAC-SHA256，并传递 4 个鉴权请求头。</span>
-              {docData.generatedAt ? <span>文档生成时间：{docData.generatedAt}</span> : null}
+              <span>页面只展示当前租户已订阅且已启用的 OpenAPI，文档内容只保留实际调用需要的信息。</span>
+              <span>所有接口统一通过网关 `/open/{'{SERVICE}'}/api/v1/...` 调用，调用地址、参数说明和示例请求可直接用于联调。</span>
+              <span>调用时使用 AppKey 在本地完成签名，下方提供鉴权请求头和签名原文模板。</span>
+              <span>文档基于最近一次成功同步的 OpenAPI 快照生成，查看时不依赖目标服务当前是否在线。</span>
+              {docData.generatedAt ? <span>文档快照时间：{docData.generatedAt}</span> : null}
             </Space>
           )}
         />
@@ -369,7 +349,7 @@ const OpenApiDocsTab: React.FC = () => {
           <Space wrap>
             <Input
               allowClear
-              placeholder="搜索编码、名称、地址或说明"
+              placeholder="搜索编码、名称、调用地址或说明"
               style={{ width: 320 }}
               value={keyword}
               onChange={(event) => setKeyword(event.target.value)}
@@ -407,10 +387,10 @@ const OpenApiDocsTab: React.FC = () => {
         >
           {!service.docAvailable ? (
             <Alert
-              type="warning"
+              type="info"
               showIcon
               style={{ marginBottom: 16 }}
-              message="服务文档暂不可用"
+              message="接口详情同步中"
               description={service.errorMessage}
             />
           ) : null}

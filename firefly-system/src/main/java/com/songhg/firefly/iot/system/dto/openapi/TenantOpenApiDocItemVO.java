@@ -31,14 +31,8 @@ public class TenantOpenApiDocItemVO {
     @Schema(description = "HTTP 方法")
     private String httpMethod;
 
-    @Schema(description = "下游路径")
-    private String pathPattern;
-
     @Schema(description = "网关调用地址")
     private String gatewayPath;
-
-    @Schema(description = "透传权限编码")
-    private String permissionCode;
 
     @Schema(description = "请求内容类型")
     private List<String> requestContentTypes = new ArrayList<>();
@@ -69,7 +63,4 @@ public class TenantOpenApiDocItemVO {
 
     @Schema(description = "curl 调用示例")
     private String curlExample;
-
-    @Schema(description = "文档补充提示")
-    private List<String> warnings = new ArrayList<>();
 }

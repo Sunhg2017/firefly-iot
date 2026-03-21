@@ -536,6 +536,8 @@ const BasicLayout: React.FC = () => {
           <div className="layout-header-right">
             {canViewOpenApiDocs ? (
               <Button
+                type="text"
+                className="layout-header-action"
                 icon={<BookOutlined />}
                 onClick={() => navigate('/app-key?tab=docs')}
               >
