@@ -1068,6 +1068,7 @@ export const apiKeyApi = {
   updateStatus: (id: number, status: string) => request.put(`/app-keys/${id}/status?status=${status}`),
   delete: (id: number) => request.delete(`/app-keys/${id}`),
   listOpenApiOptions: () => request.get('/app-keys/open-api-options'),
+  getOpenApiDocs: () => request.get('/app-keys/open-api-docs'),
   queryLogs: (id: number, data?: Record<string, unknown>) => request.post(`/app-keys/${id}/logs`, data),
   queryStats: (id: number, startDate: string, endDate: string) =>
     request.get(`/app-keys/${id}/stats`, { params: { startDate, endDate } }),

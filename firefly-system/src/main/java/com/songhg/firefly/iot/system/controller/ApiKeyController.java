@@ -13,8 +13,10 @@ import com.songhg.firefly.iot.system.dto.apikey.ApiKeyQueryDTO;
 import com.songhg.firefly.iot.system.dto.apikey.ApiKeyUpdateDTO;
 import com.songhg.firefly.iot.system.dto.apikey.ApiKeyVO;
 import com.songhg.firefly.iot.system.dto.openapi.OpenApiOptionVO;
+import com.songhg.firefly.iot.system.dto.openapi.TenantOpenApiDocVO;
 import com.songhg.firefly.iot.system.service.ApiAccessLogService;
 import com.songhg.firefly.iot.system.service.ApiKeyService;
+import com.songhg.firefly.iot.system.service.TenantOpenApiDocService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -42,6 +44,7 @@ public class ApiKeyController {
 
     private final ApiKeyService apiKeyService;
     private final ApiAccessLogService apiAccessLogService;
+    private final TenantOpenApiDocService tenantOpenApiDocService;
 
     @PostMapping
     @RequiresPermission("appkey:create")
@@ -94,6 +97,13 @@ public class ApiKeyController {
     @Operation(summary = "List subscribed OpenAPI options for current tenant")
     public R<List<OpenApiOptionVO>> listOpenApiOptions() {
         return R.ok(apiKeyService.listSubscribedOpenApiOptions());
+    }
+
+    @GetMapping("/open-api-docs")
+    @RequiresPermission("appkey:read")
+    @Operation(summary = "获取当前租户 OpenAPI 文档")
+    public R<TenantOpenApiDocVO> getOpenApiDocs() {
+        return R.ok(tenantOpenApiDocService.getCurrentTenantDocs());
     }
 
     @PostMapping("/{id}/logs")

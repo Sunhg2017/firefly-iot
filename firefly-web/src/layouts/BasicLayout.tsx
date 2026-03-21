@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useOutlet } from 'react-router-dom';
-import { Avatar, Breadcrumb, Dropdown, Form, Input, Layout, Menu, Modal, Spin, Space, Tag, message } from 'antd';
+import { Avatar, Breadcrumb, Button, Dropdown, Form, Input, Layout, Menu, Modal, Spin, Space, Tag, message } from 'antd';
 import type { MenuProps } from 'antd';
 import {
+  BookOutlined,
   CloseOutlined,
   LockOutlined,
   LogoutOutlined,
@@ -188,6 +189,10 @@ const BasicLayout: React.FC = () => {
 
   const canViewAlarmDropdown = useMemo(() => (
     enforcedWorkspace === 'tenant' && isWorkspacePathAllowed('/alarm-records', permissions, authorizedMenuPaths)
+  ), [authorizedMenuPaths, enforcedWorkspace, permissions]);
+
+  const canViewOpenApiDocs = useMemo(() => (
+    enforcedWorkspace === 'tenant' && isWorkspacePathAllowed('/app-key', permissions, authorizedMenuPaths)
   ), [authorizedMenuPaths, enforcedWorkspace, permissions]);
 
   const isPageTabRoute = useCallback((pathname: string) => (
@@ -529,6 +534,14 @@ const BasicLayout: React.FC = () => {
           </Space>
 
           <div className="layout-header-right">
+            {canViewOpenApiDocs ? (
+              <Button
+                icon={<BookOutlined />}
+                onClick={() => navigate('/app-key?tab=docs')}
+              >
+                接口文档
+              </Button>
+            ) : null}
             <NotificationDropdown />
             <AlarmDropdown visible={canViewAlarmDropdown} />
             <ExportCenterDropdown />
