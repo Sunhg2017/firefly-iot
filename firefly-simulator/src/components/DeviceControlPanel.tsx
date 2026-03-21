@@ -1520,11 +1520,6 @@ export default function DeviceControlPanel() {
   } as const;
 
   const statusTone = statusToneMap[device.status];
-  const summaryItems = accessItems.slice(0, 4);
-  const identitySummary = showGenericReport
-    ? `${device.productKey || '未配置 ProductKey'} / ${device.deviceName || '未配置 DeviceName'}`
-    : accessItems.slice(0, 2).map((item) => `${item.label}: ${item.value}`).join(' / ');
-
   const heroMetrics = [
     { label: '发送次数', value: String(device.sentCount), color: '#2563eb', background: '#eff6ff' },
     { label: '错误次数', value: String(device.errorCount), color: '#dc2626', background: '#fef2f2' },
@@ -1540,19 +1535,22 @@ export default function DeviceControlPanel() {
       background: supportsThingModelReport(device.protocol) ? '#f5f3ff' : '#ecfeff',
     },
   ];
+  const basicInfoCardStyle = {
+    position: 'sticky' as const,
+    top: 0,
+    zIndex: 20,
+    marginBottom: 18,
+    padding: 22,
+    borderRadius: 28,
+    border: '1px solid rgba(226,232,240,0.92)',
+    background: 'linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(243,248,255,0.96) 100%)',
+    boxShadow: '0 18px 42px rgba(15,23,42,0.08)',
+    backdropFilter: 'blur(12px)',
+  };
 
   return (
     <div style={{ padding: 24, height: '100%', overflow: 'auto', background: 'linear-gradient(180deg, rgba(248,250,252,0.68) 0%, rgba(241,245,249,0.28) 100%)' }}>
-      <div
-        style={{
-          marginBottom: 18,
-          padding: 22,
-          borderRadius: 28,
-          border: '1px solid rgba(226,232,240,0.92)',
-          background: 'linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(243,248,255,0.96) 100%)',
-          boxShadow: '0 18px 42px rgba(15,23,42,0.06)',
-        }}
-      >
+      <div style={basicInfoCardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 420px', minWidth: 260 }}>
             <Space size={8} wrap>
@@ -1580,26 +1578,6 @@ export default function DeviceControlPanel() {
               >
                 {STATUS_TEXT[device.status]}
               </Tag>
-            </Space>
-            <Text style={{ display: 'block', marginTop: 10, color: '#475569', fontSize: 14 }}>
-              {identitySummary || '当前设备还没有关键标识信息'}
-            </Text>
-            <Space size={[8, 8]} wrap style={{ marginTop: 14 }}>
-              {summaryItems.map((item) => (
-                <Tag
-                  key={item.label}
-                  style={{
-                    margin: 0,
-                    paddingInline: 12,
-                    borderRadius: 999,
-                    color: item.highlight ? '#4338ca' : '#475569',
-                    borderColor: item.highlight ? '#c7d2fe' : '#e2e8f0',
-                    background: item.highlight ? '#eef2ff' : '#f8fafc',
-                  }}
-                >
-                  {item.label}: {item.value}
-                </Tag>
-              ))}
             </Space>
           </div>
           {!isOnline ? (
@@ -1631,22 +1609,9 @@ export default function DeviceControlPanel() {
             </div>
           ))}
         </div>
-      </div>
-
-      <Card
-        size="small"
-        style={{
-          marginBottom: 18,
-          borderRadius: 24,
-          border: '1px solid rgba(226,232,240,0.92)',
-          background: 'linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)',
-          boxShadow: '0 14px 34px rgba(15,23,42,0.05)',
-        }}
-        title={<Space><ApiOutlined />接入概览</Space>}
-        styles={{ header: { borderBottom: '1px solid rgba(226,232,240,0.9)' }, body: { padding: 18 } }}
-      >
-        <Space direction="vertical" size={14} style={{ width: '100%' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+        <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid rgba(226,232,240,0.9)' }}>
+          <Text strong style={{ color: '#0f172a', fontSize: 13 }}>接入参数</Text>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginTop: 12 }}>
             {accessItems.map((item) => (
               <div
                 key={item.label}
@@ -1664,7 +1629,7 @@ export default function DeviceControlPanel() {
           </div>
 
           {device.protocol === 'MQTT' && mqttIdentity ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginTop: 12 }}>
               <div style={{ padding: '10px 14px', borderRadius: 14, background: '#f8fafc', border: '1px solid rgba(226,232,240,0.9)' }}>
                 <Text type="secondary" style={{ fontSize: 11 }}>客户端 ID</Text>
                 <div style={{ marginTop: 4, color: '#0f172a', wordBreak: 'break-all' }}>{mqttIdentity.clientId || '自动生成'}</div>
@@ -1677,24 +1642,28 @@ export default function DeviceControlPanel() {
           ) : null}
 
           {device.token ? (
-            <Alert
-              type="success"
-              showIcon
-              message="当前设备已获取认证令牌"
-              description={`Token 片段：${device.token.slice(0, 30)}...`}
-            />
+            <div style={{ marginTop: 12 }}>
+              <Alert
+                type="success"
+                showIcon
+                message="当前设备已获取认证令牌"
+                description={`Token 片段：${device.token.slice(0, 30)}...`}
+              />
+            </div>
           ) : null}
 
           {accessError ? (
-            <Alert
-              type="warning"
-              showIcon
-              message="接入参数还不完整"
-              description={`${accessError}。请先补齐后再发起连接，避免服务端收到空认证参数。`}
-            />
+            <div style={{ marginTop: 12 }}>
+              <Alert
+                type="warning"
+                showIcon
+                message="接入参数还不完整"
+                description={`${accessError}。请先补齐后再发起连接，避免服务端收到空认证参数。`}
+              />
+            </div>
           ) : null}
-        </Space>
-      </Card>
+        </div>
+      </div>
 
       {showGenericReport && (
         <Card
