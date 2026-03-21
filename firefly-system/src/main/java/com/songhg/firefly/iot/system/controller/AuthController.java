@@ -1,22 +1,30 @@
 package com.songhg.firefly.iot.system.controller;
 
+import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.enums.Platform;
+import com.songhg.firefly.iot.common.result.R;
+import com.songhg.firefly.iot.common.security.RequiresLogin;
 import com.songhg.firefly.iot.system.dto.LoginRequest;
 import com.songhg.firefly.iot.system.dto.LoginResponse;
 import com.songhg.firefly.iot.system.dto.RefreshTokenRequest;
 import com.songhg.firefly.iot.system.dto.SmsSendRequest;
 import com.songhg.firefly.iot.system.service.AuthService;
 import com.songhg.firefly.iot.system.service.JwtService;
-import com.songhg.firefly.iot.common.context.AppContextHolder;
-import com.songhg.firefly.iot.common.enums.Platform;
-import com.songhg.firefly.iot.common.result.R;
-import com.songhg.firefly.iot.common.security.RequiresLogin;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 @Tag(name = "认证管理", description = "登录、登出、短信验证、Token 刷新")
@@ -31,12 +39,12 @@ public class AuthController {
     @Operation(summary = "用户登录", description = "支持密码登录和短信验证码登录")
     @PostMapping("/login")
     public R<LoginResponse> login(@Valid @RequestBody LoginRequest req, HttpServletRequest httpReq) {
-        String ip = httpReq.getRemoteAddr();
-        String ua = httpReq.getHeader("User-Agent");
+        String ip = resolveClientIp(httpReq);
+        String userAgent = resolveUserAgent(httpReq);
 
         return switch (req.getLoginMethod()) {
-            case PASSWORD -> R.ok(authService.passwordLogin(req, ip, ua));
-            case SMS -> R.ok(authService.smsLogin(req, ip, ua));
+            case PASSWORD -> R.ok(authService.passwordLogin(req, ip, userAgent));
+            case SMS -> R.ok(authService.smsLogin(req, ip, userAgent));
             default -> R.fail(1000, "不支持的登录方式: " + req.getLoginMethod());
         };
     }
@@ -45,7 +53,7 @@ public class AuthController {
     @PostMapping("/sms/send")
     public R<Void> sendSmsCode(@Valid @RequestBody SmsSendRequest req, HttpServletRequest httpReq) {
         String purpose = req.getPurpose() != null ? req.getPurpose() : "LOGIN";
-        authService.sendSmsCode(req.getPhone(), purpose, httpReq.getRemoteAddr());
+        authService.sendSmsCode(req.getPhone(), purpose, resolveClientIp(httpReq));
         return R.ok();
     }
 
@@ -82,5 +90,47 @@ public class AuthController {
     @GetMapping("/.well-known/jwks.json")
     public R<Map<String, Object>> jwks() {
         return R.ok(jwtService.getPublicKeyInfo());
+    }
+
+    private String resolveClientIp(HttpServletRequest request) {
+        String forwarded = trimHeader(request, "X-Forwarded-For");
+        if (StringUtils.hasText(forwarded)) {
+            int commaIndex = forwarded.indexOf(',');
+            return commaIndex > 0 ? forwarded.substring(0, commaIndex).trim() : forwarded;
+        }
+        String realIp = trimHeader(request, "X-Real-IP");
+        if (StringUtils.hasText(realIp)) {
+            return realIp;
+        }
+        return request.getRemoteAddr();
+    }
+
+    private String resolveUserAgent(HttpServletRequest request) {
+        String userAgent = trimHeader(request, "User-Agent");
+        if (StringUtils.hasText(userAgent)) {
+            return userAgent;
+        }
+
+        List<String> clientHints = new ArrayList<>();
+        appendClientHint(clientHints, "Sec-CH-UA", trimHeader(request, "Sec-CH-UA"));
+        appendClientHint(clientHints, "Sec-CH-UA-Platform", trimHeader(request, "Sec-CH-UA-Platform"));
+        appendClientHint(clientHints, "Sec-CH-UA-Mobile", trimHeader(request, "Sec-CH-UA-Mobile"));
+        appendClientHint(clientHints, "Sec-CH-UA-Platform-Version", trimHeader(request, "Sec-CH-UA-Platform-Version"));
+
+        return clientHints.isEmpty() ? null : String.join("; ", clientHints);
+    }
+
+    private void appendClientHint(List<String> clientHints, String name, String value) {
+        if (StringUtils.hasText(value)) {
+            clientHints.add(name + "=" + value);
+        }
+    }
+
+    private String trimHeader(HttpServletRequest request, String headerName) {
+        String value = request.getHeader(headerName);
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return value.trim();
     }
 }

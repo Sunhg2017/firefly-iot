@@ -19,6 +19,7 @@
 - 安全管理页登录日志表改为读取后端真实字段 `loginMethod`、`loginIp`、`result`、`userAgent`
 - 后端登录日志查询接口新增 `keyword` 条件，支持用户名或登录 IP 模糊搜索
 - 后端登录日志视图对象补充 `userAgent`
+- 登录入口优先记录 `User-Agent`，拿不到时回退记录 `Sec-CH-UA` 等浏览器 Client Hints，并优先从转发头解析真实 IP
 
 ## 3. 部署说明
 
@@ -50,7 +51,7 @@
 - 正常执行一次账号密码登录
 - 进入 `安全管理 -> 登录日志`
 - 确认最新记录显示为 `成功`
-- 确认 `IP`、`User-Agent` 字段有值
+- 确认 `IP`、`User-Agent` 字段有值；若浏览器未提供传统 `User-Agent`，也应至少看到 Client Hints 组合值
 - 用用户名或登录 IP 检索，确认能命中该记录
 
 ## 6. 排障
@@ -70,6 +71,14 @@
 - 前端是否已发布到包含 `result === 'SUCCESS'` 渲染逻辑的版本
 - 后端接口返回的 `result` 是否确实为 `SUCCESS/FAILED`
 - 浏览器网络面板里登录日志接口响应是否包含 `loginIp`、`loginMethod`、`userAgent`
+
+### 6.3 User-Agent 仍为空
+
+优先检查：
+
+- 是否查看的是历史旧登录记录；旧记录不会自动补写 `user_agent`
+- 是否已经在本次版本发布后重新登录过
+- 登录请求头里是否携带了 `User-Agent` 或 `Sec-CH-UA`、`Sec-CH-UA-Platform`
 
 ## 7. 回滚说明
 

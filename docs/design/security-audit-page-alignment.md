@@ -38,6 +38,7 @@
 - `LoginLogVO` 增加 `userAgent`
 - `AuthService.queryLoginLogs` 返回 `loginMethod`、`loginIp`、`userAgent`、`result`
 - `LoginLogQueryDTO` 增加 `keyword`，按用户名或登录 IP 模糊查询
+- `AuthController` 登录入口优先采集 `User-Agent`，读不到时回退到 `Sec-CH-UA` 等浏览器 Client Hints，并优先使用转发头解析真实 IP
 
 前端：
 
@@ -55,3 +56,4 @@
 
 - 前端与后端需要同时部署，才能同时获得正确的搜索条件和完整日志字段展示
 - 历史数据库中的登录日志结果值仍以 `SUCCESS/FAILED` 为准，页面只做展示对齐，不做旧数据迁移
+- 历史登录日志如果当时未写入 `user_agent`，本次只修复新登录记录采集，不会自动回填旧数据
