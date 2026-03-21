@@ -30,6 +30,11 @@ import {
 import type { SimDevice } from '../store';
 import { useSimStore } from '../store';
 import {
+  getActiveEnvironment,
+  isSimulatorAuthInvalid,
+  useSimWorkspaceStore,
+} from '../workspaceStore';
+import {
   CoapControlPanel,
   HttpControlPanel,
   LoRaWanControlPanel,
@@ -91,7 +96,6 @@ const STATUS_TEXT = {
 } as const;
 
 const ALL_PROPERTIES_VALUE = '__all_properties__';
-const DEFAULT_OPEN_API_BASE_URL = 'http://localhost:8080';
 const HEARTBEAT_INTERVAL_OPTIONS = [15, 30, 60, 120, 300].map((value) => ({
   label: `${value} 秒`,
   value,
@@ -133,27 +137,18 @@ function supportsThingModelReport(protocol?: string): boolean {
   return protocol === 'HTTP' || protocol === 'CoAP' || protocol === 'MQTT';
 }
 
-function resolveThingModelOpenApiBaseUrl(device: SimDevice): string {
-  return ((device.openApiBaseUrl ?? DEFAULT_OPEN_API_BASE_URL) || '').trim();
-}
-
-function getThingModelOpenApiMissingFields(device: SimDevice): string[] {
-  const missing: string[] = [];
-  if (!resolveThingModelOpenApiBaseUrl(device)) {
-    missing.push('OpenAPI 网关地址');
-  }
-  if (!(device.openApiAccessKey || '').trim()) {
-    missing.push('Access Key');
-  }
-  if (!(device.openApiSecretKey || '').trim()) {
-    missing.push('Secret Key');
-  }
-  return missing;
-}
-
 export default function DeviceControlPanel() {
   const { devices, selectedDeviceId, updateDevice, addLog } = useSimStore();
+  const environments = useSimWorkspaceStore((state) => state.environments);
+  const activeEnvironmentId = useSimWorkspaceStore((state) => state.activeEnvironmentId);
+  const sessions = useSimWorkspaceStore((state) => state.sessions);
+  const clearWorkspaceSession = useSimWorkspaceStore((state) => state.clearSession);
   const device = devices.find((item) => item.id === selectedDeviceId);
+  const activeEnvironment = useMemo(
+    () => getActiveEnvironment(environments, activeEnvironmentId),
+    [activeEnvironmentId, environments],
+  );
+  const activeSession = sessions[activeEnvironment.id];
 
   const [sending, setSending] = useState(false);
   const [selectedModelIdentifier, setSelectedModelIdentifier] = useState('');
@@ -177,6 +172,7 @@ export default function DeviceControlPanel() {
   const [wsMessages, setWsMessages] = useState<WsMsg[]>([]);
   const [tcpMessages, setTcpMessages] = useState<TcpUdpMsg[]>([]);
   const [loraMessages, setLoraMessages] = useState<LoRaMsg[]>([]);
+  const [thingModelRefreshNonce, setThingModelRefreshNonce] = useState(0);
 
   const autoTimerRef = useRef<number | null>(null);
   const coapPollRef = useRef<number | null>(null);
@@ -236,33 +232,39 @@ export default function DeviceControlPanel() {
     }
 
     const productKey = (device.productKey || '').trim();
-    const missingOpenApiFields = getThingModelOpenApiMissingFields(device);
     if (!productKey) {
       setThingModelRoot(null);
       setThingModelError('请先配置 ProductKey');
       setThingModelLoading(false);
       return;
     }
-    if (missingOpenApiFields.length > 0) {
+    if (!activeSession?.accessToken) {
       setThingModelRoot(null);
-      setThingModelError(`请先配置物模型 OpenAPI：${missingOpenApiFields.join(' / ')}`);
+      setThingModelError('请先登录当前环境后再同步物模型');
       setThingModelLoading(false);
       return;
     }
 
-    const baseUrl = resolveThingModelOpenApiBaseUrl(device);
     let cancelled = false;
     setThingModelLoading(true);
     setThingModelError('');
 
-    void window.electronAPI.productGetThingModel({
-      baseUrl,
+    // 物模型跟随当前环境登录态请求平台接口，不再维护设备级 AK/SK。
+    void window.electronAPI.simulatorProductThingModel(
+      activeEnvironment.gatewayBaseUrl,
+      activeSession.accessToken,
       productKey,
-      accessKey: (device.openApiAccessKey || '').trim(),
-      secretKey: (device.openApiSecretKey || '').trim(),
-    })
+      navigator.userAgent,
+    )
       .then((result) => {
         if (cancelled) return;
+        if (isSimulatorAuthInvalid(result)) {
+          clearWorkspaceSession(activeEnvironment.id);
+          setThingModelRoot(null);
+          setThingModelError('当前环境登录已失效，请重新登录后再同步物模型');
+          message.warning('当前环境登录已失效，请重新登录后再同步物模型');
+          return;
+        }
         if (!result?.success || (typeof result.code === 'number' && result.code !== 0)) {
           setThingModelRoot(null);
           setThingModelError(result?.message || result?.msg || '加载产品物模型失败');
@@ -289,9 +291,11 @@ export default function DeviceControlPanel() {
     selectedDeviceId,
     device?.protocol,
     device?.productKey,
-    device?.openApiBaseUrl,
-    device?.openApiAccessKey,
-    device?.openApiSecretKey,
+    activeEnvironment.gatewayBaseUrl,
+    activeEnvironment.id,
+    activeSession?.accessToken,
+    clearWorkspaceSession,
+    thingModelRefreshNonce,
   ]);
 
   const availableModelItems = useMemo(
@@ -673,12 +677,6 @@ export default function DeviceControlPanel() {
   const mqttIdentity = device.protocol === 'MQTT' ? resolveMqttIdentity(device) : null;
   const accessError = getDeviceAccessValidationError(device);
   const accessItems = getDeviceAccessOverviewItems(device);
-  const thingModelOpenApiBaseUrl = supportsThingModelReport(device.protocol)
-    ? resolveThingModelOpenApiBaseUrl(device)
-    : '';
-  const thingModelOpenApiMissingFields = supportsThingModelReport(device.protocol)
-    ? getThingModelOpenApiMissingFields(device)
-    : [];
 
   const publishPayload = async (
     target: SimDevice,
@@ -1536,9 +1534,6 @@ export default function DeviceControlPanel() {
     },
   ];
   const basicInfoCardStyle = {
-    position: 'sticky' as const,
-    top: 0,
-    zIndex: 20,
     marginBottom: 18,
     padding: 22,
     borderRadius: 28,
@@ -1667,7 +1662,18 @@ export default function DeviceControlPanel() {
 
       {showGenericReport && (
         <Card
-          title={<Space><ApiOutlined />物模型 OpenAPI</Space>}
+          title={<Space><ApiOutlined />平台物模型</Space>}
+          extra={(
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              onClick={() => setThingModelRefreshNonce((value) => value + 1)}
+              disabled={!activeSession?.accessToken || !(device.productKey || '').trim()}
+              loading={thingModelLoading}
+            >
+              刷新
+            </Button>
+          )}
           size="small"
           style={{
             marginBottom: 16,
@@ -1680,51 +1686,17 @@ export default function DeviceControlPanel() {
         >
           <Space direction="vertical" style={{ width: '100%' }} size={12}>
             <Alert
-              type={thingModelOpenApiMissingFields.length > 0 ? 'warning' : 'success'}
+              type={activeSession?.accessToken ? 'success' : 'warning'}
               showIcon
-              message={thingModelOpenApiMissingFields.length > 0 ? '物模型签名配置还不完整' : '已具备物模型加载条件'}
-              description={thingModelOpenApiMissingFields.length > 0
-                ? `请补齐 ${thingModelOpenApiMissingFields.join(' / ')}。未补齐前可继续使用自定义 JSON。`
-                : '补齐后可直接按产品物模型选择属性或事件。'}
+              message={activeSession?.accessToken ? `当前环境：${activeEnvironment.name}` : '请先登录当前环境'}
+              description={activeSession?.accessToken
+                ? `将通过 ${activeEnvironment.gatewayBaseUrl || '-'} 按 ProductKey 同步属性和事件。`
+                : '登录后可自动同步物模型；未登录时仍可继续使用自定义 JSON。'}
             />
-
-            <div>
-              <Text type="secondary" style={{ fontSize: 12 }}>OpenAPI 网关地址</Text>
-              <Input
-                size="small"
-                style={{ marginTop: 4 }}
-                value={device.openApiBaseUrl ?? DEFAULT_OPEN_API_BASE_URL}
-                onChange={(event) => updateDevice(device.id, { openApiBaseUrl: event.target.value })}
-                placeholder={DEFAULT_OPEN_API_BASE_URL}
-              />
-            </div>
-
-            <Row gutter={[12, 12]}>
-              <Col xs={24} md={12}>
-                <Text type="secondary" style={{ fontSize: 12 }}>Access Key</Text>
-                <Input
-                  size="small"
-                  style={{ marginTop: 4 }}
-                  value={device.openApiAccessKey || ''}
-                  onChange={(event) => updateDevice(device.id, { openApiAccessKey: event.target.value })}
-                  placeholder="ak_xxx"
-                />
-              </Col>
-              <Col xs={24} md={12}>
-                <Text type="secondary" style={{ fontSize: 12 }}>Secret Key</Text>
-                <Input.Password
-                  size="small"
-                  style={{ marginTop: 4 }}
-                  value={device.openApiSecretKey || ''}
-                  onChange={(event) => updateDevice(device.id, { openApiSecretKey: event.target.value })}
-                  placeholder="sk_xxx"
-                />
-              </Col>
-            </Row>
 
             {thingModelLoading ? (
               <Text type="secondary" style={{ fontSize: 12 }}>
-                正在通过 {thingModelOpenApiBaseUrl || 'OpenAPI 网关'} 刷新物模型...
+                正在同步物模型...
               </Text>
             ) : null}
 
@@ -1734,7 +1706,7 @@ export default function DeviceControlPanel() {
               </Text>
             ) : null}
 
-            {!thingModelLoading && thingModelError && thingModelOpenApiMissingFields.length === 0 ? (
+            {!thingModelLoading && thingModelError ? (
               <Alert
                 type="warning"
                 showIcon

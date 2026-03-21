@@ -46,10 +46,6 @@ export interface SimDevice {
   productSecret: string;
   deviceName: string;
   deviceSecret: string;
-  // Thing model OpenAPI config
-  openApiBaseUrl: string;
-  openApiAccessKey: string;
-  openApiSecretKey: string;
   locators: SimDeviceLocator[];
   token: string;
   // MQTT config
@@ -375,9 +371,6 @@ export const useSimStore = create<SimulatorState>()(
       productSecret: partial.productSecret || '',
       deviceName: partial.deviceName || '',
       deviceSecret: partial.deviceSecret || '',
-      openApiBaseUrl: partial.openApiBaseUrl || 'http://localhost:8080',
-      openApiAccessKey: partial.openApiAccessKey || '',
-      openApiSecretKey: partial.openApiSecretKey || '',
       locators: partial.locators || [],
       token: '',
       mqttAuthMode: partial.mqttAuthMode || 'DEVICE_SECRET',

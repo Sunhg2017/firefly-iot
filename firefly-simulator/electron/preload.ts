@@ -39,6 +39,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   simulatorProductSecret: (baseUrl: string, token: string, productId: number, userAgent?: string) =>
     ipcRenderer.invoke('simulator:productSecret', baseUrl, token, productId, userAgent),
 
+  simulatorProductThingModel: (baseUrl: string, token: string, productKey: string, userAgent?: string) =>
+    ipcRenderer.invoke('simulator:productThingModel', baseUrl, token, productKey, userAgent),
+
   // HTTP Protocol
   httpAuth: (baseUrl: string, productKey: string, deviceName: string, deviceSecret: string) =>
     ipcRenderer.invoke('http:auth', baseUrl, productKey, deviceName, deviceSecret),
@@ -57,14 +60,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   httpHeartbeat: (baseUrl: string, token: string, event?: Record<string, any>) =>
     ipcRenderer.invoke('http:heartbeat', baseUrl, token, event),
-
-  productGetThingModel: (payload: {
-    baseUrl: string;
-    productKey: string;
-    accessKey: string;
-    secretKey: string;
-  }) =>
-    ipcRenderer.invoke('product:thingModel', payload),
 
   deviceDynamicRegister: (
     baseUrl: string,

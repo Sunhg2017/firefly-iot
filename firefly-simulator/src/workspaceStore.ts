@@ -115,7 +115,6 @@ function buildLoraWebhookUrl(protocolBaseUrl: string): string {
 export function buildEnvironmentDeviceDefaults(environment?: SimulatorEnvironment | null) {
   const activeEnvironment = environment || DEFAULT_ENVIRONMENT;
   const protocolBaseUrl = trimHttpBaseUrl(activeEnvironment.protocolBaseUrl) || DEFAULT_ENVIRONMENT.protocolBaseUrl;
-  const gatewayBaseUrl = trimHttpBaseUrl(activeEnvironment.gatewayBaseUrl) || DEFAULT_ENVIRONMENT.gatewayBaseUrl;
   const mediaBaseUrl = trimHttpBaseUrl(activeEnvironment.mediaBaseUrl) || DEFAULT_ENVIRONMENT.mediaBaseUrl;
   const mqttBrokerUrl = trimText(activeEnvironment.mqttBrokerUrl) || DEFAULT_ENVIRONMENT.mqttBrokerUrl;
 
@@ -130,7 +129,6 @@ export function buildEnvironmentDeviceDefaults(environment?: SimulatorEnvironmen
     modbusConnectorUrl: protocolBaseUrl,
     wsConnectorUrl: protocolBaseUrl,
     wsEndpoint: buildWsEndpoint(protocolBaseUrl),
-    openApiBaseUrl: gatewayBaseUrl,
     loraWebhookUrl: buildLoraWebhookUrl(protocolBaseUrl),
   };
 }

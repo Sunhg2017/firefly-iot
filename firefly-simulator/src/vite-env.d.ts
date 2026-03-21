@@ -28,6 +28,7 @@ interface ElectronAPI {
     userAgent?: string,
   ) => Promise<any>;
   simulatorProductSecret: (baseUrl: string, token: string, productId: number, userAgent?: string) => Promise<any>;
+  simulatorProductThingModel: (baseUrl: string, token: string, productKey: string, userAgent?: string) => Promise<any>;
 
   httpAuth: (baseUrl: string, productKey: string, deviceName: string, deviceSecret: string) => Promise<any>;
   httpReportProperty: (baseUrl: string, token: string, properties: Record<string, any>) => Promise<any>;
@@ -35,12 +36,6 @@ interface ElectronAPI {
   httpOnline: (baseUrl: string, token: string, event: Record<string, any>) => Promise<any>;
   httpOffline: (baseUrl: string, token: string, event: Record<string, any>) => Promise<any>;
   httpHeartbeat: (baseUrl: string, token: string, event?: Record<string, any>) => Promise<any>;
-  productGetThingModel: (payload: {
-    baseUrl: string;
-    productKey: string;
-    accessKey: string;
-    secretKey: string;
-  }) => Promise<any>;
   deviceDynamicRegister: (
     baseUrl: string,
     payload: {

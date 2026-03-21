@@ -46,8 +46,6 @@ interface TenantProductRecord {
 
 const STEP_TITLES = ['基本信息', '接入参数', '扩展配置'];
 
-const DEFAULT_OPEN_API_BASE_URL = 'http://localhost:8080';
-
 const PRODUCT_PROTOCOL_QUERY_MAP: Partial<Record<Protocol, string>> = {
   HTTP: 'HTTP',
   MQTT: 'MQTT',
@@ -104,10 +102,6 @@ function supportsTenantProductSelection(protocol: Protocol): boolean {
   return protocol === 'HTTP' || protocol === 'MQTT' || protocol === 'CoAP';
 }
 
-function supportsThingModelProtocol(protocol: Protocol): boolean {
-  return protocol === 'HTTP' || protocol === 'MQTT' || protocol === 'CoAP';
-}
-
 function buildInitialValues(
   environment: ReturnType<typeof getActiveEnvironment>,
 ): Record<string, unknown> {
@@ -140,8 +134,6 @@ function buildInitialValues(
     udpHost: 'localhost',
     udpPort: 8901,
     loraFPort: 1,
-    openApiAccessKey: '',
-    openApiSecretKey: '',
     ...environmentDefaults,
   };
 }
@@ -194,13 +186,6 @@ function buildSummary(values: Record<string, unknown>, products: TenantProductRe
     { key: 'deviceName', label: 'DeviceName', value: values.deviceName || '-' },
     { key: 'main2', label: '接入地址', value: values.httpBaseUrl || values.coapBaseUrl || values.mqttBrokerUrl || values.mediaBaseUrl || values.loraWebhookUrl || '-' },
   ];
-  if (supportsThingModelProtocol(protocol as Protocol)) {
-    items.push({
-      key: 'openApiBaseUrl',
-      label: '物模型 OpenAPI 网关',
-      value: values.openApiBaseUrl || DEFAULT_OPEN_API_BASE_URL,
-    });
-  }
   return items;
 }
 
@@ -796,26 +781,6 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       ) : null}
 
       <Card size="small" title="配置摘要" style={drawerPanelCardStyle}>
-        {supportsThingModelProtocol(protocol) ? (
-          <Space direction="vertical" size={16} style={{ width: '100%', marginBottom: 16 }}>
-            <Form.Item name="openApiBaseUrl" label="OpenAPI 网关地址" style={{ marginBottom: 0 }}>
-              <Input placeholder={activeEnvironment.gatewayBaseUrl || DEFAULT_OPEN_API_BASE_URL} />
-            </Form.Item>
-            <Row gutter={12}>
-              <Col span={12}>
-                <Form.Item name="openApiAccessKey" label="Access Key" style={{ marginBottom: 0 }}>
-                  <Input placeholder="ak_xxx" />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item name="openApiSecretKey" label="Secret Key" style={{ marginBottom: 0 }}>
-                  <Input.Password placeholder="sk_xxx" />
-                </Form.Item>
-              </Col>
-            </Row>
-            <Divider style={{ margin: 0 }} />
-          </Space>
-        ) : null}
         <Descriptions
           size="small"
           column={1}
