@@ -147,6 +147,9 @@ export default function App() {
     : showTwoColumnSecondary
       ? '332px minmax(0, 1fr)'
       : '1fr';
+  // Medium-width windows place tools/logs on the second row. Keep that row capped so
+  // it does not consume all remaining height and collapse the device list/control area.
+  const compactRailHeight = 'clamp(280px, 34vh, 340px)';
 
   const toolboxCard = (
     <Card
@@ -292,12 +295,13 @@ export default function App() {
             gap: 16,
             gridTemplateColumns: mainGridColumns,
             alignItems: 'stretch',
+            overflow: 'hidden',
           }}
         >
-          <div style={PANEL_SHELL_STYLE}>
+          <div style={{ ...PANEL_SHELL_STYLE, minHeight: 0 }}>
             <DeviceListPanel />
           </div>
-          <div style={PANEL_SHELL_STYLE}>
+          <div style={{ ...PANEL_SHELL_STYLE, minHeight: 0 }}>
             <DeviceControlPanel />
           </div>
           {showRightRail ? (
@@ -311,10 +315,15 @@ export default function App() {
         {!showRightRail ? (
           <div
             style={{
-              minHeight: showTwoColumnSecondary ? 260 : 0,
+              flex: showTwoColumnSecondary ? `0 0 ${compactRailHeight}` : '0 0 auto',
+              height: showTwoColumnSecondary ? compactRailHeight : undefined,
+              minHeight: showTwoColumnSecondary ? 280 : 0,
+              maxHeight: showTwoColumnSecondary ? 340 : undefined,
               display: 'grid',
               gap: 16,
               gridTemplateColumns: showTwoColumnSecondary ? 'minmax(0, 1fr) minmax(0, 1fr)' : '1fr',
+              alignItems: 'stretch',
+              overflow: 'hidden',
             }}
           >
             {toolboxCard}
