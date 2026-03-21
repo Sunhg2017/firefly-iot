@@ -4,9 +4,11 @@ import {
   Badge,
   Button,
   Card,
+  Col,
   Empty,
   Input,
   InputNumber,
+  Row,
   Radio,
   Select,
   Space,
@@ -89,6 +91,7 @@ const STATUS_TEXT = {
 } as const;
 
 const ALL_PROPERTIES_VALUE = '__all_properties__';
+const DEFAULT_OPEN_API_BASE_URL = 'http://localhost:8080';
 const HEARTBEAT_INTERVAL_OPTIONS = [15, 30, 60, 120, 300].map((value) => ({
   label: `${value} 秒`,
   value,
@@ -130,11 +133,22 @@ function supportsThingModelReport(protocol?: string): boolean {
   return protocol === 'HTTP' || protocol === 'CoAP' || protocol === 'MQTT';
 }
 
-function resolveThingModelBaseUrl(device: SimDevice): string {
-  if (device.protocol === 'HTTP') return (device.httpBaseUrl || '').trim();
-  if (device.protocol === 'CoAP') return (device.coapBaseUrl || '').trim();
-  if (device.protocol === 'MQTT') return (device.mqttRegisterBaseUrl || '').trim();
-  return '';
+function resolveThingModelOpenApiBaseUrl(device: SimDevice): string {
+  return ((device.openApiBaseUrl ?? DEFAULT_OPEN_API_BASE_URL) || '').trim();
+}
+
+function getThingModelOpenApiMissingFields(device: SimDevice): string[] {
+  const missing: string[] = [];
+  if (!resolveThingModelOpenApiBaseUrl(device)) {
+    missing.push('OpenAPI 网关地址');
+  }
+  if (!(device.openApiAccessKey || '').trim()) {
+    missing.push('Access Key');
+  }
+  if (!(device.openApiSecretKey || '').trim()) {
+    missing.push('Secret Key');
+  }
+  return missing;
 }
 
 export default function DeviceControlPanel() {
@@ -222,19 +236,31 @@ export default function DeviceControlPanel() {
     }
 
     const productKey = (device.productKey || '').trim();
-    const baseUrl = resolveThingModelBaseUrl(device);
-    if (!productKey || !baseUrl) {
+    const missingOpenApiFields = getThingModelOpenApiMissingFields(device);
+    if (!productKey) {
       setThingModelRoot(null);
-      setThingModelError(productKey ? '产品物模型服务地址未配置' : '请先配置 ProductKey');
+      setThingModelError('请先配置 ProductKey');
+      setThingModelLoading(false);
+      return;
+    }
+    if (missingOpenApiFields.length > 0) {
+      setThingModelRoot(null);
+      setThingModelError(`请先配置物模型 OpenAPI：${missingOpenApiFields.join(' / ')}`);
       setThingModelLoading(false);
       return;
     }
 
+    const baseUrl = resolveThingModelOpenApiBaseUrl(device);
     let cancelled = false;
     setThingModelLoading(true);
     setThingModelError('');
 
-    void window.electronAPI.productGetThingModel(baseUrl, productKey)
+    void window.electronAPI.productGetThingModel({
+      baseUrl,
+      productKey,
+      accessKey: (device.openApiAccessKey || '').trim(),
+      secretKey: (device.openApiSecretKey || '').trim(),
+    })
       .then((result) => {
         if (cancelled) return;
         if (!result?.success || (typeof result.code === 'number' && result.code !== 0)) {
@@ -263,9 +289,9 @@ export default function DeviceControlPanel() {
     selectedDeviceId,
     device?.protocol,
     device?.productKey,
-    device?.httpBaseUrl,
-    device?.coapBaseUrl,
-    device?.mqttRegisterBaseUrl,
+    device?.openApiBaseUrl,
+    device?.openApiAccessKey,
+    device?.openApiSecretKey,
   ]);
 
   const availableModelItems = useMemo(
@@ -640,6 +666,12 @@ export default function DeviceControlPanel() {
   const mqttIdentity = device.protocol === 'MQTT' ? resolveMqttIdentity(device) : null;
   const accessError = getDeviceAccessValidationError(device);
   const accessItems = getDeviceAccessOverviewItems(device);
+  const thingModelOpenApiBaseUrl = supportsThingModelReport(device.protocol)
+    ? resolveThingModelOpenApiBaseUrl(device)
+    : '';
+  const thingModelOpenApiMissingFields = supportsThingModelReport(device.protocol)
+    ? getThingModelOpenApiMissingFields(device)
+    : [];
 
   const publishPayload = async (
     target: SimDevice,
@@ -1563,6 +1595,86 @@ export default function DeviceControlPanel() {
           ) : null}
         </Space>
       </Card>
+
+      {showGenericReport && (
+        <Card
+          title={<Space><ApiOutlined />物模型 OpenAPI</Space>}
+          size="small"
+          style={{
+            marginBottom: 16,
+            borderRadius: 22,
+            border: '1px solid rgba(148,163,184,0.12)',
+            background: 'linear-gradient(180deg, rgba(15,23,42,0.70) 0%, rgba(8,15,29,0.92) 100%)',
+          }}
+          styles={{ header: { borderBottom: '1px solid rgba(148,163,184,0.08)' } }}
+        >
+          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+            <Alert
+              type={thingModelOpenApiMissingFields.length > 0 ? 'warning' : 'success'}
+              showIcon
+              message={thingModelOpenApiMissingFields.length > 0 ? '物模型签名配置还不完整' : '物模型将通过 AppKey 签名链路加载'}
+              description={thingModelOpenApiMissingFields.length > 0
+                ? `请补齐 ${thingModelOpenApiMissingFields.join(' / ')}。当前仍可使用自定义 JSON，上线后的物模型模拟会在配置完成后自动恢复。`
+                : '模拟器会通过网关 /open/DEVICE/api/v1/products/thing-model/by-product-key 拉取物模型，不再使用旧的 connector 物模型接口。'}
+            />
+
+            <div>
+              <Text type="secondary" style={{ fontSize: 12 }}>OpenAPI 网关地址</Text>
+              <Input
+                size="small"
+                style={{ marginTop: 4 }}
+                value={device.openApiBaseUrl ?? DEFAULT_OPEN_API_BASE_URL}
+                onChange={(event) => updateDevice(device.id, { openApiBaseUrl: event.target.value })}
+                placeholder={DEFAULT_OPEN_API_BASE_URL}
+              />
+            </div>
+
+            <Row gutter={12}>
+              <Col span={12}>
+                <Text type="secondary" style={{ fontSize: 12 }}>Access Key</Text>
+                <Input
+                  size="small"
+                  style={{ marginTop: 4 }}
+                  value={device.openApiAccessKey || ''}
+                  onChange={(event) => updateDevice(device.id, { openApiAccessKey: event.target.value })}
+                  placeholder="ak_xxx"
+                />
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" style={{ fontSize: 12 }}>Secret Key</Text>
+                <Input.Password
+                  size="small"
+                  style={{ marginTop: 4 }}
+                  value={device.openApiSecretKey || ''}
+                  onChange={(event) => updateDevice(device.id, { openApiSecretKey: event.target.value })}
+                  placeholder="sk_xxx"
+                />
+              </Col>
+            </Row>
+
+            {thingModelLoading ? (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                正在通过 {thingModelOpenApiBaseUrl || 'OpenAPI 网关'} 刷新物模型...
+              </Text>
+            ) : null}
+
+            {!thingModelLoading && thingModelRoot ? (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                已同步 {thingModelRoot.properties.length} 个属性、{thingModelRoot.events.length} 个事件。
+              </Text>
+            ) : null}
+
+            {!thingModelLoading && thingModelError && thingModelOpenApiMissingFields.length === 0 ? (
+              <Alert
+                type="warning"
+                showIcon
+                message="最近一次物模型同步失败"
+                description={thingModelError}
+              />
+            ) : null}
+          </Space>
+        </Card>
+      )}
 
       {showGenericReport && (
         <Card

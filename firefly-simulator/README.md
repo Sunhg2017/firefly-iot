@@ -271,6 +271,18 @@ name,protocol,productKey,deviceName,deviceSecret,httpBaseUrl
 - **electron-builder** — 打包分发
 - **动态注册昵称与删除闭环** 鈥?一型一密设备直接复用“模拟设备名称”作为平台 `nickname`，首次注册后复用 `deviceSecret`，删除时可同步删除平台侧动态注册设备
 
+## 物模型 OpenAPI 签名拉取
+
+- 物模型读取已不再使用旧的 `/api/v1/protocol/products/thing-model`
+- 当前统一改为通过网关 OpenAPI 路径 `/open/DEVICE/api/v1/products/thing-model/by-product-key`
+- 签名请求头为 `X-App-Key`、`X-Timestamp`、`X-Nonce`、`X-Signature`
+- 签名计算放在 Electron 主进程，渲染进程只传网关地址、`productKey`、Access Key、Secret Key
+- 设备配置新增以下字段，并随导入、导出、克隆一起持久化：
+  - `openApiBaseUrl`
+  - `openApiAccessKey`
+  - `openApiSecretKey`
+- 默认网关地址为 `http://localhost:8080`
+
 ## Session Persistence
 
 - Device definitions are now persisted to an Electron user-data file, not only renderer localStorage.

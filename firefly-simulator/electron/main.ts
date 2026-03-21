@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { createHash, createHmac, randomBytes } from 'crypto';
 import { MqttClient, connect as mqttConnect } from 'mqtt';
 import http from 'http';
 import https from 'https';
@@ -82,6 +83,50 @@ function writeSimulatorStore(nextStore: Record<string, string>) {
   const filePath = getSimulatorStoreFilePath();
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(nextStore, null, 2), 'utf-8');
+}
+
+const OPEN_API_DEVICE_SERVICE_CODE = 'DEVICE';
+const OPEN_API_THING_MODEL_GATEWAY_PATH = '/open/DEVICE/api/v1/products/thing-model/by-product-key';
+// Gateway signs the rewritten downstream path, not the external /open/{service} path.
+const OPEN_API_THING_MODEL_REQUEST_PATH = '/api/v1/products/thing-model/by-product-key';
+
+interface ProductThingModelOpenApiPayload {
+  baseUrl: string;
+  productKey: string;
+  accessKey: string;
+  secretKey: string;
+}
+
+function trimRequired(value: string | null | undefined, message: string): string {
+  const normalized = (value || '').trim();
+  if (!normalized) {
+    throw new Error(message);
+  }
+  return normalized;
+}
+
+function sha256Hex(content: string | Buffer): string {
+  return createHash('sha256').update(content).digest('hex');
+}
+
+function hmacSha256Hex(secretKey: string, content: string): string {
+  return createHmac('sha256', secretKey).update(content).digest('hex');
+}
+
+function randomNonce(): string {
+  return randomBytes(16).toString('hex');
+}
+
+function rfc3986Encode(value: string): string {
+  return encodeURIComponent(value)
+    .replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+function buildCanonicalQuery(params: Record<string, string>): string {
+  return Object.entries(params)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${rfc3986Encode(key)}=${rfc3986Encode(value)}`)
+    .join('&');
 }
 
 function createWindow() {
@@ -285,11 +330,34 @@ ipcMain.handle('http:heartbeat', async (_e, baseUrl: string, token: string, even
   }
 });
 
-ipcMain.handle('product:thingModel', async (_e, baseUrl: string, productKey: string) => {
+ipcMain.handle('product:thingModel', async (_e, payload: ProductThingModelOpenApiPayload) => {
   try {
-    const url = new URL(`${baseUrl}/api/v1/protocol/products/thing-model`);
-    url.searchParams.set('productKey', productKey || '');
-    const res = await httpRequest(url.toString(), 'GET', {});
+    const baseUrl = trimRequired(payload.baseUrl, 'OpenAPI 网关地址未配置').replace(/\/+$/, '');
+    const productKey = trimRequired(payload.productKey, '请先配置 ProductKey');
+    const accessKey = trimRequired(payload.accessKey, '请先配置 AppKey Access Key');
+    const secretKey = trimRequired(payload.secretKey, '请先配置 AppKey Secret Key');
+    const timestamp = String(Date.now());
+    const nonce = randomNonce();
+    const canonicalQuery = buildCanonicalQuery({ productKey });
+    const canonicalRequest = [
+      'GET',
+      OPEN_API_DEVICE_SERVICE_CODE,
+      OPEN_API_THING_MODEL_REQUEST_PATH,
+      canonicalQuery,
+      sha256Hex(''),
+      timestamp,
+      nonce,
+    ].join('\n');
+    const signature = hmacSha256Hex(secretKey, canonicalRequest);
+    const url = new URL(OPEN_API_THING_MODEL_GATEWAY_PATH, `${baseUrl}/`);
+    url.search = canonicalQuery;
+    const headers = {
+      'X-App-Key': accessKey,
+      'X-Timestamp': timestamp,
+      'X-Nonce': nonce,
+      'X-Signature': signature,
+    };
+    const res = await httpRequest(url.toString(), 'GET', headers);
     return { success: true, ...JSON.parse(res.data), _status: res.status, _headers: res.headers, _elapsed: res.elapsed };
   } catch (err: any) {
     return { success: false, message: err.message };

@@ -11,7 +11,12 @@ interface ElectronAPI {
   httpOnline: (baseUrl: string, token: string, event: Record<string, any>) => Promise<any>;
   httpOffline: (baseUrl: string, token: string, event: Record<string, any>) => Promise<any>;
   httpHeartbeat: (baseUrl: string, token: string, event?: Record<string, any>) => Promise<any>;
-  productGetThingModel: (baseUrl: string, productKey: string) => Promise<any>;
+  productGetThingModel: (payload: {
+    baseUrl: string;
+    productKey: string;
+    accessKey: string;
+    secretKey: string;
+  }) => Promise<any>;
   deviceDynamicRegister: (
     baseUrl: string,
     payload: {

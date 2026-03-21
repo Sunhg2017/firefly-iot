@@ -69,9 +69,14 @@ const initialValues = {
   udpPort: 8901,
   loraWebhookUrl: 'http://localhost:9070/api/v1/lorawan/webhook/up',
   loraFPort: 1,
+  openApiBaseUrl: 'http://localhost:8080',
+  openApiAccessKey: '',
+  openApiSecretKey: '',
 };
 
 const STEP_TITLES = ['基本信息', '接入参数', '扩展配置'];
+
+const DEFAULT_OPEN_API_BASE_URL = 'http://localhost:8080';
 
 const PROTOCOL_META: Record<Protocol, { label: string; description: string }> = {
   HTTP: { label: 'HTTP 设备', description: '支持一机一密鉴权，也支持先动态注册再通过 HTTP 鉴权上报。' },
@@ -99,6 +104,10 @@ const drawerPanelCardStyle = {
   border: '1px solid rgba(59,130,246,0.18)',
   boxShadow: '0 14px 30px rgba(2,6,23,0.24)',
 } as const;
+
+function supportsThingModelProtocol(protocol: Protocol): boolean {
+  return protocol === 'HTTP' || protocol === 'MQTT' || protocol === 'CoAP';
+}
 
 function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, streamMode?: string, httpAuthMode?: string): string[] {
   if (step === 0) return ['name', 'protocol'];
@@ -136,13 +145,21 @@ function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, 
 
 function buildSummary(values: Record<string, unknown>) {
   const protocol = (values.protocol || 'HTTP') as string;
-  return [
+  const items = [
     { key: 'name', label: '模拟设备名称 / 平台设备昵称', value: values.name || '-' },
     { key: 'protocol', label: '接入协议', value: protocol },
     { key: 'main1', label: 'ProductKey / 核心标识', value: values.productKey || values.gbDeviceId || values.loraDevEui || values.snmpHost || values.modbusHost || values.wsEndpoint || values.tcpHost || values.udpHost || '-' },
     { key: 'deviceName', label: 'DeviceName / 设备名称', value: values.deviceName || '-' },
     { key: 'main2', label: '连接地址', value: values.httpBaseUrl || values.coapBaseUrl || values.mqttBrokerUrl || values.mediaBaseUrl || values.loraWebhookUrl || '-' },
   ];
+  if (supportsThingModelProtocol(protocol as Protocol)) {
+    items.push({
+      key: 'openApiBaseUrl',
+      label: '物模型 OpenAPI 网关',
+      value: values.openApiBaseUrl || DEFAULT_OPEN_API_BASE_URL,
+    });
+  }
+  return items;
 }
 
 export default function AddDeviceModal({ open, onClose }: Props) {
@@ -507,6 +524,31 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       ) : null}
 
       <Card size="small" title="配置摘要" style={drawerPanelCardStyle}>
+        {supportsThingModelProtocol(protocol) ? (
+          <Space direction="vertical" size={16} style={{ width: '100%', marginBottom: 16 }}>
+            <Alert
+              type="info"
+              message="物模型模拟改为 AppKey 签名拉取"
+              description="数据上报面板中的“物模型模拟”会通过网关 `/open/DEVICE/api/v1/products/thing-model/by-product-key` 按 AppKey 签名读取物模型。如果暂时不填，仍然可以继续使用自定义 JSON 上报。"
+            />
+            <Form.Item name="openApiBaseUrl" label="OpenAPI 网关地址" style={{ marginBottom: 0 }}>
+              <Input placeholder={DEFAULT_OPEN_API_BASE_URL} />
+            </Form.Item>
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item name="openApiAccessKey" label="Access Key" style={{ marginBottom: 0 }}>
+                  <Input placeholder="ak_xxx" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="openApiSecretKey" label="Secret Key" style={{ marginBottom: 0 }}>
+                  <Input.Password placeholder="sk_xxx" />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Divider style={{ margin: 0 }} />
+          </Space>
+        ) : null}
         <Descriptions
           size="small"
           column={1}
