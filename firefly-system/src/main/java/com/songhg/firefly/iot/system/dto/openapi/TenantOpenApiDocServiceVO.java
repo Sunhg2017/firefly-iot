@@ -3,6 +3,7 @@ package com.songhg.firefly.iot.system.dto.openapi;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -24,6 +25,9 @@ public class TenantOpenApiDocServiceVO {
 
     @Schema(description = "文档拉取失败时的说明")
     private String errorMessage;
+
+    @Schema(description = "该服务最近一次同步 OpenAPI 文件的时间")
+    private LocalDateTime docSyncedAt;
 
     @Schema(description = "当前服务下的接口文档")
     private List<TenantOpenApiDocItemVO> items = new ArrayList<>();

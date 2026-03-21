@@ -47,11 +47,11 @@
 
 - 文档目录来源仍然是 `open_api_catalog` 与租户订阅关系。
 - 请求/响应模型、字段说明、示例来源于各微服务自身的 `springdoc-openapi /v3/api-docs`。
+- 但租户页面不再实时拉取在线服务，而是读取系统服务中持久化的“最新 OpenAPI 文件快照”。
 - 系统服务新增租户文档聚合服务，由它统一：
   - 根据当前租户找出已订阅 OpenAPI
   - 按 `serviceCode` 分组
-  - 通过注册中心定位对应微服务实例
-  - 拉取微服务 `/v3/api-docs`
+  - 读取系统库中该服务最近一次同步的 OpenAPI 文件
   - 解析匹配的 path + method
   - 生成字段列表、示例和 curl 模板
 
@@ -83,32 +83,35 @@
 新增 `TenantOpenApiDocService`，核心职责：
 
 1. 读取当前租户已订阅且已启用的 OpenAPI。
-2. 通过 `DiscoveryClient` 根据 `serviceCode` 找到微服务实例。
-3. 拉取服务 `http://{instance}/v3/api-docs`。
-4. 使用 Jackson 解析 OpenAPI JSON：
+2. 读取 `open_api_service_docs` 中按服务保存的最新 OpenAPI 文件快照。
+3. 使用 Jackson 解析 OpenAPI JSON：
    - 解析 `paths`
    - 解析 `parameters`
    - 解析 `requestBody`
    - 解析 `responses`
    - 解析 `#/components/*` 引用
-5. 将 schema 拍平成字段路径：
+4. 将 schema 拍平成字段路径：
    - 对象字段使用 `data.name`
    - 数组字段使用 `items[].name`
    - map 字段使用 `properties.*`
-6. 生成默认示例与 curl 模板。
+5. 生成默认示例与 curl 模板。
 
-### 4.3 缓存策略
+### 4.3 快照同步
 
-- 使用 Caffeine 在系统服务内缓存各服务 `/v3/api-docs` 解析结果。
-- 缓存维度：`serviceCode`
-- 过期时间：5 分钟
-- 目标：避免租户频繁打开文档页时重复拉取大体积 OpenAPI JSON。
+- 各微服务原有自动注册链路继续保留。
+- 在 `OpenApiRegistrationReporter` 中，除了同步目录项 `items` 外，再额外读取当前服务本地 `/v3/api-docs`。
+- 同步请求统一携带：
+  - `serviceCode`
+  - `items`
+  - `apiDocJson`
+- 系统服务在 `syncRegisteredOpenApis` 落库目录后，同步更新 `open_api_service_docs`。
+- 这样即使微服务后续离线，租户文档页仍可基于最近一次成功同步的 OpenAPI 文件生成说明。
 
 ### 4.4 异常处理
 
-- 如果某个服务的 `/v3/api-docs` 暂不可用，不中断整个文档页。
-- 页面仍展示该服务已订阅的接口目录、网关地址与提示信息。
-- 仅该服务分组显示“服务文档暂不可用”告警。
+- 如果某个服务本次同步目录成功，但 `apiDocJson` 获取失败，则保留系统里上一份快照，不中断目录同步。
+- 如果系统里从未保存过该服务的 OpenAPI 文件，则页面仍展示该服务已订阅的接口目录和网关地址，并提示“尚未同步过 OpenAPI 文件”。
+- 仅该服务分组显示告警，不影响其他服务的文档查看。
 
 ## 5. 前端设计
 
@@ -166,7 +169,13 @@
 - 前端直连会暴露内部服务地址和服务发现细节。
 - 系统服务更适合统一过滤“当前租户可调用的接口”。
 
-### 6.3 为什么采用拍平字段路径
+### 6.3 为什么要持久化 OpenAPI 文件快照
+
+- 用户需要在服务离线时仍然查看最近一次同步的 API 文档。
+- 仅依赖实时拉取在线服务会导致“服务宕机时文档页不可用”。
+- 将完整 OpenAPI 文件落到系统库后，可以同时满足“最新同步结果可追溯”和“查看时不依赖服务在线”。
+
+### 6.4 为什么采用拍平字段路径
 
 - OpenAPI schema 存在 `$ref`、`allOf`、数组和嵌套对象。
 - 若直接把 schema 原样下发，前端还需再做一轮复杂解析。
@@ -175,5 +184,6 @@
 ## 7. 风险与后续项
 
 - 如果某些控制器未补充足够的 Swagger 注解，字段描述可能为空，只能回退到自动推断。
-- 如果服务未注册到 Nacos 或 `/v3/api-docs` 被关闭，对应服务分组只能展示基础目录信息。
+- 如果服务长时间未完成自动同步，系统里保存的仍然是上一份 OpenAPI 文件快照。
+- 如果服务从未成功同步过 OpenAPI 文件，对应服务分组只能展示基础目录信息。
 - 当前 curl 示例使用占位符，不代替真实签名工具；后续可再补 SDK 示例或语言模板。

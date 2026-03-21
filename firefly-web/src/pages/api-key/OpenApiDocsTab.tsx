@@ -63,6 +63,7 @@ interface OpenApiDocServiceGroup {
   apiCount: number;
   docAvailable: boolean;
   errorMessage?: string;
+  docSyncedAt?: string;
   items: OpenApiDocItem[];
 }
 
@@ -324,6 +325,7 @@ const OpenApiDocsTab: React.FC = () => {
           description={(
             <Space direction="vertical" size={10} style={{ width: '100%' }}>
               <span>页面只展示当前租户已订阅且已启用的 OpenAPI。接口统一通过网关 `/open/{'{SERVICE}'}/api/v1/...` 调用。</span>
+              <span>页面内容基于系统服务保存的最新 OpenAPI 文件快照生成，查看时不依赖目标服务当前是否在线。</span>
               <span>调用方需要在本地使用 Secret Key 按固定 Canonical Request 计算 HMAC-SHA256，并传递 4 个鉴权请求头。</span>
               {docData.generatedAt ? <span>文档生成时间：{docData.generatedAt}</span> : null}
             </Space>
@@ -401,6 +403,7 @@ const OpenApiDocsTab: React.FC = () => {
           key={service.serviceCode}
           title={`${service.serviceName}（${service.items.length}）`}
           style={{ marginBottom: 16 }}
+          extra={service.docSyncedAt ? <Typography.Text type="secondary">最近同步：{service.docSyncedAt}</Typography.Text> : null}
         >
           {!service.docAvailable ? (
             <Alert

@@ -15,6 +15,8 @@ public class OpenApiRegistrationSyncDTO {
     @Size(max = 32)
     private String serviceCode;
 
+    private String apiDocJson;
+
     @Valid
     private List<OpenApiRegistrationItemDTO> items = new ArrayList<>();
 }

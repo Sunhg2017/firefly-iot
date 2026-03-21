@@ -37,6 +37,7 @@ public class OpenApiCatalogService {
     private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
 
     private final OpenApiCatalogMapper openApiCatalogMapper;
+    private final OpenApiServiceDocService openApiServiceDocService;
 
     public IPage<OpenApiVO> listOpenApis(OpenApiQueryDTO query) {
         Page<OpenApiCatalog> page = new Page<>(query.getPageNum(), query.getPageSize());
@@ -160,6 +161,8 @@ public class OpenApiCatalogService {
         for (OpenApiCatalog stale : staleByCode.values()) {
             openApiCatalogMapper.deleteById(stale.getId());
         }
+
+        openApiServiceDocService.saveSnapshot(serviceCode, request.getApiDocJson());
     }
 
     private boolean applyChanges(

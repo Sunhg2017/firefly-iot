@@ -4,8 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.MissingNode;
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
@@ -15,19 +13,12 @@ import com.songhg.firefly.iot.system.dto.openapi.TenantOpenApiDocFieldVO;
 import com.songhg.firefly.iot.system.dto.openapi.TenantOpenApiDocItemVO;
 import com.songhg.firefly.iot.system.dto.openapi.TenantOpenApiDocServiceVO;
 import com.songhg.firefly.iot.system.dto.openapi.TenantOpenApiDocVO;
+import com.songhg.firefly.iot.system.entity.OpenApiServiceDoc;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cloud.client.ServiceInstance;
-import org.springframework.cloud.client.discovery.DiscoveryClient;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
-import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.web.util.UriComponentsBuilder;
 
-import java.net.URI;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -39,7 +30,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -69,14 +59,8 @@ public class TenantOpenApiDocService {
     );
 
     private final TenantOpenApiSubscriptionService tenantOpenApiSubscriptionService;
-    private final DiscoveryClient discoveryClient;
+    private final OpenApiServiceDocService openApiServiceDocService;
     private final ObjectMapper objectMapper;
-
-    private final RestTemplate restTemplate = new RestTemplate();
-    private final Cache<String, ServiceOpenApiSnapshot> serviceDocCache = Caffeine.newBuilder()
-            .maximumSize(16)
-            .expireAfterWrite(5, TimeUnit.MINUTES)
-            .build();
 
     public TenantOpenApiDocVO getCurrentTenantDocs() {
         Long tenantId = requireTenantId();
@@ -108,21 +92,17 @@ public class TenantOpenApiDocService {
         serviceVO.setServiceName(resolveServiceDisplayName(serviceCode));
         serviceVO.setApiCount(options.size());
 
-        ServiceOpenApiSnapshot snapshot = null;
-        try {
-            snapshot = serviceDocCache.get(serviceCode, this::loadServiceOpenApiSnapshot);
-            serviceVO.setDocAvailable(true);
-        } catch (RuntimeException ex) {
+        ServiceOpenApiSnapshot snapshot = loadPersistedServiceOpenApiSnapshot(serviceCode, serviceVO);
+        if (snapshot == null) {
             serviceVO.setDocAvailable(false);
-            serviceVO.setErrorMessage("当前服务的 OpenAPI 明细暂时无法拉取，请检查该服务是否在线以及 /v3/api-docs 是否可访问。");
-            log.warn("Failed to load tenant OpenAPI docs for serviceCode={}", serviceCode, ex);
+        } else {
+            serviceVO.setDocAvailable(true);
         }
 
         List<TenantOpenApiDocItemVO> items = new ArrayList<>();
-        ServiceOpenApiSnapshot finalSnapshot = snapshot;
         options.stream()
                 .sorted(Comparator.comparing(OpenApiOptionVO::getGatewayPath, Comparator.nullsLast(String::compareTo)))
-                .forEach(option -> items.add(buildDocItem(option, finalSnapshot)));
+                .forEach(option -> items.add(buildDocItem(option, snapshot)));
         serviceVO.setItems(items);
         return serviceVO;
     }
@@ -147,14 +127,14 @@ public class TenantOpenApiDocService {
         item.setCurlExample(buildCurlExample(option, List.of(), null, null));
 
         if (snapshot == null) {
-            item.getWarnings().add("当前服务文档暂不可用，仅展示目录和网关地址。");
+            item.getWarnings().add("当前服务最新 OpenAPI 文件尚未同步到系统，仅展示目录和网关地址。");
             return item;
         }
 
         JsonNode pathNode = snapshot.findPathNode(option.getPathPattern());
         JsonNode operationNode = snapshot.findOperationNode(option.getPathPattern(), option.getHttpMethod());
         if (operationNode.isMissingNode()) {
-            item.getWarnings().add("未在服务 /v3/api-docs 中匹配到该接口的详细模型，可能是服务尚未刷新或注解不完整。");
+            item.getWarnings().add("最近一次同步的 OpenAPI 文件中未匹配到该接口详细模型，可能是服务尚未重新同步或注解未补齐。");
             return item;
         }
 
@@ -738,33 +718,24 @@ public class TenantOpenApiDocService {
         return urlBuilder.toString();
     }
 
-    private ServiceOpenApiSnapshot loadServiceOpenApiSnapshot(String serviceCode) {
-        String serviceName = resolveRegistryServiceName(serviceCode);
-        List<ServiceInstance> instances = discoveryClient.getInstances(serviceName);
-        if (CollectionUtils.isEmpty(instances)) {
-            throw new BizException(ResultCode.INTERNAL_ERROR, "service instance unavailable: " + serviceName);
+    private ServiceOpenApiSnapshot loadPersistedServiceOpenApiSnapshot(String serviceCode, TenantOpenApiDocServiceVO serviceVO) {
+        OpenApiServiceDoc snapshotEntity = openApiServiceDocService.getSnapshot(serviceCode);
+        if (snapshotEntity == null || !StringUtils.hasText(snapshotEntity.getApiDocJson())) {
+            serviceVO.setErrorMessage("当前服务还没有同步过 OpenAPI 文件，请先等待服务完成一次自动注册。");
+            return null;
         }
-
-        ServiceInstance instance = instances.get(0);
-        URI docUri = UriComponentsBuilder.fromUri(instance.getUri()).path(API_DOCS_PATH).build(true).toUri();
+        serviceVO.setDocSyncedAt(snapshotEntity.getSyncedAt());
         try {
-            ResponseEntity<String> response = restTemplate.getForEntity(docUri, String.class);
-            String body = response.getBody();
-            if (!StringUtils.hasText(body)) {
-                throw new BizException(ResultCode.INTERNAL_ERROR, "empty openapi doc response: " + serviceName);
-            }
-            return new ServiceOpenApiSnapshot(objectMapper.readTree(body));
-        } catch (RestClientException | JsonProcessingException ex) {
-            throw new BizException(ResultCode.INTERNAL_ERROR, "failed to load service openapi docs: " + serviceName);
+            return new ServiceOpenApiSnapshot(objectMapper.readTree(snapshotEntity.getApiDocJson()));
+        } catch (JsonProcessingException ex) {
+            log.warn("Failed to parse persisted OpenAPI file for serviceCode={}", serviceCode, ex);
+            serviceVO.setErrorMessage("系统中保存的 OpenAPI 文件解析失败，请让对应服务重新同步。");
+            return null;
         }
     }
 
     private String resolveServiceDisplayName(String serviceCode) {
         return SERVICE_NAME_MAP.getOrDefault(serviceCode, serviceCode + " 服务");
-    }
-
-    private String resolveRegistryServiceName(String serviceCode) {
-        return "firefly-" + serviceCode.toLowerCase(Locale.ROOT);
     }
 
     private Long requireTenantId() {
