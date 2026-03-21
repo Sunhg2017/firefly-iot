@@ -371,6 +371,12 @@ public class AuthService {
 
     public IPage<LoginLogVO> queryLoginLogs(LoginLogQueryDTO query) {
         LambdaQueryWrapper<LoginLog> wrapper = new LambdaQueryWrapper<>();
+        if (StringUtils.hasText(query.getKeyword())) {
+            String keyword = query.getKeyword().trim();
+            wrapper.and(w -> w.like(LoginLog::getUsername, keyword)
+                    .or()
+                    .like(LoginLog::getLoginIp, keyword));
+        }
         if (query.getUserId() != null) {
             wrapper.eq(LoginLog::getUserId, query.getUserId());
         }
@@ -405,6 +411,7 @@ public class AuthService {
             vo.setLoginMethod(l.getLoginMethod());
             vo.setLoginIp(l.getLoginIp());
             vo.setLoginLocation(l.getLoginLocation());
+            vo.setUserAgent(l.getUserAgent());
             vo.setResult(l.getResult());
             vo.setFailReason(l.getFailReason());
             vo.setCreatedAt(l.getCreatedAt());

@@ -17,6 +17,9 @@ import java.time.LocalDate;
 @Schema(description = "登录日志分页查询请求")
 public class LoginLogQueryDTO extends PageQuery {
 
+    @Schema(description = "关键字，按用户名或登录 IP 模糊匹配")
+    private String keyword;
+
     @Schema(description = "用户ID筛选")
     private Long userId;
 
@@ -29,7 +32,7 @@ public class LoginLogQueryDTO extends PageQuery {
     @Schema(description = "登录方式筛选")
     private LoginMethod loginMethod;
 
-    @Schema(description = "结果筛选（SUCCESS/FAILURE）")
+    @Schema(description = "结果筛选（SUCCESS/FAILED）")
     private String result;
 
     @Schema(description = "开始日期")

@@ -35,6 +35,9 @@ public class LoginLogVO {
     @Schema(description = "登录地点")
     private String loginLocation;
 
+    @Schema(description = "User-Agent")
+    private String userAgent;
+
     @Schema(description = "登录结果")
     private String result;
 
