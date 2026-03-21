@@ -129,8 +129,13 @@ export default function App() {
     };
   }, []);
 
-  const showRightRail = Boolean(screens.xl);
-  const showTwoColumnSecondary = Boolean(screens.lg);
+  const showRightRail = Boolean(screens.lg);
+  const showTwoColumnSecondary = Boolean(screens.md && !screens.lg);
+  const shellGap = 'clamp(12px, 1.2vw, 16px)';
+  const shellPadding = 'clamp(12px, 1.5vw, 20px)';
+  const headerPadding = 'clamp(16px, 1.7vw, 22px)';
+  const railColumnWidth = 'minmax(292px, 332px)';
+  const rightRailWidth = 'minmax(308px, 360px)';
 
   const summary = useMemo(
     () => ({
@@ -143,13 +148,13 @@ export default function App() {
   );
 
   const mainGridColumns = showRightRail
-    ? '332px minmax(0, 1fr) 360px'
+    ? `${railColumnWidth} minmax(0, 1fr) ${rightRailWidth}`
     : showTwoColumnSecondary
-      ? '332px minmax(0, 1fr)'
+      ? `${railColumnWidth} minmax(0, 1fr)`
       : '1fr';
   // Medium-width windows place tools/logs on the second row. Keep that row capped so
   // it does not consume all remaining height and collapse the device list/control area.
-  const compactRailHeight = 'clamp(280px, 34vh, 340px)';
+  const compactRailHeight = 'clamp(220px, 30vh, 300px)';
 
   const toolboxCard = (
     <Card
@@ -210,15 +215,15 @@ export default function App() {
   return (
     <div
       style={{
-        height: '100vh',
-        minHeight: '100vh',
+        height: '100dvh',
+        minHeight: '100dvh',
         overflow: 'hidden',
-        padding: 20,
+        padding: shellPadding,
         background:
           'radial-gradient(circle at top left, rgba(59,130,246,0.12), transparent 22%), radial-gradient(circle at top right, rgba(16,185,129,0.12), transparent 20%), linear-gradient(180deg, #eff5f9 0%, #e7eef7 100%)',
       }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%', minHeight: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: shellGap, height: '100%', minHeight: 0 }}>
         <Card
           style={{
             borderRadius: 32,
@@ -226,9 +231,9 @@ export default function App() {
             background: 'linear-gradient(135deg, rgba(255,255,255,0.96) 0%, rgba(245,249,255,0.94) 100%)',
             boxShadow: '0 18px 46px rgba(15,23,42,0.08)',
           }}
-          styles={{ body: { padding: 22 } }}
+          styles={{ body: { padding: headerPadding } }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'clamp(16px, 2vw, 24px)', flexWrap: 'wrap', alignItems: 'flex-start' }}>
             <div style={{ flex: '1 1 420px', minWidth: 280 }}>
               <Title
                 level={2}
@@ -240,10 +245,10 @@ export default function App() {
               >
                 设备模拟器
               </Title>
-              <Text style={{ display: 'block', marginTop: 10, color: '#475569', fontSize: 14, lineHeight: 1.8 }}>
+              <Text style={{ display: 'block', marginTop: 8, color: '#475569', fontSize: 14, lineHeight: 1.7 }}>
                 先在左侧选择设备，再连接、上报和调试。
               </Text>
-              <Space size={[8, 8]} wrap style={{ marginTop: 16 }}>
+              <Space size={[8, 8]} wrap style={{ marginTop: 12 }}>
                 <Tag style={{ margin: 0, borderRadius: 999, paddingInline: 12, borderColor: '#dbeafe', color: '#1d4ed8', background: '#eff6ff' }}>
                   Ctrl+N 新建设备
                 </Tag>
@@ -259,18 +264,18 @@ export default function App() {
             <div
               style={{
                 flex: '0 1 520px',
-                width: 'min(100%, 520px)',
+                width: 'min(100%, 500px)',
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
-                gap: 12,
+                gridTemplateColumns: 'repeat(auto-fit, minmax(104px, 1fr))',
+                gap: 10,
               }}
             >
               {SUMMARY_CARD_META.map((item) => (
                 <div
                   key={item.key}
                   style={{
-                    padding: '14px 14px 12px',
-                    borderRadius: 22,
+                    padding: '12px 12px 10px',
+                    borderRadius: 20,
                     border: '1px solid rgba(226,232,240,0.86)',
                     background: item.background,
                   }}
@@ -278,7 +283,7 @@ export default function App() {
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     {item.label}
                   </Text>
-                  <div style={{ marginTop: 10, fontSize: 24, fontWeight: 700, color: item.valueColor }}>
+                  <div style={{ marginTop: 8, fontSize: 24, fontWeight: 700, color: item.valueColor }}>
                     {summary[item.key]}
                   </div>
                 </div>
@@ -292,7 +297,7 @@ export default function App() {
             flex: 1,
             minHeight: 0,
             display: 'grid',
-            gap: 16,
+            gap: shellGap,
             gridTemplateColumns: mainGridColumns,
             alignItems: 'stretch',
             overflow: 'hidden',
@@ -305,7 +310,7 @@ export default function App() {
             <DeviceControlPanel />
           </div>
           {showRightRail ? (
-            <div style={{ minHeight: 0, display: 'grid', gap: 16, gridTemplateRows: 'auto minmax(0, 1fr)' }}>
+            <div style={{ minHeight: 0, display: 'grid', gap: shellGap, gridTemplateRows: 'minmax(214px, auto) minmax(0, 1fr)', overflow: 'hidden' }}>
               {toolboxCard}
               {logCard}
             </div>
@@ -317,10 +322,10 @@ export default function App() {
             style={{
               flex: showTwoColumnSecondary ? `0 0 ${compactRailHeight}` : '0 0 auto',
               height: showTwoColumnSecondary ? compactRailHeight : undefined,
-              minHeight: showTwoColumnSecondary ? 280 : 0,
-              maxHeight: showTwoColumnSecondary ? 340 : undefined,
+              minHeight: showTwoColumnSecondary ? 220 : 0,
+              maxHeight: showTwoColumnSecondary ? 300 : undefined,
               display: 'grid',
-              gap: 16,
+              gap: shellGap,
               gridTemplateColumns: showTwoColumnSecondary ? 'minmax(0, 1fr) minmax(0, 1fr)' : '1fr',
               alignItems: 'stretch',
               overflow: 'hidden',
