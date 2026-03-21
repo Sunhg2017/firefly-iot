@@ -12,7 +12,7 @@ import {
   TemplateEditorPanel,
 } from './components';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 const PANEL_SHELL_STYLE: CSSProperties = {
   minHeight: 0,
@@ -129,19 +129,6 @@ export default function App() {
     boxShadow: '0 22px 54px rgba(15,23,42,0.08)',
     overflow: 'hidden',
   };
-  const desktopHeaderStyle: CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 14,
-    alignSelf: 'flex-start',
-    maxWidth: '100%',
-    padding: '12px 16px',
-    borderRadius: 20,
-    border: '1px solid rgba(226,232,240,0.92)',
-    background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,250,255,0.96) 100%)',
-    boxShadow: '0 8px 22px rgba(15,23,42,0.05)',
-  };
-
   const toolboxCard = (
     <Card
       style={PANEL_SHELL_STYLE}
@@ -209,44 +196,6 @@ export default function App() {
       }}
     >
       <div style={appShellStyle}>
-        <div style={desktopHeaderStyle}>
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 14,
-              border: '1px solid rgba(191,219,254,0.9)',
-              background: 'linear-gradient(135deg, rgba(239,246,255,0.96) 0%, rgba(224,242,254,0.86) 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#2563eb',
-              fontWeight: 700,
-              letterSpacing: 0.6,
-              flexShrink: 0,
-            }}
-          >
-            IoT
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <Title
-              level={4}
-              style={{
-                margin: 0,
-                color: '#0f172a',
-                fontFamily: '"Microsoft YaHei UI", "PingFang SC", sans-serif',
-                fontSize: 24,
-                lineHeight: 1.2,
-              }}
-            >
-              设备模拟器
-            </Title>
-            <Text style={{ display: 'block', marginTop: 4, color: '#64748b', fontSize: 12, lineHeight: 1.5 }}>
-              设备联调工作台
-            </Text>
-          </div>
-        </div>
-
         <div
           style={{
             flex: 1,
