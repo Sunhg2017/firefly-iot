@@ -59,6 +59,8 @@ public R<String> getThingModelByProductKey(@RequestParam String productKey) {
 - 每一行代表一条平台已登记的 OpenAPI
 - 勾选后表示该租户已订阅该 OpenAPI
 - 未勾选的 OpenAPI 不会出现在租户空间 AppKey 的授权范围里
+- 可以按名称、编码、路径、所属服务、HTTP 方法快速筛选 OpenAPI
+- 可以对当前筛选结果批量订阅、批量取消，接口很多时不需要逐条点开关
 
 可配置项：
 
@@ -72,9 +74,11 @@ public R<String> getThingModelByProductKey(@RequestParam String productKey) {
 推荐操作步骤：
 
 1. 打开目标租户的 `OpenAPI订阅` 抽屉。
-2. 勾选需要开放给该租户的 OpenAPI。
-3. 按需填写 IP 白名单、并发上限、日调用上限。
-4. 点击 `保存订阅`。
+2. 先按关键字、所属服务、HTTP 方法或订阅状态筛选目标 OpenAPI。
+3. 对当前筛选结果执行批量订阅，或逐条勾选需要开放给该租户的 OpenAPI。
+4. 按需填写 IP 白名单、并发上限、日调用上限。
+5. 如需快速放开限制，可将当前筛选结果批量设为不限额。
+6. 点击 `保存订阅`。
 
 注意事项：
 
