@@ -37,7 +37,8 @@ public R<String> getThingModelByProductKey(@RequestParam String productKey) {
 - `@OpenApi` 只能标在实际对外开放的 Controller 方法上
 - 方法必须只有一个 HTTP Method 和一个确定的请求路径
 - `permissionCode` 可以显式填写；如果不填，方法上必须存在单值 `@RequiresPermission`
-- 服务发布完成后，目录会自动同步到系统运维空间，不需要再到页面手工新建
+- 服务发布完成后，目录会在启动后的后台任务中自动同步到系统运维空间，不需要再到页面手工新建
+- 若 `firefly-system` 暂时不可达，当前业务服务仍会先正常启动，目录会在后续重试时补齐
 - 当前首个已落地示例路径为 `/open/DEVICE/api/v1/products/thing-model/by-product-key?productKey=pk_xxx`
 
 使用建议：

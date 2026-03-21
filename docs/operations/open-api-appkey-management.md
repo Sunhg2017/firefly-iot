@@ -55,7 +55,7 @@ Flyway 脚本：
 原因：
 
 - 先升级系统服务，确保内部鉴权接口和新表结构就绪。
-- 再升级各业务微服务，确保它们能在启动后把 `@OpenApi` 目录同步到系统服务。
+- 再升级各业务微服务，确保它们能在启动后通过后台任务把 `@OpenApi` 目录同步到系统服务。
 - 然后升级网关，避免外部 `/open/**` 路由调用到缺失的鉴权逻辑。
 - 最后升级前端，避免页面先出现而后端接口未就绪。
 
@@ -70,7 +70,7 @@ Flyway 脚本：
 ### 4.2 配置关注点
 
 - 网关必须可通过服务发现访问 `firefly-system`
-- 各业务微服务必须可通过服务发现访问 `firefly-system`，用于自动同步 `@OpenApi` 目录
+- 各业务微服务不再把 `firefly-system` 在线作为启动前置条件，但后台自动同步 `@OpenApi` 目录时仍需通过服务发现访问 `firefly-system`
 - 网关 Redis 必须可写，否则并发与配额控制失效
 - JWT 公钥配置仍用于用户态请求；AppKey 请求不依赖 JWT
 - `firefly-system` 生产环境必须配置 `FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY`
@@ -111,7 +111,7 @@ Flyway 脚本：
 推荐至少验证以下流程：
 
 1. 在代码中为目标 Controller 方法添加 `@OpenApi` 标注。
-2. 重启或发布对应业务微服务，确认该接口已自动同步到 `open_api_catalog`。
+2. 重启或发布对应业务微服务，等待首次后台同步（默认 10 秒），确认该接口已自动同步到 `open_api_catalog`。
 3. 在租户管理中为目标租户订阅该 OpenAPI。
 4. 进入租户空间创建 AppKey，并选择该 OpenAPI。
 5. 使用 `X-App-Key`、`X-Timestamp`、`X-Nonce`、`X-Signature` 调用 `/open/{SERVICE}/api/v1/...` 路径。
@@ -140,12 +140,13 @@ Flyway 脚本：
 重点检查：
 
 - 目标接口是否确实标注了 `@OpenApi`
+- 自动注册改为启动后后台延迟同步，若服务刚完成启动，先等待首次调度窗口（默认 10 秒）
 - 当前版本的 OpenAPI 自动扫描只读取业务 MVC 的 `requestMappingHandlerMapping`；若本地仍是旧包，请先升级到包含该修复的版本
 - 标注方法是否只有一个 HTTP Method 和一个有效路径
 - `permissionCode` 是否显式填写，或该方法是否具备单值 `@RequiresPermission`
 - 对应业务微服务是否启动成功并注册到 Nacos
 - 业务微服务日志中是否出现 `OpenAPI registration sync failed`
-- `firefly-system` 是否可被业务微服务通过服务名访问
+- `firefly-system` 是否可被业务微服务通过服务名访问；这不会阻塞业务服务启动，但会导致自动同步持续失败
 
 ### 6.3 网关调用返回 401/403
 
@@ -235,7 +236,7 @@ Flyway 脚本：
 
 ## 9. 运维建议
 
-- 生产环境先在代码中完成 `@OpenApi` 标注并部署各业务微服务，再由系统运维空间核对自动注册结果。
+- 生产环境先在代码中完成 `@OpenApi` 标注并部署各业务微服务，等待首次后台同步完成后，再由系统运维空间核对自动注册结果。
 - 对外暴露前，先为每条 OpenAPI 配置明确的透传权限码，避免下游只做租户隔离而未做动作级控制。
 - 升级到签名方案后，历史 AppKey 必须重新创建；不要试图恢复 `X-App-Secret` 直传兼容逻辑。
 - 生产环境不要使用开发默认密钥，`FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY` 必须独立生成并妥善保管。

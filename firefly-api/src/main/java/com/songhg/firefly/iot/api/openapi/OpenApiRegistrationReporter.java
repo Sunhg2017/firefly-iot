@@ -4,11 +4,9 @@ import com.songhg.firefly.iot.api.client.OpenApiRegistryClient;
 import com.songhg.firefly.iot.api.dto.openapi.OpenApiRegistrationSyncDTO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.event.EventListener;
 import org.springframework.core.env.Environment;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.util.StringUtils;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
 
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -25,16 +23,12 @@ public class OpenApiRegistrationReporter {
     private final Environment environment;
     private final AtomicBoolean syncing = new AtomicBoolean(false);
 
-    @EventListener(ApplicationReadyEvent.class)
-    public void syncOnApplicationReady() {
-        publishRegistrations("application-ready");
-    }
-
     @Scheduled(
             initialDelayString = "${firefly.openapi.registry.initial-delay-ms:10000}",
             fixedDelayString = "${firefly.openapi.registry.fixed-delay-ms:300000}"
     )
     public void syncOnSchedule() {
+        // OpenAPI registry sync should never become a hard startup dependency of business services.
         publishRegistrations("schedule");
     }
 

@@ -47,7 +47,7 @@
 注册来源：
 
 - 各微服务在 Controller 方法上标注 `@OpenApi(code = "...")`。
-- 服务启动后通过内部同步接口将注解元数据写入 `open_api_catalog`。
+- 服务启动后由后台定时任务通过内部同步接口将注解元数据写入 `open_api_catalog`，首次同步默认延迟 10 秒，不阻塞业务服务启动。
 - 同一 `service_code` 下已不存在于本次同步结果中的目录项会被自动删除，避免手工目录与代码脱节。
 
 ### 3.2 租户订阅
@@ -129,7 +129,7 @@
 
 ### 4.4 自动注册链路
 
-1. 微服务启动完成后扫描 Spring MVC `RequestMappingHandlerMapping`。
+1. 微服务启动完成后，由后台定时任务延迟扫描 Spring MVC `RequestMappingHandlerMapping`。
    - 仅扫描业务 Controller 所在的 `requestMappingHandlerMapping`，不扫描 Actuator 的 `controllerEndpointHandlerMapping`，避免运维端点映射干扰 OpenAPI 自动注册。
 2. 找到所有被 `@OpenApi` 标注的方法，自动解析：
    - `code`
@@ -141,6 +141,7 @@
    - `sortOrder`
    - `description`
 3. 服务通过内部接口 `POST /api/v1/internal/open-apis/sync` 向系统服务全量同步本服务目录。
+   - 若 `firefly-system` 暂未就绪，则记录失败日志并等待下一次定时重试，不影响当前业务服务继续启动和对内提供能力。
 4. 系统服务按 `serviceCode` 对当前目录做幂等 upsert，并删除当前服务已下线的旧目录项。
 
 约束：
