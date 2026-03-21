@@ -2843,7 +2843,7 @@ const ProtocolParserPage: React.FC = () => {
               <Alert
                 type="warning"
                 showIcon
-                message="上行调试会按载荷和脚本自动识别设备，不再手工指定设备主键或设备名称。"
+                message="请确认载荷中包含可识别设备的字段，调试时会自动匹配设备。"
               />
             </Col>
           </Row>

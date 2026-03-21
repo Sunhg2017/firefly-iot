@@ -221,7 +221,7 @@ const SystemSettingsPage: React.FC = () => {
     <div>
       <PageHeader
         title="系统设置"
-        description={`当前共 ${totalCount} 项配置，页面仅保留正式生效的系统配置项，不再维护租户管理员默认权限这类过渡入口。`}
+        description={`当前共 ${totalCount} 项配置，可按分组查看和编辑生效参数。`}
       />
 
       <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 16 }}>

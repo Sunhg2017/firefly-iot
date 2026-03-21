@@ -203,7 +203,7 @@ const OpenApiPage: React.FC = () => {
           showIcon
           style={{ marginBottom: 16 }}
           message="目录只读"
-          description="OpenAPI 不再通过页面手工创建或编辑。研发在 Controller 方法上标注 @OpenApi 并发布服务后，系统会自动同步到这里，外部访问路径固定为 /open/{SERVICE}/api/v1/..."
+          description="接口目录会在服务发布后自动同步到这里。需要查看最新结果时，可重新发布服务后点击刷新。"
         />
 
         <Form form={queryForm} layout="inline" onFinish={() => void handleSearch()}>

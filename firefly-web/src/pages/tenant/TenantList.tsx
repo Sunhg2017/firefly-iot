@@ -998,7 +998,7 @@ const TenantList: React.FC = () => {
               )}
             >
               <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-                仅支持授权租户业务空间功能，取消勾选的页面将不再出现在租户空间菜单中，并禁止直接访问。
+                勾选后租户可见并可访问对应页面；取消后菜单会隐藏，并禁止直接访问。
               </Typography.Paragraph>
               <Tree
                 checkable

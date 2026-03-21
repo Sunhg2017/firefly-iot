@@ -303,7 +303,7 @@ const OpenApiDocsTab: React.FC = () => {
           message="调用说明"
           description={(
             <Space direction="vertical" size={10} style={{ width: '100%' }}>
-              <span>页面只展示当前租户已订阅且已启用的 OpenAPI，文档内容只保留实际调用需要的信息。</span>
+              <span>当前页面只展示已订阅且已启用的 OpenAPI。</span>
               <span>所有接口统一通过网关 `/open/{'{SERVICE}'}/api/v1/...` 调用，调用地址、参数说明和示例请求可直接用于联调。</span>
               <span>调用时使用 AppKey 在本地完成签名，下方提供鉴权请求头和签名原文模板。</span>
               <span>文档基于最近一次成功同步的 OpenAPI 快照生成，查看时不依赖目标服务当前是否在线。</span>

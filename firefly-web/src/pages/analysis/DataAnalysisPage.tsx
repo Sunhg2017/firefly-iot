@@ -486,8 +486,8 @@ const ExportTab: React.FC<TabProps> = ({ deviceOptions }) => {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="自定义导出已切换到异步任务中心"
-        description="提交后后台会生成 CSV 并写入对象存储，导出完成后可在任务中心统一下载。导出结果使用产品 Key 和设备名称，不再暴露内部设备主键。"
+        message="导出说明"
+        description="提交后后台会生成 CSV，并在任务中心提供下载结果。"
       />
       <Form form={form} layout="vertical" onFinish={handleExport} style={{ maxWidth: 560 }}>
         <Form.Item name="deviceIds" label="选择设备" rules={[{ required: true, message: '请选择设备' }]}>

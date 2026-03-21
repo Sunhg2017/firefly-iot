@@ -625,7 +625,7 @@ const UserList: React.FC = () => {
                 type="info"
                 showIcon
                 message="角色分配"
-                description="角色列表采用步骤式配置，不再把很长的下拉直接塞进一个弹窗。只展示当前空间可分配角色。"
+                description="勾选需要分配的角色，列表只显示当前空间可选角色。"
               />
 
               <Card

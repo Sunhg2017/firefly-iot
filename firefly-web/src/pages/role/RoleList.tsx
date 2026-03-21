@@ -699,7 +699,7 @@ const RoleList: React.FC = () => {
                     type="info"
                     showIcon
                     message="自定义范围"
-                    description="自定义范围会合并项目和设备分组，统一收口为该角色在设备、产品、告警、规则、OTA、视频等模块中的可见范围。"
+                    description="同时选择项目和设备分组后，角色只可访问命中的业务数据。"
                   />
                 </Col>
               )}
@@ -717,7 +717,7 @@ const RoleList: React.FC = () => {
                 type="info"
                 showIcon
                 message="权限选择"
-                description="模块过多时使用步骤式配置。每个模块只展示当前空间真实可分配的权限项，越权能力不会出现在这里。"
+                description="按模块勾选需要授权的权限项，列表只显示当前空间可分配的权限。"
               />
 
               <Card

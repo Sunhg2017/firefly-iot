@@ -277,7 +277,7 @@ const DeviceTagPage: React.FC = () => {
       >
         <Card size="small" style={{ marginBottom: 16 }}>
           <Space direction="vertical" style={{ width: '100%' }}>
-            <Typography.Text type="secondary">直接从现有设备中选择，不再手动输入设备 ID。</Typography.Text>
+            <Typography.Text type="secondary">搜索设备名称或别名后，点击绑定。</Typography.Text>
             <Space.Compact style={{ width: '100%' }}>
               <Select
                 showSearch

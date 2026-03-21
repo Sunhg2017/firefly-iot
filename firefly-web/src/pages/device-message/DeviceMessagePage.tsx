@@ -598,8 +598,8 @@ const ServiceInvokeTab: React.FC<ServiceInvokeTabProps> = ({
           <Alert
             type={selectedDevice ? 'info' : 'warning'}
             showIcon
-            message={selectedDevice ? '仅展示产品自定义服务' : '请先在页面顶部选择目标设备'}
-            description={selectedDevice ? '生命周期项如 online/offline/heartbeat 属于事件，不会出现在这里的服务列表里。' : '设备选定后，系统会按所属产品自动加载真实可调用的服务清单。'}
+            message={selectedDevice ? '选择服务并填写入参' : '请先在页面顶部选择目标设备'}
+            description={selectedDevice ? '服务列表会按当前设备所属产品自动加载。' : '选定设备后可直接开始属性、事件和服务调用。'}
           />
           <Select
             showSearch
@@ -904,7 +904,7 @@ const DeviceMessagePage: React.FC = () => {
             <Space direction="vertical" size={14} style={{ width: '100%' }}>
               <div>
                 <Title level={5} style={{ margin: 0 }}>目标设备</Title>
-                <Text type="secondary">设备上下文在整页共享，下面三个发送场景都会直接复用当前选择，不需要再重复选设备。</Text>
+                <Text type="secondary">先选择设备，下面三个发送场景都会使用当前设备。</Text>
               </div>
               <Select
                 showSearch
@@ -931,7 +931,7 @@ const DeviceMessagePage: React.FC = () => {
                   description={<Space direction="vertical" size={4}><span>{feedback.detail}</span><Text type="secondary">发送时间：{feedback.sentAt}</Text></Space>}
                 />
               ) : (
-                <Alert type="info" showIcon message="操作提示" description="服务调用只展示产品物模型中的自定义服务；生命周期事件不会再混入服务列表。" />
+                <Alert type="info" showIcon message="操作提示" description="先选择设备，再切换到属性、事件或服务调用页签继续发送。" />
               )}
             </Space>
           </Col>
