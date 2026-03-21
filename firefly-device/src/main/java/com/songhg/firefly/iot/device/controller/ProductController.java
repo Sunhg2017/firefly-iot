@@ -117,12 +117,12 @@ public class ProductController {
     @RequiresPermission("product:read")
     @OpenApi(
             code = "product.thing-model.by-product-key",
-            name = "Get Product Thing Model By ProductKey",
-            description = "Read the current tenant product thing model through the business key productKey"
+            name = "按 ProductKey 获取产品物模型",
+            description = "通过业务唯一键 ProductKey 读取当前租户下的产品物模型"
     )
-    @Operation(summary = "Get product thing model by ProductKey")
+    @Operation(summary = "按 ProductKey 获取产品物模型")
     public R<String> getThingModelByProductKey(
-            @Parameter(description = "Product productKey", required = true) @RequestParam String productKey) {
+            @Parameter(description = "产品 ProductKey", required = true) @RequestParam String productKey) {
         return R.ok(productService.getThingModelByProductKeyForCurrentTenant(productKey));
     }
 

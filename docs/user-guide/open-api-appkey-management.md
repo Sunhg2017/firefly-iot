@@ -44,6 +44,7 @@ public R<String> getThingModelByProductKey(@RequestParam String productKey) {
 使用建议：
 
 - 编码尽量采用稳定、可读的业务编码，例如 `product.thing-model.by-product-key`
+- OpenAPI 页面展示的名称和说明统一使用中文，避免系统运维、平台租户和租户管理员看到英文目录文案
 - 路径模板统一按 `/api/v1/...` 口径填写
 - 若下游接口仍需动作级权限控制，请确保 `permissionCode` 与实际鉴权口径一致
 

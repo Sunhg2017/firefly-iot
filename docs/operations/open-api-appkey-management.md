@@ -112,6 +112,7 @@ Flyway 脚本：
 
 1. 在代码中为目标 Controller 方法添加 `@OpenApi` 标注。
 2. 重启或发布对应业务微服务，等待首次后台同步（默认 10 秒），确认该接口已自动同步到 `open_api_catalog`。
+   - 同时确认页面展示的 OpenAPI 名称、说明为中文文案，`code` 仍保持稳定业务编码。
 3. 在租户管理中为目标租户订阅该 OpenAPI。
 4. 进入租户空间创建 AppKey，并选择该 OpenAPI。
 5. 使用 `X-App-Key`、`X-Timestamp`、`X-Nonce`、`X-Signature` 调用 `/open/{SERVICE}/api/v1/...` 路径。

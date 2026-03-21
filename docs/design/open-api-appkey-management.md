@@ -42,6 +42,7 @@
 - `http_method`：HTTP 方法。
 - `path_pattern`：下游服务路径模板，统一以 `/api/v1/...` 口径维护。
 - `permission_code`：命中接口后向下游透传的权限码。
+- `name`、`description`：面向平台页面展示的目录文案，统一使用中文；稳定标识仍以 `code` 为准。
 - `enabled`：是否允许订阅和对外开放。
 
 注册来源：
