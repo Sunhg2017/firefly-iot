@@ -658,7 +658,7 @@ export default function DeviceControlPanel() {
                 选择一台模拟设备开始控制
               </Title>
               <Text type="secondary" style={{ fontSize: 14, lineHeight: 1.8 }}>
-                左侧列表先负责选设备，当前区域只负责展示设备摘要、上报工作区和协议调试内容，核心信息会保持在第一屏。
+                先从左侧选择设备，再在这里连接、上报和调试。
               </Text>
             </Space>
             <Empty description="当前还没有选中设备" image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -1713,10 +1713,10 @@ export default function DeviceControlPanel() {
             <Alert
               type={thingModelOpenApiMissingFields.length > 0 ? 'warning' : 'success'}
               showIcon
-              message={thingModelOpenApiMissingFields.length > 0 ? '物模型签名配置还不完整' : '物模型将通过 AppKey 签名链路加载'}
+              message={thingModelOpenApiMissingFields.length > 0 ? '物模型签名配置还不完整' : '已具备物模型加载条件'}
               description={thingModelOpenApiMissingFields.length > 0
-                ? `请补齐 ${thingModelOpenApiMissingFields.join(' / ')}。当前仍可使用自定义 JSON，上线后的物模型模拟会在配置完成后自动恢复。`
-                : '模拟器会通过网关 /open/DEVICE/api/v1/products/thing-model/by-product-key 拉取物模型，不再使用旧的 connector 物模型接口。'}
+                ? `请补齐 ${thingModelOpenApiMissingFields.join(' / ')}。未补齐前可继续使用自定义 JSON。`
+                : '补齐后可直接按产品物模型选择属性或事件。'}
             />
 
             <div>
@@ -1810,8 +1810,8 @@ export default function DeviceControlPanel() {
               <Alert
                 type="info"
                 showIcon
-                message="HTTP 认证与上报已拆开展示"
-                description="先通过上方接入概览确认 ProductKey、DeviceName、DeviceSecret 是否齐全。连接成功后，再在这里发送属性或事件。"
+                message="请先连接设备"
+                description="确认 ProductKey、DeviceName、DeviceSecret 无误后，先连接，再发送属性或事件。"
               />
             ) : null}
 
@@ -2010,7 +2010,7 @@ export default function DeviceControlPanel() {
       >
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            把协议专属的历史、订阅、影子和报文工具集中到一个区域，避免它们和主上报区争抢第一屏空间。
+            连接后可在这里查看 HTTP 历史、MQTT 消息、CoAP 影子等协议调试结果。
           </Text>
           {!isOnline ? (
             <Alert

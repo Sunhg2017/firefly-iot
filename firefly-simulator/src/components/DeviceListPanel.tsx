@@ -475,7 +475,7 @@ export default function DeviceListPanel() {
                 设备列表
               </Title>
               <Paragraph style={{ margin: '6px 0 0', color: '#64748b', fontSize: 12 }}>
-                先定位设备，再进入主工作区操作。列表只保留检索、状态和关键标识，不再堆叠重复信息。
+                搜索或筛选后，点击设备卡片进入主工作区。
               </Paragraph>
             </div>
             <Space size={8} wrap>

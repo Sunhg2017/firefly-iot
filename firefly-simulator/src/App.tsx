@@ -156,7 +156,7 @@ export default function App() {
         <Space direction="vertical" size={2}>
           <Text strong style={{ color: '#0f172a' }}>快捷工具</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            把低频但重要的批量能力集中到一处，避免它们和主控制区抢焦点。
+            按需打开压测、场景编排或数据模板。
           </Text>
         </Space>
       )}
@@ -165,21 +165,21 @@ export default function App() {
         <div style={TOOL_CARD_ROW_STYLE}>
           <Space direction="vertical" size={2}>
             <Text strong style={{ color: '#0f172a' }}>压力测试</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>批量发送并统计吞吐、成功率和耗时。</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>批量发送并查看吞吐、成功率和耗时。</Text>
           </Space>
           <StressTestPanel />
         </div>
         <div style={TOOL_CARD_ROW_STYLE}>
           <Space direction="vertical" size={2}>
             <Text strong style={{ color: '#0f172a' }}>场景编排</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>按步骤串联连接、发送、等待和断开动作。</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>按步骤执行连接、发送、等待和断开。</Text>
           </Space>
           <ScenarioPanel />
         </div>
         <div style={TOOL_CARD_ROW_STYLE}>
           <Space direction="vertical" size={2}>
             <Text strong style={{ color: '#0f172a' }}>数据模板</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>维护常用属性、事件模板，减少重复录入。</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>维护常用上报模板，减少重复录入。</Text>
           </Space>
           <TemplateEditorPanel />
         </div>
@@ -195,7 +195,7 @@ export default function App() {
         <Space direction="vertical" size={2}>
           <Text strong style={{ color: '#0f172a' }}>运行日志</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            日志沉到侧边区，主控制区只保留当前设备的操作与结果。
+            支持按当前设备筛选、导出和清空。
           </Text>
         </Space>
       )}
@@ -238,7 +238,7 @@ export default function App() {
                 设备模拟器
               </Title>
               <Text style={{ display: 'block', marginTop: 10, color: '#475569', fontSize: 14, lineHeight: 1.8 }}>
-                把设备管理、数据上报、协议调试和运行日志收拢到一张工作台里。主操作区保持居中，日志与批量工具下沉到侧栏，核心信息能在第一屏读完。
+                先在左侧选择设备，再连接、上报和调试。
               </Text>
               <Space size={[8, 8]} wrap style={{ marginTop: 16 }}>
                 <Tag style={{ margin: 0, borderRadius: 999, paddingInline: 12, borderColor: '#dbeafe', color: '#1d4ed8', background: '#eff6ff' }}>
