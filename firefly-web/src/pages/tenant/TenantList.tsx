@@ -701,6 +701,7 @@ const TenantList: React.FC = () => {
       { type: 'divider' },
       {
         key: 'deactivate',
+        icon: <StopOutlined />,
         danger: true,
         label: '注销租户',
         onClick: () => {
