@@ -97,6 +97,25 @@ interface ProductThingModelOpenApiPayload {
   secretKey: string;
 }
 
+interface SimulatorAuthLoginPayload {
+  username?: string;
+  password?: string;
+  loginMethod?: string;
+  fingerprint?: string;
+  userAgent?: string;
+}
+
+interface SimulatorProductListPayload {
+  pageNum?: number;
+  pageSize?: number;
+  keyword?: string;
+  protocol?: string;
+  status?: string;
+}
+
+const SIMULATOR_PLATFORM = 'WEB';
+const SIMULATOR_USER_AGENT = 'Firefly-Simulator/1.0';
+
 function trimRequired(value: string | null | undefined, message: string): string {
   const normalized = (value || '').trim();
   if (!normalized) {
@@ -265,6 +284,112 @@ function httpRequest(
     req.end();
   });
 }
+
+function buildGatewayServiceUrl(baseUrl: string, serviceCode: string, pathName: string): string {
+  const normalizedBaseUrl = trimRequired(baseUrl, '服务网关地址未配置').replace(/\/+$/, '');
+  const normalizedPathName = pathName.startsWith('/') ? pathName : `/${pathName}`;
+  return `${normalizedBaseUrl}/${serviceCode}${normalizedPathName}`;
+}
+
+function buildGatewayHeaders(token?: string, userAgent?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'X-Platform': SIMULATOR_PLATFORM,
+    'User-Agent': userAgent || SIMULATOR_USER_AGENT,
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+function parseGatewayJsonResponse(result: { status: number; data: string; headers: Record<string, string>; elapsed: number }) {
+  try {
+    const parsed = JSON.parse(result.data);
+    return {
+      success: result.status >= 200 && result.status < 300,
+      _status: result.status,
+      _headers: result.headers,
+      _elapsed: result.elapsed,
+      ...parsed,
+    };
+  } catch {
+    return {
+      success: result.status >= 200 && result.status < 300,
+      _status: result.status,
+      _headers: result.headers,
+      _elapsed: result.elapsed,
+      message: result.data || `HTTP ${result.status}`,
+    };
+  }
+}
+
+ipcMain.handle('simulator:authLogin', async (_e, baseUrl: string, payload: SimulatorAuthLoginPayload) => {
+  try {
+    const requestPayload = {
+      loginMethod: payload?.loginMethod || 'PASSWORD',
+      platform: SIMULATOR_PLATFORM,
+      username: trimRequired(payload?.username, '请输入用户名'),
+      password: trimRequired(payload?.password, '请输入密码'),
+      fingerprint: (payload?.fingerprint || '').trim() || undefined,
+    };
+    const result = await httpRequest(
+      buildGatewayServiceUrl(baseUrl, 'SYSTEM', '/api/v1/auth/login'),
+      'POST',
+      buildGatewayHeaders(undefined, payload?.userAgent),
+      JSON.stringify(requestPayload),
+    );
+    return parseGatewayJsonResponse(result);
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('simulator:authLogout', async (_e, baseUrl: string, token: string, userAgent?: string) => {
+  try {
+    const result = await httpRequest(
+      buildGatewayServiceUrl(baseUrl, 'SYSTEM', '/api/v1/auth/logout'),
+      'POST',
+      buildGatewayHeaders(trimRequired(token, '登录令牌不存在'), userAgent),
+      JSON.stringify({}),
+    );
+    return parseGatewayJsonResponse(result);
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('simulator:productList', async (_e, baseUrl: string, token: string, query?: SimulatorProductListPayload, userAgent?: string) => {
+  try {
+    const result = await httpRequest(
+      buildGatewayServiceUrl(baseUrl, 'DEVICE', '/api/v1/products/list'),
+      'POST',
+      buildGatewayHeaders(trimRequired(token, '登录令牌不存在'), userAgent),
+      JSON.stringify({
+        pageNum: Math.max(1, Number(query?.pageNum) || 1),
+        pageSize: Math.min(200, Math.max(1, Number(query?.pageSize) || 200)),
+        keyword: (query?.keyword || '').trim() || undefined,
+        protocol: (query?.protocol || '').trim() || undefined,
+        status: (query?.status || '').trim() || undefined,
+      }),
+    );
+    return parseGatewayJsonResponse(result);
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('simulator:productSecret', async (_e, baseUrl: string, token: string, productId: number, userAgent?: string) => {
+  try {
+    const result = await httpRequest(
+      buildGatewayServiceUrl(baseUrl, 'DEVICE', `/api/v1/products/${productId}/secret`),
+      'GET',
+      buildGatewayHeaders(trimRequired(token, '登录令牌不存在'), userAgent),
+    );
+    return parseGatewayJsonResponse(result);
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+});
 
 ipcMain.handle('http:auth', async (_e, baseUrl: string, productKey: string, deviceName: string, deviceSecret: string) => {
   try {

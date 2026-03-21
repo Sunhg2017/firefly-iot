@@ -9,6 +9,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
   simulatorStoreSetItem: (name: string, value: string) => ipcRenderer.invoke('simulator-store:set', name, value),
   simulatorStoreRemoveItem: (name: string) => ipcRenderer.invoke('simulator-store:remove', name),
 
+  simulatorAuthLogin: (
+    baseUrl: string,
+    payload: {
+      username?: string;
+      password?: string;
+      loginMethod?: string;
+      fingerprint?: string;
+      userAgent?: string;
+    },
+  ) => ipcRenderer.invoke('simulator:authLogin', baseUrl, payload),
+
+  simulatorAuthLogout: (baseUrl: string, token: string, userAgent?: string) =>
+    ipcRenderer.invoke('simulator:authLogout', baseUrl, token, userAgent),
+
+  simulatorProductList: (
+    baseUrl: string,
+    token: string,
+    query?: {
+      pageNum?: number;
+      pageSize?: number;
+      keyword?: string;
+      protocol?: string;
+      status?: string;
+    },
+    userAgent?: string,
+  ) => ipcRenderer.invoke('simulator:productList', baseUrl, token, query, userAgent),
+
+  simulatorProductSecret: (baseUrl: string, token: string, productId: number, userAgent?: string) =>
+    ipcRenderer.invoke('simulator:productSecret', baseUrl, token, productId, userAgent),
+
   // HTTP Protocol
   httpAuth: (baseUrl: string, productKey: string, deviceName: string, deviceSecret: string) =>
     ipcRenderer.invoke('http:auth', baseUrl, productKey, deviceName, deviceSecret),

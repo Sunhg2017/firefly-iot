@@ -4,6 +4,30 @@ interface ElectronAPI {
   simulatorStoreGetItem: (name: string) => Promise<string | null>;
   simulatorStoreSetItem: (name: string, value: string) => Promise<void>;
   simulatorStoreRemoveItem: (name: string) => Promise<void>;
+  simulatorAuthLogin: (
+    baseUrl: string,
+    payload: {
+      username?: string;
+      password?: string;
+      loginMethod?: string;
+      fingerprint?: string;
+      userAgent?: string;
+    },
+  ) => Promise<any>;
+  simulatorAuthLogout: (baseUrl: string, token: string, userAgent?: string) => Promise<any>;
+  simulatorProductList: (
+    baseUrl: string,
+    token: string,
+    query?: {
+      pageNum?: number;
+      pageSize?: number;
+      keyword?: string;
+      protocol?: string;
+      status?: string;
+    },
+    userAgent?: string,
+  ) => Promise<any>;
+  simulatorProductSecret: (baseUrl: string, token: string, productId: number, userAgent?: string) => Promise<any>;
 
   httpAuth: (baseUrl: string, productKey: string, deviceName: string, deviceSecret: string) => Promise<any>;
   httpReportProperty: (baseUrl: string, token: string, properties: Record<string, any>) => Promise<any>;

@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import {
   Button,
   Card,
@@ -15,12 +15,19 @@ import {
   Space,
   Steps,
   Switch,
+  Tag,
   Typography,
   message,
 } from 'antd';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import type { Protocol } from '../store';
 import { useSimStore } from '../store';
+import {
+  buildEnvironmentDeviceDefaults,
+  getActiveEnvironment,
+  isSimulatorAuthInvalid,
+  useSimWorkspaceStore,
+} from '../workspaceStore';
 
 const { Paragraph, Text } = Typography;
 
@@ -29,53 +36,28 @@ interface Props {
   onClose: () => void;
 }
 
-const initialValues = {
-  protocol: 'HTTP',
-  httpBaseUrl: 'http://localhost:9070',
-  httpAuthMode: 'DEVICE_SECRET',
-  httpRegisterBaseUrl: 'http://localhost:9070',
-  coapBaseUrl: 'http://localhost:9070',
-  mqttAuthMode: 'DEVICE_SECRET',
-  mqttRegisterBaseUrl: 'http://localhost:9070',
-  mqttBrokerUrl: 'mqtt://localhost:1883',
-  mqttClean: true,
-  mqttKeepalive: 60,
-  mqttWillQos: 1,
-  mqttWillRetain: false,
-  mediaBaseUrl: 'http://localhost:9040',
-  streamMode: 'GB28181',
-  gbDomain: '3402000000',
-  sipServerIp: '127.0.0.1',
-  sipServerPort: 5060,
-  sipServerId: '34020000002000000001',
-  sipLocalPort: 5080,
-  sipKeepaliveInterval: 60,
-  sipTransport: 'UDP',
-  sipPassword: '',
-  snmpConnectorUrl: 'http://localhost:9070',
-  snmpPort: 161,
-  snmpVersion: 2,
-  snmpCommunity: 'public',
-  modbusConnectorUrl: 'http://localhost:9070',
-  modbusPort: 502,
-  modbusSlaveId: 1,
-  modbusMode: 'TCP',
-  wsConnectorUrl: 'http://localhost:9070',
-  wsEndpoint: 'ws://localhost:9070/ws/device',
-  tcpHost: 'localhost',
-  tcpPort: 8900,
-  udpHost: 'localhost',
-  udpPort: 8901,
-  loraWebhookUrl: 'http://localhost:9070/api/v1/lorawan/webhook/up',
-  loraFPort: 1,
-  openApiBaseUrl: 'http://localhost:8080',
-  openApiAccessKey: '',
-  openApiSecretKey: '',
-};
+interface TenantProductRecord {
+  id: number;
+  productKey: string;
+  name: string;
+  protocol: string;
+  deviceAuthType: 'DEVICE_SECRET' | 'PRODUCT_SECRET';
+}
 
 const STEP_TITLES = ['基本信息', '接入参数', '扩展配置'];
 
 const DEFAULT_OPEN_API_BASE_URL = 'http://localhost:8080';
+
+const PRODUCT_PROTOCOL_QUERY_MAP: Partial<Record<Protocol, string>> = {
+  HTTP: 'HTTP',
+  MQTT: 'MQTT',
+  CoAP: 'COAP',
+};
+
+const AUTH_MODE_LABELS: Record<'DEVICE_SECRET' | 'PRODUCT_SECRET', string> = {
+  DEVICE_SECRET: '一机一密',
+  PRODUCT_SECRET: '一型一密',
+};
 
 const PROTOCOL_META: Record<Protocol, { label: string; description: string }> = {
   HTTP: { label: 'HTTP 设备', description: '支持一机一密鉴权，也支持先动态注册再通过 HTTP 鉴权上报。' },
@@ -118,16 +100,50 @@ const drawerInnerCardStyle: CSSProperties = {
   boxShadow: 'none',
 };
 
-const drawerHintTextStyle: CSSProperties = {
-  display: 'block',
-  marginTop: 8,
-  fontSize: 12,
-  lineHeight: 1.7,
-  color: '#64748b',
-};
+function supportsTenantProductSelection(protocol: Protocol): boolean {
+  return protocol === 'HTTP' || protocol === 'MQTT' || protocol === 'CoAP';
+}
 
 function supportsThingModelProtocol(protocol: Protocol): boolean {
   return protocol === 'HTTP' || protocol === 'MQTT' || protocol === 'CoAP';
+}
+
+function buildInitialValues(
+  environment: ReturnType<typeof getActiveEnvironment>,
+): Record<string, unknown> {
+  const environmentDefaults = buildEnvironmentDeviceDefaults(environment);
+  return {
+    protocol: 'HTTP',
+    httpAuthMode: 'DEVICE_SECRET',
+    mqttAuthMode: 'DEVICE_SECRET',
+    mqttClean: true,
+    mqttKeepalive: 60,
+    mqttWillQos: 1,
+    mqttWillRetain: false,
+    streamMode: 'GB28181',
+    gbDomain: '3402000000',
+    sipServerIp: '127.0.0.1',
+    sipServerPort: 5060,
+    sipServerId: '34020000002000000001',
+    sipLocalPort: 5080,
+    sipKeepaliveInterval: 60,
+    sipTransport: 'UDP',
+    sipPassword: '',
+    snmpPort: 161,
+    snmpVersion: 2,
+    snmpCommunity: 'public',
+    modbusPort: 502,
+    modbusSlaveId: 1,
+    modbusMode: 'TCP',
+    tcpHost: 'localhost',
+    tcpPort: 8900,
+    udpHost: 'localhost',
+    udpPort: 8901,
+    loraFPort: 1,
+    openApiAccessKey: '',
+    openApiSecretKey: '',
+    ...environmentDefaults,
+  };
 }
 
 function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, streamMode?: string, httpAuthMode?: string): string[] {
@@ -164,12 +180,17 @@ function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, 
   return [];
 }
 
-function buildSummary(values: Record<string, unknown>) {
+function buildSummary(values: Record<string, unknown>, products: TenantProductRecord[]) {
   const protocol = (values.protocol || 'HTTP') as string;
+  const selectedProduct = products.find((item) => item.productKey === values.productKey);
   const items = [
     { key: 'name', label: '设备名称', value: values.name || '-' },
     { key: 'protocol', label: '协议', value: protocol },
-    { key: 'main1', label: '核心标识', value: values.productKey || values.gbDeviceId || values.loraDevEui || values.snmpHost || values.modbusHost || values.wsEndpoint || values.tcpHost || values.udpHost || '-' },
+    {
+      key: 'main1',
+      label: '所属产品',
+      value: selectedProduct ? `${selectedProduct.name} (${selectedProduct.productKey})` : values.productKey || '-',
+    },
     { key: 'deviceName', label: 'DeviceName', value: values.deviceName || '-' },
     { key: 'main2', label: '接入地址', value: values.httpBaseUrl || values.coapBaseUrl || values.mqttBrokerUrl || values.mediaBaseUrl || values.loraWebhookUrl || '-' },
   ];
@@ -185,22 +206,138 @@ function buildSummary(values: Record<string, unknown>) {
 
 export default function AddDeviceModal({ open, onClose }: Props) {
   const addLog = useSimStore((state) => state.addLog);
+  const environments = useSimWorkspaceStore((state) => state.environments);
+  const activeEnvironmentId = useSimWorkspaceStore((state) => state.activeEnvironmentId);
+  const sessions = useSimWorkspaceStore((state) => state.sessions);
+  const clearWorkspaceSession = useSimWorkspaceStore((state) => state.clearSession);
   const [form] = Form.useForm();
+  const activeEnvironment = useMemo(
+    () => getActiveEnvironment(environments, activeEnvironmentId),
+    [activeEnvironmentId, environments],
+  );
+  const activeSession = sessions[activeEnvironment.id];
   const [currentStep, setCurrentStep] = useState(0);
-  const [formSnapshot, setFormSnapshot] = useState<Record<string, unknown>>(initialValues);
+  const [formSnapshot, setFormSnapshot] = useState<Record<string, unknown>>(() => buildInitialValues(activeEnvironment));
+  const [products, setProducts] = useState<TenantProductRecord[]>([]);
+  const [productLoading, setProductLoading] = useState(false);
+  const [productLoadError, setProductLoadError] = useState('');
 
   const protocol = ((formSnapshot.protocol as Protocol | undefined) || 'HTTP') as Protocol;
   const httpAuthMode = formSnapshot.httpAuthMode as string | undefined;
   const mqttAuthMode = formSnapshot.mqttAuthMode as string | undefined;
   const streamMode = formSnapshot.streamMode as string | undefined;
   const meta = useMemo(() => PROTOCOL_META[protocol], [protocol]);
+  const canSelectTenantProduct = supportsTenantProductSelection(protocol)
+    && Boolean(activeSession?.accessToken)
+    && !productLoadError
+    && (productLoading || products.length > 0);
+
+  const resetForm = () => {
+    const nextValues = buildInitialValues(activeEnvironment);
+    form.resetFields();
+    form.setFieldsValue(nextValues);
+    setCurrentStep(0);
+    setFormSnapshot(nextValues);
+  };
 
   const closeDrawer = () => {
-    form.resetFields();
-    setCurrentStep(0);
-    setFormSnapshot(initialValues);
+    resetForm();
+    setProducts([]);
+    setProductLoading(false);
+    setProductLoadError('');
     onClose();
   };
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    resetForm();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    if (!supportsTenantProductSelection(protocol)) {
+      setProducts([]);
+      setProductLoadError('');
+      setProductLoading(false);
+      return;
+    }
+    if (!activeSession?.accessToken) {
+      setProducts([]);
+      setProductLoadError('');
+      setProductLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const loadTenantProducts = async () => {
+      setProductLoading(true);
+      setProductLoadError('');
+      const result = await window.electronAPI.simulatorProductList(
+        activeEnvironment.gatewayBaseUrl,
+        activeSession.accessToken,
+        {
+          pageNum: 1,
+          pageSize: 200,
+          protocol: PRODUCT_PROTOCOL_QUERY_MAP[protocol],
+        },
+        navigator.userAgent,
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      if (isSimulatorAuthInvalid(result)) {
+        clearWorkspaceSession(activeEnvironment.id);
+        setProducts([]);
+        setProductLoadError('登录已失效，请重新登录');
+        setProductLoading(false);
+        return;
+      }
+
+      if (!result?.success || (typeof result.code === 'number' && result.code !== 0)) {
+        setProducts([]);
+        setProductLoadError(result?.message || '产品列表加载失败');
+        setProductLoading(false);
+        return;
+      }
+
+      const records = Array.isArray(result.data?.records)
+        ? result.data.records
+        : Array.isArray(result.data)
+          ? result.data
+          : [];
+
+      setProducts(
+        records.map((item: any) => ({
+          id: Number(item.id),
+          productKey: String(item.productKey || ''),
+          name: String(item.name || item.productKey || ''),
+          protocol: String(item.protocol || ''),
+          deviceAuthType: item.deviceAuthType === 'PRODUCT_SECRET' ? 'PRODUCT_SECRET' : 'DEVICE_SECRET',
+        })),
+      );
+      setProductLoading(false);
+      setProductLoadError('');
+    };
+
+    void loadTenantProducts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeEnvironment.gatewayBaseUrl,
+    activeEnvironment.id,
+    activeSession?.accessToken,
+    clearWorkspaceSession,
+    open,
+    protocol,
+  ]);
 
   const nextStep = async () => {
     const fields = getStepFields(protocol, currentStep, mqttAuthMode, streamMode, httpAuthMode);
@@ -233,12 +370,87 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     closeDrawer();
   };
 
+  const loadProductSecret = async (product: TenantProductRecord) => {
+    if (!activeSession?.accessToken || product.deviceAuthType !== 'PRODUCT_SECRET') {
+      form.setFieldValue('productSecret', '');
+      setFormSnapshot(form.getFieldsValue(true));
+      return;
+    }
+
+    const result = await window.electronAPI.simulatorProductSecret(
+      activeEnvironment.gatewayBaseUrl,
+      activeSession.accessToken,
+      product.id,
+      navigator.userAgent,
+    );
+
+    if (isSimulatorAuthInvalid(result)) {
+      clearWorkspaceSession(activeEnvironment.id);
+      form.setFieldValue('productSecret', '');
+      setFormSnapshot(form.getFieldsValue(true));
+      message.warning('登录已失效，请重新登录');
+      return;
+    }
+
+    if (!result?.success || (typeof result.code === 'number' && result.code !== 0)) {
+      form.setFieldValue('productSecret', '');
+      setFormSnapshot(form.getFieldsValue(true));
+      message.error(result?.message || '获取 ProductSecret 失败');
+      return;
+    }
+
+    form.setFieldValue('productSecret', typeof result.data === 'string' ? result.data : '');
+    setFormSnapshot(form.getFieldsValue(true));
+  };
+
+  const handleProductSelect = async (productKey: string) => {
+    const targetProduct = products.find((item) => item.productKey === productKey);
+    if (!targetProduct) {
+      return;
+    }
+
+    const nextValues: Record<string, unknown> = {
+      productKey: targetProduct.productKey,
+    };
+
+    if (protocol === 'HTTP') {
+      nextValues.httpAuthMode = targetProduct.deviceAuthType;
+      if (targetProduct.deviceAuthType !== 'PRODUCT_SECRET') {
+        nextValues.productSecret = '';
+      }
+    }
+
+    if (protocol === 'MQTT') {
+      nextValues.mqttAuthMode = targetProduct.deviceAuthType;
+      if (targetProduct.deviceAuthType !== 'PRODUCT_SECRET') {
+        nextValues.productSecret = '';
+      }
+    }
+
+    form.setFieldsValue(nextValues);
+    setFormSnapshot(form.getFieldsValue(true));
+
+    if (targetProduct.deviceAuthType === 'PRODUCT_SECRET') {
+      await loadProductSecret(targetProduct);
+    }
+  };
+
   const renderBasicStep = () => (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Card size="small" style={drawerPanelCardStyle}>
-        <Text strong style={{ color: '#0f172a' }}>{meta.label}</Text>
-        <Paragraph style={{ margin: '8px 0 0', color: '#475569' }}>{meta.description}</Paragraph>
-        <Text style={drawerHintTextStyle}>先选择协议，再填写当前协议必填项。</Text>
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Space size={8} wrap>
+            <Text strong style={{ color: '#0f172a' }}>{meta.label}</Text>
+            <Tag style={{ margin: 0 }}>{activeEnvironment.name}</Tag>
+            <Tag style={{ margin: 0 }} color={activeSession ? 'success' : 'default'}>
+              {activeSession ? '已登录' : '未登录'}
+            </Tag>
+          </Space>
+          <Text type="secondary">{meta.description}</Text>
+          <Text type="secondary">
+            {activeSession ? `${activeSession.user.tenantName} / ${activeSession.user.realName || activeSession.user.username}` : '未登录时可手工填写 ProductKey'}
+          </Text>
+        </Space>
       </Card>
       <Form.Item name="name" label="模拟设备名称" rules={[{ required: true, message: '请输入模拟设备名称' }]}>
         <Input placeholder="例如：华东厂区温湿度模拟器-01" maxLength={64} />
@@ -254,14 +466,58 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     </Space>
   );
 
+  const renderProductField = () => {
+    if (canSelectTenantProduct) {
+      return (
+        <Form.Item
+          name="productKey"
+          label="所属产品"
+          rules={[{ required: true, message: '请选择产品' }]}
+          extra={productLoading ? '正在加载当前租户产品' : undefined}
+        >
+          <Select
+            showSearch
+            loading={productLoading}
+            optionFilterProp="label"
+            placeholder="请选择产品"
+            options={products.map((item) => ({
+              value: item.productKey,
+              label: `${item.name} (${item.productKey}) · ${AUTH_MODE_LABELS[item.deviceAuthType]}`,
+            }))}
+            onChange={(value) => {
+              void handleProductSelect(value);
+            }}
+          />
+        </Form.Item>
+      );
+    }
+
+    const extraText = !activeSession
+      ? '未登录时请手工填写 ProductKey'
+      : productLoadError
+        ? `${productLoadError}，可改为手工填写`
+        : !productLoading && supportsTenantProductSelection(protocol)
+          ? '当前协议下未查询到产品，可手工填写'
+          : undefined;
+
+    return (
+      <Form.Item
+        name="productKey"
+        label="ProductKey"
+        rules={[{ required: true, message: '请输入 ProductKey' }]}
+        extra={extraText}
+      >
+        <Input placeholder="例如：sensor_gateway" />
+      </Form.Item>
+    );
+  };
+
   const renderThreeTuple = (baseField: string, baseLabel: string) => (
     <>
       <Form.Item name={baseField} label={baseLabel} rules={[{ required: true, message: `请输入${baseLabel}` }]}>
-        <Input placeholder="http://localhost:9070" />
+        <Input placeholder={activeEnvironment.protocolBaseUrl} />
       </Form.Item>
-      <Form.Item name="productKey" label="ProductKey" rules={[{ required: true, message: '请输入 ProductKey' }]}>
-        <Input placeholder="例如：sensor_gateway" />
-      </Form.Item>
+      {renderProductField()}
       <Form.Item name="deviceName" label="DeviceName" rules={[{ required: true, message: '请输入 DeviceName' }]}>
         <Input placeholder="例如：device-01" />
       </Form.Item>
@@ -320,13 +576,10 @@ export default function AddDeviceModal({ open, onClose }: Props) {
 
   const renderHttpAccessStep = () => (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Text style={drawerHintTextStyle}>先选择认证方式，再填写当前方式对应的密钥字段。</Text>
       <Form.Item name="httpBaseUrl" label="HTTP 服务地址" rules={[{ required: true, message: '请输入 HTTP 服务地址' }]}>
-        <Input placeholder="http://localhost:9070" />
+        <Input placeholder={activeEnvironment.protocolBaseUrl} />
       </Form.Item>
-      <Form.Item name="productKey" label="ProductKey" rules={[{ required: true, message: '请输入 ProductKey' }]}>
-        <Input placeholder="例如：sensor_gateway" />
-      </Form.Item>
+      {renderProductField()}
       <Form.Item name="deviceName" label="DeviceName" rules={[{ required: true, message: '请输入 DeviceName' }]}>
         <Input placeholder="例如：device-01" />
       </Form.Item>
@@ -339,7 +592,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       {httpAuthMode === 'PRODUCT_SECRET' ? (
         <>
           <Form.Item name="httpRegisterBaseUrl" label="动态注册服务地址" rules={[{ required: true, message: '请输入动态注册服务地址' }]}>
-            <Input placeholder="http://localhost:9070" />
+            <Input placeholder={activeEnvironment.protocolBaseUrl} />
           </Form.Item>
           <Form.Item name="productSecret" label="ProductSecret" rules={[{ required: true, message: '请输入 ProductSecret' }]}>
             <Input.Password placeholder="输入产品密钥" />
@@ -361,8 +614,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       case 'MQTT':
         return (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Text style={drawerHintTextStyle}>先选择认证方式，再填写 Broker 地址。</Text>
-            <Form.Item name="productKey" label="ProductKey" rules={[{ required: true, message: '请输入 ProductKey' }]}><Input /></Form.Item>
+            {renderProductField()}
             <Form.Item name="deviceName" label="DeviceName" rules={[{ required: true, message: '请输入 DeviceName' }]}><Input /></Form.Item>
             <Form.Item name="mqttAuthMode" label="认证方式">
               <Radio.Group>
@@ -372,21 +624,20 @@ export default function AddDeviceModal({ open, onClose }: Props) {
             </Form.Item>
             {mqttAuthMode === 'PRODUCT_SECRET' ? (
               <>
-                <Form.Item name="mqttRegisterBaseUrl" label="动态注册服务地址" rules={[{ required: true, message: '请输入动态注册服务地址' }]}><Input /></Form.Item>
+                <Form.Item name="mqttRegisterBaseUrl" label="动态注册服务地址" rules={[{ required: true, message: '请输入动态注册服务地址' }]}><Input placeholder={activeEnvironment.protocolBaseUrl} /></Form.Item>
                 <Form.Item name="productSecret" label="ProductSecret" rules={[{ required: true, message: '请输入 ProductSecret' }]}><Input.Password /></Form.Item>
                 {renderLocatorList('需要自动注册时再补充这些标识。')}
               </>
             ) : (
               <Form.Item name="deviceSecret" label="DeviceSecret" rules={[{ required: true, message: '请输入 DeviceSecret' }]}><Input.Password /></Form.Item>
             )}
-            <Form.Item name="mqttBrokerUrl" label="MQTT Broker 地址" rules={[{ required: true, message: '请输入 MQTT Broker 地址' }]}><Input /></Form.Item>
+            <Form.Item name="mqttBrokerUrl" label="MQTT Broker 地址" rules={[{ required: true, message: '请输入 MQTT Broker 地址' }]}><Input placeholder={activeEnvironment.mqttBrokerUrl} /></Form.Item>
           </Space>
         );
       case 'Video':
         return (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Text style={drawerHintTextStyle}>先选择视频模式，SIP 与通道配置放在下一步。</Text>
-            <Form.Item name="mediaBaseUrl" label="媒体服务地址" rules={[{ required: true, message: '请输入媒体服务地址' }]}><Input /></Form.Item>
+            <Form.Item name="mediaBaseUrl" label="媒体服务地址" rules={[{ required: true, message: '请输入媒体服务地址' }]}><Input placeholder={activeEnvironment.mediaBaseUrl} /></Form.Item>
             <Form.Item name="streamMode" label="视频模式">
               <Radio.Group>
                 <Radio.Button value="GB28181">GB28181</Radio.Button>
@@ -408,7 +659,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       case 'SNMP':
         return (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Form.Item name="snmpConnectorUrl" label="Connector 地址" rules={[{ required: true, message: '请输入 Connector 地址' }]}><Input /></Form.Item>
+            <Form.Item name="snmpConnectorUrl" label="Connector 地址" rules={[{ required: true, message: '请输入 Connector 地址' }]}><Input placeholder={activeEnvironment.protocolBaseUrl} /></Form.Item>
             <Form.Item name="snmpHost" label="目标主机" rules={[{ required: true, message: '请输入目标主机' }]}><Input /></Form.Item>
             <Row gutter={12}>
               <Col span={8}><Form.Item name="snmpPort" label="端口"><InputNumber min={1} max={65535} style={{ width: '100%' }} /></Form.Item></Col>
@@ -420,7 +671,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       case 'Modbus':
         return (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Form.Item name="modbusConnectorUrl" label="Connector 地址" rules={[{ required: true, message: '请输入 Connector 地址' }]}><Input /></Form.Item>
+            <Form.Item name="modbusConnectorUrl" label="Connector 地址" rules={[{ required: true, message: '请输入 Connector 地址' }]}><Input placeholder={activeEnvironment.protocolBaseUrl} /></Form.Item>
             <Form.Item name="modbusHost" label="目标主机" rules={[{ required: true, message: '请输入目标主机' }]}><Input /></Form.Item>
             <Row gutter={12}>
               <Col span={8}><Form.Item name="modbusPort" label="端口"><InputNumber min={1} max={65535} style={{ width: '100%' }} /></Form.Item></Col>
@@ -430,7 +681,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
           </Space>
         );
       case 'WebSocket':
-        return <Form.Item name="wsEndpoint" label="WebSocket 地址" rules={[{ required: true, message: '请输入 WebSocket 地址' }]}><Input /></Form.Item>;
+        return <Form.Item name="wsEndpoint" label="WebSocket 地址" rules={[{ required: true, message: '请输入 WebSocket 地址' }]}><Input placeholder={String(buildEnvironmentDeviceDefaults(activeEnvironment).wsEndpoint)} /></Form.Item>;
       case 'TCP':
         return (
           <>
@@ -448,7 +699,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       case 'LoRaWAN':
         return (
           <>
-            <Form.Item name="loraWebhookUrl" label="Webhook 地址" rules={[{ required: true, message: '请输入 Webhook 地址' }]}><Input /></Form.Item>
+            <Form.Item name="loraWebhookUrl" label="Webhook 地址" rules={[{ required: true, message: '请输入 Webhook 地址' }]}><Input placeholder={String(buildEnvironmentDeviceDefaults(activeEnvironment).loraWebhookUrl)} /></Form.Item>
             <Form.Item name="loraDevEui" label="DevEUI" rules={[{ required: true, message: '请输入 DevEUI' }]}><Input style={{ fontFamily: 'monospace' }} /></Form.Item>
             <Form.Item name="loraAppId" label="应用 ID"><Input /></Form.Item>
             <Form.Item name="loraFPort" label="fPort"><InputNumber min={1} max={255} style={{ width: '100%' }} /></Form.Item>
@@ -536,7 +787,6 @@ export default function AddDeviceModal({ open, onClose }: Props) {
 
       {protocol === 'WebSocket' ? (
         <Card size="small" title="WebSocket 连接参数" style={drawerSectionCardStyle}>
-          <Paragraph style={{ color: '#64748b' }}>如需复用平台上下文，再补充设备、产品和租户标识。</Paragraph>
           <Row gutter={12}>
             <Col span={8}><Form.Item name="wsDeviceId" label="设备标识"><Input placeholder="可选" /></Form.Item></Col>
             <Col span={8}><Form.Item name="wsProductId" label="产品标识"><Input placeholder="可选" /></Form.Item></Col>
@@ -548,11 +798,8 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       <Card size="small" title="配置摘要" style={drawerPanelCardStyle}>
         {supportsThingModelProtocol(protocol) ? (
           <Space direction="vertical" size={16} style={{ width: '100%', marginBottom: 16 }}>
-            <Paragraph style={{ margin: 0, color: '#64748b' }}>
-              填入 AppKey 后，可在数据上报面板直接按产品物模型选择属性或事件。
-            </Paragraph>
             <Form.Item name="openApiBaseUrl" label="OpenAPI 网关地址" style={{ marginBottom: 0 }}>
-              <Input placeholder={DEFAULT_OPEN_API_BASE_URL} />
+              <Input placeholder={activeEnvironment.gatewayBaseUrl || DEFAULT_OPEN_API_BASE_URL} />
             </Form.Item>
             <Row gutter={12}>
               <Col span={12}>
@@ -572,7 +819,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
         <Descriptions
           size="small"
           column={1}
-          items={buildSummary(formSnapshot).map((item) => ({
+          items={buildSummary(formSnapshot, products).map((item) => ({
             key: item.key,
             label: item.label,
             children: <Text>{String(item.value)}</Text>,
@@ -587,7 +834,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       title={(
         <Space direction="vertical" size={0}>
           <Text strong style={{ fontSize: 18, color: '#0f172a' }}>新建设备</Text>
-          <Text style={{ fontSize: 12, color: '#64748b' }}>分三步完成基础信息、接入参数和扩展配置。</Text>
+          <Text style={{ fontSize: 12, color: '#64748b' }}>{activeEnvironment.name}</Text>
         </Space>
       )}
       open={open}
@@ -626,11 +873,10 @@ export default function AddDeviceModal({ open, onClose }: Props) {
         },
       }}
     >
-      {/* 抽屉关闭时表单会被销毁，这里保留一份快照状态，避免继续监听未挂载的 form 实例。 */}
       <Form
         form={form}
         layout="vertical"
-        initialValues={initialValues}
+        initialValues={buildInitialValues(activeEnvironment)}
         onValuesChange={() => setFormSnapshot(form.getFieldsValue(true))}
       >
         <Card size="small" style={{ ...drawerPanelCardStyle, marginBottom: 24 }}>

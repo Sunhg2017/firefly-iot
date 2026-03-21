@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Badge,
   Button,
+  Card,
+  Drawer,
   Empty,
+  Form,
   Input,
   List,
   Popconfirm,
@@ -20,9 +23,18 @@ import {
   DisconnectOutlined,
   ExportOutlined,
   ImportOutlined,
+  LoginOutlined,
+  LogoutOutlined,
   PlusOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { Protocol, SimDevice, useSimStore } from '../store';
+import {
+  buildEnvironmentDeviceDefaults,
+  getActiveEnvironment,
+  isSimulatorAuthInvalid,
+  useSimWorkspaceStore,
+} from '../workspaceStore';
 import AddDeviceModal from './AddDeviceModal';
 import {
   shouldCleanupDynamicRegistration,
@@ -140,13 +152,51 @@ function getDynamicRegisterBaseUrl(device: SimDevice): string | undefined {
   return undefined;
 }
 
+function buildSessionLabel(session?: {
+  user?: {
+    tenantName?: string;
+    realName?: string | null;
+    username?: string;
+  };
+} | null) {
+  if (!session?.user) {
+    return '未登录';
+  }
+  return `${session.user.tenantName || '当前租户'} / ${session.user.realName || session.user.username || '当前用户'}`;
+}
+
 export default function DeviceListPanel() {
   const { devices, selectedDeviceId, selectDevice, removeDevice, addLog } = useSimStore();
+  const environments = useSimWorkspaceStore((state) => state.environments);
+  const activeEnvironmentId = useSimWorkspaceStore((state) => state.activeEnvironmentId);
+  const setActiveEnvironment = useSimWorkspaceStore((state) => state.setActiveEnvironment);
+  const addEnvironment = useSimWorkspaceStore((state) => state.addEnvironment);
+  const updateEnvironment = useSimWorkspaceStore((state) => state.updateEnvironment);
+  const removeEnvironment = useSimWorkspaceStore((state) => state.removeEnvironment);
+  const sessions = useSimWorkspaceStore((state) => state.sessions);
+  const saveSession = useSimWorkspaceStore((state) => state.saveSession);
+  const clearWorkspaceSession = useSimWorkspaceStore((state) => state.clearSession);
+  const activeEnvironment = useMemo(
+    () => getActiveEnvironment(environments, activeEnvironmentId),
+    [activeEnvironmentId, environments],
+  );
+  const environmentDefaults = useMemo(
+    () => buildEnvironmentDeviceDefaults(activeEnvironment),
+    [activeEnvironment],
+  );
+  const activeSession = sessions[activeEnvironment.id];
   const [addOpen, setAddOpen] = useState(false);
   const [filterProto, setFilterProto] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchKey, setSearchKey] = useState('');
   const [batchConnecting, setBatchConnecting] = useState(false);
+  const [workspaceDrawerOpen, setWorkspaceDrawerOpen] = useState(false);
+  const [loginDrawerOpen, setLoginDrawerOpen] = useState(false);
+  const [editingEnvironmentId, setEditingEnvironmentId] = useState<string | null>(null);
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [logoutSubmitting, setLogoutSubmitting] = useState(false);
+  const [environmentForm] = Form.useForm();
+  const [loginForm] = Form.useForm();
 
   const filteredDevices = useMemo(() => {
     let list = devices;
@@ -303,35 +353,35 @@ export default function DeviceListPanel() {
           nickname: row.nickname || row.name || row.deviceName || '',
           name: row.name || row.deviceName || `导入设备 ${count + 1}`,
           protocol,
-          httpBaseUrl: row.httpBaseUrl || row.baseUrl || 'http://localhost:9070',
+          httpBaseUrl: row.httpBaseUrl || row.baseUrl || String(environmentDefaults.httpBaseUrl),
           httpAuthMode: (row.httpAuthMode as never) || 'DEVICE_SECRET',
-          httpRegisterBaseUrl: row.httpRegisterBaseUrl || row.httpBaseUrl || row.baseUrl || 'http://localhost:9070',
+          httpRegisterBaseUrl: row.httpRegisterBaseUrl || row.httpBaseUrl || row.baseUrl || String(environmentDefaults.httpRegisterBaseUrl),
           productKey: row.productKey || '',
           productSecret: row.productSecret || '',
           deviceName: row.deviceName || '',
           deviceSecret: row.deviceSecret || '',
-          openApiBaseUrl: row.openApiBaseUrl || 'http://localhost:8080',
+          openApiBaseUrl: row.openApiBaseUrl || String(environmentDefaults.openApiBaseUrl),
           openApiAccessKey: row.openApiAccessKey || '',
           openApiSecretKey: row.openApiSecretKey || '',
           mqttAuthMode: (row.mqttAuthMode as never) || 'DEVICE_SECRET',
-          mqttRegisterBaseUrl: row.mqttRegisterBaseUrl || 'http://localhost:9070',
-          mqttBrokerUrl: row.mqttBrokerUrl || 'mqtt://localhost:1883',
+          mqttRegisterBaseUrl: row.mqttRegisterBaseUrl || String(environmentDefaults.mqttRegisterBaseUrl),
+          mqttBrokerUrl: row.mqttBrokerUrl || String(environmentDefaults.mqttBrokerUrl),
           mqttClientId: row.mqttClientId || row.clientId || '',
           mqttUsername: row.mqttUsername || row.username || '',
           mqttPassword: row.mqttPassword || row.password || '',
-          coapBaseUrl: row.coapBaseUrl || row.baseUrl || 'http://localhost:9070',
-          snmpConnectorUrl: row.snmpConnectorUrl || 'http://localhost:9070',
+          coapBaseUrl: row.coapBaseUrl || row.baseUrl || String(environmentDefaults.coapBaseUrl),
+          snmpConnectorUrl: row.snmpConnectorUrl || String(environmentDefaults.snmpConnectorUrl),
           snmpHost: row.snmpHost || '',
           snmpPort: Number(row.snmpPort) || 161,
           snmpVersion: Number(row.snmpVersion) || 2,
           snmpCommunity: row.snmpCommunity || 'public',
-          modbusConnectorUrl: row.modbusConnectorUrl || 'http://localhost:9070',
+          modbusConnectorUrl: row.modbusConnectorUrl || String(environmentDefaults.modbusConnectorUrl),
           modbusHost: row.modbusHost || '',
           modbusPort: Number(row.modbusPort) || 502,
           modbusSlaveId: Number(row.modbusSlaveId) || 1,
           modbusMode: (row.modbusMode as never) || 'TCP',
-          wsConnectorUrl: row.wsConnectorUrl || 'http://localhost:9070',
-          wsEndpoint: row.wsEndpoint || 'ws://localhost:9070/ws/device',
+          wsConnectorUrl: row.wsConnectorUrl || String(environmentDefaults.wsConnectorUrl),
+          wsEndpoint: row.wsEndpoint || String(environmentDefaults.wsEndpoint),
           wsDeviceId: row.wsDeviceId || '',
           wsProductId: row.wsProductId || '',
           wsTenantId: row.wsTenantId || '',
@@ -339,7 +389,7 @@ export default function DeviceListPanel() {
           tcpPort: Number(row.tcpPort) || 8900,
           udpHost: row.udpHost || 'localhost',
           udpPort: Number(row.udpPort) || 8901,
-          loraWebhookUrl: row.loraWebhookUrl || 'http://localhost:9070/api/v1/lorawan/webhook/up',
+          loraWebhookUrl: row.loraWebhookUrl || String(environmentDefaults.loraWebhookUrl),
           loraDevEui: row.loraDevEui || '',
           loraAppId: row.loraAppId || '',
           loraFPort: Number(row.loraFPort) || 1,
@@ -440,6 +490,147 @@ export default function DeviceListPanel() {
     message.success(`已复制 ${device.name}`);
   };
 
+  const openCreateEnvironment = () => {
+    setEditingEnvironmentId(null);
+    environmentForm.setFieldsValue({
+      name: '',
+      gatewayBaseUrl: activeEnvironment.gatewayBaseUrl,
+      protocolBaseUrl: activeEnvironment.protocolBaseUrl,
+      mediaBaseUrl: activeEnvironment.mediaBaseUrl,
+      mqttBrokerUrl: activeEnvironment.mqttBrokerUrl,
+    });
+    setWorkspaceDrawerOpen(true);
+  };
+
+  const openEditEnvironment = (environmentId: string) => {
+    const target = environments.find((item) => item.id === environmentId);
+    if (!target) {
+      return;
+    }
+    setEditingEnvironmentId(environmentId);
+    environmentForm.setFieldsValue({
+      name: target.name,
+      gatewayBaseUrl: target.gatewayBaseUrl,
+      protocolBaseUrl: target.protocolBaseUrl,
+      mediaBaseUrl: target.mediaBaseUrl,
+      mqttBrokerUrl: target.mqttBrokerUrl,
+    });
+    setWorkspaceDrawerOpen(true);
+  };
+
+  const handleSaveEnvironment = async () => {
+    try {
+      const values = await environmentForm.validateFields();
+      if (editingEnvironmentId) {
+        updateEnvironment(editingEnvironmentId, values);
+        message.success('环境已更新');
+      } else {
+        const newEnvironmentId = addEnvironment(values);
+        setActiveEnvironment(newEnvironmentId);
+        message.success('环境已新增');
+      }
+      setEditingEnvironmentId(null);
+    } catch (error: any) {
+      if (error?.errorFields) {
+        return;
+      }
+      message.error(error?.message || '环境保存失败');
+    }
+  };
+
+  const handleDeleteEnvironment = (environmentId: string) => {
+    removeEnvironment(environmentId);
+    if (editingEnvironmentId === environmentId) {
+      setEditingEnvironmentId(null);
+      environmentForm.resetFields();
+    }
+    message.success('环境已删除');
+  };
+
+  const openLoginPanel = () => {
+    loginForm.setFieldsValue({
+      username: activeSession?.user?.username || '',
+      password: '',
+    });
+    setLoginDrawerOpen(true);
+  };
+
+  const handleLogin = async () => {
+    try {
+      const values = await loginForm.validateFields();
+      setLoginSubmitting(true);
+      const result = await window.electronAPI.simulatorAuthLogin(
+        activeEnvironment.gatewayBaseUrl,
+        {
+          username: values.username,
+          password: values.password,
+          loginMethod: 'PASSWORD',
+          fingerprint: `simulator:${activeEnvironment.id}`,
+          userAgent: navigator.userAgent,
+        },
+      );
+
+      if (!result?.success || (typeof result.code === 'number' && result.code !== 0)) {
+        throw new Error(result?.message || '登录失败');
+      }
+
+      const payload = result.data || {};
+      if (!payload.accessToken || !payload.user) {
+        throw new Error('登录响应缺少 accessToken');
+      }
+
+      saveSession(activeEnvironment.id, {
+        accessToken: String(payload.accessToken),
+        refreshToken: payload.refreshToken ? String(payload.refreshToken) : null,
+        loginAt: new Date().toISOString(),
+        user: {
+          id: Number(payload.user.id || 0),
+          username: String(payload.user.username || ''),
+          realName: typeof payload.user.realName === 'string' ? payload.user.realName : null,
+          tenantId: payload.user.tenantId != null ? String(payload.user.tenantId) : '',
+          tenantName: String(payload.user.tenantName || ''),
+          userType: String(payload.user.userType || ''),
+        },
+      });
+
+      setLoginDrawerOpen(false);
+      loginForm.resetFields();
+      message.success('登录成功');
+    } catch (error: any) {
+      if (error?.errorFields) {
+        return;
+      }
+      message.error(error?.message || '登录失败');
+    } finally {
+      setLoginSubmitting(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (!activeSession?.accessToken) {
+      clearWorkspaceSession(activeEnvironment.id);
+      return;
+    }
+
+    setLogoutSubmitting(true);
+    try {
+      const result = await window.electronAPI.simulatorAuthLogout(
+        activeEnvironment.gatewayBaseUrl,
+        activeSession.accessToken,
+        navigator.userAgent,
+      );
+      if (!result?.success && !isSimulatorAuthInvalid(result)) {
+        throw new Error(result?.message || '退出失败');
+      }
+      clearWorkspaceSession(activeEnvironment.id);
+      message.success('已退出当前环境');
+    } catch (error: any) {
+      message.error(error?.message || '退出失败');
+    } finally {
+      setLogoutSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     const onAdd = () => setAddOpen(true);
     const onBatchConnect = () => {
@@ -474,9 +665,6 @@ export default function DeviceListPanel() {
               >
                 设备列表
               </Title>
-              <Paragraph style={{ margin: '6px 0 0', color: '#64748b', fontSize: 12 }}>
-                搜索或筛选后，点击设备卡片进入主工作区。
-              </Paragraph>
             </div>
             <Space size={8} wrap>
               <Tooltip title="导入 JSON / CSV 模拟设备配置">
@@ -492,6 +680,62 @@ export default function DeviceListPanel() {
               <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
                 新建
               </Button>
+            </Space>
+          </div>
+
+          <div
+            style={{
+              padding: 14,
+              borderRadius: 22,
+              border: '1px solid rgba(226,232,240,0.92)',
+              background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
+            }}
+          >
+            <Space direction="vertical" size={10} style={{ width: '100%' }}>
+              <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'minmax(0, 1fr) auto auto' }}>
+                <Select
+                  size="small"
+                  value={activeEnvironment.id}
+                  options={environments.map((item) => ({
+                    value: item.id,
+                    label: item.name,
+                  }))}
+                  onChange={setActiveEnvironment}
+                />
+                <Button size="small" icon={<SettingOutlined />} onClick={openCreateEnvironment}>
+                  环境
+                </Button>
+                {activeSession ? (
+                  <Button
+                    size="small"
+                    icon={<LogoutOutlined />}
+                    onClick={() => void handleLogout()}
+                    loading={logoutSubmitting}
+                  >
+                    退出
+                  </Button>
+                ) : (
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<LoginOutlined />}
+                    onClick={openLoginPanel}
+                  >
+                    登录
+                  </Button>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                <Space size={8} wrap>
+                  <Tag style={{ margin: 0, borderRadius: 999 }}>{activeEnvironment.name}</Tag>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {buildSessionLabel(activeSession)}
+                  </Text>
+                </Space>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  网关 {activeEnvironment.gatewayBaseUrl}
+                </Text>
+              </div>
             </Space>
           </div>
 
@@ -702,6 +946,141 @@ export default function DeviceListPanel() {
           );
         }}
       />
+
+      <Drawer
+        title="环境管理"
+        open={workspaceDrawerOpen}
+        width={460}
+        onClose={() => {
+          setWorkspaceDrawerOpen(false);
+          setEditingEnvironmentId(null);
+          environmentForm.resetFields();
+        }}
+        destroyOnClose
+        extra={(
+          <Button type="link" onClick={openCreateEnvironment}>
+            新增环境
+          </Button>
+        )}
+      >
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Card size="small" title={editingEnvironmentId ? '编辑环境' : '新增环境'} style={{ borderRadius: 18 }}>
+            <Form form={environmentForm} layout="vertical">
+              <Form.Item name="name" label="环境名称" rules={[{ required: true, message: '请输入环境名称' }]}>
+                <Input placeholder="例如：测试环境" />
+              </Form.Item>
+              <Form.Item name="gatewayBaseUrl" label="平台网关地址" rules={[{ required: true, message: '请输入平台网关地址' }]}>
+                <Input placeholder="http://localhost:8080" />
+              </Form.Item>
+              <Form.Item name="protocolBaseUrl" label="协议服务地址" rules={[{ required: true, message: '请输入协议服务地址' }]}>
+                <Input placeholder="http://localhost:9070" />
+              </Form.Item>
+              <Form.Item name="mediaBaseUrl" label="媒体服务地址" rules={[{ required: true, message: '请输入媒体服务地址' }]}>
+                <Input placeholder="http://localhost:9040" />
+              </Form.Item>
+              <Form.Item name="mqttBrokerUrl" label="MQTT Broker 地址" rules={[{ required: true, message: '请输入 MQTT Broker 地址' }]}>
+                <Input placeholder="mqtt://localhost:1883" />
+              </Form.Item>
+              <Space>
+                <Button type="primary" onClick={() => void handleSaveEnvironment()}>
+                  保存环境
+                </Button>
+                {editingEnvironmentId ? (
+                  <Button
+                    onClick={() => {
+                      setEditingEnvironmentId(null);
+                      environmentForm.resetFields();
+                    }}
+                  >
+                    取消编辑
+                  </Button>
+                ) : null}
+              </Space>
+            </Form>
+          </Card>
+
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            {environments.map((environment) => (
+              <Card key={environment.id} size="small" style={{ borderRadius: 18 }}>
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                    <Space size={8} wrap>
+                      <Text strong>{environment.name}</Text>
+                      {environment.id === activeEnvironmentId ? (
+                        <Tag style={{ margin: 0 }} color="processing">
+                          当前
+                        </Tag>
+                      ) : null}
+                    </Space>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {buildSessionLabel(sessions[environment.id])}
+                    </Text>
+                  </div>
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>网关 {environment.gatewayBaseUrl}</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>协议 {environment.protocolBaseUrl}</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>媒体 {environment.mediaBaseUrl}</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Broker {environment.mqttBrokerUrl}</Text>
+                  </Space>
+                  <Space size={8} wrap>
+                    {environment.id !== activeEnvironmentId ? (
+                      <Button size="small" onClick={() => setActiveEnvironment(environment.id)}>
+                        设为当前
+                      </Button>
+                    ) : null}
+                    <Button size="small" onClick={() => openEditEnvironment(environment.id)}>
+                      编辑
+                    </Button>
+                    <Popconfirm
+                      title="确认删除当前环境吗？"
+                      disabled={environments.length <= 1}
+                      onConfirm={() => handleDeleteEnvironment(environment.id)}
+                    >
+                      <Button size="small" danger disabled={environments.length <= 1}>
+                        删除
+                      </Button>
+                    </Popconfirm>
+                  </Space>
+                </Space>
+              </Card>
+            ))}
+          </Space>
+        </Space>
+      </Drawer>
+
+      <Drawer
+        title="登录当前环境"
+        open={loginDrawerOpen}
+        width={420}
+        onClose={() => {
+          setLoginDrawerOpen(false);
+          loginForm.resetFields();
+        }}
+        destroyOnClose
+      >
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Card size="small" style={{ borderRadius: 18 }}>
+            <Space direction="vertical" size={6}>
+              <Text strong>{activeEnvironment.name}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {activeEnvironment.gatewayBaseUrl}
+              </Text>
+            </Space>
+          </Card>
+
+          <Form form={loginForm} layout="vertical">
+            <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}>
+              <Input placeholder="请输入用户名" />
+            </Form.Item>
+            <Form.Item name="password" label="密码" rules={[{ required: true, message: '请输入密码' }]}>
+              <Input.Password placeholder="请输入密码" />
+            </Form.Item>
+            <Button type="primary" block loading={loginSubmitting} onClick={() => void handleLogin()}>
+              登录
+            </Button>
+          </Form>
+        </Space>
+      </Drawer>
 
       <AddDeviceModal open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
