@@ -1042,8 +1042,9 @@ export const sessionApi = {
 
 // ==================== Admin Session API ====================
 export const adminSessionApi = {
-  getUserSessions: (userId: number) => request.get(`/users/${userId}/sessions`),
-  kickUser: (userId: number) => request.post(`/users/${userId}/kick`),
+  list: (data: Record<string, unknown> = {}) => request.post('/admin-sessions/list', data),
+  kickSession: (sessionId: number) => request.delete(`/admin-sessions/${sessionId}`),
+  kickUser: (username: string) => request.post(`/admin-sessions/users/${encodeURIComponent(username)}/kick`),
 };
 
 // ==================== Login Log API ====================

@@ -18,6 +18,9 @@ import com.songhg.firefly.iot.common.event.LoginEvent;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.system.convert.UserSessionConvert;
+import com.songhg.firefly.iot.system.dto.AdminSessionQueryDTO;
+import com.songhg.firefly.iot.system.dto.AdminSessionTarget;
+import com.songhg.firefly.iot.system.dto.AdminSessionVO;
 import com.songhg.firefly.iot.system.dto.LoginLogQueryDTO;
 import com.songhg.firefly.iot.system.dto.LoginLogVO;
 import com.songhg.firefly.iot.system.dto.LoginRequest;
@@ -343,8 +346,34 @@ public class AuthService {
         oauthBindingMapper.deleteById(bindingId);
     }
 
-    public List<UserSessionVO> getAdminUserSessions(Long userId) {
-        return getUserSessionVOs(userId);
+    public IPage<AdminSessionVO> queryAdminSessions(AdminSessionQueryDTO query) {
+        User currentUser = userDomainService.requireCurrentUser();
+        boolean platformUser = currentUser.getUserType() == UserType.SYSTEM_OPS;
+        Long currentTenantId = resolveAdminSessionScopeTenantId(currentUser);
+        Page<AdminSessionVO> page = new Page<>(query.getPageNum(), query.getPageSize());
+        return sessionMapper.selectAdminSessions(page, query, platformUser, currentTenantId);
+    }
+
+    @Transactional
+    public void adminKickAdminSession(Long sessionId, Long operatorId) {
+        AdminSessionTarget target = requireAdminSessionTarget(sessionId);
+        withTenantContext(target.getTenantId(), () -> {
+            kickSession(sessionId, operatorId);
+            return null;
+        });
+    }
+
+    @Transactional
+    public void adminKickAdminUserByUsername(String username, Long operatorId) {
+        String normalizedUsername = username == null ? null : username.trim();
+        if (!StringUtils.hasText(normalizedUsername)) {
+            throw new BizException(ResultCode.PARAM_ERROR, "username is required");
+        }
+        AdminSessionTarget target = requireAdminUserTarget(normalizedUsername);
+        withTenantContext(target.getTenantId(), () -> {
+            adminKickUser(target.getUserId(), operatorId);
+            return null;
+        });
     }
 
     @Transactional
@@ -606,6 +635,39 @@ public class AuthService {
             throw new BizException(ResultCode.TENANT_DISABLED);
         }
         return tenant;
+    }
+
+    private AdminSessionTarget requireAdminSessionTarget(Long sessionId) {
+        if (sessionId == null || sessionId <= 0) {
+            throw new BizException(ResultCode.PARAM_ERROR, "sessionId is required");
+        }
+        User currentUser = userDomainService.requireCurrentUser();
+        boolean platformUser = currentUser.getUserType() == UserType.SYSTEM_OPS;
+        Long currentTenantId = resolveAdminSessionScopeTenantId(currentUser);
+        AdminSessionTarget target = sessionMapper.selectAdminSessionTarget(sessionId, platformUser, currentTenantId);
+        if (target == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "admin session not found");
+        }
+        return target;
+    }
+
+    private AdminSessionTarget requireAdminUserTarget(String username) {
+        User currentUser = userDomainService.requireCurrentUser();
+        boolean platformUser = currentUser.getUserType() == UserType.SYSTEM_OPS;
+        Long currentTenantId = resolveAdminSessionScopeTenantId(currentUser);
+        AdminSessionTarget target = sessionMapper.selectAdminUserTarget(username, platformUser, currentTenantId);
+        if (target == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "admin user not found");
+        }
+        return target;
+    }
+
+    private Long resolveAdminSessionScopeTenantId(User currentUser) {
+        if (currentUser.getUserType() == UserType.SYSTEM_OPS) {
+            return null;
+        }
+        Long tenantId = AppContextHolder.getTenantId();
+        return tenantId != null ? tenantId : currentUser.getTenantId();
     }
 
     private User requireUniqueLoginUser(String identifier, LoginRequest req, String remoteIp, String userAgent) {

@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.system.mapper.UserSessionMapper">
+
+    <sql id="adminSessionCommonWhere">
+        s.status = 'ACTIVE'
+        AND u.deleted_at IS NULL
+        AND t.deleted_at IS NULL
+        AND (
+            u.user_type = 'SYSTEM_OPS'
+            OR t.admin_user_id = u.id
+        )
+        <if test="platformUser == false">
+            AND u.tenant_id = #{currentTenantId}
+        </if>
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND (
+                u.username LIKE CONCAT('%', #{query.keyword}, '%')
+                OR u.real_name LIKE CONCAT('%', #{query.keyword}, '%')
+                OR COALESCE(t.display_name, t.name, t.code) LIKE CONCAT('%', #{query.keyword}, '%')
+                OR s.login_ip LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        <if test="query != null and query.platform != null">
+            AND s.platform = #{query.platform}
+        </if>
+        <if test="query != null and query.adminType != null and query.adminType != ''">
+            <choose>
+                <when test="query.adminType == 'SYSTEM_OPS'">
+                    AND u.user_type = 'SYSTEM_OPS'
+                </when>
+                <when test="query.adminType == 'TENANT_SUPER_ADMIN'">
+                    AND u.user_type &lt;&gt; 'SYSTEM_OPS'
+                    AND t.admin_user_id = u.id
+                </when>
+            </choose>
+        </if>
+    </sql>
+
+    <select id="selectAdminSessions" resultType="com.songhg.firefly.iot.system.dto.AdminSessionVO">
+        SELECT s.id,
+               u.username,
+               u.real_name AS realName,
+               COALESCE(t.display_name, t.name, t.code) AS tenantName,
+               CASE
+                   WHEN u.user_type = 'SYSTEM_OPS' THEN 'SYSTEM_OPS'
+                   ELSE 'TENANT_SUPER_ADMIN'
+               END AS adminType,
+               s.platform,
+               s.login_method AS loginMethod,
+               s.login_ip AS loginIp,
+               s.user_agent AS userAgent,
+               s.last_active_at AS lastActiveAt,
+               s.created_at AS createdAt
+        FROM user_sessions s
+        JOIN users u ON u.id = s.user_id
+        JOIN tenants t ON t.id = u.tenant_id
+        WHERE
+        <include refid="adminSessionCommonWhere" />
+        ORDER BY s.last_active_at DESC, s.created_at DESC
+    </select>
+
+    <select id="selectAdminSessionTarget" resultType="com.songhg.firefly.iot.system.dto.AdminSessionTarget">
+        SELECT s.user_id AS userId,
+               s.tenant_id AS tenantId,
+               u.username
+        FROM user_sessions s
+        JOIN users u ON u.id = s.user_id
+        JOIN tenants t ON t.id = u.tenant_id
+        WHERE s.id = #{sessionId}
+          AND
+        <include refid="adminSessionCommonWhere" />
+        LIMIT 1
+    </select>
+
+    <select id="selectAdminUserTarget" resultType="com.songhg.firefly.iot.system.dto.AdminSessionTarget">
+        SELECT u.id AS userId,
+               u.tenant_id AS tenantId,
+               u.username
+        FROM users u
+        JOIN tenants t ON t.id = u.tenant_id
+        WHERE u.username = #{username}
+          AND u.deleted_at IS NULL
+          AND t.deleted_at IS NULL
+          AND (
+              u.user_type = 'SYSTEM_OPS'
+              OR t.admin_user_id = u.id
+          )
+        <if test="platformUser == false">
+            AND u.tenant_id = #{currentTenantId}
+        </if>
+        LIMIT 1
+    </select>
+
+</mapper>

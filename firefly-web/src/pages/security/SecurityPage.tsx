@@ -20,12 +20,19 @@ interface LoginLogItem {
 
 interface SessionItem {
   id: number;
-  sessionId?: string | null;
   platform?: string | null;
-  ip?: string | null;
+  loginMethod?: string | null;
+  loginIp?: string | null;
   userAgent?: string | null;
   lastActiveAt?: string | null;
   createdAt?: string | null;
+}
+
+interface AdminSessionItem extends SessionItem {
+  username?: string | null;
+  realName?: string | null;
+  tenantName?: string | null;
+  adminType?: string | null;
 }
 
 interface LoginLogQueryState {
@@ -34,6 +41,28 @@ interface LoginLogQueryState {
   keyword?: string;
   result?: string;
 }
+
+interface AdminSessionQueryState {
+  pageNum: number;
+  pageSize: number;
+  keyword?: string;
+  platform?: string;
+  adminType?: string;
+}
+
+const renderPlatform = (value?: string | null) => <Tag color="blue">{value || '-'}</Tag>;
+
+const renderLoginMethod = (value?: string | null) => <Tag>{value || 'PASSWORD'}</Tag>;
+
+const renderAdminType = (value?: string | null) => {
+  if (value === 'SYSTEM_OPS') {
+    return <Tag color="geekblue">系统运维</Tag>;
+  }
+  if (value === 'TENANT_SUPER_ADMIN') {
+    return <Tag color="gold">租户管理员</Tag>;
+  }
+  return <Tag>{value || '-'}</Tag>;
+};
 
 const LoginLogTab: React.FC = () => {
   const [data, setData] = useState<LoginLogItem[]>([]);
@@ -71,20 +100,20 @@ const LoginLogTab: React.FC = () => {
     {
       title: '用户名',
       dataIndex: 'username',
-      width: 140,
+      width: 160,
       render: (value?: string | null) => value || '-',
     },
     {
       title: '登录方式',
       dataIndex: 'loginMethod',
       width: 120,
-      render: (value?: string | null) => <Tag>{value || 'PASSWORD'}</Tag>,
+      render: (value?: string | null) => renderLoginMethod(value),
     },
     {
       title: '平台',
       dataIndex: 'platform',
       width: 100,
-      render: (value?: string | null) => <Tag color="blue">{value || '-'}</Tag>,
+      render: (value?: string | null) => renderPlatform(value),
     },
     {
       title: 'IP',
@@ -111,7 +140,7 @@ const LoginLogTab: React.FC = () => {
     {
       title: 'User-Agent',
       dataIndex: 'userAgent',
-      width: 260,
+      width: 320,
       ellipsis: true,
       render: (value?: string | null) => value || '-',
     },
@@ -167,7 +196,7 @@ const LoginLogTab: React.FC = () => {
         dataSource={data}
         loading={loading}
         size="small"
-        scroll={{ x: 1280 }}
+        scroll={{ x: 1400 }}
         pagination={{
           current: query.pageNum,
           pageSize: query.pageSize,
@@ -209,37 +238,36 @@ const MySessionTab: React.FC = () => {
   const handleKick = async (id: number) => {
     try {
       await sessionApi.kick(id);
-      message.success('已踢出');
+      message.success('会话已下线');
       await fetchData();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '踢出会话失败');
+      message.error(error instanceof Error ? error.message : '下线会话失败');
     }
   };
 
   const columns: ColumnsType<SessionItem> = [
     {
-      title: '会话标识',
-      dataIndex: 'sessionId',
-      width: 220,
-      ellipsis: true,
-      render: (value?: string | null) => value || '-',
-    },
-    {
       title: '平台',
       dataIndex: 'platform',
       width: 100,
-      render: (value?: string | null) => <Tag color="blue">{value || '-'}</Tag>,
+      render: (value?: string | null) => renderPlatform(value),
+    },
+    {
+      title: '登录方式',
+      dataIndex: 'loginMethod',
+      width: 120,
+      render: (value?: string | null) => renderLoginMethod(value),
     },
     {
       title: 'IP',
-      dataIndex: 'ip',
+      dataIndex: 'loginIp',
       width: 160,
       render: (value?: string | null) => value || '-',
     },
     {
       title: 'User-Agent',
       dataIndex: 'userAgent',
-      width: 280,
+      width: 360,
       ellipsis: true,
       render: (value?: string | null) => value || '-',
     },
@@ -250,18 +278,19 @@ const MySessionTab: React.FC = () => {
       render: (value?: string | null) => value || '-',
     },
     {
-      title: '创建时间',
+      title: '登录时间',
       dataIndex: 'createdAt',
       width: 180,
       render: (value?: string | null) => value || '-',
     },
     {
       title: '操作',
-      width: 110,
+      width: 120,
+      fixed: 'right',
       render: (_value, record) => (
-        <Popconfirm title="确认踢出这个会话吗？" onConfirm={() => void handleKick(record.id)}>
+        <Popconfirm title="确认下线这个会话吗？" onConfirm={() => void handleKick(record.id)}>
           <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-            踢出
+            下线
           </Button>
         </Popconfirm>
       ),
@@ -279,7 +308,7 @@ const MySessionTab: React.FC = () => {
         dataSource={data}
         loading={loading}
         size="small"
-        scroll={{ x: 1100 }}
+        scroll={{ x: 1280 }}
         pagination={false}
       />
     </div>
@@ -287,62 +316,102 @@ const MySessionTab: React.FC = () => {
 };
 
 const AdminSessionTab: React.FC = () => {
-  const [userId, setUserId] = useState<number | null>(null);
-  const [data, setData] = useState<SessionItem[]>([]);
+  const [data, setData] = useState<AdminSessionItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [query, setQuery] = useState<AdminSessionQueryState>({ pageNum: 1, pageSize: 20 });
 
   const fetchData = async () => {
-    if (!userId) {
-      return;
-    }
     setLoading(true);
     try {
-      const res = await adminSessionApi.getUserSessions(userId);
-      setData(res.data?.data || []);
+      const res = await adminSessionApi.list({ ...query });
+      const page = res.data?.data;
+      if (Array.isArray(page?.records)) {
+        setData(page.records);
+        setTotal(page.total || 0);
+      } else if (Array.isArray(page)) {
+        setData(page);
+        setTotal(page.length);
+      } else {
+        setData([]);
+        setTotal(0);
+      }
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '加载用户会话失败');
+      message.error(error instanceof Error ? error.message : '加载管理员会话失败');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleKickUser = async () => {
-    if (!userId) {
-      return;
-    }
+  useEffect(() => {
+    void fetchData();
+  }, [query]);
+
+  const handleKickSession = async (sessionId: number) => {
     try {
-      await adminSessionApi.kickUser(userId);
-      message.success('已强制全部下线');
+      await adminSessionApi.kickSession(sessionId);
+      message.success('管理员会话已下线');
       await fetchData();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '强制下线失败');
+      message.error(error instanceof Error ? error.message : '下线管理员会话失败');
     }
   };
 
-  const columns: ColumnsType<SessionItem> = [
+  const handleKickUser = async (username: string) => {
+    try {
+      await adminSessionApi.kickUser(username);
+      message.success('管理员全部会话已下线');
+      await fetchData();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '下线管理员全部会话失败');
+    }
+  };
+
+  const columns: ColumnsType<AdminSessionItem> = [
     {
-      title: '会话标识',
-      dataIndex: 'sessionId',
-      width: 220,
-      ellipsis: true,
+      title: '管理员',
+      width: 180,
+      render: (_value, record) => (
+        <div>
+          <div>{record.realName || record.username || '-'}</div>
+          <div style={{ color: '#8c8c8c', fontSize: 12 }}>{record.username || '-'}</div>
+        </div>
+      ),
+    },
+    {
+      title: '所属租户',
+      dataIndex: 'tenantName',
+      width: 180,
       render: (value?: string | null) => value || '-',
+    },
+    {
+      title: '身份',
+      dataIndex: 'adminType',
+      width: 130,
+      render: (value?: string | null) => renderAdminType(value),
     },
     {
       title: '平台',
       dataIndex: 'platform',
       width: 100,
-      render: (value?: string | null) => <Tag color="blue">{value || '-'}</Tag>,
+      render: (value?: string | null) => renderPlatform(value),
+    },
+    {
+      title: '登录方式',
+      dataIndex: 'loginMethod',
+      width: 120,
+      render: (value?: string | null) => renderLoginMethod(value),
     },
     {
       title: 'IP',
-      dataIndex: 'ip',
+      dataIndex: 'loginIp',
       width: 160,
       render: (value?: string | null) => value || '-',
     },
     {
       title: 'User-Agent',
       dataIndex: 'userAgent',
-      width: 280,
+      width: 360,
       ellipsis: true,
       render: (value?: string | null) => value || '-',
     },
@@ -353,42 +422,114 @@ const AdminSessionTab: React.FC = () => {
       render: (value?: string | null) => value || '-',
     },
     {
-      title: '创建时间',
+      title: '登录时间',
       dataIndex: 'createdAt',
       width: 180,
       render: (value?: string | null) => value || '-',
+    },
+    {
+      title: '操作',
+      width: 220,
+      fixed: 'right',
+      render: (_value, record) => (
+        <Space size={4}>
+          <Popconfirm title="确认下线这个管理员会话吗？" onConfirm={() => void handleKickSession(record.id)}>
+            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+              下线会话
+            </Button>
+          </Popconfirm>
+          <Popconfirm
+            title={`确认下线 ${record.username || '该管理员'} 的全部会话吗？`}
+            onConfirm={() => record.username && void handleKickUser(record.username)}
+            disabled={!record.username}
+          >
+            <Button type="link" size="small" danger icon={<LogoutOutlined />} disabled={!record.username}>
+              全部下线
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
     },
   ];
 
   return (
     <div>
       <Space style={{ marginBottom: 16 }} wrap>
-        <Input
-          placeholder="输入用户 ID"
-          style={{ width: 160 }}
-          onChange={(event) => {
-            const value = event.target.value.trim();
-            setUserId(value ? Number(value) : null);
-          }}
+        <Input.Search
+          allowClear
+          enterButton="查询"
+          placeholder="搜索管理员账号、姓名、租户或登录 IP"
+          style={{ width: 320 }}
+          onSearch={(value) =>
+            setQuery((current) => ({
+              ...current,
+              keyword: value?.trim() || undefined,
+              pageNum: 1,
+            }))
+          }
         />
-        <Button type="primary" onClick={() => void fetchData()} disabled={!userId}>
-          查询会话
+        <Select
+          allowClear
+          placeholder="平台"
+          style={{ width: 140 }}
+          value={query.platform}
+          onChange={(value) =>
+            setQuery((current) => ({
+              ...current,
+              platform: value || undefined,
+              pageNum: 1,
+            }))
+          }
+          options={[
+            { label: 'WEB', value: 'WEB' },
+            { label: 'APP_IOS', value: 'APP_IOS' },
+            { label: 'APP_ANDROID', value: 'APP_ANDROID' },
+            { label: 'MINI_WECHAT', value: 'MINI_WECHAT' },
+            { label: 'MINI_ALIPAY', value: 'MINI_ALIPAY' },
+          ]}
+        />
+        <Select
+          allowClear
+          placeholder="身份"
+          style={{ width: 160 }}
+          value={query.adminType}
+          onChange={(value) =>
+            setQuery((current) => ({
+              ...current,
+              adminType: value || undefined,
+              pageNum: 1,
+            }))
+          }
+          options={[
+            { label: '系统运维', value: 'SYSTEM_OPS' },
+            { label: '租户管理员', value: 'TENANT_SUPER_ADMIN' },
+          ]}
+        />
+        <Button icon={<ReloadOutlined />} onClick={() => void fetchData()}>
+          刷新
         </Button>
-        <Popconfirm title="确认强制下线该用户的所有会话吗？" onConfirm={() => void handleKickUser()} disabled={!userId}>
-          <Button danger icon={<LogoutOutlined />} disabled={!userId}>
-            强制全部下线
-          </Button>
-        </Popconfirm>
       </Space>
 
-      <Table<SessionItem>
+      <Table<AdminSessionItem>
         rowKey="id"
         columns={columns}
         dataSource={data}
         loading={loading}
         size="small"
-        scroll={{ x: 1100 }}
-        pagination={false}
+        scroll={{ x: 1680 }}
+        pagination={{
+          current: query.pageNum,
+          pageSize: query.pageSize,
+          total,
+          showSizeChanger: true,
+          showTotal: (value) => `共 ${value} 条`,
+          onChange: (page, pageSize) =>
+            setQuery((current) => ({
+              ...current,
+              pageNum: page,
+              pageSize,
+            })),
+        }}
       />
     </div>
   );

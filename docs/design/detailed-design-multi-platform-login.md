@@ -456,7 +456,9 @@ auth:
 
 ### 7.2 强制下线
 
-管理员 `DELETE /api/v1/user/sessions/{sessionId}` 或 `POST /api/v1/users/{userId}/kick`
+管理员先通过 `POST /api/v1/admin-sessions/list` 查看在线管理员会话，
+再通过 `DELETE /api/v1/admin-sessions/{sessionId}` 或
+`POST /api/v1/admin-sessions/users/{username}/kick` 执行强制下线
 → 更新 Session 状态→KICKED → Access Token + Refresh Token 加入黑名单 → WebSocket/推送通知客户端 → 记录审计日志
 
 ### 7.3 Session 活跃度
@@ -599,8 +601,9 @@ APP登录/启动后: `PUT /api/v1/user/push-token {pushToken, pushChannel, devic
 | `/api/v1/user/oauth-bindings` | GET | 第三方绑定列表 | 需登录 |
 | `/api/v1/user/oauth-bindings` | POST | 绑定第三方账号 | 需登录 |
 | `/api/v1/user/oauth-bindings/{id}` | DELETE | 解绑第三方账号 | 需登录 |
-| `/api/v1/users/{userId}/sessions` | GET | 管理员查询用户会话 | `user:read` |
-| `/api/v1/users/{userId}/kick` | POST | 管理员强制踢出 | `user:update` |
+| `/api/v1/admin-sessions/list` | POST | 分页查询在线管理员会话 | `user:read` |
+| `/api/v1/admin-sessions/{sessionId}` | DELETE | 强制下线管理员单个会话 | `user:update` |
+| `/api/v1/admin-sessions/users/{username}/kick` | POST | 强制下线管理员全部会话 | `user:update` |
 | `/api/v1/login-logs` | GET | 登录日志查询 | `audit:read` |
 
 ### 10.3 请求/响应示例
