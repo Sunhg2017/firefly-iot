@@ -1,6 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import {
-  Alert,
   Button,
   Card,
   Col,
@@ -98,12 +97,34 @@ const LOCATOR_TYPE_OPTIONS = [
   { value: 'SERIAL', label: 'SERIAL' },
 ];
 
-const drawerPanelCardStyle = {
-  borderRadius: 16,
-  background: 'linear-gradient(180deg, rgba(15,23,42,0.88) 0%, rgba(8,15,29,0.94) 100%)',
-  border: '1px solid rgba(59,130,246,0.18)',
-  boxShadow: '0 14px 30px rgba(2,6,23,0.24)',
-} as const;
+const drawerPanelCardStyle: CSSProperties = {
+  borderRadius: 24,
+  background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,251,255,0.96) 100%)',
+  border: '1px solid rgba(226,232,240,0.95)',
+  boxShadow: '0 18px 42px rgba(15,23,42,0.08)',
+};
+
+const drawerSectionCardStyle: CSSProperties = {
+  borderRadius: 18,
+  background: '#ffffff',
+  border: '1px solid rgba(226,232,240,0.92)',
+  boxShadow: '0 10px 24px rgba(15,23,42,0.05)',
+};
+
+const drawerInnerCardStyle: CSSProperties = {
+  borderRadius: 14,
+  background: '#f8fbff',
+  border: '1px solid rgba(226,232,240,0.92)',
+  boxShadow: 'none',
+};
+
+const drawerHintTextStyle: CSSProperties = {
+  display: 'block',
+  marginTop: 8,
+  fontSize: 12,
+  lineHeight: 1.7,
+  color: '#64748b',
+};
 
 function supportsThingModelProtocol(protocol: Protocol): boolean {
   return protocol === 'HTTP' || protocol === 'MQTT' || protocol === 'CoAP';
@@ -146,11 +167,11 @@ function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, 
 function buildSummary(values: Record<string, unknown>) {
   const protocol = (values.protocol || 'HTTP') as string;
   const items = [
-    { key: 'name', label: '模拟设备名称 / 平台设备昵称', value: values.name || '-' },
-    { key: 'protocol', label: '接入协议', value: protocol },
-    { key: 'main1', label: 'ProductKey / 核心标识', value: values.productKey || values.gbDeviceId || values.loraDevEui || values.snmpHost || values.modbusHost || values.wsEndpoint || values.tcpHost || values.udpHost || '-' },
-    { key: 'deviceName', label: 'DeviceName / 设备名称', value: values.deviceName || '-' },
-    { key: 'main2', label: '连接地址', value: values.httpBaseUrl || values.coapBaseUrl || values.mqttBrokerUrl || values.mediaBaseUrl || values.loraWebhookUrl || '-' },
+    { key: 'name', label: '设备名称', value: values.name || '-' },
+    { key: 'protocol', label: '协议', value: protocol },
+    { key: 'main1', label: '核心标识', value: values.productKey || values.gbDeviceId || values.loraDevEui || values.snmpHost || values.modbusHost || values.wsEndpoint || values.tcpHost || values.udpHost || '-' },
+    { key: 'deviceName', label: 'DeviceName', value: values.deviceName || '-' },
+    { key: 'main2', label: '接入地址', value: values.httpBaseUrl || values.coapBaseUrl || values.mqttBrokerUrl || values.mediaBaseUrl || values.loraWebhookUrl || '-' },
   ];
   if (supportsThingModelProtocol(protocol as Protocol)) {
     items.push({
@@ -214,12 +235,11 @@ export default function AddDeviceModal({ open, onClose }: Props) {
 
   const renderBasicStep = () => (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Alert
-        type="info"
-        showIcon
-        message="复杂表单改为抽屉分步配置"
-        description="先选协议，再按协议只显示真正需要的字段。模拟设备名称会同步作为平台设备昵称，不再额外单独填写 Nickname。"
-      />
+      <Card size="small" style={drawerPanelCardStyle}>
+        <Text strong style={{ color: '#0f172a' }}>{meta.label}</Text>
+        <Paragraph style={{ margin: '8px 0 0', color: '#475569' }}>{meta.description}</Paragraph>
+        <Text style={drawerHintTextStyle}>先选择协议，再填写当前协议必填项。</Text>
+      </Card>
       <Form.Item name="name" label="模拟设备名称" rules={[{ required: true, message: '请输入模拟设备名称' }]}>
         <Input placeholder="例如：华东厂区温湿度模拟器-01" maxLength={64} />
       </Form.Item>
@@ -231,10 +251,6 @@ export default function AddDeviceModal({ open, onClose }: Props) {
           }))}
         />
       </Form.Item>
-      <Card size="small" style={drawerPanelCardStyle}>
-        <Text strong>{meta.label}</Text>
-        <Paragraph type="secondary" style={{ margin: '8px 0 0' }}>{meta.description}</Paragraph>
-      </Card>
     </Space>
   );
 
@@ -256,30 +272,41 @@ export default function AddDeviceModal({ open, onClose }: Props) {
   );
 
   const renderLocatorList = (description: string) => (
-    <Card size="small" style={{ borderRadius: 16 }}>
+    <Card size="small" style={drawerSectionCardStyle}>
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
-        <Text strong>设备标识</Text>
-        <Paragraph type="secondary" style={{ margin: 0 }}>{description}</Paragraph>
+        <Text strong style={{ color: '#0f172a' }}>设备标识</Text>
+        <Paragraph style={{ margin: 0, color: '#64748b' }}>{description}</Paragraph>
         <Form.List name="locators">
           {(fields, { add, remove }) => (
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               {fields.map((field, index) => (
-                <Space key={field.key} align="start" style={{ display: 'flex' }}>
-                  <Form.Item name={[field.name, 'locatorType']} label={index === 0 ? '标识类型' : undefined} rules={[{ required: true, message: '请选择标识类型' }]} style={{ width: 180, marginBottom: 0 }}>
-                    <Select showSearch optionFilterProp="label" options={LOCATOR_TYPE_OPTIONS} placeholder="选择类型" />
-                  </Form.Item>
-                  <Form.Item name={[field.name, 'locatorValue']} label={index === 0 ? '标识值' : undefined} rules={[{ required: true, message: '请输入标识值' }]} style={{ flex: 1, marginBottom: 0 }}>
-                    <Input placeholder="输入设备真实上报的标识值" maxLength={128} />
-                  </Form.Item>
-                  <Form.Item name={[field.name, 'primaryLocator']} label={index === 0 ? '主标识' : undefined} valuePropName="checked" style={{ marginBottom: 0 }}>
-                    <Switch checkedChildren="是" unCheckedChildren="否" />
-                  </Form.Item>
-                  <Form.Item label={index === 0 ? ' ' : undefined} style={{ marginBottom: 0 }}>
-                    <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(field.name)}>
-                      删除
-                    </Button>
-                  </Form.Item>
-                </Space>
+                <Card key={field.key} size="small" style={drawerInnerCardStyle}>
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                      <Text strong style={{ color: '#0f172a' }}>{`标识 ${index + 1}`}</Text>
+                      <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(field.name)}>
+                        删除
+                      </Button>
+                    </Space>
+                    <Row gutter={12}>
+                      <Col span={8}>
+                        <Form.Item name={[field.name, 'locatorType']} label="标识类型" rules={[{ required: true, message: '请选择标识类型' }]} style={{ marginBottom: 0 }}>
+                          <Select showSearch optionFilterProp="label" options={LOCATOR_TYPE_OPTIONS} placeholder="选择类型" />
+                        </Form.Item>
+                      </Col>
+                      <Col span={10}>
+                        <Form.Item name={[field.name, 'locatorValue']} label="标识值" rules={[{ required: true, message: '请输入标识值' }]} style={{ marginBottom: 0 }}>
+                          <Input placeholder="输入设备真实上报的标识值" maxLength={128} />
+                        </Form.Item>
+                      </Col>
+                      <Col span={6}>
+                        <Form.Item name={[field.name, 'primaryLocator']} label="主标识" valuePropName="checked" style={{ marginBottom: 0 }}>
+                          <Switch checkedChildren="是" unCheckedChildren="否" />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                  </Space>
+                </Card>
               ))}
               <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({ locatorType: 'IMEI', primaryLocator: fields.length === 0 })}>
                 新增设备标识
@@ -293,12 +320,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
 
   const renderHttpAccessStep = () => (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Alert
-        type="info"
-        showIcon
-        message="HTTP 支持一机一密和一型一密动态注册"
-        description="一型一密会先通过产品密钥动态注册换取 DeviceSecret，再继续走现有 HTTP 鉴权接口。"
-      />
+      <Text style={drawerHintTextStyle}>先选择认证方式，再填写当前方式对应的密钥字段。</Text>
       <Form.Item name="httpBaseUrl" label="HTTP 服务地址" rules={[{ required: true, message: '请输入 HTTP 服务地址' }]}>
         <Input placeholder="http://localhost:9070" />
       </Form.Item>
@@ -322,7 +344,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
           <Form.Item name="productSecret" label="ProductSecret" rules={[{ required: true, message: '请输入 ProductSecret' }]}>
             <Input.Password placeholder="输入产品密钥" />
           </Form.Item>
-          {renderLocatorList('HTTP 一型一密自动注册时会把这些标识一并写入平台，便于后续设备识别与协议解析。')}
+          {renderLocatorList('需要自动注册时再补充这些标识。')}
         </>
       ) : (
         <Form.Item name="deviceSecret" label="DeviceSecret" rules={[{ required: true, message: '请输入 DeviceSecret' }]}>
@@ -339,7 +361,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       case 'MQTT':
         return (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Alert type="info" showIcon message="MQTT 口径与平台保持一致" description="一型一密会先走动态注册，一机一密直接使用 DeviceSecret。" />
+            <Text style={drawerHintTextStyle}>先选择认证方式，再填写 Broker 地址。</Text>
             <Form.Item name="productKey" label="ProductKey" rules={[{ required: true, message: '请输入 ProductKey' }]}><Input /></Form.Item>
             <Form.Item name="deviceName" label="DeviceName" rules={[{ required: true, message: '请输入 DeviceName' }]}><Input /></Form.Item>
             <Form.Item name="mqttAuthMode" label="认证方式">
@@ -352,7 +374,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
               <>
                 <Form.Item name="mqttRegisterBaseUrl" label="动态注册服务地址" rules={[{ required: true, message: '请输入动态注册服务地址' }]}><Input /></Form.Item>
                 <Form.Item name="productSecret" label="ProductSecret" rules={[{ required: true, message: '请输入 ProductSecret' }]}><Input.Password /></Form.Item>
-                {renderLocatorList('MQTT 一型一密动态注册成功后，这些标识也会同步保存到平台设备档案。')}
+                {renderLocatorList('需要自动注册时再补充这些标识。')}
               </>
             ) : (
               <Form.Item name="deviceSecret" label="DeviceSecret" rules={[{ required: true, message: '请输入 DeviceSecret' }]}><Input.Password /></Form.Item>
@@ -363,7 +385,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       case 'Video':
         return (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Alert type="info" showIcon message="先配置视频模式，再录入对应参数" description="GB28181 的 SIP 与通道配置放在下一步，RTSP 只保留最小必填项。" />
+            <Text style={drawerHintTextStyle}>先选择视频模式，SIP 与通道配置放在下一步。</Text>
             <Form.Item name="mediaBaseUrl" label="媒体服务地址" rules={[{ required: true, message: '请输入媒体服务地址' }]}><Input /></Form.Item>
             <Form.Item name="streamMode" label="视频模式">
               <Radio.Group>
@@ -440,7 +462,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
   const renderAdvancedStep = () => (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       {protocol === 'MQTT' ? (
-        <Card size="small" title="MQTT 扩展配置" style={{ borderRadius: 16 }}>
+        <Card size="small" title="MQTT 扩展配置" style={drawerSectionCardStyle}>
           <Row gutter={12}>
             <Col span={12}><Form.Item name="mqttClientId" label="Client ID"><Input placeholder="留空自动生成" /></Form.Item></Col>
             <Col span={12}><Form.Item name="mqttUsername" label="用户名"><Input placeholder="留空自动生成" /></Form.Item></Col>
@@ -462,7 +484,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
 
       {protocol === 'Video' && streamMode === 'GB28181' ? (
         <>
-          <Card size="small" title="SIP 配置" style={{ borderRadius: 16 }}>
+          <Card size="small" title="SIP 配置" style={drawerSectionCardStyle}>
             <Row gutter={12}>
               <Col span={12}><Form.Item name="sipServerIp" label="SIP 服务 IP" rules={[{ required: true, message: '请输入 SIP 服务 IP' }]}><Input /></Form.Item></Col>
               <Col span={12}><Form.Item name="sipServerPort" label="SIP 服务端口" rules={[{ required: true, message: '请输入 SIP 服务端口' }]}><InputNumber min={1} max={65535} style={{ width: '100%' }} /></Form.Item></Col>
@@ -477,12 +499,12 @@ export default function AddDeviceModal({ open, onClose }: Props) {
             </Row>
             <Form.Item name="sipPassword" label="SIP 密码"><Input.Password placeholder="留空表示不做 Digest 鉴权" /></Form.Item>
           </Card>
-          <Card size="small" title="通道配置" style={{ borderRadius: 16 }}>
+          <Card size="small" title="通道配置" style={drawerSectionCardStyle}>
             <Form.List name="sipChannels">
               {(fields, { add, remove }) => (
                 <>
                   {fields.map(({ key, name, ...restField }) => (
-                    <Card key={key} size="small" style={{ marginBottom: 12, borderRadius: 12 }} title={`通道 ${name + 1}`} extra={<MinusCircleOutlined onClick={() => remove(name)} style={{ color: '#ff4d4f' }} />}>
+                    <Card key={key} size="small" style={{ ...drawerInnerCardStyle, marginBottom: 12 }} title={`通道 ${name + 1}`} extra={<MinusCircleOutlined onClick={() => remove(name)} style={{ color: '#ff4d4f' }} />}>
                       <Row gutter={12}>
                         <Col span={16}><Form.Item {...restField} name={[name, 'channelId']} label="通道 ID" rules={[{ required: true, message: '请输入通道 ID' }]}><Input size="small" /></Form.Item></Col>
                         <Col span={8}><Form.Item {...restField} name={[name, 'status']} label="状态"><Select size="small" options={[{ value: 'ON', label: '在线' }, { value: 'OFF', label: '离线' }]} /></Form.Item></Col>
@@ -513,8 +535,8 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       ) : null}
 
       {protocol === 'WebSocket' ? (
-        <Card size="small" title="WebSocket 连接参数" style={{ borderRadius: 16 }}>
-          <Paragraph type="secondary">当前 connector 的 `/ws/device` 仍使用 deviceId、productId、tenantId 建立上下文，因此放在高级配置中维护。</Paragraph>
+        <Card size="small" title="WebSocket 连接参数" style={drawerSectionCardStyle}>
+          <Paragraph style={{ color: '#64748b' }}>如需复用平台上下文，再补充设备、产品和租户标识。</Paragraph>
           <Row gutter={12}>
             <Col span={8}><Form.Item name="wsDeviceId" label="设备标识"><Input placeholder="可选" /></Form.Item></Col>
             <Col span={8}><Form.Item name="wsProductId" label="产品标识"><Input placeholder="可选" /></Form.Item></Col>
@@ -526,11 +548,9 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       <Card size="small" title="配置摘要" style={drawerPanelCardStyle}>
         {supportsThingModelProtocol(protocol) ? (
           <Space direction="vertical" size={16} style={{ width: '100%', marginBottom: 16 }}>
-            <Alert
-              type="info"
-              message="物模型模拟改为 AppKey 签名拉取"
-              description="数据上报面板中的“物模型模拟”会通过网关 `/open/DEVICE/api/v1/products/thing-model/by-product-key` 按 AppKey 签名读取物模型。如果暂时不填，仍然可以继续使用自定义 JSON 上报。"
-            />
+            <Paragraph style={{ margin: 0, color: '#64748b' }}>
+              填入 AppKey 后，可在数据上报面板直接按产品物模型选择属性或事件。
+            </Paragraph>
             <Form.Item name="openApiBaseUrl" label="OpenAPI 网关地址" style={{ marginBottom: 0 }}>
               <Input placeholder={DEFAULT_OPEN_API_BASE_URL} />
             </Form.Item>
@@ -564,15 +584,23 @@ export default function AddDeviceModal({ open, onClose }: Props) {
 
   return (
     <Drawer
-      title="新建模拟设备"
+      title={(
+        <Space direction="vertical" size={0}>
+          <Text strong style={{ fontSize: 18, color: '#0f172a' }}>新建设备</Text>
+          <Text style={{ fontSize: 12, color: '#64748b' }}>分三步完成基础信息、接入参数和扩展配置。</Text>
+        </Space>
+      )}
       open={open}
       width={720}
       destroyOnClose
       onClose={closeDrawer}
       footer={
         <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-          <Button onClick={closeDrawer}>取消</Button>
+          <Text style={{ color: '#64748b' }}>
+            第 {currentStep + 1} 步，共 {STEP_TITLES.length} 步
+          </Text>
           <Space>
+            <Button onClick={closeDrawer}>取消</Button>
             <Button disabled={currentStep === 0} onClick={() => setCurrentStep((prev) => prev - 1)}>上一步</Button>
             {currentStep < STEP_TITLES.length - 1 ? (
               <Button type="primary" onClick={() => void nextStep()}>下一步</Button>
@@ -584,16 +612,16 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       }
       styles={{
         header: {
-          borderBottom: '1px solid rgba(148,163,184,0.12)',
-          background: 'linear-gradient(180deg, rgba(15,23,42,0.94) 0%, rgba(8,15,29,0.98) 100%)',
+          borderBottom: '1px solid rgba(226,232,240,0.9)',
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,251,255,0.98) 100%)',
         },
         body: {
           paddingBottom: 24,
-          background: 'linear-gradient(180deg, rgba(11,18,32,0.98) 0%, rgba(15,23,42,0.96) 100%)',
+          background: 'linear-gradient(180deg, #f6f9fc 0%, #eef4f8 100%)',
         },
         footer: {
-          borderTop: '1px solid rgba(148,163,184,0.12)',
-          background: 'linear-gradient(180deg, rgba(8,15,29,0.98) 0%, rgba(4,8,17,1) 100%)',
+          borderTop: '1px solid rgba(226,232,240,0.9)',
+          background: 'rgba(255,255,255,0.96)',
           padding: '16px 24px',
         },
       }}
@@ -605,16 +633,17 @@ export default function AddDeviceModal({ open, onClose }: Props) {
         initialValues={initialValues}
         onValuesChange={() => setFormSnapshot(form.getFieldsValue(true))}
       >
-        <Steps
-          current={currentStep}
-          items={STEP_TITLES.map((title) => ({ title }))}
-          style={{ marginBottom: 24 }}
-          onChange={(next) => {
-            if (next <= currentStep) {
-              setCurrentStep(next);
-            }
-          }}
-        />
+        <Card size="small" style={{ ...drawerPanelCardStyle, marginBottom: 24 }}>
+          <Steps
+            current={currentStep}
+            items={STEP_TITLES.map((title) => ({ title }))}
+            onChange={(next) => {
+              if (next <= currentStep) {
+                setCurrentStep(next);
+              }
+            }}
+          />
+        </Card>
         {currentStep === 0 ? renderBasicStep() : null}
         {currentStep === 1 ? renderAccessStep() : null}
         {currentStep === 2 ? renderAdvancedStep() : null}
