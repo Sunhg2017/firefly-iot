@@ -260,33 +260,65 @@ a {
   }
 }
 
-@keyframes loginNetworkFlow {
+@keyframes loginOrbitSpin {
   from {
-    stroke-dashoffset: 0;
+    transform: translate(-50%, -50%) rotate(0deg);
   }
   to {
-    stroke-dashoffset: -240;
+    transform: translate(-50%, -50%) rotate(360deg);
   }
 }
 
-@keyframes loginNodeFloat {
+@keyframes loginOrbitSpinReverse {
+  from {
+    transform: translate(-50%, -50%) rotate(56deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(-304deg);
+  }
+}
+
+@keyframes loginOrbitSpinInner {
+  from {
+    transform: translate(-50%, -50%) rotate(-18deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(342deg);
+  }
+}
+
+@keyframes loginCorePulse {
+  0% {
+    transform: translate(-50%, -50%) scale(0.82);
+    opacity: 0.56;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.18);
+    opacity: 0;
+  }
+}
+
+@keyframes loginParticleFloat {
   0%,
   100% {
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
+    opacity: 0.4;
   }
   50% {
-    transform: translateY(-8px);
+    transform: translate3d(0, -10px, 0);
+    opacity: 0.82;
   }
 }
 
-@keyframes loginHubPulse {
-  0% {
-    transform: scale(0.92);
-    opacity: 0.72;
-  }
+@keyframes loginPointPulse {
+  0%,
   100% {
-    transform: scale(1.2);
-    opacity: 0;
+    transform: scale(1);
+    box-shadow: 0 0 0 5px rgba(191, 219, 254, 0.22), 0 8px 18px rgba(37, 99, 235, 0.16);
+  }
+  50% {
+    transform: scale(1.16);
+    box-shadow: 0 0 0 7px rgba(191, 219, 254, 0.3), 0 10px 22px rgba(37, 99, 235, 0.22);
   }
 }
 
@@ -604,37 +636,37 @@ a {
 
 .login-page-overview {
   position: relative;
-  padding: 44px 48px;
+  padding: 48px 52px;
   background:
-    radial-gradient(circle at top left, rgba(191, 219, 254, 0.55) 0%, rgba(191, 219, 254, 0) 38%),
+    radial-gradient(circle at top left, rgba(191, 219, 254, 0.48) 0%, rgba(191, 219, 254, 0) 36%),
     linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
-  gap: 18px;
+  justify-content: center;
+  gap: 34px;
 }
 
 .login-page-overview::after {
   content: '';
   position: absolute;
-  inset: 24px 24px auto auto;
-  width: 220px;
-  height: 220px;
+  inset: auto auto 22px 28px;
+  width: 176px;
+  height: 176px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(219, 234, 254, 0.7) 0%, rgba(219, 234, 254, 0) 70%);
+  background: radial-gradient(circle, rgba(219, 234, 254, 0.58) 0%, rgba(219, 234, 254, 0) 72%);
   pointer-events: none;
 }
 
 .login-page-overview__copy {
   position: relative;
   z-index: 1;
-  max-width: 380px;
+  max-width: 360px;
 }
 
 .login-page-overview__brand {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
 }
 
 .login-page-overview__logo {
@@ -669,137 +701,182 @@ a {
   position: relative;
   z-index: 1;
   flex: 1 1 auto;
-  min-height: 360px;
-  margin-top: 6px;
+  min-height: 380px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at 50% 46%, rgba(191, 219, 254, 0.24) 0%, rgba(191, 219, 254, 0) 34%);
   overflow: visible;
-}
-
-.login-page-network::before,
-.login-page-network::after {
-  content: '';
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-.login-page-network::before {
-  inset: 42px auto auto 56px;
-  width: 84px;
-  height: 84px;
-  background: radial-gradient(circle, rgba(219, 234, 254, 0.9) 0%, rgba(219, 234, 254, 0) 70%);
-}
-
-.login-page-network::after {
-  inset: auto 64px 44px auto;
-  width: 108px;
-  height: 108px;
-  background: radial-gradient(circle, rgba(191, 219, 254, 0.72) 0%, rgba(191, 219, 254, 0) 72%);
 }
 
 .login-page-network__stage {
   position: relative;
-  width: min(100%, 430px);
-  aspect-ratio: 520 / 360;
-  transform: translate(8px, -4px) scale(1.06);
-  transform-origin: center;
+  width: min(100%, 392px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.76) 0%, rgba(239, 246, 255, 0.16) 48%, rgba(239, 246, 255, 0) 74%);
 }
 
-.login-page-network__svg {
+.login-page-network__halo {
   position: absolute;
-  inset: 0;
+  inset: 50% auto auto 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.login-page-network__halo--outer {
   width: 100%;
   height: 100%;
+  background: radial-gradient(circle, rgba(219, 234, 254, 0.76) 0%, rgba(219, 234, 254, 0.16) 34%, rgba(219, 234, 254, 0) 74%);
 }
 
-.login-page-network__line {
-  stroke: url(#login-network-gradient);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-dasharray: 10 10;
-  opacity: 0.82;
-  animation: loginNetworkFlow 18s linear infinite;
+.login-page-network__halo--inner {
+  width: 62%;
+  height: 62%;
+  background: radial-gradient(circle, rgba(191, 219, 254, 0.56) 0%, rgba(191, 219, 254, 0.12) 48%, rgba(191, 219, 254, 0) 76%);
 }
 
-.login-page-network__line--soft {
-  opacity: 0.34;
-  stroke-width: 1.5;
-  stroke-dasharray: 6 12;
-}
-
-.login-page-network__signal {
-  fill: #60a5fa;
-  filter: drop-shadow(0 0 10px rgba(96, 165, 250, 0.8));
-}
-
-.login-page-network__node {
+.login-page-network__orbit {
   position: absolute;
-  width: 62px;
-  height: 62px;
+  top: 50%;
+  left: 50%;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+.login-page-network__orbit--outer {
+  width: 88%;
+  height: 88%;
+  animation: loginOrbitSpin 24s linear infinite;
+}
+
+.login-page-network__orbit--middle {
+  width: 68%;
+  height: 68%;
+  animation: loginOrbitSpinReverse 20s linear infinite;
+}
+
+.login-page-network__orbit--inner {
+  width: 48%;
+  height: 48%;
+  animation: loginOrbitSpinInner 16s linear infinite;
+}
+
+.login-page-network__point {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #93c5fd 0%, #3b82f6 100%);
+  animation: loginPointPulse 3.8s ease-in-out infinite;
+}
+
+.login-page-network__point--top {
+  top: -6px;
+  left: calc(50% - 6px);
+}
+
+.login-page-network__point--right {
+  top: 20%;
+  right: 20px;
+  animation-delay: -1.2s;
+}
+
+.login-page-network__point--left {
+  left: 10px;
+  top: 56%;
+  animation-delay: -0.7s;
+}
+
+.login-page-network__point--upper-right {
+  top: 12%;
+  right: 26px;
+  animation-delay: -1.7s;
+}
+
+.login-page-network__point--bottom {
+  width: 10px;
+  height: 10px;
+  left: calc(48% - 5px);
+  bottom: -5px;
+  animation-delay: -0.4s;
+}
+
+.login-page-network__particle {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(147, 197, 253, 0.95) 0%, rgba(147, 197, 253, 0) 72%);
+  animation: loginParticleFloat 4.6s ease-in-out infinite;
+}
+
+.login-page-network__particle--one {
+  top: 14%;
+  left: 16%;
+  width: 12px;
+  height: 12px;
+}
+
+.login-page-network__particle--two {
+  right: 12%;
+  bottom: 18%;
+  width: 16px;
+  height: 16px;
+  animation-delay: -1.4s;
+}
+
+.login-page-network__particle--three {
+  left: 8%;
+  bottom: 24%;
+  width: 10px;
+  height: 10px;
+  animation-delay: -2.3s;
+}
+
+.login-page-network__core {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 112px;
+  height: 112px;
+  transform: translate(-50%, -50%);
+}
+
+.login-page-network__core-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  transform: translate(-50%, -50%);
+  animation: loginCorePulse 3.4s ease-out infinite;
+}
+
+.login-page-network__core-ring--delay {
+  animation-delay: 1.7s;
+}
+
+.login-page-network__core-shell {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 20px;
-  border: 1px solid rgba(191, 219, 254, 0.96);
-  background: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.1);
+  border-radius: 36px;
+  border: 1px solid rgba(191, 219, 254, 0.92);
+  background: linear-gradient(180deg, #ffffff 0%, #dbeafe 100%);
+  box-shadow: 0 20px 40px rgba(37, 99, 235, 0.16);
   color: #2563eb;
-  font-size: 25px;
-  backdrop-filter: blur(10px);
-  animation: loginNodeFloat 6s ease-in-out infinite;
+  font-size: 42px;
 }
 
-.login-page-network__node--hub {
-  width: 86px;
-  height: 86px;
-  left: calc(50% - 43px);
-  top: calc(48.89% - 43px);
-  border-radius: 28px;
-  font-size: 34px;
-  background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
-  box-shadow: 0 18px 34px rgba(37, 99, 235, 0.18);
-}
-
-.login-page-network__node--hub::after {
+.login-page-network__core-shell::after {
   content: '';
   position: absolute;
-  inset: -10px;
-  border-radius: 30px;
-  border: 1px solid rgba(96, 165, 250, 0.28);
-  animation: loginHubPulse 3.2s ease-out infinite;
-}
-
-.login-page-network__node--cloud {
-  left: calc(50% - 31px);
-  top: calc(23.89% - 31px);
-  animation-delay: -0.6s;
-}
-
-.login-page-network__node--device {
-  left: calc(21.15% - 31px);
-  top: calc(47.22% - 31px);
-  animation-delay: -1.3s;
-}
-
-.login-page-network__node--mobile {
-  left: calc(80.38% - 31px);
-  top: calc(44.44% - 31px);
-  animation-delay: -2s;
-}
-
-.login-page-network__node--api {
-  left: calc(33.08% - 31px);
-  top: calc(78.89% - 31px);
-  animation-delay: -2.8s;
-}
-
-.login-page-network__node--rule {
-  left: calc(68.46% - 31px);
-  top: calc(78.89% - 31px);
-  animation-delay: -3.5s;
+  inset: 14px;
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
 }
 
 .login-page-form-panel {
@@ -877,12 +954,15 @@ a {
     padding: 24px !important;
   }
 
+  .login-page-overview {
+    gap: 26px;
+  }
+
   .login-page-network {
-    min-height: 300px;
+    min-height: 320px;
   }
 
   .login-page-network__stage {
-    width: min(100%, 360px);
-    transform: translate(0, 0) scale(1);
+    width: min(100%, 332px);
   }
 }
