@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Card,
@@ -12,7 +12,14 @@ import {
   Typography,
   message,
 } from 'antd';
-import { LoginOutlined, SettingOutlined } from '@ant-design/icons';
+import {
+  CloudServerOutlined,
+  DeploymentUnitOutlined,
+  LockOutlined,
+  LoginOutlined,
+  SettingOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
 import {
   getActiveEnvironment,
   useSimWorkspaceStore,
@@ -32,6 +39,28 @@ function buildSessionLabel(session?: {
   }
   return `${session.user.tenantName || '当前租户'} / ${session.user.realName || session.user.username || '当前用户'}`;
 }
+
+function buildSessionUserName(session?: {
+  user?: {
+    realName?: string | null;
+    username?: string;
+  };
+} | null) {
+  return session?.user?.realName || session?.user?.username || '未登录';
+}
+
+function buildSessionTenantName(session?: {
+  user?: {
+    tenantName?: string;
+  };
+} | null) {
+  return session?.user?.tenantName || '未登录';
+}
+
+type LoginFormValues = {
+  username: string;
+  password: string;
+};
 
 export default function SimulatorAccessGate() {
   const environments = useSimWorkspaceStore((state) => state.environments);
@@ -53,7 +82,20 @@ export default function SimulatorAccessGate() {
   const [editingEnvironmentId, setEditingEnvironmentId] = useState<string | null>(null);
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [environmentForm] = Form.useForm();
-  const [loginForm] = Form.useForm();
+  const [loginForm] = Form.useForm<LoginFormValues>();
+
+  useEffect(() => {
+    loginForm.setFieldsValue({
+      username: activeSession?.user?.username || '',
+      password: '',
+    });
+  }, [activeEnvironment.id, activeSession?.user?.username, loginForm]);
+
+  const openEnvironmentManager = () => {
+    setEditingEnvironmentId(null);
+    environmentForm.resetFields();
+    setEnvironmentDrawerOpen(true);
+  };
 
   const openCreateEnvironment = () => {
     setEditingEnvironmentId(null);
@@ -112,15 +154,15 @@ export default function SimulatorAccessGate() {
     message.success('环境已删除');
   };
 
-  const handleLogin = async () => {
+  const handleLogin = async (values?: LoginFormValues) => {
     try {
-      const values = await loginForm.validateFields();
+      const formValues = values || await loginForm.validateFields();
       setLoginSubmitting(true);
       const result = await window.electronAPI.simulatorAuthLogin(
         activeEnvironment.gatewayBaseUrl,
         {
-          username: values.username,
-          password: values.password,
+          username: formValues.username,
+          password: formValues.password,
           loginMethod: 'PASSWORD',
           fingerprint: `simulator:${activeEnvironment.id}`,
           userAgent: navigator.userAgent,
@@ -169,7 +211,11 @@ export default function SimulatorAccessGate() {
         height: '100dvh',
         padding: 'clamp(20px, 3vw, 32px)',
         overflow: 'hidden',
-        background: 'linear-gradient(180deg, #eef3f7 0%, #e6edf4 100%)',
+        background: `
+          radial-gradient(circle at top left, rgba(191,219,254,0.55) 0%, rgba(191,219,254,0) 34%),
+          radial-gradient(circle at right 12%, rgba(148,163,184,0.18) 0%, rgba(148,163,184,0) 24%),
+          linear-gradient(180deg, #eef3f7 0%, #e6edf4 100%)
+        `,
       }}
     >
       <div
@@ -183,167 +229,350 @@ export default function SimulatorAccessGate() {
       >
         <div
           style={{
-            width: 'min(1120px, 100%)',
+            width: 'min(1320px, 100%)',
+            height: 'min(820px, 100%)',
             display: 'grid',
-            gap: 24,
-            gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
-            alignItems: 'stretch',
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(380px, 450px)',
+            borderRadius: 36,
+            overflow: 'hidden',
+            border: '1px solid rgba(226,232,240,0.96)',
+            background: 'rgba(255,255,255,0.76)',
+            boxShadow: '0 28px 72px rgba(15,23,42,0.12)',
+            backdropFilter: 'blur(18px)',
           }}
         >
-          <Card
+          <div
             style={{
-              borderRadius: 28,
-              border: '1px solid rgba(226,232,240,0.95)',
-              background: 'linear-gradient(160deg, rgba(255,255,255,0.98) 0%, rgba(242,248,255,0.94) 100%)',
-              boxShadow: '0 24px 54px rgba(15,23,42,0.08)',
+              position: 'relative',
+              padding: '40px 42px 36px',
+              background: `
+                radial-gradient(circle at top left, rgba(219,234,254,0.82) 0%, rgba(219,234,254,0) 30%),
+                linear-gradient(180deg, rgba(248,251,255,0.92) 0%, rgba(237,244,251,0.9) 100%)
+              `,
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              gap: 32,
             }}
-            styles={{ body: { padding: 28 } }}
           >
-            <Space direction="vertical" size={18} style={{ width: '100%' }}>
-              <div>
-                <Title level={2} style={{ margin: 0, color: '#0f172a' }}>
-                  设备模拟器
-                </Title>
-                <Text type="secondary">
-                  先登录当前环境，再进入主工作台。
-                </Text>
-              </div>
-
-              <div
-                style={{
-                  display: 'grid',
-                  gap: 12,
-                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                }}
-              >
-                <div style={{ padding: '12px 14px', borderRadius: 18, background: '#f8fbff', border: '1px solid rgba(226,232,240,0.9)' }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>当前环境</Text>
-                  <div style={{ marginTop: 6, color: '#0f172a', fontWeight: 600 }}>{activeEnvironment.name}</div>
+            <div
+              style={{
+                position: 'absolute',
+                inset: '26px auto auto 26px',
+                width: 148,
+                height: 148,
+                borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(191,219,254,0.38) 0%, rgba(191,219,254,0) 72%)',
+                pointerEvents: 'none',
+              }}
+            />
+            <div
+              style={{
+                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 18,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div
+                  style={{
+                    width: 58,
+                    height: 58,
+                    borderRadius: 20,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%)',
+                    color: '#2563eb',
+                    boxShadow: 'inset 0 0 0 1px rgba(191,219,254,0.95)',
+                  }}
+                >
+                  <DeploymentUnitOutlined style={{ fontSize: 26 }} />
                 </div>
-                <div style={{ padding: '12px 14px', borderRadius: 18, background: '#f8fbff', border: '1px solid rgba(226,232,240,0.9)' }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>登录状态</Text>
-                  <div style={{ marginTop: 6, color: '#0f172a', fontWeight: 600 }}>{buildSessionLabel(activeSession)}</div>
-                </div>
-                <div style={{ padding: '12px 14px', borderRadius: 18, background: '#f8fbff', border: '1px solid rgba(226,232,240,0.9)' }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>平台网关</Text>
-                  <div style={{ marginTop: 6, color: '#0f172a', wordBreak: 'break-all' }}>{activeEnvironment.gatewayBaseUrl}</div>
-                </div>
-                <div style={{ padding: '12px 14px', borderRadius: 18, background: '#f8fbff', border: '1px solid rgba(226,232,240,0.9)' }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>协议服务</Text>
-                  <div style={{ marginTop: 6, color: '#0f172a', wordBreak: 'break-all' }}>{activeEnvironment.protocolBaseUrl}</div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                <Space size={8} wrap>
-                  {environments.map((environment) => (
-                    <Tag
-                      key={environment.id}
-                      style={{
-                        margin: 0,
-                        borderRadius: 999,
-                        paddingInline: 12,
-                        background: environment.id === activeEnvironment.id ? '#eef2ff' : '#ffffff',
-                        borderColor: environment.id === activeEnvironment.id ? '#c7d2fe' : '#e2e8f0',
-                        color: environment.id === activeEnvironment.id ? '#4338ca' : '#475569',
-                      }}
-                    >
-                      {environment.name}
-                    </Tag>
-                  ))}
-                </Space>
-                <Button icon={<SettingOutlined />} onClick={openCreateEnvironment}>
-                  环境管理
-                </Button>
-              </div>
-            </Space>
-          </Card>
-
-          <Card
-            style={{
-              borderRadius: 28,
-              border: '1px solid rgba(226,232,240,0.95)',
-              background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,251,255,0.96) 100%)',
-              boxShadow: '0 24px 54px rgba(15,23,42,0.08)',
-            }}
-            styles={{ body: { padding: 28 } }}
-          >
-            <Space direction="vertical" size={18} style={{ width: '100%' }}>
-              <div>
-                <Text strong style={{ color: '#0f172a', fontSize: 18 }}>登录当前环境</Text>
-                <div style={{ marginTop: 4 }}>
-                  <Text type="secondary">
-                    进入主页面前，需要先完成环境登录。
+                <div>
+                  <Text style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#2563eb' }}>
+                    租户设备接入工具
                   </Text>
+                  <Title level={1} style={{ margin: '6px 0 0', color: '#0f172a', fontSize: 34, lineHeight: 1.2 }}>
+                    设备模拟器
+                  </Title>
                 </div>
               </div>
+              <Text style={{ maxWidth: 560, color: '#475569', fontSize: 15, lineHeight: 1.75 }}>
+                选择当前环境并完成登录后进入主工作台。
+              </Text>
+            </div>
 
-              <div
-                style={{
-                  padding: 14,
-                  borderRadius: 20,
-                  border: '1px solid rgba(226,232,240,0.92)',
-                  background: '#f8fbff',
-                }}
-              >
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Select
-                    value={activeEnvironment.id}
-                    options={environments.map((item) => ({
-                      value: item.id,
-                      label: item.name,
-                    }))}
-                    onChange={setActiveEnvironment}
-                  />
+            <div
+              style={{
+                position: 'relative',
+                borderRadius: 30,
+                border: '1px solid rgba(226,232,240,0.94)',
+                background: 'rgba(255,255,255,0.74)',
+                boxShadow: '0 18px 44px rgba(15,23,42,0.06)',
+                padding: 24,
+              }}
+            >
+              <Space direction="vertical" size={20} style={{ width: '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+                  <div>
+                    <Text strong style={{ color: '#0f172a', fontSize: 18 }}>
+                      当前环境概览
+                    </Text>
+                    <div style={{ marginTop: 4 }}>
+                      <Text type="secondary">可切换环境并查看当前接入地址。</Text>
+                    </div>
+                  </div>
+                  <Button icon={<SettingOutlined />} onClick={openEnvironmentManager}>
+                    环境管理
+                  </Button>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gap: 14,
+                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  }}
+                >
+                  <div
+                    style={{
+                      minHeight: 118,
+                      padding: '18px 18px 16px',
+                      borderRadius: 24,
+                      background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
+                      border: '1px solid rgba(226,232,240,0.92)',
+                    }}
+                  >
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      当前环境
+                    </Text>
+                    <div style={{ marginTop: 10, color: '#0f172a', fontSize: 24, fontWeight: 700 }}>
+                      {activeEnvironment.name}
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <Tag
+                        style={{
+                          margin: 0,
+                          borderRadius: 999,
+                          paddingInline: 12,
+                          color: '#1d4ed8',
+                          background: '#eff6ff',
+                          borderColor: '#bfdbfe',
+                        }}
+                      >
+                        已配置 {environments.length} 个环境
+                      </Tag>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      minHeight: 118,
+                      padding: '18px 18px 16px',
+                      borderRadius: 24,
+                      background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
+                      border: '1px solid rgba(226,232,240,0.92)',
+                    }}
+                  >
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      登录状态
+                    </Text>
+                    <div style={{ marginTop: 10, color: '#0f172a', fontSize: 24, fontWeight: 700 }}>
+                      {buildSessionUserName(activeSession)}
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <Text type="secondary">{buildSessionTenantName(activeSession)}</Text>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gap: 14,
+                    gridTemplateColumns: 'minmax(0, 1.25fr) minmax(220px, 0.75fr)',
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: '18px 18px 16px',
+                      borderRadius: 24,
+                      background: 'linear-gradient(180deg, rgba(248,251,255,0.96) 0%, rgba(239,246,255,0.98) 100%)',
+                      border: '1px solid rgba(226,232,240,0.92)',
+                    }}
+                  >
+                    <Space size={10} align="start">
+                      <CloudServerOutlined style={{ color: '#2563eb', fontSize: 18, marginTop: 2 }} />
+                      <div style={{ minWidth: 0 }}>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          平台网关
+                        </Text>
+                        <div style={{ marginTop: 8, color: '#0f172a', fontWeight: 600, wordBreak: 'break-all', lineHeight: 1.7 }}>
+                          {activeEnvironment.gatewayBaseUrl}
+                        </div>
+                      </div>
+                    </Space>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: '18px 18px 16px',
+                      borderRadius: 24,
+                      background: 'linear-gradient(180deg, rgba(248,251,255,0.96) 0%, rgba(255,255,255,0.98) 100%)',
+                      border: '1px solid rgba(226,232,240,0.92)',
+                    }}
+                  >
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      当前会话
+                    </Text>
+                    <div style={{ marginTop: 8, color: '#0f172a', lineHeight: 1.7 }}>
+                      {buildSessionLabel(activeSession)}
+                    </div>
+                  </div>
+                </div>
+              </Space>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 32,
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.86) 0%, rgba(247,250,252,0.92) 100%)',
+            }}
+          >
+            <Card
+              style={{
+                width: '100%',
+                maxWidth: 386,
+                borderRadius: 30,
+                border: '1px solid rgba(226,232,240,0.95)',
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(249,251,255,0.96) 100%)',
+                boxShadow: '0 22px 52px rgba(15,23,42,0.08)',
+              }}
+              styles={{ body: { padding: 28 } }}
+            >
+              <Space direction="vertical" size={22} style={{ width: '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+                  <div>
+                    <Text strong style={{ color: '#0f172a', fontSize: 22 }}>
+                      登录当前环境
+                    </Text>
+                    <div style={{ marginTop: 6 }}>
+                      <Text type="secondary">登录成功后进入主页面。</Text>
+                    </div>
+                  </div>
+                  <Tag
+                    style={{
+                      margin: 0,
+                      borderRadius: 999,
+                      paddingInline: 12,
+                      color: '#475569',
+                      background: '#f8fafc',
+                      borderColor: '#e2e8f0',
+                    }}
+                  >
+                    未登录
+                  </Tag>
+                </div>
+
+                <div
+                  style={{
+                    padding: 16,
+                    borderRadius: 22,
+                    border: '1px solid rgba(226,232,240,0.92)',
+                    background: 'linear-gradient(180deg, #f8fbff 0%, #f1f7ff 100%)',
+                  }}
+                >
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      当前环境
+                    </Text>
+                    <Select
+                      size="large"
+                      value={activeEnvironment.id}
+                      options={environments.map((item) => ({
+                        value: item.id,
+                        label: item.name,
+                      }))}
+                      onChange={setActiveEnvironment}
+                    />
+                    <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.7, wordBreak: 'break-all' }}>
+                      网关 {activeEnvironment.gatewayBaseUrl}
+                    </Text>
+                  </Space>
+                </div>
+
+                <Form
+                  form={loginForm}
+                  layout="vertical"
+                  onFinish={(values) => void handleLogin(values)}
+                >
+                  <Form.Item
+                    name="username"
+                    label="用户名"
+                    rules={[{ required: true, message: '请输入用户名' }]}
+                  >
+                    <Input size="large" prefix={<UserOutlined />} placeholder="请输入用户名" />
+                  </Form.Item>
+                  <Form.Item
+                    name="password"
+                    label="密码"
+                    rules={[{ required: true, message: '请输入密码' }]}
+                  >
+                    <Input.Password size="large" prefix={<LockOutlined />} placeholder="请输入密码" />
+                  </Form.Item>
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    block
+                    size="large"
+                    icon={<LoginOutlined />}
+                    loading={loginSubmitting}
+                    style={{
+                      height: 48,
+                      borderRadius: 14,
+                      background: 'linear-gradient(180deg, #3b82f6 0%, #2563eb 100%)',
+                      boxShadow: '0 12px 24px rgba(37,99,235,0.22)',
+                    }}
+                  >
+                    登录并进入主页面
+                  </Button>
+                </Form>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    网关 {activeEnvironment.gatewayBaseUrl}
+                    {buildSessionLabel(activeSession)}
                   </Text>
-                </Space>
-              </div>
-
-              <Form
-                form={loginForm}
-                layout="vertical"
-                initialValues={{
-                  username: activeSession?.user?.username || '',
-                  password: '',
-                }}
-              >
-                <Form.Item
-                  name="username"
-                  label="用户名"
-                  rules={[{ required: true, message: '请输入用户名' }]}
-                >
-                  <Input placeholder="请输入用户名" />
-                </Form.Item>
-                <Form.Item
-                  name="password"
-                  label="密码"
-                  rules={[{ required: true, message: '请输入密码' }]}
-                >
-                  <Input.Password placeholder="请输入密码" />
-                </Form.Item>
-                <Button
-                  type="primary"
-                  block
-                  size="large"
-                  icon={<LoginOutlined />}
-                  loading={loginSubmitting}
-                  onClick={() => void handleLogin()}
-                >
-                  登录并进入主页面
-                </Button>
-              </Form>
-            </Space>
-          </Card>
+                  <Button type="link" icon={<SettingOutlined />} onClick={openEnvironmentManager}>
+                    环境管理
+                  </Button>
+                </div>
+              </Space>
+            </Card>
+          </div>
         </div>
       </div>
 
       <Drawer
-        title="环境管理"
+        title={(
+          <Space direction="vertical" size={0}>
+            <Text strong style={{ color: '#0f172a' }}>
+              环境管理
+            </Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              维护平台网关、协议服务、媒体服务和 MQTT Broker。
+            </Text>
+          </Space>
+        )}
         open={environmentDrawerOpen}
-        width={460}
+        width={520}
         destroyOnClose
+        styles={{ body: { padding: 20, background: '#f6f8fb' } }}
         onClose={() => {
           setEnvironmentDrawerOpen(false);
           setEditingEnvironmentId(null);
@@ -356,7 +585,12 @@ export default function SimulatorAccessGate() {
         )}
       >
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <Card size="small" title={editingEnvironmentId ? '编辑环境' : '新增环境'} style={{ borderRadius: 18 }}>
+          <Card
+            size="small"
+            title={editingEnvironmentId ? '编辑环境' : '新增环境'}
+            style={{ borderRadius: 20, borderColor: 'rgba(226,232,240,0.96)' }}
+            styles={{ body: { padding: 18 } }}
+          >
             <Form form={environmentForm} layout="vertical">
               <Form.Item name="name" label="环境名称" rules={[{ required: true, message: '请输入环境名称' }]}>
                 <Input placeholder="例如：测试环境" />
@@ -393,13 +627,18 @@ export default function SimulatorAccessGate() {
 
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
             {environments.map((environment) => (
-              <Card key={environment.id} size="small" style={{ borderRadius: 18 }}>
+              <Card
+                key={environment.id}
+                size="small"
+                style={{ borderRadius: 20, borderColor: 'rgba(226,232,240,0.96)' }}
+                styles={{ body: { padding: 18 } }}
+              >
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                     <Space size={8} wrap>
                       <Text strong>{environment.name}</Text>
                       {environment.id === activeEnvironmentId ? (
-                        <Tag style={{ margin: 0 }} color="processing">
+                        <Tag style={{ margin: 0, borderRadius: 999 }} color="processing">
                           当前
                         </Tag>
                       ) : null}
