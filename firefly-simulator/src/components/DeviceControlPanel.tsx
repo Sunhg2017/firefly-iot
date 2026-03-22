@@ -1537,14 +1537,13 @@ export default function DeviceControlPanel() {
     marginBottom: 18,
     padding: 22,
     borderRadius: 28,
-    border: '1px solid rgba(226,232,240,0.92)',
-    background: 'linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(243,248,255,0.96) 100%)',
-    boxShadow: '0 18px 42px rgba(15,23,42,0.08)',
-    backdropFilter: 'blur(12px)',
+    border: '1px solid #dbe4ee',
+    background: '#ffffff',
+    boxShadow: '0 10px 24px rgba(15,23,42,0.05)',
   };
 
   return (
-    <div style={{ padding: 24, height: '100%', overflow: 'auto', background: 'linear-gradient(180deg, rgba(248,250,252,0.68) 0%, rgba(241,245,249,0.28) 100%)' }}>
+    <div style={{ padding: 24, height: '100%', overflow: 'auto', background: '#f3f7fb' }}>
       <div style={basicInfoCardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 420px', minWidth: 260 }}>
