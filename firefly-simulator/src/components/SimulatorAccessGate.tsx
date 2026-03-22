@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Card,
+  Checkbox,
   Drawer,
   Form,
   Input,
@@ -60,6 +61,7 @@ function buildSessionTenantName(session?: {
 type LoginFormValues = {
   username: string;
   password: string;
+  rememberMe: boolean;
 };
 
 export default function SimulatorAccessGate() {
@@ -70,13 +72,17 @@ export default function SimulatorAccessGate() {
   const updateEnvironment = useSimWorkspaceStore((state) => state.updateEnvironment);
   const removeEnvironment = useSimWorkspaceStore((state) => state.removeEnvironment);
   const sessions = useSimWorkspaceStore((state) => state.sessions);
+  const rememberedLogins = useSimWorkspaceStore((state) => state.rememberedLogins);
   const saveSession = useSimWorkspaceStore((state) => state.saveSession);
+  const rememberLogin = useSimWorkspaceStore((state) => state.rememberLogin);
+  const clearRememberedLogin = useSimWorkspaceStore((state) => state.clearRememberedLogin);
 
   const activeEnvironment = useMemo(
     () => getActiveEnvironment(environments, activeEnvironmentId),
     [activeEnvironmentId, environments],
   );
   const activeSession = sessions[activeEnvironment.id];
+  const activeRememberedLogin = rememberedLogins[activeEnvironment.id];
 
   const [environmentDrawerOpen, setEnvironmentDrawerOpen] = useState(false);
   const [editingEnvironmentId, setEditingEnvironmentId] = useState<string | null>(null);
@@ -86,10 +92,11 @@ export default function SimulatorAccessGate() {
 
   useEffect(() => {
     loginForm.setFieldsValue({
-      username: activeSession?.user?.username || '',
+      username: activeSession?.user?.username || activeRememberedLogin?.username || '',
       password: '',
+      rememberMe: Boolean(activeRememberedLogin),
     });
-  }, [activeEnvironment.id, activeSession?.user?.username, loginForm]);
+  }, [activeEnvironment.id, activeRememberedLogin, activeSession?.user?.username, loginForm]);
 
   const openEnvironmentManager = () => {
     setEditingEnvironmentId(null);
@@ -176,6 +183,12 @@ export default function SimulatorAccessGate() {
       const payload = result.data || {};
       if (!payload.accessToken || !payload.user) {
         throw new Error('登录响应缺少 accessToken');
+      }
+
+      if (formValues.rememberMe) {
+        rememberLogin(activeEnvironment.id, formValues.username);
+      } else {
+        clearRememberedLogin(activeEnvironment.id);
       }
 
       saveSession(activeEnvironment.id, {
@@ -511,6 +524,7 @@ export default function SimulatorAccessGate() {
                   form={loginForm}
                   layout="vertical"
                   onFinish={(values) => void handleLogin(values)}
+                  initialValues={{ rememberMe: Boolean(activeRememberedLogin) }}
                 >
                   <Form.Item
                     name="username"
@@ -525,6 +539,9 @@ export default function SimulatorAccessGate() {
                     rules={[{ required: true, message: '请输入密码' }]}
                   >
                     <Input.Password size="large" prefix={<LockOutlined />} placeholder="请输入密码" />
+                  </Form.Item>
+                  <Form.Item name="rememberMe" valuePropName="checked" style={{ marginBottom: 18 }}>
+                    <Checkbox>记住我</Checkbox>
                   </Form.Item>
                   <Button
                     type="primary"

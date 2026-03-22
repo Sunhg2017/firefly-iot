@@ -3,6 +3,7 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   Drawer,
   Empty,
   Form,
@@ -165,6 +166,12 @@ function buildSessionLabel(session?: {
   return `${session.user.tenantName || '当前租户'} / ${session.user.realName || session.user.username || '当前用户'}`;
 }
 
+type LoginFormValues = {
+  username: string;
+  password: string;
+  rememberMe: boolean;
+};
+
 export default function DeviceListPanel() {
   const { devices, selectedDeviceId, selectDevice, removeDevice, addLog } = useSimStore();
   const environments = useSimWorkspaceStore((state) => state.environments);
@@ -174,8 +181,11 @@ export default function DeviceListPanel() {
   const updateEnvironment = useSimWorkspaceStore((state) => state.updateEnvironment);
   const removeEnvironment = useSimWorkspaceStore((state) => state.removeEnvironment);
   const sessions = useSimWorkspaceStore((state) => state.sessions);
+  const rememberedLogins = useSimWorkspaceStore((state) => state.rememberedLogins);
   const saveSession = useSimWorkspaceStore((state) => state.saveSession);
   const clearWorkspaceSession = useSimWorkspaceStore((state) => state.clearSession);
+  const rememberLogin = useSimWorkspaceStore((state) => state.rememberLogin);
+  const clearRememberedLogin = useSimWorkspaceStore((state) => state.clearRememberedLogin);
   const activeEnvironment = useMemo(
     () => getActiveEnvironment(environments, activeEnvironmentId),
     [activeEnvironmentId, environments],
@@ -185,6 +195,7 @@ export default function DeviceListPanel() {
     [activeEnvironment],
   );
   const activeSession = sessions[activeEnvironment.id];
+  const activeRememberedLogin = rememberedLogins[activeEnvironment.id];
   const [addOpen, setAddOpen] = useState(false);
   const [filterProto, setFilterProto] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -196,7 +207,7 @@ export default function DeviceListPanel() {
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [logoutSubmitting, setLogoutSubmitting] = useState(false);
   const [environmentForm] = Form.useForm();
-  const [loginForm] = Form.useForm();
+  const [loginForm] = Form.useForm<LoginFormValues>();
 
   const filteredDevices = useMemo(() => {
     let list = devices;
@@ -543,8 +554,9 @@ export default function DeviceListPanel() {
 
   const openLoginPanel = () => {
     loginForm.setFieldsValue({
-      username: activeSession?.user?.username || '',
+      username: activeSession?.user?.username || activeRememberedLogin?.username || '',
       password: '',
+      rememberMe: Boolean(activeRememberedLogin),
     });
     setLoginDrawerOpen(true);
   };
@@ -571,6 +583,12 @@ export default function DeviceListPanel() {
       const payload = result.data || {};
       if (!payload.accessToken || !payload.user) {
         throw new Error('登录响应缺少 accessToken');
+      }
+
+      if (values.rememberMe) {
+        rememberLogin(activeEnvironment.id, values.username);
+      } else {
+        clearRememberedLogin(activeEnvironment.id);
       }
 
       saveSession(activeEnvironment.id, {
@@ -1062,12 +1080,19 @@ export default function DeviceListPanel() {
             </Space>
           </Card>
 
-          <Form form={loginForm} layout="vertical">
+          <Form
+            form={loginForm}
+            layout="vertical"
+            initialValues={{ rememberMe: Boolean(activeRememberedLogin) }}
+          >
             <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}>
               <Input placeholder="请输入用户名" />
             </Form.Item>
             <Form.Item name="password" label="密码" rules={[{ required: true, message: '请输入密码' }]}>
               <Input.Password placeholder="请输入密码" />
+            </Form.Item>
+            <Form.Item name="rememberMe" valuePropName="checked" style={{ marginBottom: 16 }}>
+              <Checkbox>记住我</Checkbox>
             </Form.Item>
             <Button type="primary" block loading={loginSubmitting} onClick={() => void handleLogin()}>
               登录

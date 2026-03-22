@@ -28,10 +28,15 @@ export interface SimulatorLoginSession {
   loginAt: string;
 }
 
+export interface SimulatorRememberedLogin {
+  username: string;
+}
+
 interface SimulatorWorkspaceState {
   environments: SimulatorEnvironment[];
   activeEnvironmentId: string;
   sessions: Record<string, SimulatorLoginSession | undefined>;
+  rememberedLogins: Record<string, SimulatorRememberedLogin | undefined>;
 
   addEnvironment: (environment: Omit<SimulatorEnvironment, 'id'>) => string;
   updateEnvironment: (id: string, patch: Partial<Omit<SimulatorEnvironment, 'id'>>) => void;
@@ -39,6 +44,8 @@ interface SimulatorWorkspaceState {
   setActiveEnvironment: (id: string) => void;
   saveSession: (environmentId: string, session: SimulatorLoginSession) => void;
   clearSession: (environmentId: string) => void;
+  rememberLogin: (environmentId: string, username: string) => void;
+  clearRememberedLogin: (environmentId: string) => void;
 }
 
 const DEFAULT_ENVIRONMENT: SimulatorEnvironment = {
@@ -152,6 +159,7 @@ export const useSimWorkspaceStore = create<SimulatorWorkspaceState>()(
       environments: [DEFAULT_ENVIRONMENT],
       activeEnvironmentId: DEFAULT_ENVIRONMENT.id,
       sessions: {},
+      rememberedLogins: {},
 
       addEnvironment: (environment) => {
         const id = uuidv4();
@@ -188,7 +196,9 @@ export const useSimWorkspaceStore = create<SimulatorWorkspaceState>()(
 
         const nextEnvironments = state.environments.filter((item) => item.id !== id);
         const nextSessions = { ...state.sessions };
+        const nextRememberedLogins = { ...state.rememberedLogins };
         delete nextSessions[id];
+        delete nextRememberedLogins[id];
         const nextActiveEnvironmentId = state.activeEnvironmentId === id
           ? nextEnvironments[0]?.id || DEFAULT_ENVIRONMENT.id
           : state.activeEnvironmentId;
@@ -197,6 +207,7 @@ export const useSimWorkspaceStore = create<SimulatorWorkspaceState>()(
           environments: nextEnvironments,
           activeEnvironmentId: nextActiveEnvironmentId,
           sessions: nextSessions,
+          rememberedLogins: nextRememberedLogins,
         });
       },
 
@@ -224,6 +235,25 @@ export const useSimWorkspaceStore = create<SimulatorWorkspaceState>()(
           return { sessions: nextSessions };
         });
       },
+
+      rememberLogin: (environmentId, username) => {
+        set((state) => ({
+          rememberedLogins: {
+            ...state.rememberedLogins,
+            [environmentId]: {
+              username: trimText(username),
+            },
+          },
+        }));
+      },
+
+      clearRememberedLogin: (environmentId) => {
+        set((state) => {
+          const nextRememberedLogins = { ...state.rememberedLogins };
+          delete nextRememberedLogins[environmentId];
+          return { rememberedLogins: nextRememberedLogins };
+        });
+      },
     }),
     {
       name: 'firefly-sim-workspace-store',
@@ -234,7 +264,10 @@ export const useSimWorkspaceStore = create<SimulatorWorkspaceState>()(
           ...buildDefaultSimulatorEnvironment(environment),
         })),
         activeEnvironmentId: state.activeEnvironmentId,
-        sessions: state.sessions,
+        sessions: Object.fromEntries(
+          Object.entries(state.sessions).filter(([environmentId]) => Boolean(state.rememberedLogins[environmentId])),
+        ),
+        rememberedLogins: state.rememberedLogins,
       }),
       merge: (persistedState, currentState) => {
         const incoming = (persistedState || {}) as Partial<SimulatorWorkspaceState>;
@@ -247,12 +280,22 @@ export const useSimWorkspaceStore = create<SimulatorWorkspaceState>()(
         const activeEnvironmentId = persistedEnvironments.some((item) => item.id === incoming.activeEnvironmentId)
           ? (incoming.activeEnvironmentId as string)
           : persistedEnvironments[0]?.id || DEFAULT_ENVIRONMENT.id;
+        const incomingSessions = incoming.sessions || currentState.sessions;
+        const incomingRememberedLogins = incoming.rememberedLogins
+          || Object.fromEntries(
+            Object.entries(incomingSessions).flatMap(([environmentId, session]) => (
+              session?.user?.username
+                ? [[environmentId, { username: String(session.user.username) }]]
+                : []
+            )),
+          );
         return {
           ...currentState,
           ...incoming,
           environments: persistedEnvironments,
           activeEnvironmentId,
-          sessions: incoming.sessions || currentState.sessions,
+          sessions: incomingSessions,
+          rememberedLogins: incomingRememberedLogins,
         };
       },
     },
