@@ -15,6 +15,7 @@ const ProjectList = React.lazy(() => import('./pages/project/ProjectList'));
 const ProductList = React.lazy(() => import('./pages/product/ProductList'));
 const ProtocolParserPage = React.lazy(() => import('./pages/protocol-parser/ProtocolParserPage'));
 const DeviceList = React.lazy(() => import('./pages/device/DeviceList'));
+const DeviceTopologyPage = React.lazy(() => import('./pages/device-topology/DeviceTopologyPage'));
 const DeviceGroupPage = React.lazy(() => import('./pages/device-group/DeviceGroupPage'));
 const DeviceTagPage = React.lazy(() => import('./pages/device-tag/DeviceTagPage'));
 const GeoFencePage = React.lazy(() => import('./pages/geo/GeoFencePage'));
@@ -84,6 +85,7 @@ const App: React.FC = () => {
             <Route path="product" element={<ProductList />} />
             <Route path="protocol-parser" element={<ProtocolParserPage />} />
             <Route path="device" element={<DeviceList />} />
+            <Route path="device-topology" element={<DeviceTopologyPage />} />
             <Route path="device-group" element={<DeviceGroupPage />} />
             <Route path="device-tag" element={<DeviceTagPage />} />
             <Route path="geo-fence" element={<GeoFencePage />} />

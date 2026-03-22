@@ -8,6 +8,8 @@ import com.songhg.firefly.iot.device.dto.device.DeviceCreateDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceCredentialVO;
 import com.songhg.firefly.iot.device.dto.device.DeviceImportDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceQueryDTO;
+import com.songhg.firefly.iot.device.dto.device.DeviceTopologyQueryDTO;
+import com.songhg.firefly.iot.device.dto.device.DeviceTopologyVO;
 import com.songhg.firefly.iot.device.dto.device.DeviceTripleExportDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceUpdateDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceVO;
@@ -70,6 +72,13 @@ public class DeviceController {
     @Operation(summary = "分页查询设备")
     public R<IPage<DeviceVO>> listDevices(@RequestBody DeviceQueryDTO query) {
         return R.ok(deviceService.listDevices(query));
+    }
+
+    @PostMapping("/topology")
+    @RequiresPermission("device:read")
+    @Operation(summary = "查询设备拓扑")
+    public R<DeviceTopologyVO> getDeviceTopology(@RequestBody(required = false) DeviceTopologyQueryDTO query) {
+        return R.ok(deviceService.getDeviceTopology(query));
     }
 
     @GetMapping("/{id}")

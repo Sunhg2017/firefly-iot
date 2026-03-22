@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Badge, Button, Card, Drawer, Form, Input, Modal, Progress, Select, Space, Switch, Table, Tag, Typography, message } from 'antd';
-import { CloudOutlined, DeleteOutlined, DownloadOutlined, KeyOutlined, MinusCircleOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
+import { ApartmentOutlined, CloudOutlined, DeleteOutlined, DownloadOutlined, KeyOutlined, MinusCircleOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { TableRowSelection } from 'antd/es/table/interface';
+import { useNavigate } from 'react-router-dom';
 import DeviceShadowDrawer from './DeviceShadowDrawer';
 import DeviceLocatorModal from './DeviceLocatorModal';
 import { asyncTaskApi, deviceApi, deviceGroupApi, deviceTagApi, fileApi, productApi } from '../../services/api';
@@ -113,6 +114,7 @@ const pollTaskStatus = async (taskId: number, onProgress: (progress: number) => 
 };
 
 const DeviceList: React.FC = () => {
+  const navigate = useNavigate();
   const [data, setData] = useState<DeviceRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -354,7 +356,7 @@ const DeviceList: React.FC = () => {
 
   return (
     <div>
-      <PageHeader title="设备管理" description={`共 ${total} 台设备`} extra={<Space wrap><Button icon={<DownloadOutlined />} loading={exporting} onClick={handleExportTriples}>{selectedDeviceIds.length > 0 ? `导出已选三元组 (${selectedDeviceIds.length})` : '导出当前筛选三元组'}</Button><Button icon={<UploadOutlined />} onClick={() => { if (ensureManualRegistrationProducts()) setBatchOpen(true); }}>批量导入</Button><Button type="primary" icon={<PlusOutlined />} onClick={() => { if (ensureManualRegistrationProducts()) setCreateOpen(true); }}>新建设备</Button></Space>} />
+      <PageHeader title="设备管理" description={`共 ${total} 台设备`} extra={<Space wrap><Button icon={<ApartmentOutlined />} onClick={() => navigate('/device-topology')}>设备拓扑</Button><Button icon={<DownloadOutlined />} loading={exporting} onClick={handleExportTriples}>{selectedDeviceIds.length > 0 ? `导出已选三元组 (${selectedDeviceIds.length})` : '导出当前筛选三元组'}</Button><Button icon={<UploadOutlined />} onClick={() => { if (ensureManualRegistrationProducts()) setBatchOpen(true); }}>批量导入</Button><Button type="primary" icon={<PlusOutlined />} onClick={() => { if (ensureManualRegistrationProducts()) setCreateOpen(true); }}>新建设备</Button></Space>} />
 
       <Card style={{ marginBottom: 16 }}>
         <Space wrap>

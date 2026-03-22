@@ -929,6 +929,7 @@ export const ruleApi = {
 // ==================== Device API ====================
 export const deviceApi = {
   list: (data: Record<string, unknown> = {}) => deviceRequest.post('/devices/list', data),
+  topology: (data: Record<string, unknown> = {}) => deviceRequest.post('/devices/topology', data),
   get: (id: number) => deviceRequest.get(`/devices/${id}`),
   create: (data: Record<string, unknown>) => deviceRequest.post('/devices', data),
   batchCreate: (data: Record<string, unknown>) => deviceRequest.post('/devices/batch', data),

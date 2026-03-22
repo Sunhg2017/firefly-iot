@@ -3,10 +3,13 @@ package com.songhg.firefly.iot.device.service;
 import com.songhg.firefly.iot.api.dto.DeviceLocatorInputDTO;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DeviceStatus;
+import com.songhg.firefly.iot.common.enums.NodeType;
 import com.songhg.firefly.iot.common.enums.OnlineStatus;
 import com.songhg.firefly.iot.device.dto.device.DeviceBatchCreateDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceBatchCreateItemDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceCreateDTO;
+import com.songhg.firefly.iot.device.dto.device.DeviceTopologyQueryDTO;
+import com.songhg.firefly.iot.device.dto.device.DeviceTopologyVO;
 import com.songhg.firefly.iot.device.entity.Device;
 import com.songhg.firefly.iot.device.entity.Product;
 import com.songhg.firefly.iot.device.mapper.DeviceMapper;
@@ -165,11 +168,94 @@ class DeviceServiceTest {
         verify(deviceLocatorService, times(1)).createBatch(eq(12L), any());
     }
 
+    @Test
+    void getDeviceTopologyShouldPreserveAncestorChainForMatchedSubDevice() {
+        AppContextHolder.setTenantId(1L);
+
+        Device gateway = device(21L, 101L, "gateway-21", null, DeviceStatus.ACTIVE, OnlineStatus.ONLINE);
+        Device child = device(22L, 102L, "sensor-22", 21L, DeviceStatus.ACTIVE, OnlineStatus.OFFLINE);
+
+        Product gatewayProduct = product(101L, "Gateway Product", "gateway-pk", NodeType.GATEWAY);
+        Product childProduct = product(102L, "Sensor Product", "sensor-pk", NodeType.DEVICE);
+
+        when(deviceMapper.selectList(any())).thenReturn(List.of(child), List.of(gateway), List.of());
+        when(productMapper.selectBatchIds(any())).thenReturn(List.of(gatewayProduct, childProduct));
+
+        DeviceTopologyQueryDTO query = new DeviceTopologyQueryDTO();
+        query.setProductId(102L);
+
+        DeviceTopologyVO topology = service.getDeviceTopology(query);
+
+        assertEquals(1, topology.getOverview().getMatchedDevices());
+        assertEquals(2, topology.getOverview().getVisibleDevices());
+        assertEquals(1, topology.getRootNodes().size());
+        assertEquals("gateway-21", topology.getRootNodes().get(0).getDeviceName());
+        assertEquals(1, topology.getRootNodes().get(0).getChildren().size());
+        assertEquals("sensor-22", topology.getRootNodes().get(0).getChildren().get(0).getDeviceName());
+        assertEquals("gateway-21", topology.getRootNodes().get(0).getChildren().get(0).getGatewayDeviceName());
+    }
+
+    @Test
+    void getDeviceTopologyShouldExpandMatchedGatewayWithDescendants() {
+        AppContextHolder.setTenantId(1L);
+
+        Device gateway = device(31L, 201L, "gateway-31", null, DeviceStatus.ACTIVE, OnlineStatus.ONLINE);
+        Device child = device(32L, 202L, "meter-32", 31L, DeviceStatus.ACTIVE, OnlineStatus.OFFLINE);
+
+        Product gatewayProduct = product(201L, "Edge Gateway", "edge-gw", NodeType.GATEWAY);
+        Product childProduct = product(202L, "Energy Meter", "meter-pk", NodeType.DEVICE);
+
+        when(deviceMapper.selectList(any())).thenReturn(List.of(gateway), List.of(child), List.of());
+        when(productMapper.selectBatchIds(any())).thenReturn(List.of(gatewayProduct, childProduct));
+
+        DeviceTopologyQueryDTO query = new DeviceTopologyQueryDTO();
+        query.setProductId(201L);
+
+        DeviceTopologyVO topology = service.getDeviceTopology(query);
+
+        assertEquals(1, topology.getOverview().getMatchedDevices());
+        assertEquals(2, topology.getOverview().getVisibleDevices());
+        assertEquals(1, topology.getRootNodes().size());
+        assertEquals(1, topology.getRootNodes().get(0).getChildren().size());
+        assertEquals("meter-32", topology.getRootNodes().get(0).getChildren().get(0).getDeviceName());
+        assertEquals(1, topology.getOverview().getGatewayDevices());
+        assertEquals(1, topology.getOverview().getSubDevices());
+    }
+
     private DeviceLocatorInputDTO locator(String type, String value, boolean primary) {
         DeviceLocatorInputDTO locator = new DeviceLocatorInputDTO();
         locator.setLocatorType(type);
         locator.setLocatorValue(value);
         locator.setPrimaryLocator(primary);
         return locator;
+    }
+
+    private Device device(
+            Long id,
+            Long productId,
+            String deviceName,
+            Long gatewayId,
+            DeviceStatus status,
+            OnlineStatus onlineStatus
+    ) {
+        Device device = new Device();
+        device.setId(id);
+        device.setTenantId(1L);
+        device.setProductId(productId);
+        device.setDeviceName(deviceName);
+        device.setGatewayId(gatewayId);
+        device.setStatus(status);
+        device.setOnlineStatus(onlineStatus);
+        return device;
+    }
+
+    private Product product(Long id, String name, String productKey, NodeType nodeType) {
+        Product product = new Product();
+        product.setId(id);
+        product.setTenantId(1L);
+        product.setName(name);
+        product.setProductKey(productKey);
+        product.setNodeType(nodeType);
+        return product;
     }
 }

@@ -171,3 +171,4 @@ bash deploy.sh up
 - [用户权限详细设计](docs/design/detailed-design-user-permissions.md)
 - [租户管理详细设计](docs/design/detailed-design-tenant-management.md)
 - [设备管理详细设计](docs/design/detailed-design-device-management.md)
+- [设备拓扑可视化设计说明](docs/design/device-topology-visualization.md)

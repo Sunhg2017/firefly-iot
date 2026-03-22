@@ -234,3 +234,4 @@ deploy/
 - [README](README.md)
 - [产品设计](docs/design/product-design.md)
 - [设备管理详细设计](docs/design/detailed-design-device-management.md)
+- [设备拓扑可视化设计说明](docs/design/device-topology-visualization.md)
