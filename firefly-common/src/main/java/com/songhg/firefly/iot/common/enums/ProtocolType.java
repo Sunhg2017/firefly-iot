@@ -16,6 +16,9 @@ public enum ProtocolType implements IEnum<String> {
     COAP("COAP"),
     HTTP("HTTP"),
     LWM2M("LWM2M"),
+    GB28181("GB28181"),
+    RTSP("RTSP"),
+    RTMP("RTMP"),
     CUSTOM("CUSTOM");
 
     @EnumValue

@@ -14,7 +14,9 @@ import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DataFormat;
 import com.songhg.firefly.iot.common.enums.DeviceAuthType;
 import com.songhg.firefly.iot.common.enums.NodeType;
+import com.songhg.firefly.iot.common.enums.ProductCategory;
 import com.songhg.firefly.iot.common.enums.ProductStatus;
+import com.songhg.firefly.iot.common.enums.ProtocolType;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.mybatis.DataScope;
 import com.songhg.firefly.iot.common.result.ResultCode;
@@ -33,6 +35,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.security.SecureRandom;
+import java.util.EnumSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -45,6 +48,8 @@ public class ProductService {
     private static final String CHARS = "abcdefghijklmnopqrstuvwxyz0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final long MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024;
+    private static final EnumSet<ProtocolType> VIDEO_PROTOCOLS =
+            EnumSet.of(ProtocolType.GB28181, ProtocolType.RTSP, ProtocolType.RTMP);
 
     private final ProductMapper productMapper;
     private final FileClient fileClient;
@@ -299,11 +304,29 @@ public class ProductService {
         product.setModel(trimToNull(product.getModel()));
         product.setImageUrl(trimToNull(product.getImageUrl()));
         product.setDescription(trimToNull(product.getDescription()));
+        validateCategoryProtocol(product);
         if (product.getDeviceAuthType() == null) {
             product.setDeviceAuthType(DeviceAuthType.PRODUCT_SECRET);
         }
         if (product.getDeviceAuthType() == DeviceAuthType.PRODUCT_SECRET) {
             ensureProductSecret(product);
+        }
+    }
+
+    /**
+     * 摄像头产品和通用物联网产品的接入链路不同，这里直接收口协议口径，避免前端误选。
+     */
+    private void validateCategoryProtocol(Product product) {
+        if (product.getCategory() == null || product.getProtocol() == null) {
+            return;
+        }
+
+        boolean isVideoProtocol = VIDEO_PROTOCOLS.contains(product.getProtocol());
+        if (product.getCategory() == ProductCategory.CAMERA && !isVideoProtocol) {
+            throw new BizException(ResultCode.PARAM_ERROR, "摄像头产品仅支持 GB28181、RTSP、RTMP 协议");
+        }
+        if (product.getCategory() != ProductCategory.CAMERA && isVideoProtocol) {
+            throw new BizException(ResultCode.PARAM_ERROR, "仅摄像头产品可选择 GB28181、RTSP、RTMP 协议");
         }
     }
 

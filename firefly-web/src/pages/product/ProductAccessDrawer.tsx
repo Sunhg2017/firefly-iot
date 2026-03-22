@@ -25,6 +25,7 @@ import {
   PlusOutlined,
   ReloadOutlined,
   UsbOutlined,
+  VideoCameraOutlined,
 } from '@ant-design/icons';
 import { deviceAccessApi, productApi } from '../../services/api';
 
@@ -81,6 +82,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onOpenDeviceManager?: () => void;
+  onOpenVideoManager?: () => void;
   onOpenProtocolParser?: () => void;
 }
 
@@ -110,6 +112,7 @@ const LOCATOR_TYPE_OPTIONS = [
   { value: 'MAC', label: 'MAC' },
   { value: 'SERIAL', label: 'SERIAL' },
 ];
+const VIDEO_PROTOCOL_VALUES = new Set(['GB28181', 'RTSP', 'RTMP']);
 
 const ERROR_MESSAGE_MAP: Record<string, string> = {
   PRODUCT_DYNAMIC_REGISTER_DISABLED: '当前产品未启用一型一密认证，不能进行动态注册',
@@ -142,11 +145,30 @@ const normalizeLocatorInputs = (locators?: DeviceLocatorFormItem[]) => {
   return normalized.length > 0 ? normalized : undefined;
 };
 
+const isVideoProtocol = (protocol?: string) => Boolean(protocol && VIDEO_PROTOCOL_VALUES.has(protocol));
+
 const buildGuideSteps = (
   product: ProductTarget,
   supportsProductSecret: boolean,
   canRegister: boolean,
 ) => {
+  if (isVideoProtocol(product.protocol)) {
+    return [
+      {
+        title: '确认产品协议',
+        description: `当前摄像头产品使用 ${product.protocol} 协议，后续视频设备必须按这个协议创建。`,
+      },
+      {
+        title: '进入视频监控添加设备',
+        description: '在视频监控页面创建视频设备，并填写设备编号、网络地址、厂商型号等参数。',
+      },
+      {
+        title: '完成视频接入与播放',
+        description: '创建设备后可在视频监控页面发起播放、目录查询、截图和云台控制。',
+      },
+    ];
+  }
+
   if (supportsProductSecret) {
     return [
       {
@@ -186,6 +208,52 @@ const buildProtocolGuideSections = (
   product: ProductTarget,
   supportsProductSecret: boolean,
 ): ProtocolGuideSection[] => {
+  if (isVideoProtocol(product.protocol)) {
+    switch (product.protocol) {
+      case 'GB28181':
+        return [
+          {
+            title: '视频设备创建',
+            description: '在视频监控页选择 GB/T 28181 接入方式，并补齐国标设备参数。',
+            rows: [
+              { label: '推荐页面', value: '/video', copyable: true },
+              { label: '接入方式', value: 'GB/T 28181', copyable: true },
+              { label: '必填参数', value: '设备名称、GB 设备编号、GB 域、传输协议、IP、端口' },
+            ],
+            tips: ['设备上线后可在视频监控页执行目录查询、设备信息查询和实时播放。'],
+          },
+        ];
+      case 'RTSP':
+        return [
+          {
+            title: '视频设备创建',
+            description: '在视频监控页选择 RTSP 接入方式，平台会通过流代理拉取设备视频流。',
+            rows: [
+              { label: '推荐页面', value: '/video', copyable: true },
+              { label: '接入方式', value: 'RTSP', copyable: true },
+              { label: '必填参数', value: '设备名称、IP、端口' },
+            ],
+            tips: ['创建后可在视频监控页直接发起播放，并查看 FLV、HLS、WebRTC 地址。'],
+          },
+        ];
+      case 'RTMP':
+        return [
+          {
+            title: '视频设备创建',
+            description: '在视频监控页选择 RTMP 接入方式，设备向流媒体服务主动推流。',
+            rows: [
+              { label: '推荐页面', value: '/video', copyable: true },
+              { label: '接入方式', value: 'RTMP', copyable: true },
+              { label: '必填参数', value: '设备名称、IP、端口' },
+            ],
+            tips: ['RTMP 设备创建后可直接在视频监控页管理播放和截图。'],
+          },
+        ];
+      default:
+        return [];
+    }
+  }
+
   const authSecretHint = supportsProductSecret
     ? '先动态注册，使用返回的 DeviceSecret'
     : '直接使用设备的 DeviceSecret';
@@ -333,6 +401,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
   open,
   onClose,
   onOpenDeviceManager,
+  onOpenVideoManager,
   onOpenProtocolParser,
 }) => {
   const [activeTab, setActiveTab] = useState<AccessTabKey>('guide');
@@ -342,7 +411,8 @@ const ProductAccessDrawer: React.FC<Props> = ({
   const [registerResult, setRegisterResult] = useState<DynamicRegisterResult | null>(null);
   const [form] = Form.useForm<DynamicRegisterFormValues>();
 
-  const supportsProductSecret = product?.deviceAuthType === 'PRODUCT_SECRET';
+  const isVideoProductAccess = isVideoProtocol(product?.protocol);
+  const supportsProductSecret = !isVideoProductAccess && product?.deviceAuthType === 'PRODUCT_SECRET';
   const canRegister = supportsProductSecret;
 
   const drawerTitle = useMemo(() => {
@@ -370,6 +440,12 @@ const ProductAccessDrawer: React.FC<Props> = ({
     if (!product) {
       return null;
     }
+    if (isVideoProductAccess) {
+      return {
+        type: 'info' as const,
+        message: '当前产品属于视频接入，请到视频监控页面创建视频设备并完成 GB28181、RTSP 或 RTMP 联调。',
+      };
+    }
     if (supportsProductSecret) {
       if (canRegister) {
         return {
@@ -387,7 +463,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
       type: 'info' as const,
       message: '当前产品采用一机一密，需先在设备管理页创建设备，再使用每台设备自己的 DeviceSecret 接入。',
     };
-  }, [canRegister, product, supportsProductSecret]);
+  }, [canRegister, isVideoProductAccess, product, supportsProductSecret]);
 
   const syncFormValues = (secret: string) => {
     if (!product) {
@@ -409,7 +485,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
     if (!product) {
       return '';
     }
-    if (!supportsProductSecret) {
+    if (!supportsProductSecret || isVideoProductAccess) {
       setProductSecret('');
       syncFormValues('');
       return '';
@@ -441,13 +517,13 @@ const ProductAccessDrawer: React.FC<Props> = ({
     setRegisterResult(null);
     form.resetFields();
 
-    if (product.deviceAuthType === 'PRODUCT_SECRET') {
+    if (!isVideoProductAccess && product.deviceAuthType === 'PRODUCT_SECRET') {
       void loadSecret();
     } else {
       setProductSecret('');
       syncFormValues('');
     }
-  }, [form, mode, open, product, supportsProductSecret]);
+  }, [form, isVideoProductAccess, mode, open, product, supportsProductSecret]);
 
   const handleSubmitRegister = async (values: DynamicRegisterFormValues) => {
     if (!product) {
@@ -506,6 +582,11 @@ const ProductAccessDrawer: React.FC<Props> = ({
     onOpenProtocolParser?.();
   };
 
+  const handleOpenVideoManager = () => {
+    onClose();
+    onOpenVideoManager?.();
+  };
+
   const tabItems = [
     {
       key: 'guide',
@@ -529,11 +610,27 @@ const ProductAccessDrawer: React.FC<Props> = ({
 
           <Card
             size="small"
-            title={supportsProductSecret ? '当前接入凭证' : '当前认证约束'}
+            title={isVideoProductAccess ? '当前视频接入' : supportsProductSecret ? '当前接入凭证' : '当前认证约束'}
             style={{ borderRadius: 16 }}
           >
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
-              {supportsProductSecret ? (
+              {isVideoProductAccess ? (
+                <>
+                  <Typography.Text type="secondary">
+                    摄像头产品不走设备密钥和动态注册，统一在视频监控页面按协议创建视频设备。
+                  </Typography.Text>
+                  <Descriptions column={1} size="small">
+                    <Descriptions.Item label="接入协议">{product.protocol}</Descriptions.Item>
+                    <Descriptions.Item label="推荐页面">视频监控</Descriptions.Item>
+                    <Descriptions.Item label="下一步">创建视频设备并完成播放联调</Descriptions.Item>
+                  </Descriptions>
+                  {onOpenVideoManager ? (
+                    <Button type="primary" icon={<VideoCameraOutlined />} onClick={handleOpenVideoManager}>
+                      去视频监控
+                    </Button>
+                  ) : null}
+                </>
+              ) : supportsProductSecret ? (
                 <>
                   <Typography.Text type="secondary">
                     ProductSecret 只用于动态注册，设备接入时最终仍然使用动态注册换取的 DeviceSecret。
@@ -583,8 +680,13 @@ const ProductAccessDrawer: React.FC<Props> = ({
 
           <Card size="small" title="后续动作" style={{ borderRadius: 16 }}>
             <Space wrap>
-              {onOpenDeviceManager ? <Button onClick={handleOpenDeviceManager}>设备管理</Button> : null}
-              {onOpenProtocolParser ? (
+              {isVideoProductAccess && onOpenVideoManager ? (
+                <Button icon={<VideoCameraOutlined />} onClick={handleOpenVideoManager}>
+                  视频监控
+                </Button>
+              ) : null}
+              {!isVideoProductAccess && onOpenDeviceManager ? <Button onClick={handleOpenDeviceManager}>设备管理</Button> : null}
+              {!isVideoProductAccess && onOpenProtocolParser ? (
                 <Button icon={<ApiOutlined />} onClick={handleOpenProtocolParser}>
                   协议解析
                 </Button>
@@ -761,7 +863,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
         )
       ) : null,
     },
-  ];
+  ].filter((item) => !isVideoProductAccess || item.key !== 'register');
 
   return (
     <Drawer

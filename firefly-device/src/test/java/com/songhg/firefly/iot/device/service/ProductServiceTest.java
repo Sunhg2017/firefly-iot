@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.api.client.FileClient;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.enums.ProductCategory;
 import com.songhg.firefly.iot.common.enums.ProductStatus;
 import com.songhg.firefly.iot.common.enums.ProtocolType;
@@ -16,6 +17,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -122,6 +124,32 @@ class ProductServiceTest {
         assertEquals(List.of("online", "offline", "heartbeat", "overheat"), eventIdentifiers);
         assertTrue(root.path("events").get(0).path("system").asBoolean(false));
         assertEquals(List.of("reboot"), serviceIdentifiers);
+    }
+
+    @Test
+    void shouldRejectNonVideoProtocolForCameraProduct() {
+        AppContextHolder.setTenantId(10L);
+        AppContextHolder.setUserId(20L);
+
+        ProductCreateDTO dto = new ProductCreateDTO();
+        dto.setName("园区摄像头");
+        dto.setCategory(ProductCategory.CAMERA);
+        dto.setProtocol(ProtocolType.MQTT);
+
+        assertThrows(BizException.class, () -> productService.createProduct(dto));
+    }
+
+    @Test
+    void shouldRejectVideoProtocolForNonCameraProduct() {
+        AppContextHolder.setTenantId(10L);
+        AppContextHolder.setUserId(20L);
+
+        ProductCreateDTO dto = new ProductCreateDTO();
+        dto.setName("环境传感器");
+        dto.setCategory(ProductCategory.SENSOR);
+        dto.setProtocol(ProtocolType.GB28181);
+
+        assertThrows(BizException.class, () -> productService.createProduct(dto));
     }
 
     private List<String> extractPropertyIdentifiers(JsonNode root) {

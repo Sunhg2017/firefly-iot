@@ -125,6 +125,9 @@ const PROTOCOL_COLORS: Record<string, string> = {
   COAP: 'geekblue',
   HTTP: 'volcano',
   LWM2M: 'magenta',
+  GB28181: 'cyan',
+  RTSP: 'blue',
+  RTMP: 'purple',
   CUSTOM: 'default',
 };
 
@@ -157,13 +160,27 @@ const DEVICE_AUTH_COLORS: Record<string, string> = {
 
 const CATEGORY_OPTIONS = Object.entries(CATEGORY_LABELS).map(([value, label]) => ({ value, label }));
 
-const PROTOCOL_OPTIONS = [
+const ALL_PROTOCOL_OPTIONS = [
   { value: 'MQTT', label: 'MQTT' },
   { value: 'COAP', label: 'CoAP' },
   { value: 'HTTP', label: 'HTTP' },
   { value: 'LWM2M', label: 'LwM2M' },
+  { value: 'GB28181', label: 'GB/T 28181' },
+  { value: 'RTSP', label: 'RTSP' },
+  { value: 'RTMP', label: 'RTMP' },
   { value: 'CUSTOM', label: '自定义' },
 ];
+
+const VIDEO_PROTOCOL_VALUES = new Set(['GB28181', 'RTSP', 'RTMP']);
+
+const getProtocolOptionsByCategory = (category?: string) => {
+  if (category === 'CAMERA') {
+    return ALL_PROTOCOL_OPTIONS.filter((item) => VIDEO_PROTOCOL_VALUES.has(item.value));
+  }
+  return ALL_PROTOCOL_OPTIONS.filter((item) => !VIDEO_PROTOCOL_VALUES.has(item.value));
+};
+
+const isVideoProtocol = (protocol?: string) => Boolean(protocol && VIDEO_PROTOCOL_VALUES.has(protocol));
 
 const NODE_TYPE_OPTIONS = [
   { value: 'DEVICE', label: '直连设备' },
@@ -338,8 +355,13 @@ const ProductList: React.FC = () => {
   const [accessMode, setAccessMode] = useState<'secret' | 'register' | null>(null);
   const [createForm] = Form.useForm<ProductFormValues>();
   const [editForm] = Form.useForm<ProductFormValues>();
+  const createCategory = Form.useWatch('category', createForm);
+  const editCategory = Form.useWatch('category', editForm);
   const createImageUrl = Form.useWatch('imageUrl', createForm);
   const editImageUrl = Form.useWatch('imageUrl', editForm);
+
+  const createProtocolOptions = useMemo(() => getProtocolOptionsByCategory(createCategory), [createCategory]);
+  const editProtocolOptions = useMemo(() => getProtocolOptionsByCategory(editCategory), [editCategory]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -364,6 +386,22 @@ const ProductList: React.FC = () => {
   useEffect(() => {
     void fetchData();
   }, [params.pageNum, params.pageSize, keyword, filterCategory, filterProtocol, filterStatus]);
+
+  useEffect(() => {
+    const currentProtocol = createForm.getFieldValue('protocol');
+    const options = getProtocolOptionsByCategory(createCategory);
+    if (!options.some((item) => item.value === currentProtocol)) {
+      createForm.setFieldValue('protocol', options[0]?.value);
+    }
+  }, [createCategory, createForm]);
+
+  useEffect(() => {
+    const currentProtocol = editForm.getFieldValue('protocol');
+    const options = getProtocolOptionsByCategory(editCategory);
+    if (!options.some((item) => item.value === currentProtocol)) {
+      editForm.setFieldValue('protocol', options[0]?.value);
+    }
+  }, [editCategory, editForm]);
 
   const stats = useMemo(
     () => ({
@@ -626,6 +664,8 @@ const ProductList: React.FC = () => {
   const renderActionGroup = (record: ProductRecord, variant: 'card' | 'table') => {
     const isCard = variant === 'card';
     const canViewProtocolParser = hasPermission('protocol-parser:read');
+    const accessLabel = isVideoProtocol(record.protocol) ? '视频接入' : '设备接入';
+    const accessIcon = isVideoProtocol(record.protocol) ? <VideoCameraOutlined /> : <UsbOutlined />;
 
     return (
       <Space size={isCard ? 4 : 4} wrap>
@@ -648,10 +688,10 @@ const ProductList: React.FC = () => {
         <Button
           type="link"
           size="small"
-          icon={<UsbOutlined />}
+          icon={accessIcon}
           onClick={() => openAccessDrawer(record, 'secret')}
         >
-          设备接入
+          {accessLabel}
         </Button>
         {canViewProtocolParser ? (
           <Button
@@ -776,10 +816,18 @@ const ProductList: React.FC = () => {
 
   const renderProductFormFields = (
     form: FormInstance<ProductFormValues>,
+    protocolOptions: Array<{ value: string; label: string }>,
     imageUrl: string | undefined,
     uploading: boolean,
     setUploading: React.Dispatch<React.SetStateAction<boolean>>,
-  ) => (
+  ) => {
+    const currentCategory = form.getFieldValue('category') as string | undefined;
+    const authExtra =
+      currentCategory === 'CAMERA'
+        ? '摄像头产品创建后，请到“视频监控”页面添加视频设备并完成 GB28181、RTSP 或 RTMP 接入。'
+        : '一机一密需要先创建设备再接入；一型一密在产品发布后可从“设备接入”入口查看 ProductSecret 并调试动态注册。';
+
+    return (
     <>
       <Form.Item
         name="name"
@@ -821,7 +869,7 @@ const ProductList: React.FC = () => {
         </Col>
         <Col xs={24} md={12}>
           <Form.Item name="protocol" label="接入协议" rules={[{ required: true, message: '请选择接入协议' }]}>
-            <Select options={PROTOCOL_OPTIONS} />
+            <Select options={protocolOptions} />
           </Form.Item>
         </Col>
       </Row>
@@ -843,7 +891,7 @@ const ProductList: React.FC = () => {
         name="deviceAuthType"
         label="设备认证方式"
         rules={[{ required: true, message: '请选择设备认证方式' }]}
-        extra="一机一密需要先创建设备再接入；一型一密在产品发布后可从“设备接入”入口查看 ProductSecret 并调试动态注册。"
+        extra={authExtra}
       >
         <Select options={DEVICE_AUTH_OPTIONS} />
       </Form.Item>
@@ -857,7 +905,8 @@ const ProductList: React.FC = () => {
         />
       </Form.Item>
     </>
-  );
+    );
+  };
 
   return (
     <div>
@@ -986,7 +1035,7 @@ const ProductList: React.FC = () => {
                 allowClear
                 placeholder="接入协议"
                 style={{ width: '100%' }}
-                options={PROTOCOL_OPTIONS}
+                options={ALL_PROTOCOL_OPTIONS}
                 onChange={(value) => {
                   setFilterProtocol(value);
                   setParams((prev) => ({ ...prev, pageNum: 1 }));
@@ -1233,7 +1282,7 @@ const ProductList: React.FC = () => {
           onFinish={handleCreate}
           preserve={false}
         >
-          {renderProductFormFields(createForm, createImageUrl, createUploading, setCreateUploading)}
+          {renderProductFormFields(createForm, createProtocolOptions, createImageUrl, createUploading, setCreateUploading)}
         </Form>
       </Drawer>
 
@@ -1259,7 +1308,7 @@ const ProductList: React.FC = () => {
           onFinish={handleUpdate}
           preserve={false}
         >
-          {renderProductFormFields(editForm, editImageUrl, editUploading, setEditUploading)}
+          {renderProductFormFields(editForm, editProtocolOptions, editImageUrl, editUploading, setEditUploading)}
         </Form>
       </Drawer>
 
@@ -1280,6 +1329,11 @@ const ProductList: React.FC = () => {
             mode={accessMode}
             open
             onOpenDeviceManager={() => navigate('/device')}
+            onOpenVideoManager={
+              hasPermission('video:read')
+                ? () => navigate('/video')
+                : undefined
+            }
             onOpenProtocolParser={
               hasPermission('protocol-parser:read')
                 ? () => navigate(`/protocol-parser?productId=${accessProduct.id}`)

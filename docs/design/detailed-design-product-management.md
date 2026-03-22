@@ -34,7 +34,7 @@
 | **产品 CRUD** | 创建、查看、编辑、删除产品；支持分页查询与关键字搜索 |
 | **ProductKey 生成** | 创建时自动生成全局唯一的 productKey，作为设备接入标识 |
 | **物模型定义** | 以 JSON 格式描述设备属性（Properties）、事件（Events）、服务（Services） |
-| **协议配置** | 指定产品使用的接入协议（MQTT / CoAP / HTTP / LwM2M / 自定义） |
+| **协议配置** | 指定产品使用的接入协议（MQTT / CoAP / HTTP / LwM2M / GB28181 / RTSP / RTMP / 自定义） |
 | **产品发布** | 产品从开发中→已发布状态流转，发布后物模型锁定（仅允许新增） |
 | **产品分类** | 按设备类型分类（传感器、网关、控制器、摄像头等） |
 | **数据范围** | 基于用户角色的项目级数据权限过滤 |
@@ -68,7 +68,7 @@
 | **ProductKey** | Product Key | 产品的全局唯一标识，格式 `pk_` + 16位随机字符串 |
 | **物模型 (Thing Model)** | Thing Model | 设备能力的 JSON 描述：属性、事件、服务 |
 | **产品分类** | Category | 设备类型分类：SENSOR / GATEWAY / CONTROLLER / CAMERA / OTHER |
-| **接入协议** | Protocol | 设备通信协议：MQTT / COAP / HTTP / LWM2M / CUSTOM |
+| **接入协议** | Protocol | 设备通信协议：MQTT / COAP / HTTP / LWM2M / GB28181 / RTSP / RTMP / CUSTOM |
 | **产品状态** | Status | 产品生命周期状态：DEVELOPMENT / PUBLISHED / DEPRECATED |
 | **产品密钥** | Product Secret | 一型一密场景下的产品级密钥，用于动态设备注册 |
 
@@ -111,7 +111,7 @@ CREATE INDEX idx_products_category ON products(tenant_id, category);
 | `product_key` | VARCHAR(32) | 全局唯一标识，格式 `pk_` + 16位随机字符 |
 | `product_secret` | VARCHAR(64) | 一型一密场景的产品密钥 |
 | `category` | VARCHAR(32) | 产品分类：SENSOR / GATEWAY / CONTROLLER / CAMERA / OTHER |
-| `protocol` | VARCHAR(32) | 接入协议：MQTT / COAP / HTTP / LWM2M / CUSTOM |
+| `protocol` | VARCHAR(32) | 接入协议：MQTT / COAP / HTTP / LWM2M / GB28181 / RTSP / RTMP / CUSTOM |
 | `thing_model` | JSONB | 物模型定义 JSON |
 | `node_type` | VARCHAR(16) | 节点类型：DEVICE (直连设备) / GATEWAY (网关) |
 | `data_format` | VARCHAR(16) | 数据格式：JSON / CUSTOM (自定义/透传) |
@@ -137,6 +137,9 @@ MQTT("MQTT"),
 COAP("COAP"),
 HTTP("HTTP"),
 LWM2M("LWM2M"),
+GB28181("GB28181"),
+RTSP("RTSP"),
+RTMP("RTMP"),
 CUSTOM("CUSTOM")
 ```
 
@@ -341,9 +344,27 @@ firefly-common/src/main/java/.../common/enums/
 | 描述 | TextArea | ❌ | |
 | 所属项目 | Select | ❌ | 项目列表下拉 |
 | 产品分类 | Select | ✅ | SENSOR/GATEWAY/CONTROLLER/CAMERA/OTHER |
-| 接入协议 | Select | ✅ | MQTT/COAP/HTTP/LWM2M/CUSTOM |
+| 接入协议 | Select | ✅ | 普通产品: MQTT/COAP/HTTP/LWM2M/CUSTOM；摄像头产品: GB28181/RTSP/RTMP |
 | 节点类型 | Select | ✅ | DEVICE/GATEWAY |
 | 数据格式 | Select | ✅ | JSON/CUSTOM |
+
+### 11.5 分类与协议联动约束
+
+产品分类和接入协议不是任意组合：
+
+- 摄像头产品只允许选择 `GB28181`、`RTSP`、`RTMP`
+- 非摄像头产品不允许选择上述视频协议
+
+约束同时在前后端生效：
+
+1. 前端新建/编辑抽屉按分类动态筛选协议选项
+2. 后端 `ProductService` 二次校验分类和协议组合，避免绕过前端直接写入脏数据
+
+这样可以保证：
+
+- 摄像头产品直接进入视频链路
+- 普通 IoT 产品继续走 MQTT / HTTP / CoAP 等设备接入链路
+- 不再出现“摄像头产品配置成普通物联网协议”或“普通产品误选视频协议”的脏数据
 
 ---
 
