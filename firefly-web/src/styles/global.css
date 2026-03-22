@@ -260,6 +260,36 @@ a {
   }
 }
 
+@keyframes loginNetworkFlow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -240;
+  }
+}
+
+@keyframes loginNodeFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes loginHubPulse {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.72;
+  }
+  100% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+}
+
 .app-loading {
   display: flex;
   align-items: center;
@@ -580,8 +610,8 @@ a {
     linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 24px;
+  justify-content: flex-start;
+  gap: 28px;
 }
 
 .login-page-overview::after {
@@ -643,18 +673,134 @@ a {
   line-height: 1.8;
 }
 
-.login-page-note {
+.login-page-network {
   position: relative;
   z-index: 1;
-  max-width: 420px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 20px 22px;
-  border-radius: 22px;
+  flex: 1 1 auto;
+  min-height: 320px;
+  border-radius: 28px;
   border: 1px solid rgba(219, 228, 238, 0.96);
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+  background:
+    radial-gradient(circle at 50% 46%, rgba(191, 219, 254, 0.34) 0%, rgba(191, 219, 254, 0) 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(244, 248, 253, 0.96) 100%);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.05);
+  overflow: hidden;
+}
+
+.login-page-network::before,
+.login-page-network::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.login-page-network::before {
+  inset: 24px auto auto 28px;
+  width: 92px;
+  height: 92px;
+  background: radial-gradient(circle, rgba(219, 234, 254, 0.9) 0%, rgba(219, 234, 254, 0) 70%);
+}
+
+.login-page-network::after {
+  inset: auto 36px 26px auto;
+  width: 120px;
+  height: 120px;
+  background: radial-gradient(circle, rgba(191, 219, 254, 0.72) 0%, rgba(191, 219, 254, 0) 72%);
+}
+
+.login-page-network__svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.login-page-network__line {
+  stroke: url(#login-network-gradient);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 10 10;
+  opacity: 0.82;
+  animation: loginNetworkFlow 18s linear infinite;
+}
+
+.login-page-network__line--soft {
+  opacity: 0.34;
+  stroke-width: 1.5;
+  stroke-dasharray: 6 12;
+}
+
+.login-page-network__signal {
+  fill: #60a5fa;
+  filter: drop-shadow(0 0 10px rgba(96, 165, 250, 0.8));
+}
+
+.login-page-network__node {
+  position: absolute;
+  width: 58px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  border: 1px solid rgba(191, 219, 254, 0.96);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+  font-size: 24px;
+  backdrop-filter: blur(10px);
+  animation: loginNodeFloat 6s ease-in-out infinite;
+}
+
+.login-page-network__node--hub {
+  width: 74px;
+  height: 74px;
+  left: calc(50% - 37px);
+  top: calc(48.89% - 37px);
+  border-radius: 24px;
+  font-size: 30px;
+  background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+  box-shadow: 0 18px 34px rgba(37, 99, 235, 0.18);
+}
+
+.login-page-network__node--hub::after {
+  content: '';
+  position: absolute;
+  inset: -10px;
+  border-radius: 30px;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  animation: loginHubPulse 3.2s ease-out infinite;
+}
+
+.login-page-network__node--cloud {
+  left: calc(50% - 29px);
+  top: calc(23.89% - 29px);
+  animation-delay: -0.6s;
+}
+
+.login-page-network__node--device {
+  left: calc(21.15% - 29px);
+  top: calc(47.22% - 29px);
+  animation-delay: -1.3s;
+}
+
+.login-page-network__node--mobile {
+  left: calc(80.38% - 29px);
+  top: calc(44.44% - 29px);
+  animation-delay: -2s;
+}
+
+.login-page-network__node--api {
+  left: calc(33.08% - 29px);
+  top: calc(78.89% - 29px);
+  animation-delay: -2.8s;
+}
+
+.login-page-network__node--rule {
+  left: calc(68.46% - 29px);
+  top: calc(78.89% - 29px);
+  animation-delay: -3.5s;
 }
 
 .login-page-form-panel {
@@ -730,5 +876,9 @@ a {
   .login-page-overview,
   .login-page-form-panel {
     padding: 24px !important;
+  }
+
+  .login-page-network {
+    min-height: 280px;
   }
 }

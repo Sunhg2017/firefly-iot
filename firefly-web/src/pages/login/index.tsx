@@ -2,10 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Card, Form, Input, Space, Tabs, Typography, message } from 'antd';
 import {
+  ApiOutlined,
+  CloudServerOutlined,
   DeploymentUnitOutlined,
+  HddOutlined,
   LockOutlined,
   MobileOutlined,
   SafetyCertificateOutlined,
+  ThunderboltOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import useAuthStore from '../../store/useAuthStore';
@@ -159,13 +163,59 @@ const LoginPage: React.FC = () => {
               </Text>
             </div>
 
-            <div className="login-page-note">
-              <Text strong style={{ color: '#0f172a', fontSize: 16 }}>
-                登录提示
-              </Text>
-              <Text style={{ color: '#64748b', lineHeight: 1.8 }}>
-                如无法进入，请联系管理员确认账号状态、空间角色和菜单权限。
-              </Text>
+            <div className="login-page-network" aria-hidden="true">
+              <svg className="login-page-network__svg" viewBox="0 0 520 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <linearGradient id="login-network-gradient" x1="56" y1="56" x2="464" y2="304" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#93c5fd" />
+                    <stop offset="1" stopColor="#2563eb" />
+                  </linearGradient>
+                </defs>
+                <path className="login-page-network__line" d="M260 176 L260 86" />
+                <path className="login-page-network__line" d="M260 176 L110 170" />
+                <path className="login-page-network__line" d="M260 176 L418 160" />
+                <path className="login-page-network__line" d="M260 176 L172 284" />
+                <path className="login-page-network__line" d="M260 176 L356 284" />
+                <path className="login-page-network__line login-page-network__line--soft" d="M110 170 C154 102 210 84 260 86" />
+                <path className="login-page-network__line login-page-network__line--soft" d="M260 86 C316 92 374 112 418 160" />
+                <path className="login-page-network__line login-page-network__line--soft" d="M110 170 C144 236 164 258 172 284" />
+                <path className="login-page-network__line login-page-network__line--soft" d="M356 284 C388 250 402 214 418 160" />
+
+                <circle className="login-page-network__signal" r="4">
+                  <animateMotion dur="4.6s" repeatCount="indefinite" path="M260 176 L260 86" />
+                </circle>
+                <circle className="login-page-network__signal" r="4">
+                  <animateMotion dur="5.1s" repeatCount="indefinite" path="M260 176 L110 170" />
+                </circle>
+                <circle className="login-page-network__signal" r="4">
+                  <animateMotion dur="4.9s" repeatCount="indefinite" path="M260 176 L418 160" />
+                </circle>
+                <circle className="login-page-network__signal" r="4">
+                  <animateMotion dur="5.4s" repeatCount="indefinite" path="M260 176 L172 284" />
+                </circle>
+                <circle className="login-page-network__signal" r="4">
+                  <animateMotion dur="5.2s" repeatCount="indefinite" path="M260 176 L356 284" />
+                </circle>
+              </svg>
+
+              <div className="login-page-network__node login-page-network__node--hub">
+                <DeploymentUnitOutlined />
+              </div>
+              <div className="login-page-network__node login-page-network__node--cloud">
+                <CloudServerOutlined />
+              </div>
+              <div className="login-page-network__node login-page-network__node--device">
+                <HddOutlined />
+              </div>
+              <div className="login-page-network__node login-page-network__node--mobile">
+                <MobileOutlined />
+              </div>
+              <div className="login-page-network__node login-page-network__node--api">
+                <ApiOutlined />
+              </div>
+              <div className="login-page-network__node login-page-network__node--rule">
+                <ThunderboltOutlined />
+              </div>
             </div>
           </div>
 
