@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Card, Form, Input, Space, Tabs, Typography, message } from 'antd';
+import { Button, Form, Input, Space, Tabs, Typography, message } from 'antd';
 import {
   DeploymentUnitOutlined,
   LockOutlined,
@@ -188,7 +188,7 @@ const LoginPage: React.FC = () => {
           </div>
 
           <div className="login-page-form-panel">
-            <Card className="login-page-form-card" bordered={false}>
+            <div className="login-page-form-card">
               <Space direction="vertical" size={24} style={{ width: '100%' }}>
                 <div>
                   <Title level={3} style={{ margin: 0, color: '#0f172a' }}>
@@ -198,7 +198,7 @@ const LoginPage: React.FC = () => {
 
                 <Tabs className="login-page-tabs" activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
               </Space>
-            </Card>
+            </div>
           </div>
         </div>
       </div>
