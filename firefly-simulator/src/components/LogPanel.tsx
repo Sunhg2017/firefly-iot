@@ -113,7 +113,7 @@ export default function LogPanel() {
           flex: 1,
           minHeight: 0,
           overflow: 'auto',
-          padding: 12,
+          padding: '12px 12px 20px',
           background: '#f8fafc',
         }}
       >

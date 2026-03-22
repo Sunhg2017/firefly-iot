@@ -205,8 +205,8 @@ export default function App() {
 
   const logCard = (
     <Card
-      style={{ ...PANEL_SHELL_STYLE, height: '100%' }}
-      styles={{ body: { padding: 0, height: '100%' } }}
+      style={{ ...PANEL_SHELL_STYLE, height: '100%', display: 'flex', flexDirection: 'column' }}
+      styles={{ body: { padding: 0, flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' } }}
       title={(
         <Space direction="vertical" size={2}>
           <Text strong style={{ color: '#0f172a' }}>运行日志</Text>
