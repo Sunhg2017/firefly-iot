@@ -203,9 +203,18 @@ const NotificationDropdown: React.FC = () => {
       placement="bottomRight"
       arrow={false}
     >
-      <Badge count={unreadCount} size="small" offset={[-2, 2]}>
-        <BellOutlined style={{ fontSize: 18, cursor: 'pointer', padding: '6px 10px', borderRadius: 8, transition: 'background 0.2s', color: '#475569' }} />
-      </Badge>
+      <button
+        type="button"
+        className={open ? 'layout-header-quick-action layout-header-quick-action--active' : 'layout-header-quick-action'}
+        aria-label="站内信"
+      >
+        <Badge count={unreadCount} size="small" offset={[-2, 2]}>
+          <span className="layout-header-quick-action__icon">
+            <BellOutlined />
+          </span>
+        </Badge>
+        <span className="layout-header-quick-action__label">站内信</span>
+      </button>
     </Popover>
   );
 };

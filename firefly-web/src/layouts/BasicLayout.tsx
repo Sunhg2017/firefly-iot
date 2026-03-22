@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useOutlet } from 'react-router-dom';
-import { Avatar, Breadcrumb, Button, Dropdown, Form, Input, Layout, Menu, Modal, Spin, Space, Tag, message } from 'antd';
+import { Avatar, Breadcrumb, Dropdown, Form, Input, Layout, Menu, Modal, Spin, Space, Tag, message } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   BookOutlined,
@@ -549,14 +549,17 @@ const BasicLayout: React.FC = () => {
 
           <div className="layout-header-right">
             {canViewOpenApiDocs ? (
-              <Button
-                type="text"
-                className="layout-header-action"
-                icon={<BookOutlined />}
+              <button
+                type="button"
+                className="layout-header-quick-action"
                 onClick={() => navigate('/app-key?tab=docs')}
+                aria-label="接口文档"
               >
-                接口文档
-              </Button>
+                <span className="layout-header-quick-action__icon">
+                  <BookOutlined />
+                </span>
+                <span className="layout-header-quick-action__label">接口文档</span>
+              </button>
             ) : null}
             <NotificationDropdown />
             <AlarmDropdown visible={canViewAlarmDropdown} />

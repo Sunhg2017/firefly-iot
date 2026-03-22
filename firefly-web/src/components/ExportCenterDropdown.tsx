@@ -222,9 +222,18 @@ const ExportCenterDropdown: React.FC = () => {
       placement="bottomRight"
       arrow={false}
     >
-      <Badge count={pendingCount} size="small" offset={[-4, 4]}>
-        <ThunderboltOutlined style={{ fontSize: 18, cursor: 'pointer', padding: '6px 10px', borderRadius: 8, transition: 'background 0.2s', color: '#475569' }} />
-      </Badge>
+      <button
+        type="button"
+        className={open ? 'layout-header-quick-action layout-header-quick-action--active' : 'layout-header-quick-action'}
+        aria-label="异步任务"
+      >
+        <Badge count={pendingCount} size="small" offset={[-4, 4]}>
+          <span className="layout-header-quick-action__icon">
+            <ThunderboltOutlined />
+          </span>
+        </Badge>
+        <span className="layout-header-quick-action__label">异步任务</span>
+      </button>
     </Popover>
   );
 };

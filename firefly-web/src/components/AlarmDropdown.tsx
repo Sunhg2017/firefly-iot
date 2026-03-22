@@ -187,18 +187,21 @@ const AlarmDropdown: React.FC<AlarmDropdownProps> = ({ visible }) => {
       placement="bottomRight"
       arrow={false}
     >
-      <Badge count={pendingCount} size="small" offset={[-2, 2]}>
-        <AlertOutlined
-          style={{
-            fontSize: 18,
-            cursor: 'pointer',
-            padding: '6px 10px',
-            borderRadius: 8,
-            transition: 'background 0.2s',
-            color: pendingCount > 0 ? '#dc2626' : '#475569',
-          }}
-        />
-      </Badge>
+      <button
+        type="button"
+        className={open ? 'layout-header-quick-action layout-header-quick-action--active' : 'layout-header-quick-action'}
+        aria-label="告警"
+      >
+        <Badge count={pendingCount} size="small" offset={[-2, 2]}>
+          <span
+            className="layout-header-quick-action__icon"
+            style={{ color: pendingCount > 0 ? '#dc2626' : undefined }}
+          >
+            <AlertOutlined />
+          </span>
+        </Badge>
+        <span className="layout-header-quick-action__label">告警</span>
+      </button>
     </Popover>
   );
 };
