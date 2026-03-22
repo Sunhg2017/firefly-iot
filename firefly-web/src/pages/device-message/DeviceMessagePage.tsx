@@ -889,7 +889,7 @@ const DeviceMessagePage: React.FC = () => {
     <div>
       <PageHeader
         title="设备消息工作台"
-        description="面向单设备统一下发属性设置、服务调用和原始消息。先锁定目标设备，再按场景组织消息内容，减少重复选择和手工拼 JSON。"
+        description="先选择设备，再切换到属性设置、服务调用或原始消息页签继续发送。"
         extra={
           <Space wrap>
             <Button icon={<ReloadOutlined />} onClick={() => void fetchPageContext()} loading={deviceLoading}>刷新设备</Button>

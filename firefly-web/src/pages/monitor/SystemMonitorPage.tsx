@@ -37,7 +37,7 @@ const SystemMonitorPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader title="系统监控" description="服务器资源与 JVM 运行状态" extra={<Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>刷新</Button>} />
+      <PageHeader title="系统监控" description="点击刷新后查看服务器资源和 JVM 指标。" extra={<Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>刷新</Button>} />
 
       {/* Top stat cards */}
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>

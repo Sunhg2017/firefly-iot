@@ -259,7 +259,7 @@ const DashboardPage: React.FC = () => {
     <div className="animate-fade-in">
       <PageHeader
         title="工作台"
-        description="设备接入、告警与规则运行概览统一收口到首页，重点信息保持一屏可读。"
+        description="先查看待处理告警、在线率和规则状态，再进入对应页面处理。"
       />
 
       <Card
@@ -286,10 +286,10 @@ const DashboardPage: React.FC = () => {
                 当前平台概览
               </Tag>
               <Title level={3} style={{ margin: '14px 0 8px', color: '#0f172a' }}>
-                设备、告警与规则保持同一视角查看
+                先处理告警，再检查设备和规则
               </Title>
               <Text style={{ color: '#64748b', lineHeight: 1.8 }}>
-                首屏收口为实体卡片和浅色状态块，优先展示当前运行密度最高的核心指标。
+                优先查看待处理告警、在线率和离线设备，再进入设备、告警或规则页面继续处理。
               </Text>
             </div>
 

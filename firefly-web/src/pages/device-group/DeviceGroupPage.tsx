@@ -113,7 +113,7 @@ const DeviceGroupPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader title="设备分组" description="静态分组支持手动维护成员，动态分组会在设备字段、状态或标签变化后自动重算成员。" extra={<Space><Button icon={<ReloadOutlined />} onClick={() => void fetchTree()} /><Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingRecord(null); setEditorOpen(true); }}>新建分组</Button></Space>} />
+      <PageHeader title="设备分组" description="先从左侧选择分组，再查看成员或维护分组配置。" extra={<Space><Button icon={<ReloadOutlined />} onClick={() => void fetchTree()} /><Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingRecord(null); setEditorOpen(true); }}>新建分组</Button></Space>} />
       <Card style={{ marginBottom: 16 }}><Space wrap><Tag color="blue">分组总数 {stats.groupCount}</Tag><Tag color="cyan">静态分组 {stats.staticCount}</Tag><Tag color="green">动态分组 {stats.dynamicCount}</Tag><Tag color="geekblue">成员总数 {stats.memberCount}</Tag></Space></Card>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(340px, 380px) minmax(0, 1fr)', gap: 16 }}>
         <Card title="分组目录" extra={selectedGroup ? <Button type="text" size="small" icon={<PlusOutlined />} onClick={() => openEditor(null)} /> : null}>

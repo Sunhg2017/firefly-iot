@@ -232,7 +232,7 @@ const WorkspaceMenuCustomizationPage: React.FC = () => {
     <div>
       <PageHeader
         title="菜单配置"
-        description={`当前管理员可在${currentWorkspaceLabel}内自定义菜单显示名称、层级和排序，不会突破现有授权边界。`}
+        description={`先选择${currentWorkspaceLabel}菜单节点，再调整显示名称、层级和排序。`}
         extra={(
           <Space>
             <Button icon={<ReloadOutlined />} onClick={() => void loadMenuTree()}>
@@ -251,8 +251,8 @@ const WorkspaceMenuCustomizationPage: React.FC = () => {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="配置说明"
-        description="租户空间只能调整本租户当前已授权的菜单；系统运维空间只调整系统运维租户的运维菜单。菜单权限和页面能力不会因为这里的改名或重排而放大。"
+        message="操作限制"
+        description="这里只调整当前空间已授权菜单的名称、层级和排序，不会新增或放大权限。"
       />
 
       <Row gutter={16}>

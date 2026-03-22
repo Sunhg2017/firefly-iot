@@ -863,7 +863,7 @@ const ProductList: React.FC = () => {
     <div>
       <PageHeader
         title="产品接入"
-        description="按产品目录维护接入模型、认证方式与协议能力，并从统一入口继续设备接入、动态注册和协议联调。"
+        description="先维护产品，再进入设备接入、动态注册或协议联调。"
         extra={
           <Space>
             <Segmented

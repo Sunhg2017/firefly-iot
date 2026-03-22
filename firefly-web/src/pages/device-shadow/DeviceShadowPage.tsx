@@ -533,7 +533,7 @@ const DeviceShadowPage: React.FC = () => {
     <div>
       <PageHeader
         title="设备影子"
-        description="按设备查看 desired、reported、delta 与 metadata，并仅对 desired 提供维护能力。"
+        description="先选择设备，再查看影子；只有 Desired 支持编辑。"
       />
 
       <Card

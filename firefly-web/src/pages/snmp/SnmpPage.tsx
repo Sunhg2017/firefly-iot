@@ -446,14 +446,13 @@ const SnmpPage: React.FC = () => {
     <div>
       <PageHeader
         title="SNMP 接入"
-        description="用于网络设备连通性调试、OID 读取和轮询采集任务维护。"
+        description="先配置目标设备，再读取 OID 或维护采集任务。"
       />
 
       <ProtocolAccessGuide
-        title="先建立产品上下文，再做 SNMP 调试和采集"
-        description="如果采集结果需要进入设备数据、规则告警和设备影子链路，建议先在产品接入中定义产品，再把采集任务绑定到设备。"
+        title="先调试，再决定是否入链路"
+        description="只做连通性调试可直接读取；需要进入设备数据和规则链路时，再绑定产品和设备。"
         endpoint="161 / UDP"
-        tips={['适合交换机、路由器、UPS 等设备', '支持先调试后落采集', '采集任务可关联产品和设备']}
       />
 
       <Tabs

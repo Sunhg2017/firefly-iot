@@ -134,7 +134,7 @@ const MessageTemplatePage: React.FC = () => {
     <div>
       <PageHeader
         title="消息模板"
-        description="统一维护多渠道消息模板，支持邮件、短信、电话、企业微信、钉钉、Webhook、站内信。"
+        description="先按渠道筛选，再维护主题、内容和变量。"
         extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor(null)}>新建模板</Button>}
       />
 

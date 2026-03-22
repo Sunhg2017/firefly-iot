@@ -210,7 +210,7 @@ const PermissionResourcePage: React.FC = () => {
     <div>
       <PageHeader
         title="权限资源"
-        description="在这里维护系统中的权限资源编码、资源层级和接口路径。菜单编排请前往“系统菜单权限管理”。"
+        description="先维护资源编码和接口路径，再到系统菜单权限管理绑定菜单。"
         extra={(
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreateDrawer()}>
             新建权限

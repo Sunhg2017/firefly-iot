@@ -568,13 +568,12 @@ const TcpUdpPage: React.FC = () => {
     <div>
       <PageHeader
         title="TCP/UDP 原始 Socket 接入"
-        description="用于原始报文会话查看、设备上下文绑定和 Socket 消息调试。"
+        description="先绑定产品或设备上下文，再查看报文或发送消息。"
       />
 
       <ProtocolAccessGuide
-        title="先绑定产品和设备，再进入自定义协议解析"
-        description="TCP/UDP 原始连接本身没有业务语义，建议先把会话绑定到产品或设备，再由协议解析器消费后续报文，这样设备管理、规则引擎和告警通知才能共享上下文。"
-        tips={['适合自定义二进制协议', '支持 TCP 会话和 UDP 端点绑定', '绑定后可进入协议解析链路']}
+        title="先绑定上下文，再继续解析"
+        description="先把 TCP 会话或 UDP 端点绑定到产品或设备，再继续协议解析和消息调试。"
       />
 
       <Tabs

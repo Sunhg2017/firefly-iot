@@ -243,7 +243,7 @@ const EventsTab: React.FC = () => {
 const DeviceDataPage: React.FC = () => {
   return (
     <div>
-      <PageHeader title="设备数据" description="设备遥测数据查询与事件管理" />
+      <PageHeader title="设备数据" description="先选择设备和时间范围，再查询最新数据、历史数据或事件。" />
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Tabs defaultActiveKey="latest" items={[
           { key: 'latest', label: <span><DatabaseOutlined style={{ marginRight: 6 }} />最新数据</span>, children: <LatestTab /> },

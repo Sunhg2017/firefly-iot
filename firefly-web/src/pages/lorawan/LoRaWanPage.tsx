@@ -222,13 +222,12 @@ const LoRaWanPage: React.FC = () => {
     <div>
       <PageHeader
         title="LoRaWAN 接入"
-        description="用于 LoRaWAN 设备状态查看、网络服务器接入确认和下行消息调试。"
+        description="先确认网络服务器接入，再查看设备状态或发送下行。"
       />
 
       <ProtocolAccessGuide
-        title="LoRaWAN 设备接入后建议回到设备管理统一查看"
-        description="LoRaWAN 页面侧重网络侧接入状态和下行调试；设备建立产品映射后，建议到设备管理、设备数据和规则告警页面继续使用统一的设备视角。"
-        tips={['适合 ChirpStack、TTN 等网络服务器', '支持 Webhook 上报', '支持按 DevEUI 发起下行']}
+        title="先确认接入，再进入设备链路"
+        description="完成网络服务器接入后可在这里查看状态；建立产品映射后到设备管理继续处理。"
       />
 
       <Tabs

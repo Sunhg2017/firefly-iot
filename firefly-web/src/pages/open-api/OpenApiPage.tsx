@@ -189,7 +189,7 @@ const OpenApiPage: React.FC = () => {
     <div>
       <PageHeader
         title="OpenAPI 管理"
-        description="系统运维空间查看由各微服务 @OpenApi 自动注册的 OpenAPI 目录、外部网关路径和透传权限。"
+        description="先按服务或关键字筛选，再查看网关路径、权限和状态。"
         extra={(
           <Button icon={<ReloadOutlined />} onClick={() => void fetchData()}>
             刷新
@@ -199,12 +199,12 @@ const OpenApiPage: React.FC = () => {
 
       <Card>
         <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message="目录只读"
-          description="接口目录会在服务发布后自动同步到这里。需要查看最新结果时，可重新发布服务后点击刷新。"
-        />
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message="目录只读"
+        description="接口目录来自代码自动注册；修改后请重新发布对应服务，再点击刷新。"
+      />
 
         <Form form={queryForm} layout="inline" onFinish={() => void handleSearch()}>
           <Form.Item name="keyword" label="关键字">
@@ -265,7 +265,7 @@ const OpenApiPage: React.FC = () => {
               type="info"
               showIcon
               message="自动注册"
-              description="该目录项来自代码中的 @OpenApi 标注。需要修改编码、路径、权限或状态时，请直接修改对应微服务代码并重新部署。"
+              description="如需修改编码、路径、权限或状态，请调整对应微服务代码后重新部署。"
             />
 
             <Descriptions column={1} bordered>

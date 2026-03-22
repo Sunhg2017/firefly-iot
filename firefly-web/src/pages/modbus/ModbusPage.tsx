@@ -487,14 +487,13 @@ const ModbusPage: React.FC = () => {
     <div>
       <PageHeader
         title="Modbus 接入"
-        description="用于 PLC、仪表等设备的寄存器调试、写入测试和采集任务维护。"
+        description="先配置目标设备，再执行读写调试或维护采集任务。"
       />
 
       <ProtocolAccessGuide
-        title="让 Modbus 调试和设备管理用同一套上下文"
-        description="建议先在产品接入中定义 Modbus 产品，再把寄存器采集任务关联到设备，这样数据、告警和日志都能按设备统一查看。"
+        title="先调试，再绑定采集上下文"
+        description="只做寄存器调试可直接使用工具；需要进入设备链路时再把采集任务绑定到产品和设备。"
         endpoint="502 / TCP"
-        tips={['支持 Modbus TCP', '支持 RTU over TCP', '采集任务可直接绑定产品和设备']}
       />
 
       <Tabs

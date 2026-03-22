@@ -408,7 +408,7 @@ const ApiKeyManagerTab: React.FC = () => {
     <div>
       <PageHeader
         title="AppKey 管理"
-        description="租户空间为外部应用维护独立 AppKey，并明确每个 AppKey 可调用的 OpenAPI 范围。"
+        description="先创建 AppKey，再勾选可调用接口；调用前可在右侧查看密钥详情。"
         extra={(
           <Space>
             <Button icon={<ReloadOutlined />} onClick={() => { void fetchList(); void fetchOpenApiOptions(); }}>

@@ -324,7 +324,7 @@ const SystemMenuPermissionPage: React.FC = () => {
     <div>
       <PageHeader
         title="系统菜单权限管理"
-        description="系统运维空间在这里维护平台空间和租户业务空间的基础菜单层级，以及每个菜单节点可分配的权限集合。"
+        description="先选择空间和菜单节点，再维护可分配权限集合。"
         extra={(
           <Space>
             <Button icon={<ReloadOutlined />} onClick={() => void loadMenuTree()}>
@@ -344,7 +344,7 @@ const SystemMenuPermissionPage: React.FC = () => {
         showIcon
         style={{ marginBottom: 16 }}
         message="使用规则"
-        description="这里维护的是菜单授权基线。租户空间授权从租户业务空间菜单树中选择，角色权限目录则基于菜单绑定的权限集合自动生成。"
+        description="这里维护菜单授权基线；变更后会影响租户空间授权和角色权限目录。"
       />
 
       <Tabs

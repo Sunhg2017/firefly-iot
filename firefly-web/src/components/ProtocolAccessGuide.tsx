@@ -7,14 +7,12 @@ interface ProtocolAccessGuideProps {
   title: string;
   description: string;
   endpoint?: string;
-  tips?: string[];
 }
 
 const ProtocolAccessGuide: React.FC<ProtocolAccessGuideProps> = ({
   title,
   description,
   endpoint,
-  tips = [],
 }) => {
   const navigate = useNavigate();
 
@@ -30,7 +28,7 @@ const ProtocolAccessGuide: React.FC<ProtocolAccessGuideProps> = ({
     >
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
         <Space wrap size={[8, 8]}>
-          <Tag color="processing">协议接入</Tag>
+          <Tag color="processing">操作入口</Tag>
           {endpoint ? <Tag>{endpoint}</Tag> : null}
         </Space>
 
@@ -54,16 +52,6 @@ const ProtocolAccessGuide: React.FC<ProtocolAccessGuideProps> = ({
             设备管理
           </Button>
         </Space>
-
-        {tips.length > 0 ? (
-          <Space wrap size={[8, 8]}>
-            {tips.map((tip) => (
-              <Tag key={tip} color="blue">
-                {tip}
-              </Tag>
-            ))}
-          </Space>
-        ) : null}
       </Space>
     </Card>
   );

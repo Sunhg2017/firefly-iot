@@ -288,7 +288,7 @@ const OpenApiDocsTab: React.FC = () => {
     <div>
       <PageHeader
         title="Open API 文档"
-        description="按服务查看当前租户已订阅且可调用的 OpenAPI，包含调用地址、入参与出参字段说明，以及示例请求。"
+        description="先按服务或关键字筛选，再查看地址、参数、返回字段和示例请求。"
         extra={(
           <Typography.Link onClick={() => void fetchDocs()}>
             <ReloadOutlined /> 刷新文档

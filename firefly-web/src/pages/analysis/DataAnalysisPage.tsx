@@ -544,7 +544,7 @@ const DataAnalysisPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader title="数据分析" description="时序查询、聚合统计与数据导出" />
+      <PageHeader title="数据分析" description="先选择时间范围和统计条件，再执行查询或导出。" />
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Tabs
           defaultActiveKey="timeseries"

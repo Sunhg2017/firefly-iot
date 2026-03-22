@@ -213,7 +213,7 @@ const NotificationPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader title="通知渠道" description="系统运维空间统一维护平台默认通知渠道。Webhook 由租户管理列表单独维护；其他渠道在租户未单独配置时会回落到这里的默认配置。" />
+      <PageHeader title="通知渠道" description="先维护默认渠道；租户未单独配置时会使用这里的配置。" />
       <Card bordered={false} style={{ borderRadius: 12, marginBottom: 16 }} title="平台默认通知渠道" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor(null)}>新建渠道</Button>}>
         <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={false} scroll={{ x: 900 }} />
         <Drawer title={record ? '编辑通知渠道' : '新建通知渠道'} open={open} onClose={() => setOpen(false)} width={640} destroyOnClose footer={<Space style={{ width: '100%', justifyContent: 'flex-end' }}><Button onClick={() => setOpen(false)}>取消</Button><Button type="primary" onClick={() => form.submit()}>{record ? '保存修改' : '创建渠道'}</Button></Space>}>

@@ -233,14 +233,13 @@ const WebSocketPage: React.FC = () => {
     <div>
       <PageHeader
         title="WebSocket 接入"
-        description="用于长连接设备在线会话查看、消息下发和广播调试。"
+        description="先选择在线会话，再发送定向消息或广播。"
       />
 
       <ProtocolAccessGuide
-        title="把 WebSocket 在线连接纳入设备管理链路"
-        description="如果设备已经完成产品认证，WebSocket 会话会自动带上设备上下文。这样消息下发、规则处理和运行排障可以围绕同一台设备展开。"
+        title="先定位连接，再继续调试"
+        description="优先选择目标连接；已完成认证的设备会自动带出设备上下文。"
         endpoint="/ws/device"
-        tips={['适合双向实时设备', '支持定向消息与广播', '在线会话自动刷新']}
       />
 
       <Tabs

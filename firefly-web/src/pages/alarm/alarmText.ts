@@ -4,12 +4,12 @@ export const ALARM_TEXT = {
   recipientGroupMenu: '告警接收组',
   ruleTitle: '告警规则',
   ruleDescription:
-    '面向规则维护人员，统一维护告警等级块、触发条件、通知方式和接收对象，确保告警触发后可以直接分发到值班人。',
+    '先选择适用范围，再配置等级块、触发条件和通知方式。',
   recordTitle: '告警处理',
-  recordDescription: '面向值班和运维人员，负责确认、处理和关闭已经触发的告警记录。',
+  recordDescription: '先按状态筛选告警，再执行确认、处理或关闭。',
   recipientGroupTitle: '告警接收组',
   recipientGroupDescription:
-    '将常用接收人整理成组，告警规则可直接按组编排，同时也支持在规则里补充指定人员。',
+    '先维护接收人和通知方式，再在告警规则中选择接收组。',
   ruleName: '规则名称',
   scope: '适用范围',
   project: '所属项目',

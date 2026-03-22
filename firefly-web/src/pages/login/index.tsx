@@ -24,32 +24,32 @@ const loginInputStyle: React.CSSProperties = {
 
 const featureCards = [
   {
-    title: '多协议接入',
-    description: '统一管理 MQTT、HTTP、CoAP、视频与边缘能力。',
+    title: '选择登录方式',
+    description: '支持账号密码和手机号两种登录方式。',
     icon: <CloudServerOutlined />,
     tint: 'linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%)',
     border: '#bfdbfe',
     color: '#2563eb',
   },
   {
-    title: '租户与空间',
-    description: '系统运维空间与租户空间切换保持统一操作体验。',
+    title: '输入当前账号',
+    description: '填写用户名密码，或手机号和验证码。',
     icon: <ApartmentOutlined />,
     tint: 'linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%)',
     border: '#bbf7d0',
     color: '#15803d',
   },
   {
-    title: '开放接口',
-    description: 'API Key、接口文档、订阅能力集中收口管理。',
+    title: '登录后自动跳转',
+    description: '系统会按当前账号权限进入对应首页。',
     icon: <ApiOutlined />,
     tint: 'linear-gradient(180deg, #f5f3ff 0%, #ede9fe 100%)',
     border: '#ddd6fe',
     color: '#7c3aed',
   },
   {
-    title: '规则联动',
-    description: '告警、通知、规则引擎和调度任务集中联动。',
+    title: '无法进入时',
+    description: '检查账号状态、空间角色和菜单权限。',
     icon: <ThunderboltOutlined />,
     tint: 'linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%)',
     border: '#fed7aa',
@@ -242,7 +242,7 @@ const LoginPage: React.FC = () => {
               </div>
 
               <Text style={{ maxWidth: 560, color: '#475569', fontSize: 15, lineHeight: 1.8 }}>
-                Web 控制台统一收口为与设备模拟器一致的浅色桌面风格，重点保留清晰层级、实体卡片和高可读操作区。
+                使用账号密码或手机号登录。登录成功后会根据当前账号权限自动进入对应首页。
               </Text>
 
               <Space size={10} wrap>
@@ -320,10 +320,10 @@ const LoginPage: React.FC = () => {
             >
               <Space direction="vertical" size={10} style={{ width: '100%' }}>
                 <Text strong style={{ color: '#0f172a', fontSize: 16 }}>
-                  入口说明
+                  登录须知
                 </Text>
                 <Text style={{ color: '#64748b', lineHeight: 1.8 }}>
-                  登录后根据当前账号所属空间和菜单权限自动进入对应首页，不再需要在入口页做额外选择。
+                  首次登录前请确认账号已启用，并已分配可访问的空间角色和菜单权限。
                 </Text>
               </Space>
             </div>
@@ -360,7 +360,7 @@ const LoginPage: React.FC = () => {
                     登录当前 Web 控制台
                   </Title>
                   <Text type="secondary">
-                    保留账号密码和手机号两种登录方式。
+                    选择一种方式完成登录。
                   </Text>
                 </div>
 
