@@ -21,11 +21,12 @@
 5. 平台与租户基础菜单种子
 6. 系统菜单权限管理页面
 7. 运行时 `authorizedMenuPaths` 访问约束
+8. 菜单图标必填校验与 `tenant-device-assets` 图标回填
 
 ## 发布步骤
 
 1. 发布 `firefly-system`
-2. 执行 Flyway 迁移到 `V24__rebuild_workspace_menu_catalog.sql`
+2. 执行 Flyway 迁移到最新版本，至少包含 `V24__rebuild_workspace_menu_catalog.sql` 和 `V33__backfill_device_assets_menu_icon.sql`
 3. 发布 `firefly-web`
 4. 重新登录平台和租户账号验证菜单授权是否生效
 
@@ -34,6 +35,7 @@
 1. 确认数据库允许执行 `DROP TABLE` 与重建索引。
 2. 如果历史环境曾经手工改过租户菜单、旧目录接口或权限种子，建议先清理旧数据。
 3. 如果当前环境尚未正式使用，建议直接清库后重跑迁移，避免旧脏数据影响菜单授权判断。
+4. 如历史环境出现菜单名称正常但左侧无图标，优先确认 `workspace_menu_catalog.icon` 未被手工清空，并已执行到 `V33`。
 
 ## 发布后验证
 
@@ -44,9 +46,13 @@ select count(*) from workspace_menu_catalog;
 
 select count(*) from workspace_menu_permission_catalog;
 
-select workspace_scope, menu_key, label, route_path, menu_type
+select workspace_scope, menu_key, label, icon, route_path, menu_type
 from workspace_menu_catalog
 order by workspace_scope, sort_order, menu_key;
+
+select workspace_scope, menu_key, icon
+from workspace_menu_catalog
+where menu_key = 'tenant-device-assets';
 
 select workspace_scope, menu_key, permission_code, permission_label
 from workspace_menu_permission_catalog
@@ -76,6 +82,7 @@ order by tenant_id, menu_key;
 1. 使用系统运维管理员登录。
 2. 确认左侧出现 `用户与权限 -> 系统菜单权限`。
 3. 打开页面后，平台与租户页签都能正常加载菜单树。
+4. 新建菜单时，第一步必须选择图标后才能继续保存。
 
 ### 租户空间授权
 
@@ -124,6 +131,14 @@ order by tenant_id, menu_key;
 1. 仓库文件编码是否为 UTF-8。
 2. 数据库连接参数是否正确传递字符集。
 3. 如果已经写入脏数据，清理相关表后重新执行迁移。
+
+### 5. 菜单名称正常，但图标不显示
+
+请检查：
+
+1. `workspace_menu_catalog.icon` 是否为空、拼错，或未与预期图标名一致。
+2. 历史环境是否已执行 `V33__backfill_device_assets_menu_icon.sql`。
+3. 前端 `firefly-web/src/config/iconMap.tsx` 是否已注册对应图标名称。
 
 ## 回滚说明
 

@@ -22,7 +22,7 @@
 
 1. `firefly-system` 的菜单目录模型、租户菜单授权模型、角色权限目录生成链路、登录用户授权菜单路径输出。
 2. `firefly-web` 的系统菜单权限管理页面、平台/租户菜单展示、运行时菜单访问控制。
-3. Flyway 迁移 `V24__rebuild_workspace_menu_catalog.sql`。
+3. Flyway 迁移 `V24__rebuild_workspace_menu_catalog.sql` 与 `V33__backfill_device_assets_menu_icon.sql`。
 
 ## 数据模型
 
@@ -41,13 +41,15 @@
    - 父级菜单键，构建树结构。
 4. `label`
    - 菜单显示名称。
-5. `route_path`
+5. `icon`
+   - 菜单图标名称；新增菜单时必填，且必须能被前端 `iconMap` 解析。
+6. `route_path`
    - 前端路由；为空时代表目录节点。
-6. `menu_type`
+7. `menu_type`
    - `GROUP` 或 `PAGE`。
-7. `visible`
+8. `visible`
    - 是否在菜单中显示。
-8. `role_catalog_visible`
+9. `role_catalog_visible`
    - 是否进入角色授权目录。
 
 ### `workspace_menu_permission_catalog`
@@ -167,10 +169,11 @@
 ## 关键约束
 
 1. 一个菜单只能属于一个空间，不再使用任何“共享空间”兜底字段。
-2. 目录节点不能绑定权限。
-3. 页面节点不能再拥有子菜单。
-4. 菜单删除会级联删除子树权限绑定，并同步删除租户授权记录。
-5. 不再保留旧平面目录接口和只读页面台账。
+2. 新增和编辑菜单时必须显式维护 `icon`，并且该图标名必须已经注册到前端 `iconMap`，否则运行时菜单无法渲染图标。
+3. 目录节点不能绑定权限。
+4. 页面节点不能再拥有子菜单。
+5. 菜单删除会级联删除子树权限绑定，并同步删除租户授权记录。
+6. 不再保留旧平面目录接口和只读页面台账。
 
 ## 初始化数据
 
@@ -183,6 +186,7 @@ Flyway `V24` 会一次性写入：
    - `workspace-menu:read`
    - `workspace-menu:update`
 5. 系统运维超级管理员默认授权。
+6. 历史库中 `TENANT/tenant-device-assets` 菜单图标回填为 `HddOutlined`。
 
 ## 风险与取舍
 

@@ -131,7 +131,7 @@ public class WorkspaceMenuCatalogService {
         entity.setMenuKey(menuKey);
         entity.setParentMenuKey(parent != null ? parent.getMenuKey() : null);
         entity.setLabel(trimRequired(menu.getLabel(), "menu label is required"));
-        entity.setIcon(trimToNull(menu.getIcon()));
+        entity.setIcon(trimRequired(menu.getIcon(), "menu icon is required"));
         entity.setRoutePath(normalizeRoutePath(menu.getRoutePath()));
         entity.setMenuType(resolveMenuType(entity.getRoutePath()));
         entity.setSortOrder(menu.getSortOrder() != null ? menu.getSortOrder() : 0);
@@ -166,7 +166,7 @@ public class WorkspaceMenuCatalogService {
 
         existing.setParentMenuKey(parent != null ? parent.getMenuKey() : null);
         existing.setLabel(trimRequired(changes.getLabel(), "menu label is required"));
-        existing.setIcon(trimToNull(changes.getIcon()));
+        existing.setIcon(trimRequired(changes.getIcon(), "menu icon is required"));
         existing.setRoutePath(nextRoutePath);
         existing.setMenuType(resolveMenuType(nextRoutePath));
         existing.setSortOrder(changes.getSortOrder() != null ? changes.getSortOrder() : 0);

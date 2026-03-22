@@ -32,6 +32,7 @@ import {
   message,
 } from 'antd';
 import type { DataNode } from 'antd/es/tree';
+import iconMap from '../../config/iconMap';
 import PageHeader from '../../components/PageHeader';
 import { permissionResourceApi, systemMenuPermissionApi } from '../../services/api';
 import useAuthStore from '../../store/useAuthStore';
@@ -197,6 +198,20 @@ const SystemMenuPermissionPage: React.FC = () => {
       .map((item) => ({ value: item.code, label: `${item.name} (${item.code})` })),
     [permissionResources],
   );
+  const iconOptions = useMemo(
+    () => Object.entries(iconMap)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([value, icon]) => ({
+        value,
+        label: (
+          <Space size={8}>
+            <span>{icon}</span>
+            <span>{value}</span>
+          </Space>
+        ),
+      })),
+    [],
+  );
   const routePath = Form.useWatch('routePath', form);
   const selectedPermissionCodes = Form.useWatch('permissionCodes', form) ?? [];
 
@@ -271,7 +286,7 @@ const SystemMenuPermissionPage: React.FC = () => {
   };
 
   const handleNextStep = async () => {
-    await form.validateFields(['workspaceScope', 'parentMenuKey', 'menuKey', 'label', 'sortOrder']);
+    await form.validateFields(['workspaceScope', 'parentMenuKey', 'menuKey', 'label', 'icon', 'sortOrder']);
     setStepIndex(1);
   };
 
@@ -564,8 +579,16 @@ const SystemMenuPermissionPage: React.FC = () => {
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <Form.Item name="icon" label="图标名称">
-                  <Input placeholder="例如 AppstoreOutlined" />
+                <Form.Item name="icon" label="菜单图标" rules={[{ required: true, message: '请选择菜单图标' }]}>
+                  <Select
+                    showSearch
+                    placeholder="请选择菜单图标"
+                    optionFilterProp="value"
+                    filterOption={(input, option) =>
+                      String(option?.value ?? '').toLowerCase().includes(input.toLowerCase())
+                    }
+                    options={iconOptions}
+                  />
                 </Form.Item>
               </Col>
               <Col span={12}>

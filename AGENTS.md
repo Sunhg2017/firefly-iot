@@ -4,6 +4,7 @@
 - 功能重构应直接收口到当前最佳实现，旧入口、旧接口、旧配置项、旧页面和旧权限模型应一并删除，而不是继续保留备用分支。
 - 如果担心历史数据影响新实现，应在交付说明和运维文档中明确提醒清理数据库旧数据，而不是在代码中继续叠加兼容分支。
 - 菜单、权限点或所属空间发生变动时，必须同步通过 Flyway SQL 维护系统菜单管理基础数据，至少包括 `workspace_menu_catalog` 与 `workspace_menu_permission_catalog`；仅属于一个空间的功能写一条菜单记录，共享于系统运维空间和租户空间的功能分别写对应空间记录，禁止只改前后端代码而不更新台账。
+- 新增菜单时必须同步补齐菜单 icon；`workspace_menu_catalog.icon`、前端菜单配置以及 `firefly-web/src/config/iconMap.tsx` 中的图标映射必须同时落地，禁止新增无 icon 菜单或只写图标名但前端无法渲染。
 
 # Firefly IoT Repository Rules
 
@@ -83,7 +84,7 @@
    - 评审和自检时，必须检查是否新增了 `@Select` 注解 SQL；一经发现，必须在交付前改回 `mapper.xml`。
 
 12. 新增、删除、迁移或改名菜单时，必须同步通过 Flyway SQL 增减系统菜单管理基础数据。
-   - 新增菜单时，至少同步维护 `workspace_menu_catalog`、`workspace_menu_permission_catalog` 以及相关 `permission_resources`。
+   - 新增菜单时，至少同步维护 `workspace_menu_catalog`（含 `icon` 字段）、`workspace_menu_permission_catalog` 以及相关 `permission_resources`；如果前端运行时依赖图标映射，必须同步补齐前端图标映射。
    - 删除或替换旧菜单时，必须同步清理旧菜单对应的 `workspace_menu_catalog`、`workspace_menu_permission_catalog`，以及相关 `workspace_menu_customizations`、`tenant_menu_configs` 等脏数据。
    - 只改前端路由、后端接口或权限常量，而不补系统菜单管理基础数据 SQL，视为不合格交付。
 
@@ -114,6 +115,7 @@
 - 不允许在“导入导出未走异步任务中心或前端直接解析文件”状态下宣告完成。
 - 不允许在“Java 代码中仍使用 `@Select` 直接写 SQL，且未收敛到 `mapper.xml`”状态下宣告完成。
 - 不允许在“新增、删除或迁移菜单，但未通过 Flyway SQL 同步系统菜单管理基础数据”状态下宣告完成。
+- 不允许在“新增菜单但未补齐菜单 icon、前端图标映射或对应基础数据”状态下宣告完成。
 - 不允许在“文档已更新但未提交”状态下宣告完成。
 - 不允许在“本地已提交但未推送远端”状态下宣告完成。
 - 最终交付时，默认应处于可追溯、已提交且已推送的状态。

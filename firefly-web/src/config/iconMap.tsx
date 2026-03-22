@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   DashboardOutlined,
+  ApartmentOutlined,
   TeamOutlined,
   SafetyOutlined,
   BankOutlined,
@@ -46,6 +47,7 @@ import {
 
 const iconMap: Record<string, React.ReactNode> = {
   DashboardOutlined: <DashboardOutlined />,
+  ApartmentOutlined: <ApartmentOutlined />,
   TeamOutlined: <TeamOutlined />,
   SafetyOutlined: <SafetyOutlined />,
   BankOutlined: <BankOutlined />,

@@ -26,6 +26,7 @@ public class WorkspaceMenuCatalogUpsertDTO {
     private String label;
 
     @Schema(description = "图标名称")
+    @NotBlank(message = "菜单图标不能为空")
     private String icon;
 
     @Schema(description = "前端路由，目录节点留空")
