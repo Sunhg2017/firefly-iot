@@ -181,7 +181,9 @@ const BasicLayout: React.FC = () => {
   );
 
   const currentPathAccessible = useMemo(() => {
-    if (location.pathname === '/403') {
+    // Root and nested wildcard redirects must be allowed to render first, otherwise the layout
+    // will short-circuit "/" and unknown in-app paths to /403 before HomeRedirect can run.
+    if (location.pathname === '/403' || location.pathname === '/' || !isRoutePathRegistered(location.pathname)) {
       return true;
     }
     return isWorkspacePathAllowed(location.pathname, permissions, authorizedMenuPaths);
