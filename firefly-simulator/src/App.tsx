@@ -1,5 +1,5 @@
-import { useEffect, type CSSProperties } from 'react';
-import { Card, Grid, Space, Typography } from 'antd';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { Card, Space, Typography } from 'antd';
 import { useSimStore } from './store';
 import { buildMqttInboundLogMessage } from './utils/mqtt';
 import { restorePersistedConnections } from './utils/runtime';
@@ -10,9 +10,16 @@ import {
   StressTestPanel,
   ScenarioPanel,
   TemplateEditorPanel,
+  SimulatorAccessGate,
 } from './components';
+import { getActiveEnvironment, useSimWorkspaceStore } from './workspaceStore';
 
 const { Text } = Typography;
+
+const FRAME_WIDTH = 1760;
+const FRAME_HEIGHT = 960;
+const STAGE_PADDING = 18;
+const MAX_STAGE_SCALE = 1.08;
 
 const PANEL_SHELL_STYLE: CSSProperties = {
   minHeight: 0,
@@ -35,10 +42,42 @@ const TOOL_CARD_ROW_STYLE: CSSProperties = {
   background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
 };
 
+function readViewportSize() {
+  if (typeof window === 'undefined') {
+    return {
+      width: FRAME_WIDTH,
+      height: FRAME_HEIGHT,
+    };
+  }
+  return {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  };
+}
+
 export default function App() {
-  const screens = Grid.useBreakpoint();
+  const environments = useSimWorkspaceStore((state) => state.environments);
+  const activeEnvironmentId = useSimWorkspaceStore((state) => state.activeEnvironmentId);
+  const sessions = useSimWorkspaceStore((state) => state.sessions);
+  const activeEnvironment = useMemo(
+    () => getActiveEnvironment(environments, activeEnvironmentId),
+    [activeEnvironmentId, environments],
+  );
+  const activeSession = sessions[activeEnvironment.id];
+  const [viewportSize, setViewportSize] = useState(readViewportSize);
 
   useEffect(() => {
+    const handleResize = () => {
+      setViewportSize(readViewportSize());
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (!activeSession?.accessToken) {
+      return undefined;
+    }
     const handler = (event: KeyboardEvent) => {
       if (event.ctrlKey && !event.shiftKey && event.key === 'n') {
         event.preventDefault();
@@ -55,9 +94,12 @@ export default function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [activeSession?.accessToken]);
 
   useEffect(() => {
+    if (!activeSession?.accessToken) {
+      return undefined;
+    }
     const restore = () => {
       void restorePersistedConnections();
     };
@@ -71,10 +113,12 @@ export default function App() {
       restore();
     });
     return unsubscribe;
-  }, []);
+  }, [activeSession?.accessToken]);
 
   useEffect(() => {
-    if (!window.electronAPI) return undefined;
+    if (!activeSession?.accessToken || !window.electronAPI) {
+      return undefined;
+    }
     const unsubMsg = window.electronAPI.onMqttMessage((id: string, topic: string, payload: string) => {
       const { addLog, devices: latestDevices } = useSimStore.getState();
       const device = latestDevices.find((item) => item.id === id);
@@ -99,27 +143,18 @@ export default function App() {
       unsubDisconnect();
       unsubError();
     };
-  }, []);
+  }, [activeSession?.accessToken]);
 
-  const showRightRail = Boolean(screens.lg);
-  const showTwoColumnSecondary = Boolean(screens.md && !screens.lg);
-  const shellGap = 'clamp(12px, 1.2vw, 16px)';
-  const shellPadding = 'clamp(12px, 1.5vw, 20px)';
-  const railColumnWidth = 'minmax(292px, 332px)';
-  const rightRailWidth = 'minmax(308px, 360px)';
+  if (!activeSession?.accessToken) {
+    return <SimulatorAccessGate />;
+  }
 
-  const mainGridColumns = showRightRail
-    ? `${railColumnWidth} minmax(0, 1fr) ${rightRailWidth}`
-    : showTwoColumnSecondary
-      ? `${railColumnWidth} minmax(0, 1fr)`
-      : '1fr';
-
-  // 中等宽度窗口会把工具区和日志区挪到第二行，需要限制高度，避免挤压主工作区。
-  const compactRailHeight = 'clamp(220px, 30vh, 300px)';
+  const shellGap = 16;
   const appShellStyle: CSSProperties = {
     display: 'flex',
     flexDirection: 'column',
     gap: shellGap,
+    width: '100%',
     height: '100%',
     minHeight: 0,
     padding: shellGap,
@@ -129,6 +164,7 @@ export default function App() {
     boxShadow: '0 22px 54px rgba(15,23,42,0.08)',
     overflow: 'hidden',
   };
+
   const toolboxCard = (
     <Card
       style={PANEL_SHELL_STYLE}
@@ -185,60 +221,83 @@ export default function App() {
     </Card>
   );
 
+  const availableWidth = Math.max(320, viewportSize.width - STAGE_PADDING * 2);
+  const availableHeight = Math.max(320, viewportSize.height - STAGE_PADDING * 2);
+  const stageScale = Math.min(
+    availableWidth / FRAME_WIDTH,
+    availableHeight / FRAME_HEIGHT,
+    MAX_STAGE_SCALE,
+  );
+
   return (
     <div
       style={{
         height: '100dvh',
         minHeight: '100dvh',
         overflow: 'hidden',
-        padding: shellPadding,
+        padding: STAGE_PADDING,
         background: 'linear-gradient(180deg, #eef3f7 0%, #e6edf4 100%)',
       }}
     >
-      <div style={appShellStyle}>
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+        }}
+      >
         <div
           style={{
-            flex: 1,
-            minHeight: 0,
-            display: 'grid',
-            gap: shellGap,
-            gridTemplateColumns: mainGridColumns,
-            alignItems: 'stretch',
-            overflow: 'hidden',
+            width: FRAME_WIDTH * stageScale,
+            height: FRAME_HEIGHT * stageScale,
+            flex: '0 0 auto',
           }}
         >
-          <div style={{ ...PANEL_SHELL_STYLE, minHeight: 0 }}>
-            <DeviceListPanel />
-          </div>
-          <div style={{ ...PANEL_SHELL_STYLE, minHeight: 0 }}>
-            <DeviceControlPanel />
-          </div>
-          {showRightRail ? (
-            <div style={{ minHeight: 0, display: 'grid', gap: shellGap, gridTemplateRows: 'minmax(214px, auto) minmax(0, 1fr)', overflow: 'hidden' }}>
-              {toolboxCard}
-              {logCard}
-            </div>
-          ) : null}
-        </div>
-
-        {!showRightRail ? (
           <div
             style={{
-              flex: showTwoColumnSecondary ? `0 0 ${compactRailHeight}` : '0 0 auto',
-              height: showTwoColumnSecondary ? compactRailHeight : undefined,
-              minHeight: showTwoColumnSecondary ? 220 : 0,
-              maxHeight: showTwoColumnSecondary ? 300 : undefined,
-              display: 'grid',
-              gap: shellGap,
-              gridTemplateColumns: showTwoColumnSecondary ? 'minmax(0, 1fr) minmax(0, 1fr)' : '1fr',
-              alignItems: 'stretch',
-              overflow: 'hidden',
+              width: FRAME_WIDTH,
+              height: FRAME_HEIGHT,
+              transform: `scale(${stageScale})`,
+              transformOrigin: 'top left',
             }}
           >
-            {toolboxCard}
-            {logCard}
+            <div style={appShellStyle}>
+              <div
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  display: 'grid',
+                  gap: shellGap,
+                  gridTemplateColumns: '352px minmax(0, 1fr) 356px',
+                  alignItems: 'stretch',
+                  overflow: 'hidden',
+                }}
+              >
+                <div style={{ ...PANEL_SHELL_STYLE, minHeight: 0 }}>
+                  <DeviceListPanel />
+                </div>
+                <div style={{ ...PANEL_SHELL_STYLE, minHeight: 0 }}>
+                  <DeviceControlPanel />
+                </div>
+                <div
+                  style={{
+                    minHeight: 0,
+                    display: 'grid',
+                    gap: shellGap,
+                    gridTemplateRows: '280px minmax(0, 1fr)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {toolboxCard}
+                  {logCard}
+                </div>
+              </div>
+            </div>
           </div>
-        ) : null}
+        </div>
       </div>
     </div>
   );

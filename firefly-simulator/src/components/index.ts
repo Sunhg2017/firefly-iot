@@ -5,3 +5,4 @@ export { default as LogPanel } from './LogPanel';
 export { default as StressTestPanel } from './StressTestPanel';
 export { default as ScenarioPanel } from './ScenarioPanel';
 export { default as TemplateEditorPanel } from './TemplateEditorPanel';
+export { default as SimulatorAccessGate } from './SimulatorAccessGate';
