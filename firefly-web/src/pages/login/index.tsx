@@ -157,64 +157,62 @@ const LoginPage: React.FC = () => {
                   <Title level={1} className="login-page-overview__title">Firefly IoT</Title>
                 </div>
               </div>
-
-              <Text className="login-page-overview__description">
-                使用已开通账号登录。登录成功后会根据当前账号权限自动进入对应首页。
-              </Text>
             </div>
 
             <div className="login-page-network" aria-hidden="true">
-              <svg className="login-page-network__svg" viewBox="0 0 520 360" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                  <linearGradient id="login-network-gradient" x1="56" y1="56" x2="464" y2="304" gradientUnits="userSpaceOnUse">
-                    <stop stopColor="#93c5fd" />
-                    <stop offset="1" stopColor="#2563eb" />
-                  </linearGradient>
-                </defs>
-                <path className="login-page-network__line" d="M260 176 L260 86" />
-                <path className="login-page-network__line" d="M260 176 L110 170" />
-                <path className="login-page-network__line" d="M260 176 L418 160" />
-                <path className="login-page-network__line" d="M260 176 L172 284" />
-                <path className="login-page-network__line" d="M260 176 L356 284" />
-                <path className="login-page-network__line login-page-network__line--soft" d="M110 170 C154 102 210 84 260 86" />
-                <path className="login-page-network__line login-page-network__line--soft" d="M260 86 C316 92 374 112 418 160" />
-                <path className="login-page-network__line login-page-network__line--soft" d="M110 170 C144 236 164 258 172 284" />
-                <path className="login-page-network__line login-page-network__line--soft" d="M356 284 C388 250 402 214 418 160" />
+              <div className="login-page-network__stage">
+                <svg className="login-page-network__svg" viewBox="0 0 520 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <linearGradient id="login-network-gradient" x1="56" y1="56" x2="464" y2="304" gradientUnits="userSpaceOnUse">
+                      <stop stopColor="#93c5fd" />
+                      <stop offset="1" stopColor="#2563eb" />
+                    </linearGradient>
+                  </defs>
+                  <path className="login-page-network__line" d="M260 176 L260 86" />
+                  <path className="login-page-network__line" d="M260 176 L110 170" />
+                  <path className="login-page-network__line" d="M260 176 L418 160" />
+                  <path className="login-page-network__line" d="M260 176 L172 284" />
+                  <path className="login-page-network__line" d="M260 176 L356 284" />
+                  <path className="login-page-network__line login-page-network__line--soft" d="M110 170 C154 102 210 84 260 86" />
+                  <path className="login-page-network__line login-page-network__line--soft" d="M260 86 C316 92 374 112 418 160" />
+                  <path className="login-page-network__line login-page-network__line--soft" d="M110 170 C144 236 164 258 172 284" />
+                  <path className="login-page-network__line login-page-network__line--soft" d="M356 284 C388 250 402 214 418 160" />
 
-                <circle className="login-page-network__signal" r="4">
-                  <animateMotion dur="4.6s" repeatCount="indefinite" path="M260 176 L260 86" />
-                </circle>
-                <circle className="login-page-network__signal" r="4">
-                  <animateMotion dur="5.1s" repeatCount="indefinite" path="M260 176 L110 170" />
-                </circle>
-                <circle className="login-page-network__signal" r="4">
-                  <animateMotion dur="4.9s" repeatCount="indefinite" path="M260 176 L418 160" />
-                </circle>
-                <circle className="login-page-network__signal" r="4">
-                  <animateMotion dur="5.4s" repeatCount="indefinite" path="M260 176 L172 284" />
-                </circle>
-                <circle className="login-page-network__signal" r="4">
-                  <animateMotion dur="5.2s" repeatCount="indefinite" path="M260 176 L356 284" />
-                </circle>
-              </svg>
+                  <circle className="login-page-network__signal" r="4">
+                    <animateMotion dur="4.6s" repeatCount="indefinite" path="M260 176 L260 86" />
+                  </circle>
+                  <circle className="login-page-network__signal" r="4">
+                    <animateMotion dur="5.1s" repeatCount="indefinite" path="M260 176 L110 170" />
+                  </circle>
+                  <circle className="login-page-network__signal" r="4">
+                    <animateMotion dur="4.9s" repeatCount="indefinite" path="M260 176 L418 160" />
+                  </circle>
+                  <circle className="login-page-network__signal" r="4">
+                    <animateMotion dur="5.4s" repeatCount="indefinite" path="M260 176 L172 284" />
+                  </circle>
+                  <circle className="login-page-network__signal" r="4">
+                    <animateMotion dur="5.2s" repeatCount="indefinite" path="M260 176 L356 284" />
+                  </circle>
+                </svg>
 
-              <div className="login-page-network__node login-page-network__node--hub">
-                <DeploymentUnitOutlined />
-              </div>
-              <div className="login-page-network__node login-page-network__node--cloud">
-                <CloudServerOutlined />
-              </div>
-              <div className="login-page-network__node login-page-network__node--device">
-                <HddOutlined />
-              </div>
-              <div className="login-page-network__node login-page-network__node--mobile">
-                <MobileOutlined />
-              </div>
-              <div className="login-page-network__node login-page-network__node--api">
-                <ApiOutlined />
-              </div>
-              <div className="login-page-network__node login-page-network__node--rule">
-                <ThunderboltOutlined />
+                <div className="login-page-network__node login-page-network__node--hub">
+                  <DeploymentUnitOutlined />
+                </div>
+                <div className="login-page-network__node login-page-network__node--cloud">
+                  <CloudServerOutlined />
+                </div>
+                <div className="login-page-network__node login-page-network__node--device">
+                  <HddOutlined />
+                </div>
+                <div className="login-page-network__node login-page-network__node--mobile">
+                  <MobileOutlined />
+                </div>
+                <div className="login-page-network__node login-page-network__node--api">
+                  <ApiOutlined />
+                </div>
+                <div className="login-page-network__node login-page-network__node--rule">
+                  <ThunderboltOutlined />
+                </div>
               </div>
             </div>
           </div>
@@ -226,16 +224,9 @@ const LoginPage: React.FC = () => {
                   <Title level={3} style={{ margin: 0, color: '#0f172a' }}>
                     登录控制台
                   </Title>
-                  <Text type="secondary" style={{ marginTop: 8, display: 'block' }}>
-                    选择一种方式完成登录。
-                  </Text>
                 </div>
 
                 <Tabs className="login-page-tabs" activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
-
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  登录成功后自动进入当前账号首页
-                </Text>
               </Space>
             </Card>
           </div>

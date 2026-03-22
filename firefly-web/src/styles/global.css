@@ -611,7 +611,7 @@ a {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  gap: 28px;
+  gap: 18px;
 }
 
 .login-page-overview::after {
@@ -628,7 +628,7 @@ a {
 .login-page-overview__copy {
   position: relative;
   z-index: 1;
-  max-width: 420px;
+  max-width: 380px;
 }
 
 .login-page-overview__brand {
@@ -665,19 +665,15 @@ a {
   line-height: 1.2;
 }
 
-.login-page-overview__description {
-  display: block;
-  margin-top: 24px;
-  color: #475569;
-  font-size: 15px;
-  line-height: 1.8;
-}
-
 .login-page-network {
   position: relative;
   z-index: 1;
   flex: 1 1 auto;
-  min-height: 320px;
+  min-height: 360px;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: radial-gradient(circle at 50% 46%, rgba(191, 219, 254, 0.24) 0%, rgba(191, 219, 254, 0) 34%);
   overflow: visible;
 }
@@ -691,17 +687,25 @@ a {
 }
 
 .login-page-network::before {
-  inset: 24px auto auto 28px;
-  width: 92px;
-  height: 92px;
+  inset: 42px auto auto 56px;
+  width: 84px;
+  height: 84px;
   background: radial-gradient(circle, rgba(219, 234, 254, 0.9) 0%, rgba(219, 234, 254, 0) 70%);
 }
 
 .login-page-network::after {
-  inset: auto 36px 26px auto;
-  width: 120px;
-  height: 120px;
+  inset: auto 64px 44px auto;
+  width: 108px;
+  height: 108px;
   background: radial-gradient(circle, rgba(191, 219, 254, 0.72) 0%, rgba(191, 219, 254, 0) 72%);
+}
+
+.login-page-network__stage {
+  position: relative;
+  width: min(100%, 430px);
+  aspect-ratio: 520 / 360;
+  transform: translate(8px, -4px) scale(1.06);
+  transform-origin: center;
 }
 
 .login-page-network__svg {
@@ -733,28 +737,28 @@ a {
 
 .login-page-network__node {
   position: absolute;
-  width: 58px;
-  height: 58px;
+  width: 62px;
+  height: 62px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 18px;
+  border-radius: 20px;
   border: 1px solid rgba(191, 219, 254, 0.96);
   background: rgba(255, 255, 255, 0.95);
   box-shadow: 0 12px 26px rgba(37, 99, 235, 0.1);
   color: #2563eb;
-  font-size: 24px;
+  font-size: 25px;
   backdrop-filter: blur(10px);
   animation: loginNodeFloat 6s ease-in-out infinite;
 }
 
 .login-page-network__node--hub {
-  width: 74px;
-  height: 74px;
-  left: calc(50% - 37px);
-  top: calc(48.89% - 37px);
-  border-radius: 24px;
-  font-size: 30px;
+  width: 86px;
+  height: 86px;
+  left: calc(50% - 43px);
+  top: calc(48.89% - 43px);
+  border-radius: 28px;
+  font-size: 34px;
   background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
   box-shadow: 0 18px 34px rgba(37, 99, 235, 0.18);
 }
@@ -769,32 +773,32 @@ a {
 }
 
 .login-page-network__node--cloud {
-  left: calc(50% - 29px);
-  top: calc(23.89% - 29px);
+  left: calc(50% - 31px);
+  top: calc(23.89% - 31px);
   animation-delay: -0.6s;
 }
 
 .login-page-network__node--device {
-  left: calc(21.15% - 29px);
-  top: calc(47.22% - 29px);
+  left: calc(21.15% - 31px);
+  top: calc(47.22% - 31px);
   animation-delay: -1.3s;
 }
 
 .login-page-network__node--mobile {
-  left: calc(80.38% - 29px);
-  top: calc(44.44% - 29px);
+  left: calc(80.38% - 31px);
+  top: calc(44.44% - 31px);
   animation-delay: -2s;
 }
 
 .login-page-network__node--api {
-  left: calc(33.08% - 29px);
-  top: calc(78.89% - 29px);
+  left: calc(33.08% - 31px);
+  top: calc(78.89% - 31px);
   animation-delay: -2.8s;
 }
 
 .login-page-network__node--rule {
-  left: calc(68.46% - 29px);
-  top: calc(78.89% - 29px);
+  left: calc(68.46% - 31px);
+  top: calc(78.89% - 31px);
   animation-delay: -3.5s;
 }
 
@@ -816,7 +820,7 @@ a {
 }
 
 .login-page-form-card .ant-card-body {
-  padding: 30px !important;
+  padding: 34px 30px !important;
 }
 
 .login-page-tabs .ant-tabs-nav {
@@ -874,6 +878,11 @@ a {
   }
 
   .login-page-network {
-    min-height: 280px;
+    min-height: 300px;
+  }
+
+  .login-page-network__stage {
+    width: min(100%, 360px);
+    transform: translate(0, 0) scale(1);
   }
 }
