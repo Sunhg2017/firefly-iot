@@ -409,17 +409,19 @@ const BasicLayout: React.FC = () => {
   };
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout className="app-layout-root" style={{ minHeight: '100vh' }}>
       <Sider
+        className="app-sider"
         width={248}
         collapsedWidth={72}
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
         trigger={null}
+        theme="light"
         style={{
-          background: 'linear-gradient(180deg, #0f172a 0%, #16213a 45%, #1e293b 100%)',
-          borderRight: '1px solid rgba(255,255,255,0.06)',
+          background: 'linear-gradient(180deg, #f8fbff 0%, #eef4fa 100%)',
+          borderRight: '1px solid #dbe4ee',
         }}
       >
         <div
@@ -429,7 +431,7 @@ const BasicLayout: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             gap: 12,
-            borderBottom: '1px solid rgba(255,255,255,0.08)',
+            borderBottom: '1px solid #e6edf5',
           }}
         >
           <div
@@ -437,8 +439,10 @@ const BasicLayout: React.FC = () => {
               width: 36,
               height: 36,
               borderRadius: 12,
-              background: 'linear-gradient(135deg, #f97316 0%, #fb7185 100%)',
-              color: '#fff',
+              background: 'linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%)',
+              border: '1px solid #bfdbfe',
+              boxShadow: '0 8px 18px rgba(37,99,235,0.12)',
+              color: '#2563eb',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -450,8 +454,8 @@ const BasicLayout: React.FC = () => {
           </div>
           {!collapsed ? (
             <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-              <span style={{ color: '#f8fafc', fontWeight: 700, fontSize: 16 }}>Firefly IoT</span>
-              <span style={{ color: 'rgba(248,250,252,0.62)', fontSize: 12 }}>
+              <span style={{ color: '#0f172a', fontWeight: 700, fontSize: 16 }}>Firefly IoT</span>
+              <span style={{ color: '#64748b', fontSize: 12 }}>
                 {workspace === 'platform' ? '系统运维空间' : '租户业务空间'}
               </span>
             </div>
@@ -466,7 +470,7 @@ const BasicLayout: React.FC = () => {
           ) : (
             <Menu
               mode="inline"
-              theme="dark"
+              theme="light"
               items={menuItems}
               selectedKeys={[location.pathname]}
               openKeys={collapsed ? [] : menuOpenKeys}
@@ -481,17 +485,17 @@ const BasicLayout: React.FC = () => {
         </div>
       </Sider>
 
-      <Layout style={{ background: '#eef2f7' }}>
+      <Layout style={{ background: 'linear-gradient(180deg, #edf2f7 0%, #e7edf4 100%)' }}>
         <Header
+          className="app-header"
           style={{
             height: 64,
             padding: '0 20px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            background: 'rgba(255,255,255,0.88)',
-            backdropFilter: 'blur(12px)',
-            borderBottom: '1px solid rgba(15,23,42,0.06)',
+            background: '#ffffff',
+            borderBottom: '1px solid #dbe4ee',
             position: 'sticky',
             top: 0,
             zIndex: 10,
@@ -503,18 +507,28 @@ const BasicLayout: React.FC = () => {
               style={{
                 width: 36,
                 height: 36,
-                borderRadius: 10,
+                borderRadius: 12,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
                 color: '#475569',
-                background: '#f8fafc',
+                background: '#f8fbff',
+                border: '1px solid #e2e8f0',
               }}
             >
               {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             </div>
-            <Tag color={workspace === 'platform' ? 'geekblue' : 'green'}>
+            <Tag
+              style={{
+                margin: 0,
+                borderRadius: 999,
+                paddingInline: 12,
+                borderColor: workspace === 'platform' ? '#bfdbfe' : '#bbf7d0',
+                background: workspace === 'platform' ? '#eff6ff' : '#f0fdf4',
+                color: workspace === 'platform' ? '#1d4ed8' : '#15803d',
+              }}
+            >
               {workspace === 'platform' ? '系统运维空间' : '租户业务空间'}
             </Tag>
             <Breadcrumb
@@ -558,7 +572,7 @@ const BasicLayout: React.FC = () => {
           </div>
         </Header>
 
-        <Content style={{ margin: 20, minHeight: 360 }}>
+        <Content style={{ margin: 16, minHeight: 360 }}>
           {displayedTabs.length > 0 ? (
             <div className="page-tabs-shell">
               <div className="page-tabs" role="tablist" aria-label="已打开页面">
