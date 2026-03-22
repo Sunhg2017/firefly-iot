@@ -18,17 +18,16 @@ const { Text } = Typography;
 
 const FRAME_WIDTH = 1760;
 const FRAME_HEIGHT = 960;
-const STAGE_PADDING = 18;
-const MAX_STAGE_SCALE = 1.08;
+const STAGE_PADDING = 8;
+const MAX_STAGE_SCALE = 1.2;
 
 const PANEL_SHELL_STYLE: CSSProperties = {
   minHeight: 0,
   overflow: 'hidden',
   borderRadius: 24,
-  border: '1px solid rgba(226,232,240,0.95)',
-  background: 'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(249,251,255,0.94) 100%)',
-  boxShadow: '0 12px 30px rgba(15,23,42,0.06)',
-  backdropFilter: 'blur(12px)',
+  border: '1px solid #dbe4ee',
+  background: '#ffffff',
+  boxShadow: '0 10px 22px rgba(15,23,42,0.04)',
 };
 
 const TOOL_CARD_ROW_STYLE: CSSProperties = {
@@ -38,8 +37,8 @@ const TOOL_CARD_ROW_STYLE: CSSProperties = {
   gap: 14,
   padding: '12px 14px',
   borderRadius: 16,
-  border: '1px solid rgba(226,232,240,0.9)',
-  background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
+  border: '1px solid #e2e8f0',
+  background: '#f8fbff',
 };
 
 function readViewportSize() {
@@ -158,10 +157,10 @@ export default function App() {
     height: '100%',
     minHeight: 0,
     padding: shellGap,
-    borderRadius: 30,
-    border: '1px solid rgba(226,232,240,0.96)',
-    background: 'linear-gradient(180deg, rgba(248,251,255,0.98) 0%, rgba(243,247,252,0.96) 100%)',
-    boxShadow: '0 22px 54px rgba(15,23,42,0.08)',
+    borderRadius: 26,
+    border: '1px solid #dbe4ee',
+    background: '#f3f7fb',
+    boxShadow: '0 14px 36px rgba(15,23,42,0.06)',
     overflow: 'hidden',
   };
 
@@ -236,7 +235,7 @@ export default function App() {
         minHeight: '100dvh',
         overflow: 'hidden',
         padding: STAGE_PADDING,
-        background: 'linear-gradient(180deg, #eef3f7 0%, #e6edf4 100%)',
+        background: '#edf2f7',
       }}
     >
       <div
