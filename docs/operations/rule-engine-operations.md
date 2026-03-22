@@ -17,6 +17,7 @@
 - Nacos：配置中心与注册发现
 - `firefly-device`：查询设备基础信息
 - `firefly-support`：发送通知类动作
+- `firefly-web`：提供租户侧规则管理页面
 
 ## 2. 部署与启动
 
@@ -70,6 +71,22 @@ mvn spring-boot:run
   - 通过 `NotificationClient` 调 `firefly-support`
 - `DEVICE_COMMAND`
   - 由 `firefly-rule` 投递到 `device.message.down`
+
+### 3.3 管理台依赖
+
+控制台规则页本次改为链路化视图，前端除了规则接口外，还会调用项目列表接口展示项目范围：
+
+- `POST /api/v1/rules/list`
+- `GET /api/v1/rules/{id}`
+- `POST /api/v1/rules`
+- `PUT /api/v1/rules/{id}`
+- `POST /api/v1/projects/list`
+
+运维排查页面异常时，需要同时确认：
+
+- `firefly-web` 已正确代理 `firefly-rule` 与项目服务接口
+- 项目列表接口可正常返回项目名称，否则页面只能退化显示项目编号
+- 规则详情接口返回 `actions` 列表，否则前端无法回填动作卡片
 
 ## 4. 支持的动作配置
 
@@ -166,6 +183,15 @@ mvn spring-boot:run
 - `Notification dispatch failed`
 
 ## 6. 常见故障排查
+
+### 6.0 控制台页面显示异常
+
+排查顺序：
+
+1. 检查浏览器网络请求里 `/api/v1/rules/list`、`/api/v1/rules/{id}`、`/api/v1/projects/list` 是否成功。
+2. 若列表有数据但项目名称为空，检查项目服务是否可用。
+3. 若编辑抽屉无法回填，检查详情接口返回是否包含 `sqlExpr` 与 `actions`。
+4. 若动作模板填入后提交失败，检查 JSON 是否被手工改坏。
 
 ### 6.1 规则启用后没有触发
 

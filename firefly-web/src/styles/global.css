@@ -659,6 +659,177 @@ a {
   flex-wrap: wrap;
 }
 
+.rule-engine-overview-shell {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.rule-engine-overview-card {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 18px 20px;
+  border-radius: 20px;
+  border: 1px solid var(--ff-border);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: var(--ff-shadow-sm);
+}
+
+.rule-engine-overview-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+  color: var(--ff-primary);
+  font-size: 18px;
+  flex: 0 0 auto;
+}
+
+.rule-engine-overview-card__label {
+  color: var(--ff-text-secondary);
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.rule-engine-overview-card__value {
+  color: var(--ff-text);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.rule-engine-overview-card__caption {
+  color: var(--ff-text-secondary);
+  font-size: 12px;
+  margin-top: 8px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.rule-engine-list-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rule-engine-list-cell__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rule-engine-list-cell__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rule-engine-soft-tag {
+  color: #475569;
+  background: #f1f5f9 !important;
+}
+
+.rule-engine-result-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rule-engine-result-cell__numbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #475569;
+  font-weight: 600;
+}
+
+.rule-engine-result-cell__success {
+  color: var(--ff-success);
+}
+
+.rule-engine-result-cell__error {
+  color: var(--ff-danger);
+}
+
+.rule-engine-drawer-section {
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--ff-border-soft);
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+}
+
+.rule-engine-drawer-section:last-child {
+  margin-bottom: 0;
+}
+
+.rule-engine-drawer-section__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ff-text);
+  margin-bottom: 16px;
+}
+
+.rule-engine-expression-preview {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--ff-border-soft);
+  background: #f8fbff;
+}
+
+.rule-engine-expression-preview__label {
+  color: var(--ff-text-secondary);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.rule-engine-expression-preview__code {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ff-text);
+  font-size: 13px;
+  line-height: 1.7;
+  font-family: Consolas, 'Courier New', monospace;
+}
+
+.rule-engine-action-card {
+  padding: 18px 18px 6px;
+  margin-bottom: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--ff-border-soft);
+  background: linear-gradient(180deg, #fdfefe 0%, #f8fbff 100%);
+}
+
+.rule-engine-action-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.rule-engine-action-card__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ff-text);
+  margin-bottom: 4px;
+}
+
+.rule-engine-action-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+
 .page-title {
   font-size: 20px;
   font-weight: 700;
@@ -1043,6 +1214,10 @@ a {
     padding: 16px;
   }
 
+  .rule-engine-overview-shell {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .login-page-overview,
   .login-page-form-panel {
     padding: 24px !important;
@@ -1067,5 +1242,18 @@ a {
   .login-page-form-card {
     max-width: 100%;
     padding: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .rule-engine-overview-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .rule-engine-action-card__header,
+  .rule-engine-action-card__footer,
+  .rule-engine-list-cell__header {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
