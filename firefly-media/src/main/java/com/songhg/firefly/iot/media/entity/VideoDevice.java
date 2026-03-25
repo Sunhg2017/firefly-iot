@@ -21,6 +21,7 @@ public class VideoDevice {
     private String gbDeviceId;
     private String gbDomain;
     private String transport;
+    private String sipPassword;
     private StreamMode streamMode;
     private String ip;
     private Integer port;
@@ -32,4 +33,8 @@ public class VideoDevice {
     private Long createdBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    public Boolean getSipAuthEnabled() {
+        return sipPassword != null && !sipPassword.isBlank();
+    }
 }

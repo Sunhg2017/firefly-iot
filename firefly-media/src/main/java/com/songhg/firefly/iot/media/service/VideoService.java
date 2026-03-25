@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
-import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.StreamMode;
 import com.songhg.firefly.iot.common.enums.StreamStatus;
 import com.songhg.firefly.iot.common.enums.VideoDeviceStatus;
@@ -39,7 +38,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -60,6 +58,7 @@ public class VideoService {
     public VideoDeviceVO createDevice(VideoDeviceCreateDTO dto) {
         Long tenantId = AppContextHolder.getTenantId();
         VideoDevice device = VideoConvert.INSTANCE.toDeviceEntity(dto);
+        normalizeDevice(device, dto.getSipAuthEnabled());
         device.setTenantId(tenantId);
         device.setStatus(VideoDeviceStatus.OFFLINE);
         device.setCreatedBy(AppContextHolder.getUserId());
@@ -107,6 +106,7 @@ public class VideoService {
             throw new BizException(ResultCode.VIDEO_DEVICE_NOT_FOUND);
         }
         VideoConvert.INSTANCE.updateDeviceEntity(dto, device);
+        normalizeDevice(device, dto.getSipAuthEnabled());
         videoDeviceMapper.updateById(device);
         return VideoConvert.INSTANCE.toDeviceVO(device);
     }
@@ -374,5 +374,46 @@ public class VideoService {
         vo.setStoppedAt(LocalDateTime.now());
         log.info("Recording stopped: deviceId={}, streamId={}", videoDeviceId, session.getStreamId());
         return vo;
+    }
+
+    private void normalizeDevice(VideoDevice device, Boolean sipAuthEnabled) {
+        device.setName(trimToNull(device.getName()));
+        device.setGbDeviceId(trimToNull(device.getGbDeviceId()));
+        device.setGbDomain(trimToNull(device.getGbDomain()));
+        device.setTransport(trimToNull(device.getTransport()));
+        device.setSipPassword(trimToNull(device.getSipPassword()));
+        device.setIp(trimToNull(device.getIp()));
+        device.setManufacturer(trimToNull(device.getManufacturer()));
+        device.setModel(trimToNull(device.getModel()));
+        device.setFirmware(trimToNull(device.getFirmware()));
+
+        if (device.getStreamMode() == StreamMode.GB28181) {
+            if (device.getTransport() == null) {
+                device.setTransport("UDP");
+            }
+            boolean authEnabled = Boolean.TRUE.equals(sipAuthEnabled)
+                    || (sipAuthEnabled == null && device.getSipPassword() != null);
+            if (authEnabled) {
+                if (device.getGbDeviceId() == null) {
+                    throw new BizException(ResultCode.PARAM_ERROR, "启用 SIP 密码鉴权时必须填写 GB 设备编号");
+                }
+                if (device.getSipPassword() == null) {
+                    throw new BizException(ResultCode.PARAM_ERROR, "启用 SIP 密码鉴权时必须填写 SIP 密码");
+                }
+            } else {
+                device.setSipPassword(null);
+            }
+            return;
+        }
+
+        device.setSipPassword(null);
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

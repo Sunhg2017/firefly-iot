@@ -10,11 +10,11 @@ import org.springframework.stereotype.Component;
 import javax.sip.*;
 import javax.sip.address.AddressFactory;
 import javax.sip.header.HeaderFactory;
+import javax.sip.header.WWWAuthenticateHeader;
 import javax.sip.message.MessageFactory;
 import javax.sip.message.Request;
 import javax.sip.message.Response;
 import java.util.Properties;
-import java.util.TooManyListenersException;
 
 /**
  * GB/T 28181 SIP 服务器
@@ -32,6 +32,7 @@ public class SipServer implements SipListener {
 
     private final SipProperties sipProperties;
     private final SipMessageHandler sipMessageHandler;
+    private final SipRegisterAuthService sipRegisterAuthService;
 
     private SipFactory sipFactory;
     private SipStack sipStack;
@@ -98,6 +99,12 @@ public class SipServer implements SipListener {
 
         switch (method) {
             case Request.REGISTER:
+                SipRegisterAuthService.RegisterAuthorization registerAuthorization =
+                        sipRegisterAuthService.authorize(request, sipProperties.getDomain());
+                if (!registerAuthorization.authorized()) {
+                    sendUnauthorizedResponse(request, serverTransaction, registerAuthorization.realm(), registerAuthorization.nonce());
+                    break;
+                }
                 sipMessageHandler.handleRegister(requestEvent);
                 sendOkResponse(request, serverTransaction, method);
                 break;
@@ -158,8 +165,7 @@ public class SipServer implements SipListener {
     public MessageFactory getMessageFactory() { return messageFactory; }
 
     /**
-     * 当前 GB28181 服务端按无密码模式接收设备请求。
-     * 对 REGISTER / MESSAGE / BYE 必须明确返回 200 OK，
+     * 对已通过鉴权或无需鉴权的 REGISTER / MESSAGE / BYE 明确返回 200 OK，
      * 否则部分国标设备会把超时或无响应直接显示成“认证失败”。
      */
     private void sendOkResponse(Request request, ServerTransaction serverTransaction, String method) {
@@ -172,6 +178,28 @@ public class SipServer implements SipListener {
             serverTransaction.sendResponse(response);
         } catch (Exception e) {
             log.error("Error sending SIP {} 200 OK response: {}", method, e.getMessage(), e);
+        }
+    }
+
+    private void sendUnauthorizedResponse(
+            Request request,
+            ServerTransaction serverTransaction,
+            String realm,
+            String nonce) {
+        if (serverTransaction == null || messageFactory == null || headerFactory == null) {
+            log.warn("Skip SIP 401 response because runtime factories are unavailable");
+            return;
+        }
+        try {
+            Response response = messageFactory.createResponse(Response.UNAUTHORIZED, request);
+            WWWAuthenticateHeader authenticateHeader = headerFactory.createWWWAuthenticateHeader("Digest");
+            authenticateHeader.setRealm(realm);
+            authenticateHeader.setNonce(nonce);
+            authenticateHeader.setAlgorithm("MD5");
+            response.addHeader(authenticateHeader);
+            serverTransaction.sendResponse(response);
+        } catch (Exception e) {
+            log.error("Error sending SIP 401 response: {}", e.getMessage(), e);
         }
     }
 }

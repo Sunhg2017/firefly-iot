@@ -35,6 +35,9 @@ public class VideoDeviceVO {
     @Schema(description = "传输协议")
     private String transport;
 
+    @Schema(description = "启用 SIP 密码鉴权")
+    private Boolean sipAuthEnabled;
+
     @Schema(description = "流模式")
     private StreamMode streamMode;
 

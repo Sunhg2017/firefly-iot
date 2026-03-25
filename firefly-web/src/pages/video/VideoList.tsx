@@ -12,6 +12,7 @@ import {
   Row,
   Select,
   Space,
+  Switch,
   Table,
   Tabs,
   Tag,
@@ -22,6 +23,7 @@ import {
   CheckCircleOutlined,
   DeleteOutlined,
   DisconnectOutlined,
+  EditOutlined,
   InfoCircleOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
@@ -36,15 +38,21 @@ import PageHeader from '../../components/PageHeader';
 import VideoPlayer from '../../components/video/VideoPlayer';
 import PtzControlPanel from '../../components/video/PtzControlPanel';
 
+type EditorMode = 'create' | 'edit';
+
 interface VideoDeviceRecord {
   id: number;
   name: string;
-  gbDeviceId: string;
+  gbDeviceId?: string;
+  gbDomain?: string;
+  transport?: string;
   streamMode: string;
-  ip: string;
-  port: number;
-  manufacturer: string;
-  model: string;
+  sipAuthEnabled?: boolean;
+  ip?: string;
+  port?: number;
+  manufacturer?: string;
+  model?: string;
+  firmware?: string;
   status: string;
   createdAt: string;
 }
@@ -63,12 +71,14 @@ interface VideoProductContext {
   autoCreate: boolean;
 }
 
-interface VideoCreateFormValues {
+interface VideoEditorFormValues {
   name?: string;
   streamMode?: string;
   gbDeviceId?: string;
   gbDomain?: string;
   transport?: string;
+  sipAuthEnabled?: boolean;
+  sipPassword?: string;
   ip?: string;
   port?: number | string;
   manufacturer?: string;
@@ -129,22 +139,45 @@ const parseVideoProductContext = (searchParams: URLSearchParams): VideoProductCo
   };
 };
 
-const buildCreateInitialValues = (productContext?: VideoProductContext | null): VideoCreateFormValues => {
+const buildEditorInitialValues = (
+  productContext?: VideoProductContext | null,
+  device?: VideoDeviceRecord | null,
+): VideoEditorFormValues => {
+  if (device) {
+    return {
+      name: device.name,
+      streamMode: device.streamMode,
+      gbDeviceId: device.gbDeviceId,
+      gbDomain: device.gbDomain,
+      transport: device.streamMode === 'GB28181' ? device.transport || 'UDP' : undefined,
+      sipAuthEnabled: Boolean(device.sipAuthEnabled),
+      sipPassword: undefined,
+      ip: device.ip,
+      port: device.port,
+      manufacturer: device.manufacturer,
+      model: device.model,
+    };
+  }
+
   const streamMode = productContext?.protocol || 'GB28181';
   return {
     streamMode,
     transport: streamMode === 'GB28181' ? 'UDP' : undefined,
+    sipAuthEnabled: false,
   };
 };
 
-const buildCreatePayload = (values: VideoCreateFormValues) => {
+const buildEditorPayload = (values: VideoEditorFormValues) => {
   const streamMode = values.streamMode || 'GB28181';
+  const sipAuthEnabled = streamMode === 'GB28181' ? Boolean(values.sipAuthEnabled) : false;
   return {
     name: values.name?.trim(),
     streamMode,
     gbDeviceId: trimOptionalValue(values.gbDeviceId),
     gbDomain: trimOptionalValue(values.gbDomain),
     transport: streamMode === 'GB28181' ? trimOptionalValue(values.transport) || 'UDP' : undefined,
+    sipAuthEnabled,
+    sipPassword: sipAuthEnabled ? trimOptionalValue(values.sipPassword) : undefined,
     ip: trimOptionalValue(values.ip),
     port: normalizeOptionalPort(values.port),
     manufacturer: trimOptionalValue(values.manufacturer),
@@ -159,10 +192,14 @@ const VideoList: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createForm] = Form.useForm<VideoCreateFormValues>();
-  const [pendingCreateValues, setPendingCreateValues] = useState<VideoCreateFormValues>(buildCreateInitialValues());
-  const currentCreateMode = Form.useWatch('streamMode', createForm) || productContext?.protocol || 'GB28181';
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorMode, setEditorMode] = useState<EditorMode>('create');
+  const [editingDevice, setEditingDevice] = useState<VideoDeviceRecord | null>(null);
+  const [editorLoading, setEditorLoading] = useState(false);
+  const [editorForm] = Form.useForm<VideoEditorFormValues>();
+  const [pendingEditorValues, setPendingEditorValues] = useState<VideoEditorFormValues>(buildEditorInitialValues());
+  const currentEditorStreamMode = Form.useWatch('streamMode', editorForm) || productContext?.protocol || 'GB28181';
+  const currentSipAuthEnabled = Boolean(Form.useWatch('sipAuthEnabled', editorForm));
   const [keyword, setKeyword] = useState('');
   const [filterMode, setFilterMode] = useState<string | undefined>();
   const [filterStatus, setFilterStatus] = useState<string | undefined>();
@@ -200,28 +237,34 @@ const VideoList: React.FC = () => {
       return;
     }
 
-    setPendingCreateValues(buildCreateInitialValues(productContext));
-    setCreateOpen(true);
+    setEditorMode('create');
+    setEditingDevice(null);
+    setPendingEditorValues(buildEditorInitialValues(productContext));
+    setEditorOpen(true);
 
     const nextSearchParams = new URLSearchParams(searchParams);
     nextSearchParams.delete('autoCreate');
     setSearchParams(nextSearchParams, { replace: true });
-  }, [createForm, productContext, searchParams, setSearchParams]);
+  }, [productContext, searchParams, setSearchParams]);
 
   useEffect(() => {
-    if (!createOpen || !productContext?.protocol) {
+    if (!editorOpen || editorMode !== 'create' || !productContext?.protocol) {
       return;
     }
-    if (createForm.getFieldValue('streamMode') !== productContext.protocol) {
-      createForm.setFieldValue('streamMode', productContext.protocol);
+    if (editorForm.getFieldValue('streamMode') !== productContext.protocol) {
+      editorForm.setFieldValue('streamMode', productContext.protocol);
     }
-  }, [createForm, createOpen, productContext]);
+  }, [editorForm, editorMode, editorOpen, productContext]);
 
   useEffect(() => {
-    if (currentCreateMode === 'GB28181' && !createForm.getFieldValue('transport')) {
-      createForm.setFieldValue('transport', 'UDP');
+    if (currentEditorStreamMode === 'GB28181' && !editorForm.getFieldValue('transport')) {
+      editorForm.setFieldValue('transport', 'UDP');
     }
-  }, [createForm, currentCreateMode]);
+    if (currentEditorStreamMode !== 'GB28181') {
+      editorForm.setFieldValue('sipAuthEnabled', false);
+      editorForm.setFieldValue('sipPassword', undefined);
+    }
+  }, [currentEditorStreamMode, editorForm]);
 
   const stats = useMemo(
     () => ({
@@ -233,13 +276,35 @@ const VideoList: React.FC = () => {
   );
 
   const openCreateDrawer = () => {
-    setPendingCreateValues(buildCreateInitialValues(productContext));
-    setCreateOpen(true);
+    setEditorMode('create');
+    setEditingDevice(null);
+    setEditorLoading(false);
+    setPendingEditorValues(buildEditorInitialValues(productContext));
+    setEditorOpen(true);
   };
 
-  const closeCreateDrawer = () => {
-    setCreateOpen(false);
-    createForm.resetFields();
+  const openEditDrawer = async (record: VideoDeviceRecord) => {
+    setEditorLoading(true);
+    try {
+      const res = await videoApi.get(record.id);
+      const detail = res.data.data as VideoDeviceRecord;
+      setEditorMode('edit');
+      setEditingDevice(detail);
+      setPendingEditorValues(buildEditorInitialValues(productContext, detail));
+      setEditorOpen(true);
+    } catch {
+      message.error('加载视频设备详情失败');
+    } finally {
+      setEditorLoading(false);
+    }
+  };
+
+  const closeEditorDrawer = () => {
+    setEditorOpen(false);
+    setEditingDevice(null);
+    setEditorMode('create');
+    setEditorLoading(false);
+    editorForm.resetFields();
   };
 
   const clearProductContext = () => {
@@ -248,14 +313,29 @@ const VideoList: React.FC = () => {
     setSearchParams(nextSearchParams, { replace: true });
   };
 
-  const handleCreate = async (values: VideoCreateFormValues) => {
+  const handleSubmitEditor = async (values: VideoEditorFormValues) => {
+    setEditorLoading(true);
     try {
-      await videoApi.create(buildCreatePayload(values));
-      message.success('视频设备创建成功');
-      closeCreateDrawer();
+      if (editorMode === 'edit' && editingDevice) {
+        await videoApi.update(editingDevice.id, buildEditorPayload(values));
+        message.success('视频设备更新成功');
+      } else {
+        await videoApi.create(buildEditorPayload(values));
+        message.success('视频设备创建成功');
+      }
+      closeEditorDrawer();
       void fetchData();
-    } catch {
-      message.error('创建失败');
+    } catch (error) {
+      if (typeof error === 'object' && error !== null && 'response' in error) {
+        const response = (error as { response?: { data?: { message?: string } } }).response;
+        if (response?.data?.message) {
+          message.error(response.data.message);
+          return;
+        }
+      }
+      message.error(editorMode === 'edit' ? '更新失败' : '创建失败');
+    } finally {
+      setEditorLoading(false);
     }
   };
 
@@ -384,10 +464,13 @@ const VideoList: React.FC = () => {
     { title: '创建时间', dataIndex: 'createdAt', width: 170 },
     {
       title: '操作',
-      width: 340,
+      width: 420,
       fixed: 'right',
       render: (_: unknown, record: VideoDeviceRecord) => (
         <Space>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => void openEditDrawer(record)}>
+            编辑
+          </Button>
           {record.status === 'ONLINE' ? (
             <Button type="link" size="small" icon={<PlayCircleOutlined />} onClick={() => handlePlay(record)}>
               播放
@@ -533,7 +616,7 @@ const VideoList: React.FC = () => {
           columns={columns}
           dataSource={data}
           loading={loading}
-          scroll={{ x: 1400 }}
+          scroll={{ x: 1460 }}
           pagination={{
             current: params.pageNum,
             pageSize: params.pageSize,
@@ -546,31 +629,37 @@ const VideoList: React.FC = () => {
       </Card>
 
       <Drawer
-        title={productContext ? `添加视频设备 - ${productContext.productName || productContext.productKey}` : '添加视频设备'}
+        title={
+          editorMode === 'edit'
+            ? `编辑视频设备 - ${editingDevice?.name || ''}`
+            : productContext
+              ? `添加视频设备 - ${productContext.productName || productContext.productKey}`
+              : '添加视频设备'
+        }
         placement="right"
         width={640}
-        open={createOpen}
+        open={editorOpen}
         afterOpenChange={(open) => {
           if (!open) {
             return;
           }
-          createForm.resetFields();
-          createForm.setFieldsValue(pendingCreateValues);
+          editorForm.resetFields();
+          editorForm.setFieldsValue(pendingEditorValues);
         }}
-        onClose={closeCreateDrawer}
+        onClose={closeEditorDrawer}
         destroyOnClose
         styles={{ body: { paddingBottom: 24 } }}
         footer={
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button onClick={closeCreateDrawer}>取消</Button>
-            <Button type="primary" onClick={() => createForm.submit()}>
-              创建设备
+            <Button onClick={closeEditorDrawer}>取消</Button>
+            <Button type="primary" loading={editorLoading} onClick={() => editorForm.submit()}>
+              {editorMode === 'edit' ? '保存修改' : '创建设备'}
             </Button>
           </Space>
         }
       >
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          {productContext ? (
+          {editorMode === 'create' && productContext ? (
             <Card size="small" title="当前产品上下文" style={{ borderRadius: 16 }}>
               <Descriptions column={1} size="small">
                 <Descriptions.Item label="产品名称">
@@ -584,7 +673,7 @@ const VideoList: React.FC = () => {
             </Card>
           ) : null}
 
-          <Form form={createForm} layout="vertical" onFinish={handleCreate} preserve={false}>
+          <Form form={editorForm} layout="vertical" onFinish={handleSubmitEditor} preserve={false}>
             <Form.Item
               name="name"
               label="设备名称"
@@ -598,10 +687,10 @@ const VideoList: React.FC = () => {
               label="接入方式"
               rules={[{ required: true, message: '请选择接入方式' }]}
             >
-              <Select disabled={Boolean(productContext)} options={VIDEO_MODE_OPTIONS} />
+              <Select disabled={editorMode === 'create' && Boolean(productContext)} options={VIDEO_MODE_OPTIONS} />
             </Form.Item>
 
-            {currentCreateMode === 'GB28181' ? (
+            {currentEditorStreamMode === 'GB28181' ? (
               <>
                 <Row gutter={16}>
                   <Col xs={24} md={12}>
@@ -616,14 +705,49 @@ const VideoList: React.FC = () => {
                   </Col>
                 </Row>
 
-                <Form.Item name="transport" label="传输协议">
-                  <Select
-                    options={[
-                      { value: 'UDP', label: 'UDP' },
-                      { value: 'TCP', label: 'TCP' },
+                <Row gutter={16}>
+                  <Col xs={24} md={12}>
+                    <Form.Item name="transport" label="传输协议">
+                      <Select
+                        options={[
+                          { value: 'UDP', label: 'UDP' },
+                          { value: 'TCP', label: 'TCP' },
+                        ]}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item name="sipAuthEnabled" label="SIP 鉴权" valuePropName="checked">
+                      <Switch checkedChildren="启用" unCheckedChildren="关闭" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                {currentSipAuthEnabled ? (
+                  <Form.Item
+                    name="sipPassword"
+                    label="SIP 密码"
+                    rules={[
+                      {
+                        validator: async (_, value) => {
+                          const trimmed = typeof value === 'string' ? value.trim() : '';
+                          if (trimmed) {
+                            return;
+                          }
+                          if (editorMode === 'edit' && editingDevice?.sipAuthEnabled) {
+                            return;
+                          }
+                          throw new Error('请输入SIP密码');
+                        },
+                      },
                     ]}
-                  />
-                </Form.Item>
+                  >
+                    <Input.Password
+                      placeholder={editorMode === 'edit' && editingDevice?.sipAuthEnabled ? '留空则保持原密码' : '请输入SIP密码'}
+                      maxLength={128}
+                    />
+                  </Form.Item>
+                ) : null}
               </>
             ) : null}
 

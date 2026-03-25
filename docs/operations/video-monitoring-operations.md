@@ -39,7 +39,8 @@
 4. 确认摄像头产品历史数据已执行：
    - `V22__force_camera_products_custom_data_format.sql`
    - `V23__normalize_camera_products_video_access_auth.sql`
-5. 当前 GB28181 接入默认不要求 SIP 密码，排查注册问题时优先检查设备编号、域、IP、端口和平台 `200 OK` 响应，而不是先找空密码配置。
+5. 确认 `firefly-media` 已执行 `V2__add_video_device_sip_password.sql`。
+6. 若 GB28181 设备开启了 SIP 鉴权，确认页面已保存设备级 `SIP 密码`。
 
 ## 监控与日志
 
@@ -94,13 +95,14 @@
 3. GB28181 设备检查 SIP 注册、目录查询与设备信息查询是否成功。
 4. RTSP / RTMP 设备检查 IP、端口和流地址是否正确。
 
-### 5. SIP 密码为空但设备提示认证失败
+### 5. GB28181 设备开启了 SIP 鉴权但仍提示认证失败
 
 排查：
 
-1. 当前平台默认按无密码模式接收 GB28181 注册，不依赖 `gb28181.sip.password`。
-2. 优先抓包或看平台日志，确认设备的 `REGISTER` 是否收到了平台返回的 `200 OK`。
-3. 如果仍失败，继续检查设备编号、域、传输协议、平台监听 IP/端口是否配置一致。
+1. 确认视频设备记录里已保存 `SIP 密码`。
+2. 确认设备端使用 `GB 设备编号` 作为 SIP 用户名。
+3. 抓包或看平台日志，确认第一次 `REGISTER` 收到 `401 Unauthorized`，第二次带 `Authorization` 的 `REGISTER` 是否校验通过。
+4. 如果仍失败，继续检查设备编号、域、传输协议、平台监听 IP/端口是否配置一致。
 
 ## 回滚说明
 

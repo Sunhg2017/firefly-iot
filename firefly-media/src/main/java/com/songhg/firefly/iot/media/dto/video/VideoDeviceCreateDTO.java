@@ -4,6 +4,7 @@ import com.songhg.firefly.iot.common.enums.StreamMode;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 /**
@@ -28,6 +29,13 @@ public class VideoDeviceCreateDTO {
 
     @Schema(description = "传输协议")
     private String transport;
+
+    @Schema(description = "启用 SIP 密码鉴权")
+    private Boolean sipAuthEnabled;
+
+    @Schema(description = "SIP 密码")
+    @Size(max = 128)
+    private String sipPassword;
 
     @Schema(description = "流模式")
     @NotNull(message = "接入方式不能为空")

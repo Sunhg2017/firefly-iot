@@ -84,6 +84,7 @@ CREATE TABLE video_devices (
     gb_device_id    VARCHAR(64),
     gb_domain       VARCHAR(64),
     transport       VARCHAR(16) NOT NULL DEFAULT 'UDP',
+    sip_password    VARCHAR(128),
     stream_mode     VARCHAR(16) NOT NULL DEFAULT 'GB28181',
     ip              VARCHAR(64),
     port            INT,
@@ -178,11 +179,12 @@ STOP(0), UP(1), DOWN(2), LEFT(3), RIGHT(4), ZOOM_IN(5), ZOOM_OUT(6)
 1. 管理员可直接进入 `/video`，或从摄像头产品页跳转进入视频监控
 2. 如果来自产品页，前端自动带入 `productKey / productName / protocol` 并打开“添加视频设备”抽屉
 3. 管理员补齐设备名称、地址、厂商型号等参数后创建视频设备记录（GB28181 / RTSP / RTMP）
-4. GB28181 设备通过 SIP 注册 → 自动更新设备状态为 ONLINE
-5. 用户请求实时播放 → 平台调用 ZLMediaKit API 发起点播
-6. ZLMediaKit 返回播放地址 → 平台保存流会话并返回前端
-7. 前端使用 FLV.js / HLS.js 播放视频
-8. 用户停止播放 → 平台调用 ZLMediaKit 关闭流 → 更新会话状态
+4. 若 GB28181 设备启用了 SIP 鉴权，平台以 `GB 设备编号` 为用户名，对 REGISTER 发起 Digest 挑战并校验设备级 `sip_password`
+5. REGISTER 校验通过后，平台更新设备状态为 ONLINE
+6. 用户请求实时播放 → 平台调用 ZLMediaKit API 发起点播
+7. ZLMediaKit 返回播放地址 → 平台保存流会话并返回前端
+8. 前端使用 FLV.js / HLS.js 播放视频
+9. 用户停止播放 → 平台调用 ZLMediaKit 关闭流 → 更新会话状态
 ```
 
 ---
@@ -262,7 +264,8 @@ firefly-system/src/main/java/.../system/
 
 - **设备列表**: 视频设备表格，含在线状态
 - **产品联动上下文**: 若从摄像头产品页进入，则在页头下方仅展示产品名称、ProductKey、接入方式，并提供“新增设备 / 清空联动”动作
-- **创建设备抽屉**: 使用抽屉而非弹窗，分组展示基础字段、GB28181 专属字段和产品上下文
+- **创建设备抽屉**: 使用抽屉而非弹窗，分组展示基础字段、GB28181 专属字段、SIP 鉴权开关和产品上下文
+- **编辑设备抽屉**: 在列表侧边继续维护 GB 域、传输协议和设备级 SIP 密码
 - **协议锁定**: 存在产品上下文时，`streamMode` 自动锁定为产品协议，不允许在创建设备时切换
 - **实时预览**: 选择设备/通道，使用 FLV.js 播放实时视频流
 - **PTZ 控制面板**: 方向控制按钮 + 变焦按钮
@@ -270,9 +273,9 @@ firefly-system/src/main/java/.../system/
 
 ### 8.2 GB28181 注册口径
 
-- 当前平台按无密码模式接收 GB28181 设备注册，不再保留误导性的 `gb28181.sip.password` 空配置。
-- SIP 服务端在收到 `REGISTER / MESSAGE / BYE` 后统一显式返回 `200 OK`。
-- 如果后续需要真正支持设备级 SIP 密码鉴权，应单独补充视频设备凭证字段、持久化结构和 Digest 鉴权流程，而不是继续复用空配置。
+- 若视频设备未开启 SIP 鉴权，平台直接对 `REGISTER / MESSAGE / BYE` 返回 `200 OK`。
+- 若视频设备开启 SIP 鉴权，平台以 `GB 设备编号` 作为用户名，基于设备级 `sip_password` 执行 MD5 Digest 校验。
+- 平台不再保留误导性的全局 `gb28181.sip.password` 空配置。
 
 ---
 
