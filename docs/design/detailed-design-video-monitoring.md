@@ -181,12 +181,13 @@ STOP(0), UP(1), DOWN(2), LEFT(3), RIGHT(4), ZOOM_IN(5), ZOOM_OUT(6)
 2. 如果来自产品页，前端自动带入 `productKey / productName / protocol` 并打开“添加视频设备”抽屉
 3. 管理员选择产品或沿用产品上下文，前端自动锁定与产品一致的接入协议
 4. 平台先在设备资产主链路创建设备并回填 `video_devices.device_id`，再保存视频设备记录
-5. 若 GB28181 设备启用了 SIP 鉴权，平台以 `GB 设备编号` 为用户名，对 REGISTER 发起 Digest 挑战并校验设备级 `sip_password`
-6. REGISTER 校验通过后，平台更新设备状态为 ONLINE
-7. 用户请求实时播放 → 平台调用 ZLMediaKit API 发起点播
-8. ZLMediaKit 返回播放地址 → 平台保存流会话并返回前端
-9. 前端使用 FLV.js / HLS.js 播放视频
-10. 用户停止播放 → 平台调用 ZLMediaKit 关闭流 → 更新会话状态
+5. `firefly-media -> firefly-device` 的 Feign 调用会透传当前请求的租户、用户与权限头，保证产品查询与设备资产创建落在同一可见范围
+6. 若 GB28181 设备启用了 SIP 鉴权，平台以 `GB 设备编号` 为用户名，对 REGISTER 发起 Digest 挑战并校验设备级 `sip_password`
+7. REGISTER 校验通过后，平台更新设备状态为 ONLINE
+8. 用户请求实时播放 → 平台调用 ZLMediaKit API 发起点播
+9. ZLMediaKit 返回播放地址 → 平台保存流会话并返回前端
+10. 前端使用 FLV.js / HLS.js 播放视频
+11. 用户停止播放 → 平台调用 ZLMediaKit 关闭流 → 更新会话状态
 ```
 
 ---

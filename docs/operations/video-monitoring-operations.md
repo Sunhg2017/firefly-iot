@@ -43,6 +43,7 @@
 6. 若 GB28181 设备开启了 SIP 鉴权，确认页面已保存设备级 `SIP 密码`。
 7. `sip_password` 只允许通过 `V2__add_video_device_sip_password.sql` 增量补齐，禁止改写已上线的 `V1__init_video.sql`，否则 Flyway 会因 checksum 不一致阻止服务启动。
 8. 新建视频设备会同步调用 `firefly-device` 内部接口创建设备资产主设备；若 `firefly-device` 不可用或产品不存在，视频设备保存会直接失败。
+9. 确认公共 Feign 上下文透传已生效，`firefly-media -> firefly-device` 需要携带 `X-Tenant-Id / X-User-Id / X-Granted-Permissions`，否则产品查询或设备资产创建可能落不到当前租户与数据权限范围。
 
 ## 监控与日志
 
@@ -104,6 +105,7 @@
 1. 检查 `firefly-device` 是否可用，确认视频设备创建时设备资产主设备也创建成功。
 2. 检查 `video_devices.device_id` 是否已回填；如果为空，说明创建链路中断。
 3. 检查当前用户的数据权限是否按 `device_id` 过滤；若主设备未创建成功，视频设备会被列表权限过滤掉。
+4. 检查 `firefly-media` 调用 `firefly-device` 时是否带上 `X-Tenant-Id / X-User-Id`；若头丢失，可能出现保存成功但新建记录立即从列表消失。
 
 ### 6. GB28181 设备开启了 SIP 鉴权但仍提示认证失败
 
