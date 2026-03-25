@@ -98,13 +98,16 @@ public class SipServer implements SipListener {
 
         switch (method) {
             case Request.REGISTER:
-                sipMessageHandler.handleRegister(requestEvent, serverTransaction);
+                sipMessageHandler.handleRegister(requestEvent);
+                sendOkResponse(request, serverTransaction, method);
                 break;
             case Request.MESSAGE:
-                sipMessageHandler.handleMessage(requestEvent, serverTransaction);
+                sipMessageHandler.handleMessage(requestEvent);
+                sendOkResponse(request, serverTransaction, method);
                 break;
             case Request.BYE:
-                sipMessageHandler.handleBye(requestEvent, serverTransaction);
+                sipMessageHandler.handleBye(requestEvent);
+                sendOkResponse(request, serverTransaction, method);
                 break;
             case Request.ACK:
                 // ACK 不需要特殊处理
@@ -153,4 +156,22 @@ public class SipServer implements SipListener {
     public AddressFactory getAddressFactory() { return addressFactory; }
     public HeaderFactory getHeaderFactory() { return headerFactory; }
     public MessageFactory getMessageFactory() { return messageFactory; }
+
+    /**
+     * 当前 GB28181 服务端按无密码模式接收设备请求。
+     * 对 REGISTER / MESSAGE / BYE 必须明确返回 200 OK，
+     * 否则部分国标设备会把超时或无响应直接显示成“认证失败”。
+     */
+    private void sendOkResponse(Request request, ServerTransaction serverTransaction, String method) {
+        if (serverTransaction == null || messageFactory == null) {
+            log.warn("Skip SIP {} response because server transaction or messageFactory is unavailable", method);
+            return;
+        }
+        try {
+            Response response = messageFactory.createResponse(Response.OK, request);
+            serverTransaction.sendResponse(response);
+        } catch (Exception e) {
+            log.error("Error sending SIP {} 200 OK response: {}", method, e.getMessage(), e);
+        }
+    }
 }

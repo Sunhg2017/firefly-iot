@@ -13,7 +13,6 @@ public class SipProperties {
     private int port = 5060;
     private String domain = "3402000000";
     private String id = "34020000002000000001";
-    private String password = "";
     private String transport = "UDP";
     private int expires = 3600;
 }

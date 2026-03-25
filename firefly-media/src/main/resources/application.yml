@@ -58,7 +58,6 @@ gb28181:
     port: 5060
     domain: "3402000000"
     id: "34020000002000000001"
-    password: ""
     transport: UDP
     expires: 3600
 
@@ -101,5 +100,4 @@ management:
   otlp:
     tracing:
       endpoint: ${FIREFLY_OTLP_TRACING_ENDPOINT:http://127.0.0.1:4318/v1/traces}
-
 

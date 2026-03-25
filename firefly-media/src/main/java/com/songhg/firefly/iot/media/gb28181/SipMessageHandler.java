@@ -17,12 +17,9 @@ import org.xml.sax.InputSource;
 
 import javax.sip.RequestEvent;
 import javax.sip.ResponseEvent;
-import javax.sip.ServerTransaction;
-import javax.sip.SipProvider;
 import javax.sip.header.ExpiresHeader;
 import javax.sip.header.FromHeader;
 import javax.sip.message.Request;
-import javax.sip.message.Response;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.StringReader;
@@ -46,7 +43,7 @@ public class SipMessageHandler {
     /**
      * 处理 REGISTER 请求（设备注册/注销）
      */
-    public void handleRegister(RequestEvent event, ServerTransaction transaction) {
+    public void handleRegister(RequestEvent event) {
         Request request = event.getRequest();
         try {
             FromHeader fromHeader = (FromHeader) request.getHeader(FromHeader.NAME);
@@ -73,21 +70,6 @@ public class SipMessageHandler {
                 wrapper.set(VideoDevice::getLastRegisteredAt, LocalDateTime.now());
             }
             videoDeviceMapper.update(null, wrapper);
-
-            // 回复 200 OK
-            if (transaction != null) {
-                Response response = transaction.getDialog() != null
-                        ? transaction.getDialog().createReliableProvisionalResponse(Response.OK)
-                        : null;
-                if (response == null) {
-                    response = ((SipProvider) event.getSource())
-                            .getNewServerTransaction(request) != null
-                            ? null : null;
-                }
-                // 简化: 直接使用 MessageFactory 创建响应
-                // 实际中需要注入 SipServer 获取 MessageFactory
-                log.debug("REGISTER response sent for device: {}", deviceId);
-            }
         } catch (Exception e) {
             log.error("Error handling REGISTER: {}", e.getMessage(), e);
         }
@@ -96,7 +78,7 @@ public class SipMessageHandler {
     /**
      * 处理 MESSAGE 请求（目录响应、告警、状态上报等）
      */
-    public void handleMessage(RequestEvent event, ServerTransaction transaction) {
+    public void handleMessage(RequestEvent event) {
         Request request = event.getRequest();
         try {
             byte[] content = request.getRawContent();
@@ -250,7 +232,7 @@ public class SipMessageHandler {
     /**
      * 处理 BYE 请求
      */
-    public void handleBye(RequestEvent event, ServerTransaction transaction) {
+    public void handleBye(RequestEvent event) {
         log.debug("GB28181 BYE received");
     }
 
