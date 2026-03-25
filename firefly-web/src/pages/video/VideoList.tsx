@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Button,
   Card,
   Col,
@@ -162,6 +161,7 @@ const VideoList: React.FC = () => {
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm] = Form.useForm<VideoCreateFormValues>();
+  const [pendingCreateValues, setPendingCreateValues] = useState<VideoCreateFormValues>(buildCreateInitialValues());
   const currentCreateMode = Form.useWatch('streamMode', createForm) || productContext?.protocol || 'GB28181';
   const [keyword, setKeyword] = useState('');
   const [filterMode, setFilterMode] = useState<string | undefined>();
@@ -200,9 +200,7 @@ const VideoList: React.FC = () => {
       return;
     }
 
-    // 从产品页带入上下文时，首次进入视频页直接打开创建设备抽屉。
-    createForm.resetFields();
-    createForm.setFieldsValue(buildCreateInitialValues(productContext));
+    setPendingCreateValues(buildCreateInitialValues(productContext));
     setCreateOpen(true);
 
     const nextSearchParams = new URLSearchParams(searchParams);
@@ -235,8 +233,7 @@ const VideoList: React.FC = () => {
   );
 
   const openCreateDrawer = () => {
-    createForm.resetFields();
-    createForm.setFieldsValue(buildCreateInitialValues(productContext));
+    setPendingCreateValues(buildCreateInitialValues(productContext));
     setCreateOpen(true);
   };
 
@@ -427,23 +424,28 @@ const VideoList: React.FC = () => {
       />
 
       {productContext ? (
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message={`当前从产品“${productContext.productName || productContext.productKey}”进入，新增视频设备时会自动锁定为 ${modeLabels[productContext.protocol] || productContext.protocol}。`}
-          description={`ProductKey：${productContext.productKey}。当前联动仅负责带入产品和协议上下文，视频设备仍需在本页按业务唯一设备名称单独创建。`}
-          action={
-            <Space direction="vertical" size={8}>
-              <Button type="primary" size="small" onClick={openCreateDrawer}>
-                按当前产品新增
+        <Card size="small" style={{ marginBottom: 16, borderRadius: 12 }}>
+          <Space
+            align="start"
+            style={{ width: '100%', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}
+          >
+            <Descriptions column={1} size="small">
+              <Descriptions.Item label="产品名称">
+                {productContext.productName || productContext.productKey}
+              </Descriptions.Item>
+              <Descriptions.Item label="ProductKey">{productContext.productKey}</Descriptions.Item>
+              <Descriptions.Item label="接入方式">
+                {modeLabels[productContext.protocol] || productContext.protocol}
+              </Descriptions.Item>
+            </Descriptions>
+            <Space>
+              <Button type="primary" onClick={openCreateDrawer}>
+                新增设备
               </Button>
-              <Button size="small" onClick={clearProductContext}>
-                清空联动
-              </Button>
+              <Button onClick={clearProductContext}>清空联动</Button>
             </Space>
-          }
-        />
+          </Space>
+        </Card>
       ) : null}
 
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
@@ -548,6 +550,13 @@ const VideoList: React.FC = () => {
         placement="right"
         width={640}
         open={createOpen}
+        afterOpenChange={(open) => {
+          if (!open) {
+            return;
+          }
+          createForm.resetFields();
+          createForm.setFieldsValue(pendingCreateValues);
+        }}
         onClose={closeCreateDrawer}
         destroyOnClose
         styles={{ body: { paddingBottom: 24 } }}
@@ -571,28 +580,15 @@ const VideoList: React.FC = () => {
                 <Descriptions.Item label="接入方式">
                   {modeLabels[productContext.protocol] || productContext.protocol}
                 </Descriptions.Item>
-                <Descriptions.Item label="认证方式">视频协议接入</Descriptions.Item>
               </Descriptions>
             </Card>
           ) : null}
-
-          <Alert
-            type="info"
-            showIcon
-            message={
-              productContext
-                ? `当前已按产品联动锁定 ${modeLabels[currentCreateMode] || currentCreateMode} 协议。`
-                : `当前正在创建 ${modeLabels[currentCreateMode] || currentCreateMode} 视频设备。`
-            }
-            description="摄像头产品不走 ProductSecret 和动态注册，视频设备在本页按业务唯一设备名称单独维护。"
-          />
 
           <Form form={createForm} layout="vertical" onFinish={handleCreate} preserve={false}>
             <Form.Item
               name="name"
               label="设备名称"
               rules={[{ required: true, message: '请输入设备名称' }]}
-              extra={productContext ? `建议使用当前产品下的业务唯一设备名称，例如 ${productContext.productKey}-cam-001。` : undefined}
             >
               <Input placeholder="如：门口摄像头" maxLength={128} />
             </Form.Item>
