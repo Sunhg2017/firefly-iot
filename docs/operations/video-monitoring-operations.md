@@ -41,6 +41,7 @@
    - `V23__normalize_camera_products_video_access_auth.sql`
 5. 确认 `firefly-media` 已执行 `V2__add_video_device_sip_password.sql`。
 6. 若 GB28181 设备开启了 SIP 鉴权，确认页面已保存设备级 `SIP 密码`。
+7. `sip_password` 只允许通过 `V2__add_video_device_sip_password.sql` 增量补齐，禁止改写已上线的 `V1__init_video.sql`，否则 Flyway 会因 checksum 不一致阻止服务启动。
 
 ## 监控与日志
 

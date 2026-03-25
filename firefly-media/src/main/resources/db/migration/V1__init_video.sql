@@ -9,7 +9,6 @@ CREATE TABLE IF NOT EXISTS video_devices (
     gb_device_id        VARCHAR(64),
     gb_domain           VARCHAR(64),
     transport           VARCHAR(16) NOT NULL DEFAULT 'UDP',
-    sip_password        VARCHAR(128),
     stream_mode         VARCHAR(16) NOT NULL DEFAULT 'GB28181',
     ip                  VARCHAR(64),
     port                INT,
