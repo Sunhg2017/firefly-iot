@@ -201,6 +201,7 @@ const DEVICE_AUTH_OPTIONS = [
   { value: 'DEVICE_SECRET', label: '一机一密' },
   { value: 'PRODUCT_SECRET', label: '一型一密' },
 ];
+const CAMERA_DEVICE_AUTH_OPTION = { value: 'DEVICE_SECRET', label: '视频协议接入' };
 
 const STATUS_OPTIONS = [
   { value: 'DEVELOPMENT', label: '开发中' },
@@ -246,6 +247,32 @@ const resolveProductDataFormat = (category?: string, dataFormat?: string) => {
   return dataFormat || 'JSON';
 };
 
+const resolveProductDeviceAuthType = (category?: string, deviceAuthType?: string) => {
+  if (category === 'CAMERA') {
+    return 'DEVICE_SECRET';
+  }
+  return deviceAuthType || 'PRODUCT_SECRET';
+};
+
+const resolveDeviceAuthPresentation = ({
+  category,
+  protocol,
+  deviceAuthType,
+}: Pick<ProductRecord, 'category' | 'protocol' | 'deviceAuthType'>) => {
+  if (category === 'CAMERA' || isVideoProtocol(protocol)) {
+    return {
+      color: 'cyan',
+      label: '视频协议接入',
+    };
+  }
+
+  const authType = deviceAuthType || 'PRODUCT_SECRET';
+  return {
+    color: DEVICE_AUTH_COLORS[authType] || 'default',
+    label: DEVICE_AUTH_LABELS[authType] || authType || '未配置',
+  };
+};
+
 const buildProductPayload = (values: ProductFormValues) => ({
   name: values.name.trim(),
   model: trimOptionalValue(values.model),
@@ -255,7 +282,7 @@ const buildProductPayload = (values: ProductFormValues) => ({
   protocol: values.protocol,
   nodeType: values.nodeType,
   dataFormat: resolveProductDataFormat(values.category, values.dataFormat),
-  deviceAuthType: values.deviceAuthType,
+  deviceAuthType: resolveProductDeviceAuthType(values.category, values.deviceAuthType),
 });
 
 const mapRecordToFormValues = (record: ProductRecord): ProductFormValues => ({
@@ -267,7 +294,7 @@ const mapRecordToFormValues = (record: ProductRecord): ProductFormValues => ({
   protocol: record.protocol,
   nodeType: record.nodeType,
   dataFormat: resolveProductDataFormat(record.category, record.dataFormat),
-  deviceAuthType: record.deviceAuthType || 'PRODUCT_SECRET',
+  deviceAuthType: resolveProductDeviceAuthType(record.category, record.deviceAuthType),
 });
 
 const ProductImageUploader: React.FC<{
@@ -428,6 +455,22 @@ const ProductList: React.FC = () => {
     const nextDataFormat = resolveProductDataFormat(editCategory, currentDataFormat);
     if (currentDataFormat !== nextDataFormat) {
       editForm.setFieldValue('dataFormat', nextDataFormat);
+    }
+  }, [editCategory, editForm]);
+
+  useEffect(() => {
+    const currentDeviceAuthType = createForm.getFieldValue('deviceAuthType');
+    const nextDeviceAuthType = resolveProductDeviceAuthType(createCategory, currentDeviceAuthType);
+    if (currentDeviceAuthType !== nextDeviceAuthType) {
+      createForm.setFieldValue('deviceAuthType', nextDeviceAuthType);
+    }
+  }, [createCategory, createForm]);
+
+  useEffect(() => {
+    const currentDeviceAuthType = editForm.getFieldValue('deviceAuthType');
+    const nextDeviceAuthType = resolveProductDeviceAuthType(editCategory, currentDeviceAuthType);
+    if (currentDeviceAuthType !== nextDeviceAuthType) {
+      editForm.setFieldValue('deviceAuthType', nextDeviceAuthType);
     }
   }, [editCategory, editForm]);
 
@@ -619,6 +662,18 @@ const ProductList: React.FC = () => {
     setAccessMode(mode);
   };
 
+  const openVideoManager = (record: ProductRecord) => {
+    const searchParams = new URLSearchParams({
+      source: 'product',
+      autoCreate: '1',
+      productId: String(record.id),
+      productKey: record.productKey,
+      productName: record.name,
+      protocol: record.protocol,
+    });
+    navigate(`/video?${searchParams.toString()}`);
+  };
+
   const renderProductImage = (record: ProductRecord, compact = false) => {
     const width = compact ? 84 : '100%';
     const height = compact ? 60 : 188;
@@ -683,11 +738,14 @@ const ProductList: React.FC = () => {
     </div>
   );
 
-  const renderDeviceAuthTag = (deviceAuthType?: string) => (
-    <Tag color={DEVICE_AUTH_COLORS[deviceAuthType || ''] || 'default'} style={{ margin: 0 }}>
-      {DEVICE_AUTH_LABELS[deviceAuthType || ''] || deviceAuthType || '未配置'}
-    </Tag>
-  );
+  const renderDeviceAuthTag = (record: Pick<ProductRecord, 'category' | 'protocol' | 'deviceAuthType'>) => {
+    const authPresentation = resolveDeviceAuthPresentation(record);
+    return (
+      <Tag color={authPresentation.color} style={{ margin: 0 }}>
+        {authPresentation.label}
+      </Tag>
+    );
+  };
 
   const renderActionGroup = (record: ProductRecord, variant: 'card' | 'table') => {
     const isCard = variant === 'card';
@@ -772,7 +830,7 @@ const ProductList: React.FC = () => {
             {record.name}
           </Typography.Text>
           <Space wrap size={8}>
-            {renderDeviceAuthTag(record.deviceAuthType)}
+            {renderDeviceAuthTag(record)}
             {record.model ? <Tag style={{ margin: 0 }}>型号 {record.model}</Tag> : null}
           </Space>
           {record.description ? (
@@ -815,7 +873,7 @@ const ProductList: React.FC = () => {
       title: '认证方式',
       dataIndex: 'deviceAuthType',
       width: 120,
-      render: (value: string) => renderDeviceAuthTag(value),
+      render: (_: string, record) => renderDeviceAuthTag(record),
     },
     {
       title: '状态',
@@ -853,7 +911,7 @@ const ProductList: React.FC = () => {
     const isCameraCategory = currentCategory === 'CAMERA';
     const authExtra =
       isCameraCategory
-        ? '摄像头产品创建后，请到“视频监控”页面添加视频设备并完成 GB28181、RTSP 或 RTMP 接入。'
+        ? '摄像头产品不走普通 IoT 的密钥鉴权和动态注册，创建后请直接到“视频监控”页面按协议添加视频设备。'
         : '一机一密需要先创建设备再接入；一型一密在产品发布后可从“设备接入”入口查看 ProductSecret 并调试动态注册。';
 
     return (
@@ -932,7 +990,10 @@ const ProductList: React.FC = () => {
         rules={[{ required: true, message: '请选择设备认证方式' }]}
         extra={authExtra}
       >
-        <Select options={DEVICE_AUTH_OPTIONS} />
+        <Select
+          disabled={isCameraCategory}
+          options={isCameraCategory ? [CAMERA_DEVICE_AUTH_OPTION] : DEVICE_AUTH_OPTIONS}
+        />
       </Form.Item>
 
       <Form.Item name="description" label="产品说明">
@@ -951,7 +1012,7 @@ const ProductList: React.FC = () => {
     <div>
       <PageHeader
         title="产品接入"
-        description="先维护产品，再进入设备接入、动态注册或协议联调。"
+        description="先维护产品，再进入设备接入、视频接入或协议联调。"
         extra={
           <Space>
             <Segmented
@@ -1163,7 +1224,7 @@ const ProductList: React.FC = () => {
                             <Tag color={PROTOCOL_COLORS[record.protocol]} style={{ margin: 0, borderRadius: 999 }}>
                               {record.protocol}
                             </Tag>
-                            {renderDeviceAuthTag(record.deviceAuthType)}
+                            {renderDeviceAuthTag(record)}
                           </Space>
                           <Typography.Title level={5} style={{ margin: 0, fontSize: 18, lineHeight: 1.35 }}>
                             {record.name}
@@ -1370,7 +1431,7 @@ const ProductList: React.FC = () => {
             onOpenDeviceManager={() => navigate('/device')}
             onOpenVideoManager={
               hasPermission('video:read')
-                ? () => navigate('/video')
+                ? () => openVideoManager(accessProduct)
                 : undefined
             }
             onOpenProtocolParser={

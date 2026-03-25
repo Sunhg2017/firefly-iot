@@ -9,6 +9,7 @@
 - `firefly-web`
 - `firefly-connector`
 - `firefly-device`
+- `firefly-media`
 - `firefly-simulator`（联调时）
 
 ## 部署与发布关注点
@@ -19,6 +20,8 @@
 - 关注页面：
   - 产品接入
   - 设备接入抽屉
+  - 视频监控
+  - 添加视频设备抽屉
 
 ### 后端
 
@@ -26,6 +29,7 @@
 - 关注接口：
   - `GET /api/v1/products/{id}/secret`
   - `POST /api/v1/protocol/device/register`
+  - `POST /api/v1/video/devices`
   - `POST /api/v1/protocol/http/auth`
   - `POST /api/v1/protocol/http/property/post`
   - `POST /api/v1/protocol/http/event/post`
@@ -39,7 +43,11 @@
 3. 如果验证一型一密：
    - 产品必须是 `PRODUCT_SECRET`
    - 产品状态可以是 `DEVELOPMENT` 或 `PUBLISHED`
-4. 如果验证协议说明：
+4. 如果验证摄像头产品：
+   - 产品分类必须是 `CAMERA`
+   - 产品协议必须是 `GB28181 / RTSP / RTMP`
+   - `V23__normalize_camera_products_video_access_auth.sql` 已执行，历史摄像头产品不再残留 `product_secret`
+5. 如果验证协议说明：
    - MQTT / HTTP / CoAP 接口应与页面说明保持一致
    - 自定义协议需确认协议解析规则已配置
 
@@ -62,6 +70,7 @@
 - 动态注册失败率是否异常升高。
 - `INVALID_PRODUCT_SECRET`、`DEVICE_NAME_EXISTS` 是否集中出现。
 - HTTP 认证成功后，属性、事件、心跳接口是否稳定返回 200。
+- 摄像头产品跳转视频监控时，是否正确锁定协议并自动打开添加抽屉。
 
 ## 常见故障与排查
 
@@ -103,6 +112,22 @@
 2. 确认后续请求携带 `X-Device-Token`。
 3. 检查 token 是否过期或设备未完成动态注册。
 
+### 5. 摄像头产品仍能查看 ProductSecret
+
+排查：
+
+1. 检查 `firefly-device` 是否已部署到包含摄像头认证收口的版本。
+2. 检查 `V23__normalize_camera_products_video_access_auth.sql` 是否执行成功。
+3. 检查数据库中摄像头产品是否仍残留 `device_auth_type = PRODUCT_SECRET` 或非空 `product_secret`。
+
+### 6. 从产品跳到视频监控后没有自动锁定协议
+
+排查：
+
+1. 检查前端跳转 URL 是否带上 `productKey / productName / protocol / autoCreate=1`。
+2. 检查视频监控页前端版本是否已包含 `useSearchParams` 联动逻辑。
+3. 如果页面已打开但未自动弹出抽屉，检查浏览器控制台是否存在 `Form` 或 `Drawer` 渲染错误。
+
 ## 回滚说明
 
 如果本次改造需要回滚：
@@ -123,4 +148,6 @@
 1. 一机一密产品打开“设备接入”，确认看到手动创建设备指引。
 2. 一型一密开发中产品打开“设备接入”，确认可以执行动态注册。
 3. 一型一密已发布产品完成一次动态注册，确认返回 `productKey / deviceName / deviceSecret`。
-4. HTTP 产品按页面说明完成认证、属性上报和心跳调用。
+4. 摄像头产品打开“视频接入”，确认页面显示“视频协议接入”，且不再展示 ProductSecret。
+5. 从摄像头产品跳转到视频监控，确认自动打开添加抽屉并锁定产品协议。
+6. HTTP 产品按页面说明完成认证、属性上报和心跳调用。

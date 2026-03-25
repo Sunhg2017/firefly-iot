@@ -1,0 +1,121 @@
+# 视频监控模块运维说明
+
+## 适用范围
+
+本文档适用于 `视频监控` 页面、视频设备创建抽屉、实时播放抽屉，以及从摄像头产品页跳转到视频监控页的联动链路。
+
+涉及模块：
+
+- `firefly-web`
+- `firefly-media`
+- `firefly-device`
+- `ZLMediaKit`
+
+## 部署与发布关注点
+
+### 前端
+
+- 构建命令：`npm run build`
+- 关注页面：
+  - `视频监控`
+  - `添加视频设备` 抽屉
+  - 从产品页进入时的产品上下文提示
+
+### 后端
+
+- 编译命令：`mvn -pl firefly-media -am -DskipTests compile`
+- 关注接口：
+  - `POST /api/v1/video/devices`
+  - `POST /api/v1/video/devices/list`
+  - `POST /api/v1/video/devices/{id}/start`
+  - `POST /api/v1/video/devices/{id}/stop`
+  - `POST /api/v1/video/devices/{id}/snapshot`
+
+## 运行前检查
+
+1. 确认 `firefly-media` 与 `ZLMediaKit` 都已启动。
+2. 如果从摄像头产品页跳转进入视频监控，确认产品协议是 `GB28181 / RTSP / RTMP` 之一。
+3. 确认当前前端版本已包含 `useSearchParams` 联动逻辑，能识别 `productKey / productName / protocol / autoCreate=1`。
+4. 确认摄像头产品历史数据已执行：
+   - `V22__force_camera_products_custom_data_format.sql`
+   - `V23__normalize_camera_products_video_access_auth.sql`
+
+## 监控与日志
+
+### 关键日志
+
+- `firefly-media`
+  - `VideoService`
+  - `SipCommandSender`
+  - `ZlmApiClient`
+- `firefly-device`
+  - `ProductService`
+
+### 重点观察项
+
+- 视频设备创建失败率是否异常升高。
+- 从产品页跳转视频监控时，是否正确自动打开抽屉并锁定协议。
+- `start / stop / snapshot` 接口是否连续报错。
+- GB28181 设备是否按预期更新在线状态。
+
+## 常见故障与排查
+
+### 1. 从产品页跳到视频监控后没有自动打开抽屉
+
+排查：
+
+1. 检查跳转 URL 是否带上 `autoCreate=1`。
+2. 检查前端版本是否已部署到包含产品联动的新版本。
+3. 检查浏览器控制台是否存在 `Drawer` 或 `Form` 渲染错误。
+
+### 2. 抽屉已打开，但接入方式没有锁定到产品协议
+
+排查：
+
+1. 检查 URL 中的 `protocol` 是否为 `GB28181 / RTSP / RTMP`。
+2. 检查视频监控页是否被旧缓存覆盖。
+3. 检查用户是否点击过“清空联动”按钮。
+
+### 3. 摄像头产品仍提示 ProductSecret 或动态注册
+
+排查：
+
+1. 检查 `firefly-device` 是否已部署到摄像头认证收口版本。
+2. 检查摄像头产品是否仍残留 `product_secret` 历史脏数据。
+3. 若数据库仍残留旧值，应执行清理，不再继续叠加兼容逻辑。
+
+### 4. 视频设备可以创建，但播放失败
+
+排查：
+
+1. 检查设备状态是否为 `ONLINE`。
+2. 检查 `ZLMediaKit` 是否可访问。
+3. GB28181 设备检查 SIP 注册、目录查询与设备信息查询是否成功。
+4. RTSP / RTMP 设备检查 IP、端口和流地址是否正确。
+
+## 回滚说明
+
+如果本次视频监控联动改造需要回滚：
+
+1. 回退前端文件：
+   - `firefly-web/src/pages/video/VideoList.tsx`
+   - `firefly-web/src/pages/product/ProductList.tsx`
+   - `firefly-web/src/pages/product/ProductAccessDrawer.tsx`
+2. 回退后端摄像头认证收口：
+   - `firefly-device/src/main/java/com/songhg/firefly/iot/device/service/ProductService.java`
+3. 同步回退文档：
+   - `docs/design/detailed-design-video-monitoring.md`
+   - `docs/operations/video-monitoring-operations.md`
+   - `docs/user-guide/video-monitoring-guide.md`
+
+注意：
+
+- 回滚前需确认是否要保留 `V23__normalize_camera_products_video_access_auth.sql` 已清理的数据。
+- 如果回滚代码但数据库已清空摄像头 `product_secret`，旧前端即使回退也不应再要求恢复旧口径。
+
+## 验证建议
+
+1. 从摄像头产品页点击 `视频接入`，确认跳转后自动打开“添加视频设备”抽屉。
+2. 确认抽屉中的 `接入方式` 与产品协议一致，且处于锁定状态。
+3. 新建一台视频设备，确认列表可见。
+4. 对在线设备执行播放、截图、停止，确认接口调用成功。

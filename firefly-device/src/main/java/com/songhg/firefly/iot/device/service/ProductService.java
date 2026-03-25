@@ -239,6 +239,9 @@ public class ProductService {
         if (product == null) {
             throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
         }
+        if (product.getCategory() == ProductCategory.CAMERA) {
+            throw new BizException(ResultCode.PRODUCT_STATUS_ERROR, "摄像头产品统一通过视频协议接入，不支持查看 ProductSecret");
+        }
         if (product.getDeviceAuthType() != DeviceAuthType.PRODUCT_SECRET) {
             throw new BizException(ResultCode.PRODUCT_STATUS_ERROR, "当前产品未启用一型一密认证，不支持查看 ProductSecret");
         }
@@ -302,10 +305,14 @@ public class ProductService {
         product.setImageUrl(trimToNull(product.getImageUrl()));
         product.setDescription(trimToNull(product.getDescription()));
         validateCategoryProtocol(product);
-        // 摄像头产品统一走视频链路，不再暴露 JSON 物联网数据格式选择。
+        // 摄像头产品统一走视频链路，不再复用普通 IoT 的数据格式和密钥认证模型。
         if (product.getCategory() == ProductCategory.CAMERA) {
             product.setDataFormat(DataFormat.CUSTOM);
-        } else if (product.getDataFormat() == null) {
+            product.setDeviceAuthType(DeviceAuthType.DEVICE_SECRET);
+            product.setProductSecret(null);
+            return;
+        }
+        if (product.getDataFormat() == null) {
             product.setDataFormat(DataFormat.JSON);
         }
         if (product.getDeviceAuthType() == null) {
@@ -313,7 +320,9 @@ public class ProductService {
         }
         if (product.getDeviceAuthType() == DeviceAuthType.PRODUCT_SECRET) {
             ensureProductSecret(product);
+            return;
         }
+        product.setProductSecret(null);
     }
 
     /**

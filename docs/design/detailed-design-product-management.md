@@ -92,6 +92,7 @@ CREATE TABLE products (
     thing_model         JSONB DEFAULT '{"properties":[],"events":[],"services":[]}',
     node_type           VARCHAR(16) NOT NULL DEFAULT 'DEVICE',
     data_format         VARCHAR(16) NOT NULL DEFAULT 'JSON',
+    device_auth_type    VARCHAR(32) NOT NULL DEFAULT 'PRODUCT_SECRET',
     status              VARCHAR(16) NOT NULL DEFAULT 'DEVELOPMENT',
     device_count        INT NOT NULL DEFAULT 0,
     created_by          BIGINT,
@@ -115,6 +116,7 @@ CREATE INDEX idx_products_category ON products(tenant_id, category);
 | `thing_model` | JSONB | 物模型定义 JSON |
 | `node_type` | VARCHAR(16) | 节点类型：DEVICE (直连设备) / GATEWAY (网关) |
 | `data_format` | VARCHAR(16) | 数据格式：JSON / CUSTOM (自定义/透传)；其中摄像头产品固定为 CUSTOM |
+| `device_auth_type` | VARCHAR(32) | 认证方式：DEVICE_SECRET / PRODUCT_SECRET；其中摄像头产品前端统一显示为“视频协议接入” |
 | `status` | VARCHAR(16) | 产品状态：DEVELOPMENT / PUBLISHED / DEPRECATED |
 | `device_count` | INT | 该产品下的设备数量（缓存字段，异步更新） |
 
@@ -172,6 +174,20 @@ CUSTOM("CUSTOM")    // 自定义/透传
 - 普通 IoT 产品可按协议选择 `JSON` 或 `CUSTOM`
 - 摄像头产品固定使用 `CUSTOM`，不再开放 `JSON` 选项
 
+### 4.6 DeviceAuthType
+
+```java
+DEVICE_SECRET("DEVICE_SECRET"),
+PRODUCT_SECRET("PRODUCT_SECRET")
+```
+
+说明：
+
+- 普通 IoT 产品继续使用 `一机一密 / 一型一密`
+- 摄像头产品不再复用普通 IoT 的 ProductSecret 和动态注册链路
+- 后端会把摄像头产品的 `device_auth_type` 统一收口为 `DEVICE_SECRET` 作为内部占位，并清空 `product_secret`
+- 前端对摄像头产品统一展示为 `视频协议接入`
+
 ---
 
 ## 5. API 接口设计
@@ -200,7 +216,8 @@ CUSTOM("CUSTOM")    // 自定义/透传
   "category": "SENSOR",
   "protocol": "MQTT",
   "nodeType": "DEVICE",
-  "dataFormat": "JSON"
+  "dataFormat": "JSON",
+  "deviceAuthType": "PRODUCT_SECRET"
 }
 ```
 
@@ -217,6 +234,7 @@ CUSTOM("CUSTOM")    // 自定义/透传
     "protocol": "MQTT",
     "nodeType": "DEVICE",
     "dataFormat": "JSON",
+    "deviceAuthType": "PRODUCT_SECRET",
     "status": "DEVELOPMENT",
     "deviceCount": 0,
     "createdAt": "2026-02-27T10:00:00"
@@ -352,26 +370,31 @@ firefly-common/src/main/java/.../common/enums/
 | 接入协议 | Select | ✅ | 普通产品: MQTT/COAP/HTTP/LWM2M/CUSTOM；摄像头产品: GB28181/RTSP/RTMP |
 | 节点类型 | Select | ✅ | DEVICE/GATEWAY |
 | 数据格式 | Select | ✅ | 普通产品: JSON/CUSTOM；摄像头产品: 固定 CUSTOM |
+| 设备认证方式 | Select | ✅ | 普通产品: 一机一密/一型一密；摄像头产品: 固定显示“视频协议接入” |
 
 ### 11.5 分类与协议联动约束
 
-产品分类、接入协议和数据格式不是任意组合：
+产品分类、接入协议、数据格式和认证方式不是任意组合：
 
 - 摄像头产品只允许选择 `GB28181`、`RTSP`、`RTMP`
 - 摄像头产品固定使用 `CUSTOM` 数据格式
+- 摄像头产品固定显示 `视频协议接入`，不再开放 `一机一密 / 一型一密`
 - 非摄像头产品不允许选择上述视频协议
 
 约束同时在前后端生效：
 
 1. 前端新建/编辑抽屉按分类动态筛选协议选项
 2. 前端在摄像头分类下将数据格式直接收口为 `CUSTOM`
-3. 后端 `ProductService` 二次校验分类和协议组合，并强制把摄像头产品写成 `CUSTOM`
-4. Flyway `V22__force_camera_products_custom_data_format.sql` 会把历史摄像头产品的 `data_format` 修正为 `CUSTOM`
+3. 前端在摄像头分类下把认证方式固定展示为 `视频协议接入`
+4. 后端 `ProductService` 二次校验分类和协议组合，并强制把摄像头产品写成 `CUSTOM + DEVICE_SECRET + product_secret = null`
+5. Flyway `V22__force_camera_products_custom_data_format.sql` 会把历史摄像头产品的 `data_format` 修正为 `CUSTOM`
+6. Flyway `V23__normalize_camera_products_video_access_auth.sql` 会把历史摄像头产品的 `device_auth_type` 修正为 `DEVICE_SECRET`，并清理遗留 `product_secret`
 
 这样可以保证：
 
 - 摄像头产品直接进入视频链路
 - 摄像头产品不再伪装成 `JSON` 设备产品
+- 摄像头产品不再伪装成一型一密产品
 - 普通 IoT 产品继续走 MQTT / HTTP / CoAP 等设备接入链路
 - 不再出现“摄像头产品配置成普通物联网协议”或“普通产品误选视频协议”的脏数据
 

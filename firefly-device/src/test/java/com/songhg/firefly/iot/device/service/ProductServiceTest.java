@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.api.client.FileClient;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DataFormat;
+import com.songhg.firefly.iot.common.enums.DeviceAuthType;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.enums.ProductCategory;
 import com.songhg.firefly.iot.common.enums.ProductStatus;
@@ -21,6 +22,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
@@ -176,16 +178,20 @@ class ProductServiceTest {
         ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
         verify(productMapper).insert(captor.capture());
         assertEquals(DataFormat.CUSTOM, captor.getValue().getDataFormat());
+        assertEquals(DeviceAuthType.DEVICE_SECRET, captor.getValue().getDeviceAuthType());
+        assertNull(captor.getValue().getProductSecret());
     }
 
     @Test
-    void shouldForceCustomDataFormatWhenUpdatingCameraProduct() {
+    void shouldForceVideoAccessAuthWhenUpdatingCameraProduct() {
         Product product = new Product();
         product.setId(2L);
         product.setName("厂区摄像头");
         product.setCategory(ProductCategory.CAMERA);
         product.setProtocol(ProtocolType.GB28181);
         product.setDataFormat(DataFormat.JSON);
+        product.setDeviceAuthType(DeviceAuthType.PRODUCT_SECRET);
+        product.setProductSecret("ps_existing");
 
         when(productMapper.selectById(2L)).thenReturn(product);
 
@@ -198,6 +204,21 @@ class ProductServiceTest {
         ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
         verify(productMapper).updateById(captor.capture());
         assertEquals(DataFormat.CUSTOM, captor.getValue().getDataFormat());
+        assertEquals(DeviceAuthType.DEVICE_SECRET, captor.getValue().getDeviceAuthType());
+        assertNull(captor.getValue().getProductSecret());
+    }
+
+    @Test
+    void shouldRejectProductSecretForCameraProduct() {
+        Product product = new Product();
+        product.setId(3L);
+        product.setCategory(ProductCategory.CAMERA);
+        product.setProtocol(ProtocolType.GB28181);
+        product.setDeviceAuthType(DeviceAuthType.DEVICE_SECRET);
+
+        when(productMapper.selectById(3L)).thenReturn(product);
+
+        assertThrows(BizException.class, () -> productService.getProductSecret(3L));
     }
 
     private List<String> extractPropertyIdentifiers(JsonNode root) {

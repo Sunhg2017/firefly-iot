@@ -147,6 +147,21 @@ const normalizeLocatorInputs = (locators?: DeviceLocatorFormItem[]) => {
 
 const isVideoProtocol = (protocol?: string) => Boolean(protocol && VIDEO_PROTOCOL_VALUES.has(protocol));
 
+const resolveAccessAuthPresentation = (product: Pick<ProductTarget, 'protocol' | 'deviceAuthType'>) => {
+  if (isVideoProtocol(product.protocol)) {
+    return {
+      color: 'cyan',
+      label: '视频协议接入',
+    };
+  }
+
+  const authType = product.deviceAuthType || 'DEVICE_SECRET';
+  return {
+    color: DEVICE_AUTH_LABELS[authType] === '一型一密' ? 'gold' : 'blue',
+    label: DEVICE_AUTH_LABELS[authType] || authType,
+  };
+};
+
 const buildGuideSteps = (
   product: ProductTarget,
   supportsProductSecret: boolean,
@@ -160,7 +175,7 @@ const buildGuideSteps = (
       },
       {
         title: '进入视频监控添加设备',
-        description: '在视频监控页面创建视频设备，并填写设备编号、网络地址、厂商型号等参数。',
+        description: '从当前产品跳转到视频监控时会自动带入协议，后续只需补齐设备名称、地址、厂商型号等参数。',
       },
       {
         title: '完成视频接入与播放',
@@ -218,9 +233,10 @@ const buildProtocolGuideSections = (
             rows: [
               { label: '推荐页面', value: '/video', copyable: true },
               { label: '接入方式', value: 'GB/T 28181', copyable: true },
+              { label: '认证方式', value: '视频协议接入（不使用 ProductSecret / 动态注册）' },
               { label: '必填参数', value: '设备名称、GB 设备编号、GB 域、传输协议、IP、端口' },
             ],
-            tips: ['设备上线后可在视频监控页执行目录查询、设备信息查询和实时播放。'],
+            tips: ['从产品页跳转时，视频监控页会自动锁定为 GB/T 28181 创建设备。', '设备上线后可在视频监控页执行目录查询、设备信息查询和实时播放。'],
           },
         ];
       case 'RTSP':
@@ -231,9 +247,10 @@ const buildProtocolGuideSections = (
             rows: [
               { label: '推荐页面', value: '/video', copyable: true },
               { label: '接入方式', value: 'RTSP', copyable: true },
+              { label: '认证方式', value: '视频协议接入（不使用 ProductSecret / 动态注册）' },
               { label: '必填参数', value: '设备名称、IP、端口' },
             ],
-            tips: ['创建后可在视频监控页直接发起播放，并查看 FLV、HLS、WebRTC 地址。'],
+            tips: ['从产品页跳转时，视频监控页会自动锁定为 RTSP 创建设备。', '创建后可在视频监控页直接发起播放，并查看 FLV、HLS、WebRTC 地址。'],
           },
         ];
       case 'RTMP':
@@ -244,9 +261,10 @@ const buildProtocolGuideSections = (
             rows: [
               { label: '推荐页面', value: '/video', copyable: true },
               { label: '接入方式', value: 'RTMP', copyable: true },
+              { label: '认证方式', value: '视频协议接入（不使用 ProductSecret / 动态注册）' },
               { label: '必填参数', value: '设备名称、IP、端口' },
             ],
-            tips: ['RTMP 设备创建后可直接在视频监控页管理播放和截图。'],
+            tips: ['从产品页跳转时，视频监控页会自动锁定为 RTMP 创建设备。', 'RTMP 设备创建后可直接在视频监控页管理播放和截图。'],
           },
         ];
       default:
@@ -414,6 +432,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
   const isVideoProductAccess = isVideoProtocol(product?.protocol);
   const supportsProductSecret = !isVideoProductAccess && product?.deviceAuthType === 'PRODUCT_SECRET';
   const canRegister = supportsProductSecret;
+  const authPresentation = product ? resolveAccessAuthPresentation(product) : null;
 
   const drawerTitle = useMemo(() => {
     if (!product) {
@@ -443,7 +462,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
     if (isVideoProductAccess) {
       return {
         type: 'info' as const,
-        message: '当前产品属于视频接入，请到视频监控页面创建视频设备并完成 GB28181、RTSP 或 RTMP 联调。',
+        message: '当前产品属于视频协议接入，请跳转到视频监控页面创建设备；系统会自动带入当前产品协议，不再走 ProductSecret 和动态注册。',
       };
     }
     if (supportsProductSecret) {
@@ -904,8 +923,8 @@ const ProductAccessDrawer: React.FC<Props> = ({
                 {NODE_TYPE_LABELS[product.nodeType] || product.nodeType}
               </Descriptions.Item>
               <Descriptions.Item label="认证方式">
-                <Tag color={supportsProductSecret ? 'gold' : 'blue'}>
-                  {DEVICE_AUTH_LABELS[product.deviceAuthType] || product.deviceAuthType}
+                <Tag color={authPresentation?.color}>
+                  {authPresentation?.label}
                 </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="关联设备">{product.deviceCount}</Descriptions.Item>
