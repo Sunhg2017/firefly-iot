@@ -4,11 +4,15 @@
   "description": "Firefly IoT 设备模拟器 — 模拟设备接入与数据上报",
   "main": "dist-electron/main.js",
   "scripts": {
+    "ensure:electron": "node ./scripts/ensure-electron.mjs",
     "dev": "vite",
     "build": "tsc && vite build && electron-builder",
     "build:vite": "tsc && vite build",
     "preview": "vite preview",
+    "preelectron:dev": "npm run ensure:electron",
     "electron:dev": "vite",
+    "prebuild": "npm run ensure:electron",
+    "preelectron:build": "npm run ensure:electron",
     "electron:build": "npm run build:vite && electron-builder"
   },
   "dependencies": {

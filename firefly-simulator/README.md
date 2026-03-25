@@ -41,6 +41,12 @@ npm run electron:dev
 npm run electron:build
 ```
 
+启动说明：
+
+- `npm run electron:dev` 与 `npm run electron:build` 会先执行 `npm run ensure:electron`
+- 如果本地 `node_modules/electron` 缺少实际 Electron 二进制，脚本会先自动补装，再继续启动
+- 若补装失败，优先检查网络是否可访问 Electron 下载源，然后在 `firefly-simulator` 目录重新执行 `npm install` 或 `npm run ensure:electron`
+
 ## 对接说明
 
 ### HTTP 模式
