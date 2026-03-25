@@ -6,6 +6,7 @@
 
 涉及模块：
 
+- `firefly-common`
 - `firefly-web`
 - `firefly-media`
 - `firefly-device`
@@ -23,7 +24,7 @@
 
 ### 后端
 
-- 编译命令：`mvn -pl firefly-media -am -DskipTests compile`
+- 编译命令：`mvn -pl firefly-common,firefly-device,firefly-media -am -DskipTests compile`
 - 关注接口：
   - `POST /api/v1/video/devices`
   - `POST /api/v1/video/devices/list`
@@ -44,11 +45,17 @@
 7. `sip_password` 只允许通过 `V2__add_video_device_sip_password.sql` 增量补齐，禁止改写已上线的 `V1__init_video.sql`，否则 Flyway 会因 checksum 不一致阻止服务启动。
 8. 新建视频设备会同步调用 `firefly-device` 内部接口创建设备资产主设备；若 `firefly-device` 不可用或产品不存在，视频设备保存会直接失败。
 9. 确认公共 Feign 上下文透传已生效，`firefly-media -> firefly-device` 需要携带 `X-Tenant-Id / X-User-Id / X-Granted-Permissions`，否则产品查询或设备资产创建可能落不到当前租户与数据权限范围。
+10. 确认 Kafka 业务上下文传播已生效：
+   - Producer 已注册 `KafkaAuthContextProducerInterceptor`
+   - Listener 容器已注册 `KafkaAuthContextRecordInterceptor`
+   - 消费端按记录恢复并清理 `AppContextHolder`，而不是复用整批 `poll` 线程上下文
 
 ## 监控与日志
 
 ### 关键日志
 
+- `firefly-common`
+  - `KafkaAuthContextConfig`
 - `firefly-media`
   - `VideoService`
   - `SipCommandSender`
@@ -104,8 +111,10 @@
 
 1. 检查 `firefly-device` 是否可用，确认视频设备创建时设备资产主设备也创建成功。
 2. 检查 `video_devices.device_id` 是否已回填；如果为空，说明创建链路中断。
-3. 检查当前用户的数据权限是否按 `device_id` 过滤；若主设备未创建成功，视频设备会被列表权限过滤掉。
-4. 检查 `firefly-media` 调用 `firefly-device` 时是否带上 `X-Tenant-Id / X-User-Id`；若头丢失，可能出现保存成功但新建记录立即从列表消失。
+3. 检查对应 `devices.project_id` 是否为空或落错项目；当产品本身没有项目时，系统只会在当前数据范围恰好命中一个项目时自动补入该项目。
+4. 检查 `device_group_members` 是否已写入当前可见静态分组；若用户是分组数据权限口径，主设备不在可见静态分组里会导致视频设备被过滤。
+5. 检查动态分组是否已重算；若当前权限依赖动态分组，需确认建设备后是否已重新命中规则。
+6. 检查 `firefly-media` 调用 `firefly-device` 时是否带上 `X-Tenant-Id / X-User-Id / X-Granted-Permissions`；若头丢失，可能出现保存成功但新建记录立即从列表消失。
 
 ### 6. GB28181 设备开启了 SIP 鉴权但仍提示认证失败
 
@@ -115,6 +124,15 @@
 2. 确认设备端使用 `GB 设备编号` 作为 SIP 用户名。
 3. 抓包或看平台日志，确认第一次 `REGISTER` 收到 `401 Unauthorized`，第二次带 `Authorization` 的 `REGISTER` 是否校验通过。
 4. 如果仍失败，继续检查设备编号、域、传输协议、平台监听 IP/端口是否配置一致。
+
+### 7. Kafka 消费链路出现租户或用户上下文丢失
+
+排查：
+
+1. 检查消息头是否带有 `X-Tenant-Id / X-User-Id / X-Granted-Permissions`。
+2. 检查服务启动日志里是否打印了 `Record interceptor registered on listener factory`。
+3. 若消息体本身也包含 `tenantId / userId / operatorId`，确认 Consumer 侧是否按预期回退解析。
+4. 如果同一消费线程连续处理不同租户消息，确认消费端是否使用逐条 `RecordInterceptor` 恢复上下文，而不是在批量 `ConsumerInterceptor` 中写死线程上下文。
 
 ## 回滚说明
 
@@ -143,3 +161,4 @@
 3. 新建一台视频设备，确认列表可见。
 4. 对在线设备执行播放、截图、停止，确认接口调用成功。
 5. 从摄像头产品页进入新建视频设备后，确认 `设备资产` 与 `视频监控` 两侧都能看到对应记录。
+6. 使用带项目/分组数据权限的账号重复执行一次新建，确认新设备仍然可见。

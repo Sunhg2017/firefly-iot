@@ -33,7 +33,7 @@
 |------|------|
 | **视频设备管理** | 视频设备 CRUD，支持 GB28181 / RTSP / RTMP 接入方式 |
 | **产品联动预填** | 从摄像头产品跳转时自动带入产品上下文并锁定接入协议 |
-| **设备资产联动** | 新建视频设备时自动补建设备资产主设备并回填 `video_devices.device_id` |
+| **设备资产联动** | 新建视频设备时自动补建设备资产主设备，继承当前可见项目/分组范围并回填 `video_devices.device_id` |
 | **通道管理** | 设备下的视频通道列表，支持多通道 NVR |
 | **实时播放** | 发起实时点播，返回 FLV/HLS/WebRTC 播放地址 |
 | **云台控制** | PTZ 方向控制、变焦控制 |
@@ -104,6 +104,8 @@ CREATE TABLE video_devices (
 
 - `video_devices` 通过 `device_id` 关联设备资产主表，视频设备权限与设备资产数据权限保持一致。
 - 当前 `video_devices` 仍未单独持久化 `product_id / product_key`；产品归属通过关联的设备资产主设备反查，不再只依赖 URL 参数。
+- 自动补建的视频设备资产会优先沿用产品自身 `projectId`；若产品未绑定项目且当前数据权限只命中一个项目，则使用当前数据范围中的唯一项目作为兜底项目。
+- 自动补建链路会透传当前数据范围中的分组 ID，设备侧仅同步静态分组，并在保存后立即重算动态分组，避免记录刚创建就被分组数据权限过滤。
 
 ### 3.2 video_channels 表
 
@@ -182,12 +184,13 @@ STOP(0), UP(1), DOWN(2), LEFT(3), RIGHT(4), ZOOM_IN(5), ZOOM_OUT(6)
 3. 管理员选择产品或沿用产品上下文，前端自动锁定与产品一致的接入协议
 4. 平台先在设备资产主链路创建设备并回填 `video_devices.device_id`，再保存视频设备记录
 5. `firefly-media -> firefly-device` 的 Feign 调用会透传当前请求的租户、用户与权限头，保证产品查询与设备资产创建落在同一可见范围
-6. 若 GB28181 设备启用了 SIP 鉴权，平台以 `GB 设备编号` 为用户名，对 REGISTER 发起 Digest 挑战并校验设备级 `sip_password`
-7. REGISTER 校验通过后，平台更新设备状态为 ONLINE
-8. 用户请求实时播放 → 平台调用 ZLMediaKit API 发起点播
-9. ZLMediaKit 返回播放地址 → 平台保存流会话并返回前端
-10. 前端使用 FLV.js / HLS.js 播放视频
-11. 用户停止播放 → 平台调用 ZLMediaKit 关闭流 → 更新会话状态
+6. 自动补建链路会解析当前用户数据范围，把可见项目与静态分组带到设备资产创建请求中，并在设备侧重算动态分组
+7. 若 GB28181 设备启用了 SIP 鉴权，平台以 `GB 设备编号` 为用户名，对 REGISTER 发起 Digest 挑战并校验设备级 `sip_password`
+8. REGISTER 校验通过后，平台更新设备状态为 ONLINE
+9. 用户请求实时播放 → 平台调用 ZLMediaKit API 发起点播
+10. ZLMediaKit 返回播放地址 → 平台保存流会话并返回前端
+11. 前端使用 FLV.js / HLS.js 播放视频
+12. 用户停止播放 → 平台调用 ZLMediaKit 关闭流 → 更新会话状态
 ```
 
 ---
@@ -258,6 +261,16 @@ firefly-system/src/main/java/.../system/
 └── controller/
     └── VideoController.java
 ```
+
+### 7.2 上下文传播与可见性控制
+
+- `firefly-media -> firefly-device` 的同步调用统一通过 Feign 头透传 `tenantId / userId / permissions`，避免产品查询与内部建设备落到错误租户或错误权限口径。
+- Kafka 异步链路由 `firefly-common` 统一补齐业务上下文传播：Producer 在消息头写入 `AppContextHolder` 中的租户、用户与权限信息，Consumer 通过 Spring Kafka `RecordInterceptor` 按消息逐条恢复并在处理后清理。
+- 视频设备自动建设备资产时，会读取当前用户的数据范围：
+  - 若产品已绑定项目，直接沿用产品项目。
+  - 若产品未绑定项目且当前范围只命中一个项目，则把该项目写入新建设备。
+  - 当前范围中的分组只把静态分组带入内部创建设备请求，动态分组在设备插入后统一重算。
+- 视频列表的数据权限最终仍以 `video_devices.device_id -> devices` 主链路为准，因此 `device_id`、`project_id`、`device_group_members` 与动态分组结果必须保持一致。
 
 ---
 

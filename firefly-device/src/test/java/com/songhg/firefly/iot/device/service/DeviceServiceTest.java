@@ -1,6 +1,7 @@
 package com.songhg.firefly.iot.device.service;
 
 import com.songhg.firefly.iot.api.dto.DeviceLocatorInputDTO;
+import com.songhg.firefly.iot.api.dto.InternalDeviceCreateDTO;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DeviceStatus;
 import com.songhg.firefly.iot.common.enums.NodeType;
@@ -166,6 +167,32 @@ class DeviceServiceTest {
         service.batchCreateDevices(dto);
 
         verify(deviceLocatorService, times(1)).createBatch(eq(12L), any());
+        verify(deviceGroupService).rebuildDynamicGroupsForDevice(12L);
+    }
+
+    @Test
+    void createDeviceFromInternalShouldSyncStaticGroupsAndRebuildDynamicGroups() {
+        Product product = new Product();
+        product.setId(13L);
+
+        InternalDeviceCreateDTO dto = new InternalDeviceCreateDTO();
+        dto.setProductId(13L);
+        dto.setDeviceName("video-dev-013");
+        dto.setGroupIds(List.of(101L, 102L, 103L));
+
+        when(productMapper.selectById(13L)).thenReturn(product);
+        when(deviceMapper.selectList(any())).thenReturn(List.of());
+        when(deviceMapper.insert(any(Device.class))).thenAnswer(invocation -> {
+            Device inserted = invocation.getArgument(0);
+            inserted.setId(13L);
+            return 1;
+        });
+        when(deviceGroupService.filterStaticGroupIds(dto.getGroupIds())).thenReturn(List.of(101L, 103L));
+
+        service.createDeviceFromInternal(dto);
+
+        verify(deviceGroupService).syncDeviceGroups(13L, List.of(101L, 103L));
+        verify(deviceGroupService).rebuildDynamicGroupsForDevice(13L);
     }
 
     @Test

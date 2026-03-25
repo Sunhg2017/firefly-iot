@@ -10,6 +10,8 @@ import com.songhg.firefly.iot.common.enums.StreamStatus;
 import com.songhg.firefly.iot.common.enums.VideoDeviceStatus;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.mybatis.DataScope;
+import com.songhg.firefly.iot.common.mybatis.DataScopeContext;
+import com.songhg.firefly.iot.common.mybatis.DataScopeResolver;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.media.convert.VideoConvert;
@@ -38,6 +40,7 @@ import com.songhg.firefly.iot.media.zlm.ZlmApiClient;
 import com.songhg.firefly.iot.media.zlm.ZlmResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +49,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
@@ -62,6 +66,7 @@ public class VideoService {
     private final StreamSessionMapper streamSessionMapper;
     private final ProductClient productClient;
     private final DeviceClient deviceClient;
+    private final ObjectProvider<DataScopeResolver> dataScopeResolverProvider;
     private final ZlmApiClient zlmApiClient;
     private final FileClient fileClient;
     private final SipCommandSender sipCommandSender;
@@ -438,10 +443,14 @@ public class VideoService {
 
         ProductBasicVO product = loadProductBasic(productKey);
         validateProductProtocol(product, device.getStreamMode());
+        DataScopeContext dataScope = resolveCurrentDataScope();
 
         InternalDeviceCreateDTO createDTO = new InternalDeviceCreateDTO();
         createDTO.setProductId(product.getId());
-        createDTO.setProjectId(product.getProjectId());
+        // 自动建设备资产时沿用当前产品链路与当前用户可见范围，避免 group/project 数据权限下
+        // 视频设备刚保存就因为关联资产未落入当前范围而被列表过滤掉。
+        createDTO.setProjectId(resolveLinkedProjectId(product, dataScope));
+        createDTO.setGroupIds(resolveLinkedGroupIds(dataScope));
         createDTO.setDeviceName(generateLinkedDeviceName(productKey, device.getStreamMode()));
         createDTO.setNickname(device.getName());
         createDTO.setDescription(buildLinkedDeviceDescription(device));
@@ -459,6 +468,51 @@ public class VideoService {
             throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
         }
         return response.getData();
+    }
+
+    private DataScopeContext resolveCurrentDataScope() {
+        Long userId = AppContextHolder.getUserId();
+        if (userId == null) {
+            return null;
+        }
+        DataScopeResolver resolver = dataScopeResolverProvider.getIfAvailable();
+        if (resolver == null) {
+            return null;
+        }
+        return resolver.resolve(userId, AppContextHolder.getTenantId());
+    }
+
+    private Long resolveLinkedProjectId(ProductBasicVO product, DataScopeContext dataScope) {
+        if (product.getProjectId() != null) {
+            return product.getProjectId();
+        }
+        if (dataScope == null || dataScope.getProjectIds() == null || dataScope.getProjectIds().size() != 1) {
+            return null;
+        }
+        return dataScope.getProjectIds().get(0);
+    }
+
+    private List<Long> resolveLinkedGroupIds(DataScopeContext dataScope) {
+        if (dataScope == null || dataScope.getGroupIds() == null || dataScope.getGroupIds().isEmpty()) {
+            return List.of();
+        }
+        return dataScope.getGroupIds().stream()
+                .map(this::parseScopeGroupId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+    }
+
+    private Long parseScopeGroupId(String value) {
+        String normalized = trimToNull(value);
+        if (normalized == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(normalized);
+        } catch (NumberFormatException ignore) {
+            return null;
+        }
     }
 
     private void validateProductProtocol(ProductBasicVO product, StreamMode streamMode) {

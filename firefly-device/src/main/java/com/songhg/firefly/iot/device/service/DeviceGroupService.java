@@ -461,6 +461,22 @@ public class DeviceGroupService {
         affectedGroupIds.forEach(this::updateDeviceCount);
     }
 
+    public List<Long> filterStaticGroupIds(Collection<Long> groupIds) {
+        List<Long> normalizedGroupIds = normalizeIds(groupIds);
+        if (normalizedGroupIds.isEmpty()) {
+            return List.of();
+        }
+        Long tenantId = AppContextHolder.getTenantId();
+        return groupMapper.selectBatchIds(normalizedGroupIds).stream()
+                .filter(Objects::nonNull)
+                .filter(group -> tenantId == null || Objects.equals(group.getTenantId(), tenantId))
+                .filter(group -> GROUP_TYPE_STATIC.equals(normalizeGroupType(group.getType())))
+                .map(DeviceGroup::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+    }
+
     @Transactional
     public void removeDeviceMemberships(Long deviceId) {
         List<DeviceGroupMember> members = memberMapper.selectList(new LambdaQueryWrapper<DeviceGroupMember>()

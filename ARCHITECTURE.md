@@ -67,7 +67,16 @@ flowchart LR
    - 如果连接归属其他节点，先检查目标节点心跳，再通过 Redis Pub/Sub 转发到目标节点投递。
    - 如果目标节点已失活，会清理陈旧路由并尝试使用本地有效路由恢复投递。
 
-### 3.3 动态注册
+### 3.3 调用链上下文传播
+
+1. HTTP / Gateway 请求进入业务服务后，由统一安全链路恢复 `AppContextHolder`。
+2. 服务间同步调用通过 `AuthContextFeignInterceptor` 透传 `X-Tenant-Id`、`X-User-Id`、`X-Granted-Permissions` 等业务上下文。
+3. Kafka 异步调用由 `firefly-common` 统一补齐：
+   - Producer 拦截器把当前 `AppContextHolder` 写入 Kafka Header。
+   - Consumer 侧通过 Spring Kafka `RecordInterceptor` 按记录恢复上下文，并在处理完成后恢复上一个线程上下文。
+4. 不允许依赖批量 `poll` 线程上下文混跑不同租户消息；逐条恢复是默认口径。
+
+### 3.4 动态注册
 
 一型一密产品只能走动态注册流程：
 
@@ -116,6 +125,11 @@ flowchart LR
 | `device.message.down` | `firefly-device` | `firefly-connector` | 设备下行消息 |
 | `device.ota.progress` | `firefly-connector` | `firefly-device` | OTA 进度 |
 | `rule.engine.input` | `firefly-device` | `firefly-rule` | 规则引擎输入 |
+
+补充约束：
+
+- 业务消息在可获得 `AppContextHolder` 时，统一写入租户、用户、权限相关 Header。
+- 消费端必须按单条消息恢复上下文，避免同一消费线程上的跨租户污染。
 
 ## 6. Connector 对外入口
 

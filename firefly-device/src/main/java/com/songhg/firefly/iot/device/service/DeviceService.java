@@ -93,6 +93,7 @@ public class DeviceService {
         deviceTagService.syncDeviceTags(device.getId(), dto.getTagIds());
         deviceGroupService.syncDeviceGroups(device.getId(), dto.getGroupIds());
         bindDeviceLocators(device.getId(), dto.getLocators());
+        deviceGroupService.rebuildDynamicGroupsForDevice(device.getId());
         increaseProductDeviceCount(product, 1);
 
         log.info("Device created: id={}, deviceName={}, productId={}", device.getId(), device.getDeviceName(), dto.getProductId());
@@ -117,6 +118,11 @@ public class DeviceService {
                 dto.getDescription()
         );
         deviceMapper.insert(device);
+        // 视频等跨服务建链场景会把当前可见范围内的静态分组一并带过来，
+        // 同时对动态分组做一次重算，避免设备创建成功后立刻落到当前数据权限之外。
+        List<Long> staticGroupIds = deviceGroupService.filterStaticGroupIds(dto.getGroupIds());
+        deviceGroupService.syncDeviceGroups(device.getId(), staticGroupIds);
+        deviceGroupService.rebuildDynamicGroupsForDevice(device.getId());
         increaseProductDeviceCount(product, 1);
 
         log.info("Internal device created: id={}, deviceName={}, productId={}", device.getId(), device.getDeviceName(), dto.getProductId());
@@ -156,6 +162,7 @@ public class DeviceService {
             deviceTagService.syncDeviceTags(device.getId(), dto.getTagIds());
             deviceGroupService.syncDeviceGroups(device.getId(), dto.getGroupIds());
             bindDeviceLocators(device.getId(), item.getLocators());
+            deviceGroupService.rebuildDynamicGroupsForDevice(device.getId());
             result.add(toCredentialVO(device, product));
         }
 

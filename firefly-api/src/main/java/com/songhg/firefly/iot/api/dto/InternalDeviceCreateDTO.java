@@ -8,6 +8,7 @@ import lombok.Data;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * 内部设备创建请求。
@@ -34,4 +35,6 @@ public class InternalDeviceCreateDTO implements Serializable {
     private String nickname;
 
     private String description;
+
+    private List<Long> groupIds;
 }
