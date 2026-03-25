@@ -114,7 +114,7 @@ CREATE INDEX idx_products_category ON products(tenant_id, category);
 | `protocol` | VARCHAR(32) | 接入协议：MQTT / COAP / HTTP / LWM2M / GB28181 / RTSP / RTMP / CUSTOM |
 | `thing_model` | JSONB | 物模型定义 JSON |
 | `node_type` | VARCHAR(16) | 节点类型：DEVICE (直连设备) / GATEWAY (网关) |
-| `data_format` | VARCHAR(16) | 数据格式：JSON / CUSTOM (自定义/透传) |
+| `data_format` | VARCHAR(16) | 数据格式：JSON / CUSTOM (自定义/透传)；其中摄像头产品固定为 CUSTOM |
 | `status` | VARCHAR(16) | 产品状态：DEVELOPMENT / PUBLISHED / DEPRECATED |
 | `device_count` | INT | 该产品下的设备数量（缓存字段，异步更新） |
 
@@ -166,6 +166,11 @@ GATEWAY("GATEWAY")    // 网关设备
 JSON("JSON"),       // JSON 格式
 CUSTOM("CUSTOM")    // 自定义/透传
 ```
+
+说明：
+
+- 普通 IoT 产品可按协议选择 `JSON` 或 `CUSTOM`
+- 摄像头产品固定使用 `CUSTOM`，不再开放 `JSON` 选项
 
 ---
 
@@ -346,23 +351,27 @@ firefly-common/src/main/java/.../common/enums/
 | 产品分类 | Select | ✅ | SENSOR/GATEWAY/CONTROLLER/CAMERA/OTHER |
 | 接入协议 | Select | ✅ | 普通产品: MQTT/COAP/HTTP/LWM2M/CUSTOM；摄像头产品: GB28181/RTSP/RTMP |
 | 节点类型 | Select | ✅ | DEVICE/GATEWAY |
-| 数据格式 | Select | ✅ | JSON/CUSTOM |
+| 数据格式 | Select | ✅ | 普通产品: JSON/CUSTOM；摄像头产品: 固定 CUSTOM |
 
 ### 11.5 分类与协议联动约束
 
-产品分类和接入协议不是任意组合：
+产品分类、接入协议和数据格式不是任意组合：
 
 - 摄像头产品只允许选择 `GB28181`、`RTSP`、`RTMP`
+- 摄像头产品固定使用 `CUSTOM` 数据格式
 - 非摄像头产品不允许选择上述视频协议
 
 约束同时在前后端生效：
 
 1. 前端新建/编辑抽屉按分类动态筛选协议选项
-2. 后端 `ProductService` 二次校验分类和协议组合，避免绕过前端直接写入脏数据
+2. 前端在摄像头分类下将数据格式直接收口为 `CUSTOM`
+3. 后端 `ProductService` 二次校验分类和协议组合，并强制把摄像头产品写成 `CUSTOM`
+4. Flyway `V22__force_camera_products_custom_data_format.sql` 会把历史摄像头产品的 `data_format` 修正为 `CUSTOM`
 
 这样可以保证：
 
 - 摄像头产品直接进入视频链路
+- 摄像头产品不再伪装成 `JSON` 设备产品
 - 普通 IoT 产品继续走 MQTT / HTTP / CoAP 等设备接入链路
 - 不再出现“摄像头产品配置成普通物联网协议”或“普通产品误选视频协议”的脏数据
 

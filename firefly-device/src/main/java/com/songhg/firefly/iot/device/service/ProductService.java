@@ -72,9 +72,6 @@ public class ProductService {
         if (product.getNodeType() == null) {
             product.setNodeType(NodeType.DEVICE);
         }
-        if (product.getDataFormat() == null) {
-            product.setDataFormat(DataFormat.JSON);
-        }
         normalizeProductFields(product);
         productMapper.insert(product);
 
@@ -305,6 +302,12 @@ public class ProductService {
         product.setImageUrl(trimToNull(product.getImageUrl()));
         product.setDescription(trimToNull(product.getDescription()));
         validateCategoryProtocol(product);
+        // 摄像头产品统一走视频链路，不再暴露 JSON 物联网数据格式选择。
+        if (product.getCategory() == ProductCategory.CAMERA) {
+            product.setDataFormat(DataFormat.CUSTOM);
+        } else if (product.getDataFormat() == null) {
+            product.setDataFormat(DataFormat.JSON);
+        }
         if (product.getDeviceAuthType() == null) {
             product.setDeviceAuthType(DeviceAuthType.PRODUCT_SECRET);
         }

@@ -192,6 +192,11 @@ const DATA_FORMAT_OPTIONS = [
   { value: 'CUSTOM', label: '自定义透传' },
 ];
 
+const DATA_FORMAT_LABELS: Record<string, string> = {
+  JSON: 'JSON',
+  CUSTOM: '自定义透传',
+};
+
 const DEVICE_AUTH_OPTIONS = [
   { value: 'DEVICE_SECRET', label: '一机一密' },
   { value: 'PRODUCT_SECRET', label: '一型一密' },
@@ -234,6 +239,13 @@ const trimOptionalValue = (value?: string) => {
   return trimmed ? trimmed : undefined;
 };
 
+const resolveProductDataFormat = (category?: string, dataFormat?: string) => {
+  if (category === 'CAMERA') {
+    return 'CUSTOM';
+  }
+  return dataFormat || 'JSON';
+};
+
 const buildProductPayload = (values: ProductFormValues) => ({
   name: values.name.trim(),
   model: trimOptionalValue(values.model),
@@ -242,7 +254,7 @@ const buildProductPayload = (values: ProductFormValues) => ({
   category: values.category,
   protocol: values.protocol,
   nodeType: values.nodeType,
-  dataFormat: values.dataFormat,
+  dataFormat: resolveProductDataFormat(values.category, values.dataFormat),
   deviceAuthType: values.deviceAuthType,
 });
 
@@ -254,7 +266,7 @@ const mapRecordToFormValues = (record: ProductRecord): ProductFormValues => ({
   category: record.category,
   protocol: record.protocol,
   nodeType: record.nodeType,
-  dataFormat: record.dataFormat,
+  dataFormat: resolveProductDataFormat(record.category, record.dataFormat),
   deviceAuthType: record.deviceAuthType || 'PRODUCT_SECRET',
 });
 
@@ -400,6 +412,22 @@ const ProductList: React.FC = () => {
     const options = getProtocolOptionsByCategory(editCategory);
     if (!options.some((item) => item.value === currentProtocol)) {
       editForm.setFieldValue('protocol', options[0]?.value);
+    }
+  }, [editCategory, editForm]);
+
+  useEffect(() => {
+    const currentDataFormat = createForm.getFieldValue('dataFormat');
+    const nextDataFormat = resolveProductDataFormat(createCategory, currentDataFormat);
+    if (currentDataFormat !== nextDataFormat) {
+      createForm.setFieldValue('dataFormat', nextDataFormat);
+    }
+  }, [createCategory, createForm]);
+
+  useEffect(() => {
+    const currentDataFormat = editForm.getFieldValue('dataFormat');
+    const nextDataFormat = resolveProductDataFormat(editCategory, currentDataFormat);
+    if (currentDataFormat !== nextDataFormat) {
+      editForm.setFieldValue('dataFormat', nextDataFormat);
     }
   }, [editCategory, editForm]);
 
@@ -822,8 +850,9 @@ const ProductList: React.FC = () => {
     setUploading: React.Dispatch<React.SetStateAction<boolean>>,
   ) => {
     const currentCategory = form.getFieldValue('category') as string | undefined;
+    const isCameraCategory = currentCategory === 'CAMERA';
     const authExtra =
-      currentCategory === 'CAMERA'
+      isCameraCategory
         ? '摄像头产品创建后，请到“视频监控”页面添加视频设备并完成 GB28181、RTSP 或 RTMP 接入。'
         : '一机一密需要先创建设备再接入；一型一密在产品发布后可从“设备接入”入口查看 ProductSecret 并调试动态注册。';
 
@@ -881,8 +910,18 @@ const ProductList: React.FC = () => {
           </Form.Item>
         </Col>
         <Col xs={24} md={12}>
-          <Form.Item name="dataFormat" label="数据格式" rules={[{ required: true, message: '请选择数据格式' }]}>
-            <Select options={DATA_FORMAT_OPTIONS} />
+          <Form.Item
+            name="dataFormat"
+            label="数据格式"
+            rules={[{ required: true, message: '请选择数据格式' }]}
+            extra={isCameraCategory ? '摄像头产品固定使用自定义透传，不支持切换为 JSON。' : undefined}
+          >
+            <Select
+              disabled={isCameraCategory}
+              options={isCameraCategory
+                ? DATA_FORMAT_OPTIONS.filter((item) => item.value === 'CUSTOM')
+                : DATA_FORMAT_OPTIONS}
+            />
           </Form.Item>
         </Col>
       </Row>
@@ -1155,7 +1194,7 @@ const ProductList: React.FC = () => {
                           }}
                         >
                           {renderCompactMetric('节点类型', NODE_TYPE_LABELS[record.nodeType] || record.nodeType)}
-                          {renderCompactMetric('数据格式', record.dataFormat)}
+                          {renderCompactMetric('数据格式', DATA_FORMAT_LABELS[record.dataFormat] || record.dataFormat)}
                           {renderCompactMetric('设备数量', `${record.deviceCount || 0} 台`)}
                         </div>
 

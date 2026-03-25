@@ -4,11 +4,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.api.client.FileClient;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.enums.DataFormat;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.enums.ProductCategory;
 import com.songhg.firefly.iot.common.enums.ProductStatus;
 import com.songhg.firefly.iot.common.enums.ProtocolType;
 import com.songhg.firefly.iot.device.dto.product.ProductCreateDTO;
+import com.songhg.firefly.iot.device.dto.product.ProductUpdateDTO;
 import com.songhg.firefly.iot.device.entity.Product;
 import com.songhg.firefly.iot.device.mapper.ProductMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -150,6 +152,52 @@ class ProductServiceTest {
         dto.setProtocol(ProtocolType.GB28181);
 
         assertThrows(BizException.class, () -> productService.createProduct(dto));
+    }
+
+    @Test
+    void shouldForceCustomDataFormatForCameraProduct() {
+        AppContextHolder.setTenantId(10L);
+        AppContextHolder.setUserId(20L);
+
+        ProductCreateDTO dto = new ProductCreateDTO();
+        dto.setName("园区摄像头");
+        dto.setCategory(ProductCategory.CAMERA);
+        dto.setProtocol(ProtocolType.GB28181);
+        dto.setDataFormat(DataFormat.JSON);
+
+        doAnswer(invocation -> {
+            Product inserted = invocation.getArgument(0);
+            inserted.setId(101L);
+            return 1;
+        }).when(productMapper).insert(any(Product.class));
+
+        productService.createProduct(dto);
+
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productMapper).insert(captor.capture());
+        assertEquals(DataFormat.CUSTOM, captor.getValue().getDataFormat());
+    }
+
+    @Test
+    void shouldForceCustomDataFormatWhenUpdatingCameraProduct() {
+        Product product = new Product();
+        product.setId(2L);
+        product.setName("厂区摄像头");
+        product.setCategory(ProductCategory.CAMERA);
+        product.setProtocol(ProtocolType.GB28181);
+        product.setDataFormat(DataFormat.JSON);
+
+        when(productMapper.selectById(2L)).thenReturn(product);
+
+        ProductUpdateDTO dto = new ProductUpdateDTO();
+        dto.setDataFormat(DataFormat.JSON);
+        dto.setProtocol(ProtocolType.RTSP);
+
+        productService.updateProduct(2L, dto);
+
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productMapper).updateById(captor.capture());
+        assertEquals(DataFormat.CUSTOM, captor.getValue().getDataFormat());
     }
 
     private List<String> extractPropertyIdentifiers(JsonNode root) {
