@@ -22,7 +22,7 @@
 
 1. `firefly-system` 的菜单目录模型、租户菜单授权模型、角色权限目录生成链路、登录用户授权菜单路径输出。
 2. `firefly-web` 的系统菜单权限管理页面、平台/租户菜单展示、运行时菜单访问控制。
-3. Flyway 迁移 `V24__rebuild_workspace_menu_catalog.sql` 与 `V33__backfill_device_assets_menu_icon.sql`。
+3. Flyway 迁移 `V24__rebuild_workspace_menu_catalog.sql`、`V33__backfill_device_assets_menu_icon.sql` 与 `V34__move_video_menu_to_device_assets.sql`。
 
 ## 数据模型
 
@@ -177,7 +177,7 @@
 
 ## 初始化数据
 
-Flyway `V24` 会一次性写入：
+相关 Flyway 迁移会写入或修正：
 
 1. 平台空间基础菜单树。
 2. 租户业务空间基础菜单树。
@@ -187,6 +187,7 @@ Flyway `V24` 会一次性写入：
    - `workspace-menu:update`
 5. 系统运维超级管理员默认授权。
 6. 历史库中 `TENANT/tenant-device-assets` 菜单图标回填为 `HddOutlined`。
+7. 历史库中 `TENANT/video` 菜单父级迁移到 `tenant-device-assets`，并修正仍指向旧父级的租户菜单自定义记录。
 
 ## 风险与取舍
 

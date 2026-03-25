@@ -22,11 +22,12 @@
 6. 系统菜单权限管理页面
 7. 运行时 `authorizedMenuPaths` 访问约束
 8. 菜单图标必填校验与 `tenant-device-assets` 图标回填
+9. 租户空间 `video` 菜单迁移到 `tenant-device-assets`
 
 ## 发布步骤
 
 1. 发布 `firefly-system`
-2. 执行 Flyway 迁移到最新版本，至少包含 `V24__rebuild_workspace_menu_catalog.sql` 和 `V33__backfill_device_assets_menu_icon.sql`
+2. 执行 Flyway 迁移到最新版本，至少包含 `V24__rebuild_workspace_menu_catalog.sql`、`V33__backfill_device_assets_menu_icon.sql` 和 `V34__move_video_menu_to_device_assets.sql`
 3. 发布 `firefly-web`
 4. 重新登录平台和租户账号验证菜单授权是否生效
 
@@ -36,6 +37,7 @@
 2. 如果历史环境曾经手工改过租户菜单、旧目录接口或权限种子，建议先清理旧数据。
 3. 如果当前环境尚未正式使用，建议直接清库后重跑迁移，避免旧脏数据影响菜单授权判断。
 4. 如历史环境出现菜单名称正常但左侧无图标，优先确认 `workspace_menu_catalog.icon` 未被手工清空，并已执行到 `V33`。
+5. 如历史环境仍把“视频监控”显示在“运维工具”下，优先确认 `V34` 已执行，并检查是否残留旧的租户菜单自定义父级。
 
 ## 发布后验证
 
@@ -53,6 +55,10 @@ order by workspace_scope, sort_order, menu_key;
 select workspace_scope, menu_key, icon
 from workspace_menu_catalog
 where menu_key = 'tenant-device-assets';
+
+select workspace_scope, menu_key, parent_menu_key, sort_order
+from workspace_menu_catalog
+where menu_key = 'video';
 
 select workspace_scope, menu_key, permission_code, permission_label
 from workspace_menu_permission_catalog
@@ -73,6 +79,11 @@ where code in ('workspace-menu:read', 'workspace-menu:update');
 select tenant_id, menu_key
 from tenant_menu_configs
 order by tenant_id, menu_key;
+
+select tenant_id, workspace_scope, menu_key, parent_menu_key, sort_order
+from workspace_menu_customizations
+where menu_key = 'video'
+order by tenant_id, workspace_scope;
 ```
 
 ## 功能验证
@@ -115,7 +126,16 @@ order by tenant_id, menu_key;
 2. `tenant_menu_configs` 是否仍保留该菜单键。
 3. 前端是否已刷新到最新构建版本。
 
-### 3. 角色权限页没有出现某个页面的权限分组
+### 3. 视频监控仍显示在运维工具下
+
+优先检查：
+
+1. 数据库是否已执行 `V34__move_video_menu_to_device_assets.sql`。
+2. `workspace_menu_catalog` 中 `TENANT/video` 的父级是否为 `tenant-device-assets`。
+3. `workspace_menu_customizations` 中是否仍残留指向 `tenant-ops-tools` 的旧记录。
+4. 前端是否已刷新到最新构建版本。
+
+### 4. 角色权限页没有出现某个页面的权限分组
 
 检查：
 
@@ -124,7 +144,7 @@ order by tenant_id, menu_key;
 3. 菜单是否真正绑定了权限集合。
 4. 租户空间下该菜单是否已授权给当前租户。
 
-### 4. 迁移执行后菜单名称是乱码
+### 5. 迁移执行后菜单名称是乱码
 
 说明迁移文件或数据库字符集未按 UTF-8 处理。请检查：
 
@@ -132,7 +152,7 @@ order by tenant_id, menu_key;
 2. 数据库连接参数是否正确传递字符集。
 3. 如果已经写入脏数据，清理相关表后重新执行迁移。
 
-### 5. 菜单名称正常，但图标不显示
+### 6. 菜单名称正常，但图标不显示
 
 请检查：
 
