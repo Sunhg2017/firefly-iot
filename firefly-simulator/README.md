@@ -103,6 +103,7 @@ npm run electron:build
 
 - GB28181 模式会自动使用 `国标设备 ID` 作为本地 `DeviceName`
 - RTSP 代理模式会自动使用“模拟设备名称”作为本地 `DeviceName`
+- Video 设备现在也支持先绑定平台产品，再按 `ProductKey` 同步当前产品物模型
 
 | 功能 | API | 说明 |
 |------|-----|------|

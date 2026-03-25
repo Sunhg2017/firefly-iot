@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   Button,
   Card,
@@ -45,12 +45,6 @@ interface TenantProductRecord {
 }
 
 const STEP_TITLES = ['基本信息', '接入参数', '扩展配置'];
-
-const PRODUCT_PROTOCOL_QUERY_MAP: Partial<Record<Protocol, string>> = {
-  HTTP: 'HTTP',
-  MQTT: 'MQTT',
-  CoAP: 'COAP',
-};
 
 const AUTH_MODE_LABELS: Record<'DEVICE_SECRET' | 'PRODUCT_SECRET', string> = {
   DEVICE_SECRET: '一机一密',
@@ -117,7 +111,22 @@ function resolveEffectiveDeviceName(values: Record<string, unknown>): string {
 }
 
 function supportsTenantProductSelection(protocol: Protocol): boolean {
-  return protocol === 'HTTP' || protocol === 'MQTT' || protocol === 'CoAP';
+  return protocol === 'HTTP' || protocol === 'MQTT' || protocol === 'CoAP' || protocol === 'Video';
+}
+
+function resolveProductProtocolQuery(protocol: Protocol, streamMode?: string): string | undefined {
+  switch (protocol) {
+    case 'HTTP':
+      return 'HTTP';
+    case 'MQTT':
+      return 'MQTT';
+    case 'CoAP':
+      return 'COAP';
+    case 'Video':
+      return streamMode === 'RTSP_PROXY' ? 'RTSP' : 'GB28181';
+    default:
+      return undefined;
+  }
 }
 
 function buildInitialValues(
@@ -165,7 +174,7 @@ function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, 
       case 'MQTT':
         return ['productKey', 'deviceName', 'mqttBrokerUrl', ...(mqttAuthMode === 'PRODUCT_SECRET' ? ['mqttRegisterBaseUrl', 'productSecret'] : ['deviceSecret'])];
       case 'Video':
-        return ['mediaBaseUrl', 'streamMode', ...(streamMode === 'RTSP_PROXY' ? ['rtspUrl'] : ['gbDeviceId', 'gbDomain'])];
+        return ['productKey', 'mediaBaseUrl', 'streamMode', ...(streamMode === 'RTSP_PROXY' ? ['rtspUrl'] : ['gbDeviceId', 'gbDomain'])];
       case 'CoAP':
         return ['coapBaseUrl', 'productKey', 'deviceName', 'deviceSecret'];
       case 'SNMP':
@@ -224,6 +233,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
   const [products, setProducts] = useState<TenantProductRecord[]>([]);
   const [productLoading, setProductLoading] = useState(false);
   const [productLoadError, setProductLoadError] = useState('');
+  const previousVideoStreamModeRef = useRef<string | undefined>(undefined);
 
   const protocol = ((formSnapshot.protocol as Protocol | undefined) || 'HTTP') as Protocol;
   const httpAuthMode = formSnapshot.httpAuthMode as string | undefined;
@@ -260,6 +270,30 @@ export default function AddDeviceModal({ open, onClose }: Props) {
 
   useEffect(() => {
     if (!open) {
+      previousVideoStreamModeRef.current = undefined;
+      return;
+    }
+
+    const previousStreamMode = previousVideoStreamModeRef.current;
+    previousVideoStreamModeRef.current = protocol === 'Video' ? streamMode : undefined;
+
+    if (protocol !== 'Video' || !streamMode || !previousStreamMode || previousStreamMode === streamMode) {
+      return;
+    }
+
+    const currentProductKey = trimText(form.getFieldValue('productKey'));
+    if (!currentProductKey) {
+      return;
+    }
+
+    // Video 的产品协议由当前视频模式决定，模式切换后不能继续复用旧 ProductKey。
+    form.setFieldValue('productKey', undefined);
+    setFormSnapshot(form.getFieldsValue(true));
+    message.info('视频模式已切换，请重新选择匹配当前模式的产品');
+  }, [form, open, protocol, streamMode]);
+
+  useEffect(() => {
+    if (!open) {
       return;
     }
     if (!supportsTenantProductSelection(protocol)) {
@@ -285,7 +319,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
         {
           pageNum: 1,
           pageSize: 200,
-          protocol: PRODUCT_PROTOCOL_QUERY_MAP[protocol],
+          protocol: resolveProductProtocolQuery(protocol, streamMode),
         },
         navigator.userAgent,
       );
@@ -340,6 +374,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     clearWorkspaceSession,
     open,
     protocol,
+    streamMode,
   ]);
 
   const nextStep = async () => {
@@ -643,6 +678,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       case 'Video':
         return (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            {renderProductField()}
             <Form.Item name="mediaBaseUrl" label="媒体服务地址" rules={[{ required: true, message: '请输入媒体服务地址' }]}><Input placeholder={activeEnvironment.mediaBaseUrl} /></Form.Item>
             <Form.Item name="streamMode" label="视频模式">
               <Radio.Group>

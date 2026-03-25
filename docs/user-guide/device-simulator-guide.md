@@ -26,7 +26,7 @@
 
 - HTTP / CoAP：`productKey`、`deviceName`、`deviceSecret`
 - MQTT：`productKey`、`deviceName`、认证方式、Broker 地址
-- Video：媒体服务地址、视频模式、国标设备 ID 或 RTSP 地址
+- Video：先选产品或填写 `productKey`，再补媒体服务地址、视频模式、国标设备 ID 或 RTSP 地址
 
 创建完成后，右侧设备控制区会先展示“接入概览”，把地址、标识和密钥状态整理成卡片，不需要再从长表单里回忆参数。
 
@@ -70,12 +70,14 @@
 
 如果你是联调 GB28181：
 
-1. 第二步先填媒体服务地址和国标设备 ID
-2. `DeviceName` 会自动跟随国标设备 ID 生成
-3. 第三步再补 SIP 配置和通道
+1. 第二步先选择 GB28181 产品，或手工填写对应 `ProductKey`
+2. 再填媒体服务地址和国标设备 ID
+3. `DeviceName` 会自动跟随国标设备 ID 生成
+4. 第三步再补 SIP 配置和通道
 
 如果你只想验证 RTSP 代理，直接选 `RTSP 代理` 并填写 RTSP 地址即可。
-RTSP 代理模式下，`DeviceName` 会自动复用第一步填写的模拟设备名称。
+RTSP 代理模式下，先选择 RTSP 产品或填写对应 `ProductKey`，`DeviceName` 会自动复用第一步填写的模拟设备名称。
+如果中途切换了视频模式，原先选择的产品会自动清空，需要重新选择与当前模式一致的产品。
 
 ### 2.4 WebSocket
 

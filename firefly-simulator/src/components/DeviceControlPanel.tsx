@@ -133,6 +133,10 @@ function maskSecret(value?: string | null): string {
   return `${'*'.repeat(Math.max(4, text.length - 4))}${text.slice(-4)}`;
 }
 
+function supportsThingModelSync(protocol?: string): boolean {
+  return protocol === 'HTTP' || protocol === 'CoAP' || protocol === 'MQTT' || protocol === 'Video';
+}
+
 function supportsThingModelReport(protocol?: string): boolean {
   return protocol === 'HTTP' || protocol === 'CoAP' || protocol === 'MQTT';
 }
@@ -224,7 +228,7 @@ export default function DeviceControlPanel() {
   }, [selectedDeviceId, device?.protocol, device?.productKey, device?.deviceName, reportType]);
 
   useEffect(() => {
-    if (!device || !supportsThingModelReport(device.protocol)) {
+    if (!device || !supportsThingModelSync(device.protocol)) {
       setThingModelRoot(null);
       setThingModelError('');
       setThingModelLoading(false);
@@ -674,6 +678,7 @@ export default function DeviceControlPanel() {
 
   const isOnline = device.status === 'online';
   const showGenericReport = device.protocol === 'HTTP' || device.protocol === 'CoAP' || device.protocol === 'MQTT';
+  const showThingModelSync = supportsThingModelSync(device.protocol);
   const mqttIdentity = device.protocol === 'MQTT' ? resolveMqttIdentity(device) : null;
   const accessError = getDeviceAccessValidationError(device);
   const accessItems = getDeviceAccessOverviewItems(device);
@@ -1659,7 +1664,7 @@ export default function DeviceControlPanel() {
         </div>
       </div>
 
-      {showGenericReport && (
+      {showThingModelSync && (
         <Card
           title={<Space><ApiOutlined />平台物模型</Space>}
           extra={(
@@ -1689,8 +1694,8 @@ export default function DeviceControlPanel() {
               showIcon
               message={activeSession?.accessToken ? `当前环境：${activeEnvironment.name}` : '请先登录当前环境'}
               description={activeSession?.accessToken
-                ? `将通过 ${activeEnvironment.gatewayBaseUrl || '-'} 按 ProductKey 同步属性和事件。`
-                : '登录后可自动同步物模型；未登录时仍可继续使用自定义 JSON。'}
+                ? `将通过 ${activeEnvironment.gatewayBaseUrl || '-'} 按 ProductKey 同步当前产品的属性、事件和服务定义。`
+                : '登录后可自动同步物模型；未登录时仍可继续调试当前协议接入。'}
             />
 
             {thingModelLoading ? (
@@ -1701,7 +1706,7 @@ export default function DeviceControlPanel() {
 
             {!thingModelLoading && thingModelRoot ? (
               <Text type="secondary" style={{ fontSize: 12 }}>
-                已同步 {thingModelRoot.properties.length} 个属性、{thingModelRoot.events.length} 个事件。
+                已同步 {thingModelRoot.properties.length} 个属性、{thingModelRoot.events.length} 个事件、{thingModelRoot.services.length} 个服务。
               </Text>
             ) : null}
 

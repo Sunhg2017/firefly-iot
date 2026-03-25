@@ -118,9 +118,11 @@ function getDeviceSubtitle(device: SimDevice) {
     return `${device.productKey || '-'} / ${device.deviceName || '-'}`;
   }
   if (device.protocol === 'Video') {
-    return device.streamMode === 'GB28181'
-      ? device.gbDeviceId || '未配置国标设备 ID'
-      : device.rtspUrl || '未配置 RTSP 地址';
+    const missing = getDeviceAccessMissingFields(device);
+    if (missing.length > 0) {
+      return `待补齐 ${missing.join(' / ')}`;
+    }
+    return `${device.productKey || '-'} / ${device.deviceName || '-'}`;
   }
   if (device.protocol === 'SNMP') {
     return `${device.snmpHost || '-'}:${device.snmpPort || '-'}`;

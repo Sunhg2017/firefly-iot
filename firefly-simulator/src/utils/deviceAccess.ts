@@ -96,7 +96,9 @@ export function getDeviceAccessMissingFields(device: SimDevice): string[] {
     }
     case 'Video': {
       const missing: string[] = [];
+      if (!trim(device.productKey)) missing.push('ProductKey');
       if (!trim(device.mediaBaseUrl)) missing.push('媒体服务地址');
+      if (!trim(device.deviceName)) missing.push('DeviceName');
       if (device.streamMode === 'GB28181') {
         if (!trim(device.gbDeviceId)) missing.push('国标设备 ID');
         if (!trim(device.gbDomain)) missing.push('国标域');
@@ -193,6 +195,8 @@ export function getDeviceAccessOverviewItems(device: SimDevice): AccessOverviewI
       ];
     case 'Video':
       return [
+        { label: 'ProductKey', value: trim(device.productKey) || '未配置' },
+        { label: 'DeviceName', value: trim(device.deviceName) || '未配置' },
         { label: '媒体服务', value: trim(device.mediaBaseUrl) || '未配置' },
         { label: '模式', value: device.streamMode === 'GB28181' ? 'GB28181' : 'RTSP 代理', highlight: true },
         { label: device.streamMode === 'GB28181' ? '国标设备 ID' : 'RTSP 地址', value: trim(device.streamMode === 'GB28181' ? device.gbDeviceId : device.rtspUrl) || '未配置' },
