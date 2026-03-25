@@ -98,6 +98,24 @@ const drawerInnerCardStyle: CSSProperties = {
   boxShadow: 'none',
 };
 
+function trimText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function resolveVideoDeviceName(values: Record<string, unknown>): string {
+  if (values.streamMode === 'RTSP_PROXY') {
+    return trimText(values.name);
+  }
+  return trimText(values.gbDeviceId);
+}
+
+function resolveEffectiveDeviceName(values: Record<string, unknown>): string {
+  if (values.protocol === 'Video') {
+    return resolveVideoDeviceName(values);
+  }
+  return trimText(values.deviceName);
+}
+
 function supportsTenantProductSelection(protocol: Protocol): boolean {
   return protocol === 'HTTP' || protocol === 'MQTT' || protocol === 'CoAP';
 }
@@ -183,7 +201,7 @@ function buildSummary(values: Record<string, unknown>, products: TenantProductRe
       label: '所属产品',
       value: selectedProduct ? `${selectedProduct.name} (${selectedProduct.productKey})` : values.productKey || '-',
     },
-    { key: 'deviceName', label: 'DeviceName', value: values.deviceName || '-' },
+    { key: 'deviceName', label: 'DeviceName', value: resolveEffectiveDeviceName(values) || '-' },
     { key: 'main2', label: '接入地址', value: values.httpBaseUrl || values.coapBaseUrl || values.mqttBrokerUrl || values.mediaBaseUrl || values.loraWebhookUrl || '-' },
   ];
   return items;
@@ -343,10 +361,13 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     }
 
     const values = form.getFieldsValue(true);
+    const effectiveDeviceName = resolveEffectiveDeviceName(values);
     const normalizedValues = {
       ...values,
+      // Video 设备不再保留空的 DeviceName，而是统一映射到当前可识别的业务标识。
+      deviceName: effectiveDeviceName,
       // 模拟设备名称就是平台侧昵称口径，避免再维护一个重复输入框。
-      nickname: `${values.name || ''}`.trim(),
+      nickname: trimText(values.name),
     };
 
     useSimStore.getState().addDevice(normalizedValues);
@@ -637,6 +658,16 @@ export default function AddDeviceModal({ open, onClose }: Props) {
                 <Form.Item name="gbDomain" label="国标域" rules={[{ required: true, message: '请输入国标域' }]}><Input /></Form.Item>
               </>
             )}
+            <Form.Item
+              label="DeviceName"
+              extra={streamMode === 'RTSP_PROXY' ? 'RTSP 代理默认复用模拟设备名称作为 DeviceName。' : 'GB28181 默认复用国标设备 ID 作为 DeviceName。'}
+            >
+              <Input
+                readOnly
+                value={resolveVideoDeviceName(formSnapshot)}
+                placeholder={streamMode === 'RTSP_PROXY' ? '创建时自动使用模拟设备名称' : '创建时自动使用国标设备 ID'}
+              />
+            </Form.Item>
           </Space>
         );
       case 'CoAP':

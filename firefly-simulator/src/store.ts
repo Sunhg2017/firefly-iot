@@ -180,6 +180,23 @@ export function generatePayload(fields: TemplateField[]): Record<string, any> {
   return data;
 }
 
+function trimText(value?: string | null): string {
+  return (value ?? '').trim();
+}
+
+function resolveStoredDeviceName(partial: Partial<SimDevice>): string {
+  if (partial.protocol === 'Video') {
+    const currentValue = trimText(partial.deviceName);
+    if (currentValue) {
+      return currentValue;
+    }
+    return partial.streamMode === 'RTSP_PROXY'
+      ? trimText(partial.name)
+      : trimText(partial.gbDeviceId);
+  }
+  return trimText(partial.deviceName);
+}
+
 // ============================================================
 // Default templates
 // ============================================================
@@ -369,7 +386,7 @@ export const useSimStore = create<SimulatorState>()(
       httpRegisterBaseUrl: partial.httpRegisterBaseUrl || 'http://localhost:9070',
       productKey: partial.productKey || '',
       productSecret: partial.productSecret || '',
-      deviceName: partial.deviceName || '',
+      deviceName: resolveStoredDeviceName(partial),
       deviceSecret: partial.deviceSecret || '',
       locators: partial.locators || [],
       token: '',

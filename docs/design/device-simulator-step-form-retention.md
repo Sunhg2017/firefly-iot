@@ -32,3 +32,11 @@
 ## 6. 2026-03-14 摘要展示补充
 
 - 第三步“配置摘要”补充单独的 `DeviceName / 设备名称` 展示项，避免 HTTP 设备在最终确认阶段只能看到 `ProductKey`、看不到设备名称。
+
+## 7. 2026-03-25 视频 DeviceName 自动映射补充
+
+- Video 协议第二步不再保留空的 `DeviceName` 状态。
+- GB28181 模式统一使用 `gbDeviceId` 作为 Video 设备的本地 `DeviceName`。
+- RTSP 代理模式统一复用第一步填写的“模拟设备名称”作为本地 `DeviceName`。
+- 第三步“配置摘要”直接展示自动生成后的 `DeviceName`，用户不需要额外手工输入。
+- `addDevice(...)` 同步补齐 Video 设备的 `deviceName`，确保创建、导入和复制场景使用同一套口径。

@@ -101,6 +101,9 @@ npm run electron:build
 
 模拟器通过 `firefly-media` REST API 管理视频设备，支持 GB28181 和 RTSP 代理两种接入方式：
 
+- GB28181 模式会自动使用 `国标设备 ID` 作为本地 `DeviceName`
+- RTSP 代理模式会自动使用“模拟设备名称”作为本地 `DeviceName`
+
 | 功能 | API | 说明 |
 |------|-----|------|
 | 1. 注册设备 | `POST /api/v1/video/devices` | 创建视频设备（GB28181 或 RTSP_PROXY） |
@@ -294,4 +297,3 @@ name,protocol,productKey,deviceName,deviceSecret,httpBaseUrl
 - Device definitions are now persisted to an Electron user-data file, not only renderer localStorage.
 - Restorable protocols automatically reconnect after the simulator is reopened if they were online before shutdown.
 - Video devices are excluded from auto-restore to avoid duplicating server-side media resources.
-

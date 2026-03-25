@@ -54,3 +54,12 @@ npm run build:vite
 2. 在“配置摘要”中确认 `DeviceName / 设备名称` 已显示当前填写值。
 3. 若未显示，优先检查 `buildSummary(...)` 是否仍遗漏 `deviceName`。
 4. 若“模拟设备名称 / 平台设备昵称”显示为 `-`，优先检查 `onValuesChange` 是否仍使用了不完整的 `allValues`，当前应读取 `form.getFieldsValue(true)`。
+
+## 7. 2026-03-25 视频 DeviceName 回归补充
+
+回归时补充检查：
+
+1. 新建一个 GB28181 视频设备，第二步填写 `国标设备 ID`。
+2. 进入第三步，确认“配置摘要”中的 `DeviceName` 与 `国标设备 ID` 一致。
+3. 再新建一个 RTSP 代理设备，确认“配置摘要”中的 `DeviceName` 与第一步填写的“模拟设备名称”一致。
+4. 创建设备后检查设备配置导出结果，确认 Video 设备的 `deviceName` 不再为空。
