@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.songhg.firefly.iot.api.dto.DeviceBasicVO;
+import com.songhg.firefly.iot.api.dto.InternalDeviceCreateDTO;
 import com.songhg.firefly.iot.api.dto.DeviceLocatorInputDTO;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DeviceAuthType;
@@ -96,6 +97,30 @@ public class DeviceService {
 
         log.info("Device created: id={}, deviceName={}, productId={}", device.getId(), device.getDeviceName(), dto.getProductId());
         return toCredentialVO(device, product);
+    }
+
+    @Transactional
+    public DeviceBasicVO createDeviceFromInternal(InternalDeviceCreateDTO dto) {
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
+        Product product = getProductOrThrow(dto.getProductId());
+        validateManualRegistrationAllowed(product);
+        validateUniqueDeviceNames(dto.getProductId(), List.of(dto.getDeviceName()));
+
+        Device device = buildDevice(
+                tenantId,
+                userId,
+                dto.getProductId(),
+                dto.getProjectId(),
+                dto.getDeviceName(),
+                dto.getNickname(),
+                dto.getDescription()
+        );
+        deviceMapper.insert(device);
+        increaseProductDeviceCount(product, 1);
+
+        log.info("Internal device created: id={}, deviceName={}, productId={}", device.getId(), device.getDeviceName(), dto.getProductId());
+        return deviceMapper.selectBasicByIdIgnoreTenant(device.getId());
     }
 
     @Transactional

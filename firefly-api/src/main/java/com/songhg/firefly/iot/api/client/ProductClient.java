@@ -16,6 +16,9 @@ public interface ProductClient {
     @GetMapping("/{id}/basic")
     R<ProductBasicVO> getProductBasic(@PathVariable("id") Long id);
 
+    @GetMapping("/basic/by-product-key")
+    R<ProductBasicVO> getProductBasicByProductKey(@RequestParam("productKey") String productKey);
+
     @GetMapping("/thing-model")
     R<String> getThingModelByProductKey(@RequestParam("productKey") String productKey);
 }

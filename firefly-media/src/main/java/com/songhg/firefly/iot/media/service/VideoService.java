@@ -3,12 +3,14 @@ package com.songhg.firefly.iot.media.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.songhg.firefly.iot.api.client.DeviceClient;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.StreamMode;
 import com.songhg.firefly.iot.common.enums.StreamStatus;
 import com.songhg.firefly.iot.common.enums.VideoDeviceStatus;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.mybatis.DataScope;
+import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.media.convert.VideoConvert;
 import com.songhg.firefly.iot.media.dto.video.PtzControlDTO;
@@ -20,6 +22,10 @@ import com.songhg.firefly.iot.media.dto.video.VideoDeviceCreateDTO;
 import com.songhg.firefly.iot.media.dto.video.VideoDeviceQueryDTO;
 import com.songhg.firefly.iot.media.dto.video.VideoDeviceUpdateDTO;
 import com.songhg.firefly.iot.media.dto.video.VideoDeviceVO;
+import com.songhg.firefly.iot.api.client.ProductClient;
+import com.songhg.firefly.iot.api.dto.DeviceBasicVO;
+import com.songhg.firefly.iot.api.dto.InternalDeviceCreateDTO;
+import com.songhg.firefly.iot.api.dto.ProductBasicVO;
 import com.songhg.firefly.iot.media.entity.StreamSession;
 import com.songhg.firefly.iot.media.entity.VideoChannel;
 import com.songhg.firefly.iot.media.entity.VideoDevice;
@@ -36,8 +42,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -45,9 +54,14 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class VideoService {
 
+    private static final DateTimeFormatter LINKED_DEVICE_NAME_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
+
     private final VideoDeviceMapper videoDeviceMapper;
     private final VideoChannelMapper videoChannelMapper;
     private final StreamSessionMapper streamSessionMapper;
+    private final ProductClient productClient;
+    private final DeviceClient deviceClient;
     private final ZlmApiClient zlmApiClient;
     private final FileClient fileClient;
     private final SipCommandSender sipCommandSender;
@@ -59,6 +73,9 @@ public class VideoService {
         Long tenantId = AppContextHolder.getTenantId();
         VideoDevice device = VideoConvert.INSTANCE.toDeviceEntity(dto);
         normalizeDevice(device, dto.getSipAuthEnabled());
+        // 视频设备列表按 device_id 参与数据权限过滤，新增时必须先挂到设备资产主链路，
+        // 否则保存成功后会因为 device_id 为空而立即从列表中消失。
+        device.setDeviceId(resolveLinkedDeviceId(dto, device));
         device.setTenantId(tenantId);
         device.setStatus(VideoDeviceStatus.OFFLINE);
         device.setCreatedBy(AppContextHolder.getUserId());
@@ -407,6 +424,85 @@ public class VideoService {
         }
 
         device.setSipPassword(null);
+    }
+
+    private Long resolveLinkedDeviceId(VideoDeviceCreateDTO dto, VideoDevice device) {
+        if (device.getDeviceId() != null) {
+            return device.getDeviceId();
+        }
+
+        String productKey = trimToNull(dto.getProductKey());
+        if (productKey == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "请选择产品");
+        }
+
+        ProductBasicVO product = loadProductBasic(productKey);
+        validateProductProtocol(product, device.getStreamMode());
+
+        InternalDeviceCreateDTO createDTO = new InternalDeviceCreateDTO();
+        createDTO.setProductId(product.getId());
+        createDTO.setProjectId(product.getProjectId());
+        createDTO.setDeviceName(generateLinkedDeviceName(productKey, device.getStreamMode()));
+        createDTO.setNickname(device.getName());
+        createDTO.setDescription(buildLinkedDeviceDescription(device));
+
+        R<DeviceBasicVO> response = deviceClient.createDevice(createDTO);
+        if (response == null || response.getCode() != 0 || response.getData() == null || response.getData().getId() == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, response == null ? "创建设备资产失败" : response.getMessage());
+        }
+        return response.getData().getId();
+    }
+
+    private ProductBasicVO loadProductBasic(String productKey) {
+        R<ProductBasicVO> response = productClient.getProductBasicByProductKey(productKey);
+        if (response == null || response.getCode() != 0 || response.getData() == null || response.getData().getId() == null) {
+            throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
+        }
+        return response.getData();
+    }
+
+    private void validateProductProtocol(ProductBasicVO product, StreamMode streamMode) {
+        if (product.getProtocol() == null || streamMode == null) {
+            return;
+        }
+        if (!streamMode.name().equalsIgnoreCase(product.getProtocol())) {
+            throw new BizException(ResultCode.PARAM_ERROR, "视频设备接入方式必须与产品协议一致");
+        }
+    }
+
+    private String generateLinkedDeviceName(String productKey, StreamMode streamMode) {
+        String prefix = normalizeLinkedDeviceNamePart(productKey);
+        String protocol = streamMode == null ? "video" : streamMode.name().toLowerCase(Locale.ROOT);
+        String timestamp = LocalDateTime.now().format(LINKED_DEVICE_NAME_TIME_FORMATTER);
+        String random = String.format("%04d", ThreadLocalRandom.current().nextInt(10000));
+        String candidate = prefix + "." + protocol + "." + timestamp + "." + random;
+        return candidate.length() <= 64 ? candidate : candidate.substring(0, 64);
+    }
+
+    private String normalizeLinkedDeviceNamePart(String value) {
+        String normalized = trimToNull(value);
+        if (normalized == null) {
+            return "video";
+        }
+        normalized = normalized.replaceAll("[^A-Za-z0-9:_.-]+", "-");
+        normalized = normalized.replaceAll("-{2,}", "-");
+        normalized = normalized.replaceAll("^[^A-Za-z0-9]+", "");
+        normalized = normalized.replaceAll("[^A-Za-z0-9]+$", "");
+        if (normalized.isEmpty()) {
+            return "video";
+        }
+        if (normalized.length() > 24) {
+            return normalized.substring(0, 24);
+        }
+        return normalized;
+    }
+
+    private String buildLinkedDeviceDescription(VideoDevice device) {
+        String name = trimToNull(device.getName());
+        if (name == null) {
+            return "视频设备接入自动创建";
+        }
+        return "视频设备接入自动创建: " + name;
     }
 
     private String trimToNull(String value) {

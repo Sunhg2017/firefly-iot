@@ -33,7 +33,7 @@ import {
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
-import { videoApi } from '../../services/api';
+import { productApi, videoApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 import VideoPlayer from '../../components/video/VideoPlayer';
 import PtzControlPanel from '../../components/video/PtzControlPanel';
@@ -71,7 +71,15 @@ interface VideoProductContext {
   autoCreate: boolean;
 }
 
+interface VideoProductOption {
+  id: number;
+  name: string;
+  productKey: string;
+  protocol: string;
+}
+
 interface VideoEditorFormValues {
+  productKey?: string;
   name?: string;
   streamMode?: string;
   gbDeviceId?: string;
@@ -161,6 +169,7 @@ const buildEditorInitialValues = (
 
   const streamMode = productContext?.protocol || 'GB28181';
   return {
+    productKey: productContext?.productKey,
     streamMode,
     transport: streamMode === 'GB28181' ? 'UDP' : undefined,
     sipAuthEnabled: false,
@@ -171,6 +180,7 @@ const buildEditorPayload = (values: VideoEditorFormValues) => {
   const streamMode = values.streamMode || 'GB28181';
   const sipAuthEnabled = streamMode === 'GB28181' ? Boolean(values.sipAuthEnabled) : false;
   return {
+    productKey: trimOptionalValue(values.productKey),
     name: values.name?.trim(),
     streamMode,
     gbDeviceId: trimOptionalValue(values.gbDeviceId),
@@ -198,6 +208,8 @@ const VideoList: React.FC = () => {
   const [editorLoading, setEditorLoading] = useState(false);
   const [editorForm] = Form.useForm<VideoEditorFormValues>();
   const [pendingEditorValues, setPendingEditorValues] = useState<VideoEditorFormValues>(buildEditorInitialValues());
+  const [productOptions, setProductOptions] = useState<VideoProductOption[]>([]);
+  const currentEditorProductKey = Form.useWatch('productKey', editorForm);
   const currentEditorStreamMode = Form.useWatch('streamMode', editorForm) || productContext?.protocol || 'GB28181';
   const currentSipAuthEnabled = Boolean(Form.useWatch('sipAuthEnabled', editorForm));
   const [keyword, setKeyword] = useState('');
@@ -208,6 +220,33 @@ const VideoList: React.FC = () => {
   const [playerDevice, setPlayerDevice] = useState<VideoDeviceRecord | null>(null);
   const [streamInfo, setStreamInfo] = useState<StreamInfo | null>(null);
   const [playerLoading, setPlayerLoading] = useState(false);
+  const selectedEditorProduct = useMemo(
+    () => productOptions.find((item) => item.productKey === currentEditorProductKey),
+    [currentEditorProductKey, productOptions],
+  );
+  const currentCreateProtocol =
+    editorMode === 'create' ? productContext?.protocol || selectedEditorProduct?.protocol : undefined;
+  const isCreateProductLocked = editorMode === 'create' && Boolean(productContext);
+  const isCreateProtocolLocked = editorMode === 'create' && Boolean(currentCreateProtocol);
+
+  const fetchProductOptions = async () => {
+    try {
+      const res = await productApi.list({ pageNum: 1, pageSize: 500, category: 'CAMERA' });
+      const records = (res.data.data.records || []) as Array<Record<string, unknown>>;
+      setProductOptions(
+        records
+          .map((item) => ({
+            id: Number(item.id),
+            name: String(item.name || ''),
+            productKey: String(item.productKey || ''),
+            protocol: String(item.protocol || ''),
+          }))
+          .filter((item) => item.id > 0 && item.productKey && VIDEO_PROTOCOL_VALUES.has(item.protocol)),
+      );
+    } catch {
+      setProductOptions([]);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -229,6 +268,10 @@ const VideoList: React.FC = () => {
   };
 
   useEffect(() => {
+    void fetchProductOptions();
+  }, []);
+
+  useEffect(() => {
     void fetchData();
   }, [keyword, params.pageNum, params.pageSize, filterMode, filterStatus]);
 
@@ -248,13 +291,13 @@ const VideoList: React.FC = () => {
   }, [productContext, searchParams, setSearchParams]);
 
   useEffect(() => {
-    if (!editorOpen || editorMode !== 'create' || !productContext?.protocol) {
+    if (!editorOpen || editorMode !== 'create' || !currentCreateProtocol) {
       return;
     }
-    if (editorForm.getFieldValue('streamMode') !== productContext.protocol) {
-      editorForm.setFieldValue('streamMode', productContext.protocol);
+    if (editorForm.getFieldValue('streamMode') !== currentCreateProtocol) {
+      editorForm.setFieldValue('streamMode', currentCreateProtocol);
     }
-  }, [editorForm, editorMode, editorOpen, productContext]);
+  }, [currentCreateProtocol, editorForm, editorMode, editorOpen]);
 
   useEffect(() => {
     if (currentEditorStreamMode === 'GB28181' && !editorForm.getFieldValue('transport')) {
@@ -321,6 +364,7 @@ const VideoList: React.FC = () => {
         message.success('视频设备更新成功');
       } else {
         await videoApi.create(buildEditorPayload(values));
+        setParams((current) => ({ ...current, pageNum: 1 }));
         message.success('视频设备创建成功');
       }
       closeEditorDrawer();
@@ -674,6 +718,31 @@ const VideoList: React.FC = () => {
           ) : null}
 
           <Form form={editorForm} layout="vertical" onFinish={handleSubmitEditor} preserve={false}>
+            {editorMode === 'create' ? (
+              productContext ? (
+                <Form.Item name="productKey" hidden>
+                  <Input />
+                </Form.Item>
+              ) : (
+                <Form.Item
+                  name="productKey"
+                  label="所属产品"
+                  rules={[{ required: true, message: '请选择产品' }]}
+                >
+                  <Select
+                    showSearch
+                    placeholder="选择摄像头产品"
+                    disabled={isCreateProductLocked}
+                    optionFilterProp="label"
+                    options={productOptions.map((item) => ({
+                      value: item.productKey,
+                      label: `${item.name} (${item.productKey})`,
+                    }))}
+                  />
+                </Form.Item>
+              )
+            ) : null}
+
             <Form.Item
               name="name"
               label="设备名称"
@@ -687,7 +756,7 @@ const VideoList: React.FC = () => {
               label="接入方式"
               rules={[{ required: true, message: '请选择接入方式' }]}
             >
-              <Select disabled={editorMode === 'create' && Boolean(productContext)} options={VIDEO_MODE_OPTIONS} />
+              <Select disabled={isCreateProtocolLocked} options={VIDEO_MODE_OPTIONS} />
             </Form.Item>
 
             {currentEditorStreamMode === 'GB28181' ? (

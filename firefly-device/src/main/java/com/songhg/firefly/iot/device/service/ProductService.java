@@ -99,6 +99,31 @@ public class ProductService {
         basic.setNodeType(product.getNodeType() == null ? null : product.getNodeType().name());
         basic.setProtocol(product.getProtocol() == null ? null : product.getProtocol().name());
         basic.setTenantId(product.getTenantId());
+        basic.setProjectId(product.getProjectId());
+        return basic;
+    }
+
+    public ProductBasicVO getProductBasicByProductKey(String productKey) {
+        String normalizedProductKey = trimToNull(productKey);
+        if (normalizedProductKey == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "productKey 不能为空");
+        }
+        Long tenantId = AppContextHolder.getTenantId();
+        Product product = productMapper.selectOne(new LambdaQueryWrapper<Product>()
+                .eq(Product::getTenantId, tenantId)
+                .eq(Product::getProductKey, normalizedProductKey)
+                .last("LIMIT 1"));
+        if (product == null) {
+            throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
+        }
+        ProductBasicVO basic = new ProductBasicVO();
+        basic.setId(product.getId());
+        basic.setProductKey(product.getProductKey());
+        basic.setName(product.getName());
+        basic.setNodeType(product.getNodeType() == null ? null : product.getNodeType().name());
+        basic.setProtocol(product.getProtocol() == null ? null : product.getProtocol().name());
+        basic.setTenantId(product.getTenantId());
+        basic.setProjectId(product.getProjectId());
         return basic;
     }
 

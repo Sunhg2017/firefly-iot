@@ -33,6 +33,7 @@
 |------|------|
 | **视频设备管理** | 视频设备 CRUD，支持 GB28181 / RTSP / RTMP 接入方式 |
 | **产品联动预填** | 从摄像头产品跳转时自动带入产品上下文并锁定接入协议 |
+| **设备资产联动** | 新建视频设备时自动补建设备资产主设备并回填 `video_devices.device_id` |
 | **通道管理** | 设备下的视频通道列表，支持多通道 NVR |
 | **实时播放** | 发起实时点播，返回 FLV/HLS/WebRTC 播放地址 |
 | **云台控制** | PTZ 方向控制、变焦控制 |
@@ -101,8 +102,8 @@ CREATE TABLE video_devices (
 
 说明：
 
-- 当前 `video_devices` 仍未持久化 `product_id / product_key`，本次仅实现产品页跳转到视频监控页的前端联动预填。
-- 如果后续需要在视频设备列表中反查所属产品，应单独补充字段、迁移脚本和查询接口，而不是继续依赖 URL 参数。
+- `video_devices` 通过 `device_id` 关联设备资产主表，视频设备权限与设备资产数据权限保持一致。
+- 当前 `video_devices` 仍未单独持久化 `product_id / product_key`；产品归属通过关联的设备资产主设备反查，不再只依赖 URL 参数。
 
 ### 3.2 video_channels 表
 
@@ -178,13 +179,14 @@ STOP(0), UP(1), DOWN(2), LEFT(3), RIGHT(4), ZOOM_IN(5), ZOOM_OUT(6)
 ```
 1. 管理员可直接进入 `/video`，或从摄像头产品页跳转进入视频监控
 2. 如果来自产品页，前端自动带入 `productKey / productName / protocol` 并打开“添加视频设备”抽屉
-3. 管理员补齐设备名称、地址、厂商型号等参数后创建视频设备记录（GB28181 / RTSP / RTMP）
-4. 若 GB28181 设备启用了 SIP 鉴权，平台以 `GB 设备编号` 为用户名，对 REGISTER 发起 Digest 挑战并校验设备级 `sip_password`
-5. REGISTER 校验通过后，平台更新设备状态为 ONLINE
-6. 用户请求实时播放 → 平台调用 ZLMediaKit API 发起点播
-7. ZLMediaKit 返回播放地址 → 平台保存流会话并返回前端
-8. 前端使用 FLV.js / HLS.js 播放视频
-9. 用户停止播放 → 平台调用 ZLMediaKit 关闭流 → 更新会话状态
+3. 管理员选择产品或沿用产品上下文，前端自动锁定与产品一致的接入协议
+4. 平台先在设备资产主链路创建设备并回填 `video_devices.device_id`，再保存视频设备记录
+5. 若 GB28181 设备启用了 SIP 鉴权，平台以 `GB 设备编号` 为用户名，对 REGISTER 发起 Digest 挑战并校验设备级 `sip_password`
+6. REGISTER 校验通过后，平台更新设备状态为 ONLINE
+7. 用户请求实时播放 → 平台调用 ZLMediaKit API 发起点播
+8. ZLMediaKit 返回播放地址 → 平台保存流会话并返回前端
+9. 前端使用 FLV.js / HLS.js 播放视频
+10. 用户停止播放 → 平台调用 ZLMediaKit 关闭流 → 更新会话状态
 ```
 
 ---

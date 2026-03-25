@@ -1,11 +1,15 @@
 package com.songhg.firefly.iot.device.controller;
 
 import com.songhg.firefly.iot.api.dto.DeviceBasicVO;
+import com.songhg.firefly.iot.api.dto.InternalDeviceCreateDTO;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.device.service.DeviceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,6 +28,12 @@ import java.util.List;
 public class InternalDeviceController {
 
     private final DeviceService deviceService;
+
+    @PostMapping
+    @Operation(summary = "内部创建设备")
+    public R<DeviceBasicVO> createDevice(@Valid @RequestBody InternalDeviceCreateDTO dto) {
+        return R.ok(deviceService.createDeviceFromInternal(dto));
+    }
 
     @GetMapping("/{id}/basic")
     @Operation(summary = "获取设备基础信息")

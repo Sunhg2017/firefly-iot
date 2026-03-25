@@ -20,4 +20,5 @@ public class ProductBasicVO implements Serializable {
     private String nodeType;
     private String protocol;
     private Long tenantId;
+    private Long projectId;
 }

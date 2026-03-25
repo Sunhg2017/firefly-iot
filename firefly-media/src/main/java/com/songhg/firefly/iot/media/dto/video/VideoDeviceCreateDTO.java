@@ -21,6 +21,9 @@ public class VideoDeviceCreateDTO {
     @Schema(description = "关联设备编号")
     private Long deviceId;
 
+    @Schema(description = "产品 ProductKey")
+    private String productKey;
+
     @Schema(description = "国标设备编号")
     private String gbDeviceId;
 

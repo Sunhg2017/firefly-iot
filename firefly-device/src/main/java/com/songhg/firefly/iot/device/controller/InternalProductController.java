@@ -29,6 +29,12 @@ public class InternalProductController {
         return R.ok(productService.getProductBasic(id));
     }
 
+    @GetMapping("/basic/by-product-key")
+    @Operation(summary = "按 ProductKey 获取产品基础信息")
+    public R<ProductBasicVO> getProductBasicByProductKey(@RequestParam("productKey") String productKey) {
+        return R.ok(productService.getProductBasicByProductKey(productKey));
+    }
+
     @GetMapping("/thing-model")
     @Operation(summary = "按 ProductKey 获取产品物模型")
     public R<String> getThingModelByProductKey(@RequestParam("productKey") String productKey) {
