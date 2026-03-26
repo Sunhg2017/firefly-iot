@@ -25,6 +25,7 @@ public class VideoDevice {
     private StreamMode streamMode;
     private String ip;
     private Integer port;
+    private String sourceUrl;
     private String manufacturer;
     private String model;
     private String firmware;

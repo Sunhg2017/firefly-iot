@@ -94,7 +94,7 @@ public class ZlmHookController {
 
         log.info("ZLM hook on_stream_none_reader: app={}, stream={}, schema={}", app, stream, schema);
 
-        // 对于 RTSP 代理流，无人观看时自动关闭以节省资源
+        // 对于 RTSP / RTMP 代理流，无人观看时自动关闭以节省资源
         // 对于 GB28181 流，保持不关闭（设备持续推流）
         boolean close = !"rtp".equals(app);
 

@@ -42,7 +42,7 @@ Video 补充回归：
 
 1. 新建一个 Video 设备。
 2. 第二步先选择与当前视频模式匹配的产品，或手工填写 `ProductKey`。
-3. 在 `GB28181 / RTSP 代理` 之间切换一次，确认旧产品会被清空并要求重新选择。
+3. 在 `GB28181 / RTSP / RTMP` 之间切换一次，确认旧产品会被清空并要求重新选择。
 4. 创建后选中该设备，确认右侧出现“平台物模型”卡片。
 5. 确认物模型可按 `ProductKey` 拉取，不再只支持 HTTP / MQTT / CoAP。
 
@@ -69,7 +69,7 @@ Video 补充回归：
 排查项：
 
 - `ProductKey` 是否正确
-- Video 模式下，产品协议是否与当前视频模式一致：`GB28181 -> GB28181`，`RTSP 代理 -> RTSP`
+- Video 模式下，产品协议是否与当前视频模式一致：`GB28181 -> GB28181`，`RTSP -> RTSP`，`RTMP -> RTMP`
 - `gatewayBaseUrl` 是否可达
 - 平台 `DEVICE` 服务是否正常
 - 网关转发 `/DEVICE/api/v1/products/thing-model/by-product-key` 是否正常

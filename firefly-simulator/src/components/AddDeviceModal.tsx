@@ -28,6 +28,14 @@ import {
   isSimulatorAuthInvalid,
   useSimWorkspaceStore,
 } from '../workspaceStore';
+import {
+  getVideoSourceFieldLabel,
+  isProxyVideoMode,
+  normalizeVideoStreamMode,
+  parseVideoSourceUrl,
+  resolveVideoDeviceName,
+  resolveVideoProductProtocol,
+} from '../utils/video';
 
 const { Paragraph, Text } = Typography;
 
@@ -55,7 +63,7 @@ const PROTOCOL_META: Record<Protocol, { label: string; description: string }> = 
   HTTP: { label: 'HTTP 设备', description: '支持一机一密鉴权，也支持先动态注册再通过 HTTP 鉴权上报。' },
   MQTT: { label: 'MQTT 设备', description: '支持一机一密和一型一密动态注册。' },
   CoAP: { label: 'CoAP 设备', description: '支持 CoAP Bridge 鉴权、上报和影子拉取。' },
-  Video: { label: '视频设备', description: '支持 GB28181 和 RTSP 代理两种模式。' },
+  Video: { label: '视频设备', description: '支持 GB28181、RTSP、RTMP 三种模式。' },
   SNMP: { label: 'SNMP 设备', description: '用于 SNMP 连通性和 OID 读写测试。' },
   Modbus: { label: 'Modbus 设备', description: '用于 Modbus TCP / RTU over TCP 调试。' },
   WebSocket: { label: 'WebSocket 设备', description: '通过 `/ws/device` 建立实时双向连接。' },
@@ -96,16 +104,13 @@ function trimText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function resolveVideoDeviceName(values: Record<string, unknown>): string {
-  if (values.streamMode === 'RTSP_PROXY') {
-    return trimText(values.name);
-  }
-  return trimText(values.gbDeviceId);
-}
-
 function resolveEffectiveDeviceName(values: Record<string, unknown>): string {
   if (values.protocol === 'Video') {
-    return resolveVideoDeviceName(values);
+    return resolveVideoDeviceName({
+      name: trimText(values.name),
+      gbDeviceId: trimText(values.gbDeviceId),
+      streamMode: typeof values.streamMode === 'string' ? values.streamMode : undefined,
+    });
   }
   return trimText(values.deviceName);
 }
@@ -123,7 +128,7 @@ function resolveProductProtocolQuery(protocol: Protocol, streamMode?: string): s
     case 'CoAP':
       return 'COAP';
     case 'Video':
-      return streamMode === 'RTSP_PROXY' ? 'RTSP' : 'GB28181';
+      return resolveVideoProductProtocol(streamMode);
     default:
       return undefined;
   }
@@ -143,6 +148,7 @@ function buildInitialValues(
     mqttWillRetain: false,
     streamMode: 'GB28181',
     gbDomain: '3402000000',
+    ip: '127.0.0.1',
     sipServerIp: '127.0.0.1',
     sipServerPort: 5060,
     sipServerId: '34020000002000000001',
@@ -174,7 +180,7 @@ function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, 
       case 'MQTT':
         return ['productKey', 'deviceName', 'mqttBrokerUrl', ...(mqttAuthMode === 'PRODUCT_SECRET' ? ['mqttRegisterBaseUrl', 'productSecret'] : ['deviceSecret'])];
       case 'Video':
-        return ['productKey', 'mediaBaseUrl', 'streamMode', ...(streamMode === 'RTSP_PROXY' ? ['rtspUrl'] : ['gbDeviceId', 'gbDomain'])];
+        return ['productKey', 'mediaBaseUrl', 'streamMode', ...(isProxyVideoMode(streamMode) ? ['sourceUrl'] : ['gbDeviceId', 'gbDomain'])];
       case 'CoAP':
         return ['coapBaseUrl', 'productKey', 'deviceName', 'deviceSecret'];
       case 'SNMP':
@@ -202,6 +208,10 @@ function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, 
 function buildSummary(values: Record<string, unknown>, products: TenantProductRecord[]) {
   const protocol = (values.protocol || 'HTTP') as string;
   const selectedProduct = products.find((item) => item.productKey === values.productKey);
+  const streamMode = normalizeVideoStreamMode(typeof values.streamMode === 'string' ? values.streamMode : undefined);
+  const videoEndpoint = isProxyVideoMode(streamMode)
+    ? trimText(values.sourceUrl)
+    : [trimText(values.ip as string | undefined) || '127.0.0.1', values.sipLocalPort || 5080].join(':');
   const items = [
     { key: 'name', label: '设备名称', value: values.name || '-' },
     { key: 'protocol', label: '协议', value: protocol },
@@ -211,7 +221,13 @@ function buildSummary(values: Record<string, unknown>, products: TenantProductRe
       value: selectedProduct ? `${selectedProduct.name} (${selectedProduct.productKey})` : values.productKey || '-',
     },
     { key: 'deviceName', label: 'DeviceName', value: resolveEffectiveDeviceName(values) || '-' },
-    { key: 'main2', label: '接入地址', value: values.httpBaseUrl || values.coapBaseUrl || values.mqttBrokerUrl || values.mediaBaseUrl || values.loraWebhookUrl || '-' },
+    {
+      key: 'main2',
+      label: '接入地址',
+      value: protocol === 'Video'
+        ? videoEndpoint || '-'
+        : values.httpBaseUrl || values.coapBaseUrl || values.mqttBrokerUrl || values.mediaBaseUrl || values.loraWebhookUrl || '-',
+    },
   ];
   return items;
 }
@@ -240,6 +256,16 @@ export default function AddDeviceModal({ open, onClose }: Props) {
   const mqttAuthMode = formSnapshot.mqttAuthMode as string | undefined;
   const streamMode = formSnapshot.streamMode as string | undefined;
   const meta = useMemo(() => PROTOCOL_META[protocol], [protocol]);
+  const sourcePreview = useMemo(() => {
+    if (protocol !== 'Video' || !isProxyVideoMode(streamMode)) {
+      return null;
+    }
+    try {
+      return parseVideoSourceUrl(streamMode, trimText(formSnapshot.sourceUrl as string | undefined));
+    } catch {
+      return null;
+    }
+  }, [formSnapshot.sourceUrl, protocol, streamMode]);
   const canSelectTenantProduct = supportsTenantProductSelection(protocol)
     && Boolean(activeSession?.accessToken)
     && !productLoadError
@@ -399,6 +425,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     const effectiveDeviceName = resolveEffectiveDeviceName(values);
     const normalizedValues = {
       ...values,
+      streamMode: protocol === 'Video' ? normalizeVideoStreamMode(typeof values.streamMode === 'string' ? values.streamMode : undefined) : values.streamMode,
       // Video 设备不再保留空的 DeviceName，而是统一映射到当前可识别的业务标识。
       deviceName: effectiveDeviceName,
       // 模拟设备名称就是平台侧昵称口径，避免再维护一个重复输入框。
@@ -683,25 +710,56 @@ export default function AddDeviceModal({ open, onClose }: Props) {
             <Form.Item name="streamMode" label="视频模式">
               <Radio.Group>
                 <Radio.Button value="GB28181">GB28181</Radio.Button>
-                <Radio.Button value="RTSP_PROXY">RTSP 代理</Radio.Button>
+                <Radio.Button value="RTSP">RTSP</Radio.Button>
+                <Radio.Button value="RTMP">RTMP</Radio.Button>
               </Radio.Group>
             </Form.Item>
-            {streamMode === 'RTSP_PROXY' ? (
-              <Form.Item name="rtspUrl" label="RTSP 源地址" rules={[{ required: true, message: '请输入 RTSP 源地址' }]}><Input /></Form.Item>
+            {isProxyVideoMode(streamMode) ? (
+              <>
+                <Form.Item
+                  name="sourceUrl"
+                  label={getVideoSourceFieldLabel(streamMode)}
+                  rules={[
+                    { required: true, message: `请输入${getVideoSourceFieldLabel(streamMode)}` },
+                    {
+                      validator: async (_, value) => {
+                        if (!trimText(value)) {
+                          return;
+                        }
+                        parseVideoSourceUrl(streamMode, value);
+                      },
+                    },
+                  ]}
+                >
+                  <Input placeholder={streamMode === 'RTMP' ? 'rtmp://127.0.0.1/live/camera-001' : 'rtsp://127.0.0.1:554/live/camera-001'} />
+                </Form.Item>
+                <Form.Item label="平台接入地址">
+                  <Input
+                    readOnly
+                    value={sourcePreview ? `${sourcePreview.host}:${sourcePreview.port}` : ''}
+                    placeholder="根据源地址自动解析 IP 和端口"
+                  />
+                </Form.Item>
+              </>
             ) : (
               <>
                 <Form.Item name="gbDeviceId" label="国标设备 ID" rules={[{ required: true, message: '请输入国标设备 ID' }]}><Input /></Form.Item>
                 <Form.Item name="gbDomain" label="国标域" rules={[{ required: true, message: '请输入国标域' }]}><Input /></Form.Item>
+                <Form.Item name="ip" label="设备 IP"><Input placeholder="默认 127.0.0.1" /></Form.Item>
               </>
             )}
             <Form.Item
               label="DeviceName"
-              extra={streamMode === 'RTSP_PROXY' ? 'RTSP 代理默认复用模拟设备名称作为 DeviceName。' : 'GB28181 默认复用国标设备 ID 作为 DeviceName。'}
+              extra={isProxyVideoMode(streamMode) ? 'RTSP / RTMP 默认复用模拟设备名称作为 DeviceName。' : 'GB28181 默认复用国标设备 ID 作为 DeviceName。'}
             >
               <Input
                 readOnly
-                value={resolveVideoDeviceName(formSnapshot)}
-                placeholder={streamMode === 'RTSP_PROXY' ? '创建时自动使用模拟设备名称' : '创建时自动使用国标设备 ID'}
+                value={resolveVideoDeviceName({
+                  name: trimText(formSnapshot.name),
+                  gbDeviceId: trimText(formSnapshot.gbDeviceId),
+                  streamMode,
+                })}
+                placeholder={isProxyVideoMode(streamMode) ? '创建时自动使用模拟设备名称' : '创建时自动使用国标设备 ID'}
               />
             </Form.Item>
           </Space>
@@ -785,8 +843,17 @@ export default function AddDeviceModal({ open, onClose }: Props) {
         </Card>
       ) : null}
 
-      {protocol === 'Video' && streamMode === 'GB28181' ? (
+      {protocol === 'Video' ? (
         <>
+          <Card size="small" title="设备信息" style={drawerSectionCardStyle}>
+            <Row gutter={12}>
+              <Col span={12}><Form.Item name="manufacturer" label="厂商"><Input placeholder="如：Firefly-Simulator" /></Form.Item></Col>
+              <Col span={12}><Form.Item name="model" label="型号"><Input placeholder="如：Virtual-Camera" /></Form.Item></Col>
+            </Row>
+            <Form.Item name="firmware" label="固件版本"><Input placeholder="如：1.0.0" /></Form.Item>
+          </Card>
+          {streamMode === 'GB28181' ? (
+            <>
           <Card size="small" title="SIP 配置" style={drawerSectionCardStyle}>
             <Row gutter={12}>
               <Col span={12}><Form.Item name="sipServerIp" label="SIP 服务 IP" rules={[{ required: true, message: '请输入 SIP 服务 IP' }]}><Input /></Form.Item></Col>
@@ -834,6 +901,27 @@ export default function AddDeviceModal({ open, onClose }: Props) {
               )}
             </Form.List>
           </Card>
+            </>
+          ) : (
+            <Card size="small" title="源地址摘要" style={drawerSectionCardStyle}>
+              <Descriptions
+                size="small"
+                column={1}
+                items={[
+                  {
+                    key: 'sourceUrl',
+                    label: getVideoSourceFieldLabel(streamMode),
+                    children: <Text>{trimText(formSnapshot.sourceUrl) || '-'}</Text>,
+                  },
+                  {
+                    key: 'endpoint',
+                    label: '平台接入地址',
+                    children: <Text>{sourcePreview ? `${sourcePreview.host}:${sourcePreview.port}` : '-'}</Text>,
+                  },
+                ]}
+              />
+            </Card>
+          )}
         </>
       ) : null}
 

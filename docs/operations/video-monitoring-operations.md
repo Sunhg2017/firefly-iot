@@ -43,6 +43,8 @@
 5. 确认 `firefly-media` 已执行：
    - `V2__add_video_device_sip_password.sql`
    - `V3__enforce_video_device_identity_unique.sql`
+   - `V4__add_video_device_source_url.sql`
+   - `V5__refine_video_device_proxy_identity_unique.sql`
 6. 若 GB28181 设备开启了 SIP 鉴权，确认页面已保存设备级 `SIP 密码`。
 7. `sip_password` 只允许通过 `V2__add_video_device_sip_password.sql` 增量补齐，禁止改写已上线的 `V1__init_video.sql`，否则 Flyway 会因 checksum 不一致阻止服务启动。
 8. 新建视频设备会同步调用 `firefly-device` 内部接口创建设备资产主设备；若 `firefly-device` 不可用或产品不存在，视频设备保存会直接失败。
@@ -51,7 +53,7 @@
    - Producer 已注册 `KafkaAuthContextProducerInterceptor`
    - Listener 容器已注册 `KafkaAuthContextRecordInterceptor`
    - 消费端按记录恢复并清理 `AppContextHolder`，而不是复用整批 `poll` 线程上下文
-11. 如果历史环境已经存在重复视频设备，先清理重复数据，再执行 `V3`；不要通过删除唯一索引继续容忍重复数据。
+11. 如果历史环境已经存在重复视频设备，先清理重复数据，再执行 `V3 / V5`；不要通过删除唯一索引继续容忍重复数据。
 
 ## 监控与日志
 
@@ -106,7 +108,7 @@
 1. 检查设备状态是否为 `ONLINE`。
 2. 检查 `ZLMediaKit` 是否可访问。
 3. GB28181 设备检查 SIP 注册、目录查询与设备信息查询是否成功。
-4. RTSP / RTMP 设备检查 IP、端口和流地址是否正确。
+4. RTSP / RTMP 设备优先检查完整 `sourceUrl` 是否正确，其次再看平台解析出来的 IP、端口和流媒体服务状态。
 
 ### 5. 从产品页进入后新建视频设备成功提示了，但列表里看不到
 
@@ -141,11 +143,22 @@
 排查：
 
 1. 检查 `firefly-media` 是否已执行 `V3__enforce_video_device_identity_unique.sql`。
-2. 检查当前租户下是否已有重复历史数据；若有，先人工清理后再执行迁移。
-3. 确认创建请求是否复用了同一个接入标识：
+2. 检查 `firefly-media` 是否已执行 `V5__refine_video_device_proxy_identity_unique.sql`。
+3. 检查当前租户下是否已有重复历史数据；若有，先人工清理后再执行迁移。
+4. 确认创建请求是否复用了同一个接入标识：
    - `GB28181` 看 `GB 设备编号`
-   - `RTSP / RTMP` 看 `IP + 端口`
-4. 若接口仍然成功创建两条记录，检查服务端是否已部署到包含 `VideoService` 预校验的新版本。
+   - `RTSP / RTMP` 优先看完整 `sourceUrl`
+   - 只有没有 `sourceUrl` 的旧记录才看 `IP + 端口`
+5. 若接口仍然成功创建两条记录，检查服务端是否已部署到包含 `VideoService` 预校验和 `sourceUrl` 唯一索引的新版本。
+
+### 6.3 使用设备模拟器联调视频设备时报未登录或调用错环境
+
+排查：
+
+1. 确认模拟器左上角当前环境已经登录。
+2. 确认模拟器当前环境 `mediaBaseUrl` 指向的就是待联调的 `firefly-media`。
+3. 若刚切换环境，重新连接模拟器中的 Video 设备，确认没有沿用旧环境的 token。
+4. 若平台上已经存在同一台视频设备，确认模拟器连接后走的是“同步更新”而不是“重复创建”。
 
 ### 7. Kafka 消费链路出现租户或用户上下文丢失
 
@@ -184,3 +197,4 @@
 4. 对在线设备执行播放、截图、停止，确认接口调用成功。
 5. 从摄像头产品页进入新建视频设备后，确认 `设备资产` 与 `视频监控` 两侧都能看到对应记录。
 6. 使用带项目/分组数据权限的账号重复执行一次新建，确认新设备仍然可见。
+7. 使用设备模拟器分别联调 `GB28181`、`RTSP`、`RTMP` 三种模式，确认能同步设备、开始推流、截图、录制和查询通道。

@@ -11,6 +11,13 @@ import {
 import { getDeviceAccessValidationError } from './deviceAccess';
 import { buildLifecycleEventPayload, invokeHttpLifecycle } from './httpLifecycle';
 import { buildTransportBindingPayload, buildWebSocketConnectParams } from './transportBinding';
+import {
+  buildVideoCreatePayload,
+  buildVideoUpdatePayload,
+  getActiveVideoApiContext,
+  getVideoIdentityKeyword,
+  matchesVideoIdentity,
+} from './video';
 
 const RESTORABLE_PROTOCOLS: Protocol[] = [
   'HTTP',
@@ -49,6 +56,106 @@ function clearDeviceHeartbeatTimer(device: SimDevice) {
 
 function isSuccessfulResponse(result: any) {
   return Boolean(result?.success) && (typeof result?.code !== 'number' || result.code === 0);
+}
+
+function extractVideoResultMessage(result: any, fallback: string) {
+  return result?.data?.message
+    || result?.data?.msg
+    || result?.message
+    || fallback;
+}
+
+function isVideoBizSuccess(result: any) {
+  return Boolean(result?.success) && Number(result?.data?.code ?? 0) === 0;
+}
+
+async function findExistingVideoDevice(device: SimDevice) {
+  const videoApiContext = getActiveVideoApiContext();
+  if (!videoApiContext) {
+    throw new Error('请先登录当前环境后再连接视频设备');
+  }
+
+  const keyword = getVideoIdentityKeyword(device);
+  if (!keyword) {
+    return null;
+  }
+
+  const result = await window.electronAPI.videoListDevices(
+    videoApiContext.baseUrl,
+    {
+      pageNum: 1,
+      pageSize: 100,
+      keyword,
+      streamMode: device.streamMode,
+    },
+    videoApiContext.accessToken,
+  );
+  if (!isVideoBizSuccess(result)) {
+    throw new Error(extractVideoResultMessage(result, '查询平台视频设备失败'));
+  }
+
+  const records = Array.isArray(result.data?.data?.records) ? result.data.data.records : [];
+  return records.find((item: any) => matchesVideoIdentity(device, item)) || null;
+}
+
+async function syncVideoDevice(device: SimDevice) {
+  const videoApiContext = getActiveVideoApiContext();
+  if (!videoApiContext) {
+    throw new Error('请先登录当前环境后再连接视频设备');
+  }
+
+  const createPayload = buildVideoCreatePayload(device);
+  const updatePayload = buildVideoUpdatePayload(device);
+
+  if (device.videoDeviceId) {
+    const detail = await window.electronAPI.videoGetDevice(
+      videoApiContext.baseUrl,
+      device.videoDeviceId,
+      videoApiContext.accessToken,
+    );
+    if (isVideoBizSuccess(detail)) {
+      const updateResult = await window.electronAPI.videoUpdateDevice(
+        videoApiContext.baseUrl,
+        device.videoDeviceId,
+        updatePayload,
+        videoApiContext.accessToken,
+      );
+      if (!isVideoBizSuccess(updateResult)) {
+        throw new Error(extractVideoResultMessage(updateResult, '更新平台视频设备失败'));
+      }
+      return { id: device.videoDeviceId, reused: true };
+    }
+  }
+
+  const createResult = await window.electronAPI.videoCreateDevice(
+    videoApiContext.baseUrl,
+    createPayload,
+    videoApiContext.accessToken,
+  );
+  if (isVideoBizSuccess(createResult) && createResult.data?.data?.id) {
+    return { id: Number(createResult.data.data.id), reused: false };
+  }
+
+  const createMessage = extractVideoResultMessage(createResult, '创建平台视频设备失败');
+  if (!createMessage.includes('已存在')) {
+    throw new Error(createMessage);
+  }
+
+  const existing = await findExistingVideoDevice(device);
+  if (!existing?.id) {
+    throw new Error(createMessage);
+  }
+
+  const updateResult = await window.electronAPI.videoUpdateDevice(
+    videoApiContext.baseUrl,
+    Number(existing.id),
+    updatePayload,
+    videoApiContext.accessToken,
+  );
+  if (!isVideoBizSuccess(updateResult)) {
+    throw new Error(extractVideoResultMessage(updateResult, '更新已存在视频设备失败'));
+  }
+  return { id: Number(existing.id), reused: true };
 }
 
 async function refreshDynamicRegistrationSecret(device: SimDevice) {
@@ -263,30 +370,21 @@ export async function connectSimDevice(
     }
 
     if (device.protocol === 'Video') {
-      const dto: Record<string, unknown> = {
-        name: device.name,
-        streamMode: device.streamMode,
-      };
-      if (device.streamMode === 'GB28181') {
-        dto.gbDeviceId = device.gbDeviceId;
-        dto.gbDomain = device.gbDomain;
-        dto.transport = 'UDP';
-      } else {
-        dto.ip = '127.0.0.1';
+      const synced = await syncVideoDevice(device);
+      store.updateDevice(device.id, {
+        status: 'online',
+        videoDeviceId: synced.id,
+        restoreOnLaunch: false,
+      });
+      if (!options?.silent) {
+        store.addLog(
+          device.id,
+          device.name,
+          'success',
+          synced.reused ? `Video device synced: ${synced.id}` : `Video device created: ${synced.id}`,
+        );
       }
-      const result = await window.electronAPI.videoCreateDevice(device.mediaBaseUrl, dto);
-      if (result.success && result.data?.data?.id) {
-        store.updateDevice(device.id, {
-          status: 'online',
-          videoDeviceId: result.data.data.id,
-          restoreOnLaunch: false,
-        });
-        if (!options?.silent) {
-          store.addLog(device.id, device.name, 'success', `Video device created: ${result.data.data.id}`);
-        }
-        return { success: true };
-      }
-      throw new Error(result.data?.msg || result.message || 'Video device create failed');
+      return { success: true };
     }
 
     const validationError = validateMqttDevice(device);
@@ -415,13 +513,22 @@ export async function disconnectSimDevice(deviceId: string, options?: { silent?:
     if (device.protocol === 'UDP') {
       await window.electronAPI.udpDisconnect(device.id);
     }
+    if (device.protocol === 'Video' && device.videoDeviceId) {
+      const videoApiContext = getActiveVideoApiContext();
+      if (videoApiContext) {
+        await window.electronAPI.videoStopStream(
+          videoApiContext.baseUrl,
+          device.videoDeviceId,
+          videoApiContext.accessToken,
+        );
+      }
+    }
     if (device.protocol === 'Video' && device.streamMode === 'GB28181') {
       await window.electronAPI.sipStop(device.id);
     }
     store.updateDevice(device.id, {
       status: 'offline',
       token: '',
-      videoDeviceId: null,
       streamUrl: '',
       sipRegistered: false,
       autoReport: false,

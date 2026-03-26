@@ -72,6 +72,7 @@ import {
   type ThingModelRoot,
   type ThingModelSimulationRule,
 } from '../utils/thingModel';
+import { connectSimDevice, disconnectSimDevice } from '../utils/runtime';
 
 const { Text, Title } = Typography;
 
@@ -1065,21 +1066,13 @@ export default function DeviceControlPanel() {
       }
 
       if (device.protocol === 'Video') {
-        const dto: any = { name: device.name, streamMode: device.streamMode };
-        if (device.streamMode === 'GB28181') {
-          dto.gbDeviceId = device.gbDeviceId;
-          dto.gbDomain = device.gbDomain;
-          dto.transport = 'UDP';
-        } else {
-          dto.ip = '127.0.0.1';
-        }
-        const result = await window.electronAPI.videoCreateDevice(device.mediaBaseUrl, dto);
-        if (result.success && result.data?.data?.id) {
-          updateDevice(device.id, { status: 'online', videoDeviceId: result.data.data.id, restoreOnLaunch: false });
-          addLog(device.id, device.name, 'success', `视频设备创建成功：${result.data.data.id}`);
+        const result = await connectSimDevice(device.id, { silent: true });
+        const latest = useSimStore.getState().devices.find((item) => item.id === device.id);
+        if (result.success && latest?.videoDeviceId) {
+          addLog(device.id, device.name, 'success', `视频设备已同步：${latest.videoDeviceId}`);
         } else {
           updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
-          addLog(device.id, device.name, 'error', `视频设备创建失败：${result.data?.msg || result.message || JSON.stringify(result.data)}`);
+          addLog(device.id, device.name, 'error', `视频设备同步失败：${result.message || '未知错误'}`);
         }
         return;
       }
@@ -1103,7 +1096,12 @@ export default function DeviceControlPanel() {
       if (device.protocol === 'WebSocket') await window.electronAPI.wsDisconnect(device.id);
       if (device.protocol === 'TCP') await window.electronAPI.tcpDisconnect(device.id);
       if (device.protocol === 'UDP') await window.electronAPI.udpDisconnect(device.id);
-      if (device.protocol === 'Video' && device.streamMode === 'GB28181') await window.electronAPI.sipStop(device.id);
+      if (device.protocol === 'Video') {
+        await disconnectSimDevice(device.id, { silent: true });
+        updateDevice(device.id, { status: 'offline', token: '', streamUrl: '', sipRegistered: false, restoreOnLaunch: false, heartbeatTimerId: null });
+        addLog(device.id, device.name, 'info', '已断开连接');
+        return;
+      }
       updateDevice(device.id, { status: 'offline', token: '', videoDeviceId: null, streamUrl: '', sipRegistered: false, restoreOnLaunch: false, heartbeatTimerId: null });
       addLog(device.id, device.name, 'info', '已断开连接');
     } catch (error: any) {

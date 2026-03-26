@@ -1,7 +1,7 @@
 # Firefly-IoT 视频监控模块 — 详细设计文档
 
 > **版本**: v1.0.0  
-> **日期**: 2026-02-27  
+> **日期**: 2026-03-26
 > **状态**: Draft  
 > **关联**: [产品设计文档](./product-design.md) §6.6 视频设备接入与推流
 
@@ -89,6 +89,7 @@ CREATE TABLE video_devices (
     stream_mode     VARCHAR(16) NOT NULL DEFAULT 'GB28181',
     ip              VARCHAR(64),
     port            INT,
+    source_url      VARCHAR(1024),
     manufacturer    VARCHAR(128),
     model           VARCHAR(128),
     firmware        VARCHAR(64),
@@ -108,8 +109,8 @@ CREATE TABLE video_devices (
 - 自动补建链路会透传当前数据范围中的分组 ID，设备侧仅同步静态分组，并在保存后立即重算动态分组，避免记录刚创建就被分组数据权限过滤。
 - `video_devices` 的业务唯一性按接入标识控制：
   - `GB28181`：`tenant_id + stream_mode + gb_device_id`
-  - `RTSP / RTMP`：`tenant_id + stream_mode + ip + port`
-- `firefly-media` 通过 `V3__enforce_video_device_identity_unique.sql` 建立唯一索引，并在服务层提前拦截重复创建。
+  - `RTSP / RTMP`：优先 `tenant_id + stream_mode + source_url`；仅对未落 `source_url` 的旧记录退回 `tenant_id + stream_mode + ip + port`
+- `firefly-media` 通过 `V3__enforce_video_device_identity_unique.sql`、`V4__add_video_device_source_url.sql`、`V5__refine_video_device_proxy_identity_unique.sql` 建立字段和唯一索引，并在服务层提前拦截重复创建。
 
 ### 3.2 video_channels 表
 
@@ -190,11 +191,12 @@ STOP(0), UP(1), DOWN(2), LEFT(3), RIGHT(4), ZOOM_IN(5), ZOOM_OUT(6)
 5. `firefly-media -> firefly-device` 的 Feign 调用会透传当前请求的租户、用户与权限头，保证产品查询与设备资产创建落在同一可见范围
 6. 自动补建链路会解析当前用户数据范围，把可见项目与静态分组带到设备资产创建请求中，并在设备侧重算动态分组
 7. 若 GB28181 设备启用了 SIP 鉴权，平台以 `GB 设备编号` 为用户名，对 REGISTER 发起 Digest 挑战并校验设备级 `sip_password`
-8. REGISTER 校验通过后，平台更新设备状态为 ONLINE
+8. GB28181 REGISTER 校验通过后，平台更新设备状态为 ONLINE；RTSP / RTMP 设备在保存后直接对齐为受管在线状态
 9. 用户请求实时播放 → 平台调用 ZLMediaKit API 发起点播
-10. ZLMediaKit 返回播放地址 → 平台保存流会话并返回前端
-11. 前端使用 FLV.js / HLS.js 播放视频
-12. 用户停止播放 → 平台调用 ZLMediaKit 关闭流 → 更新会话状态
+10. RTSP / RTMP 设备优先使用完整 `sourceUrl` 调用 ZLMediaKit；没有 `sourceUrl` 时才回退到 `ip + port`
+11. ZLMediaKit 返回播放地址 → 平台保存流会话并返回前端
+12. 前端使用 FLV.js / HLS.js 播放视频
+13. 用户停止播放 → 平台调用 ZLMediaKit 关闭流 → 更新会话状态
 ```
 
 ---
@@ -214,6 +216,7 @@ STOP(0), UP(1), DOWN(2), LEFT(3), RIGHT(4), ZOOM_IN(5), ZOOM_OUT(6)
 补充约束：
 
 - 创建/更新视频设备时，SIP 密码字段统一口径仍为 `sipPassword`。
+- 创建/更新 RTSP / RTMP 视频设备时，可直接携带完整 `sourceUrl`。
 - 当接入标识已被当前租户下同协议的视频设备占用时，接口直接返回业务冲突，不允许创建重复视频设备。
 
 ### 6.2 通道管理
@@ -289,7 +292,7 @@ firefly-system/src/main/java/.../system/
 
 - **设备列表**: 视频设备表格，含在线状态
 - **产品联动上下文**: 若从摄像头产品页进入，则在页头下方仅展示产品名称、ProductKey、接入方式，并提供“新增设备 / 清空联动”动作
-- **创建设备抽屉**: 使用抽屉而非弹窗，分组展示基础字段、GB28181 专属字段、SIP 鉴权开关和产品上下文
+- **创建设备抽屉**: 使用抽屉而非弹窗，分组展示基础字段、GB28181 或 RTSP/RTMP 专属字段、SIP 鉴权开关和产品上下文
 - **编辑设备抽屉**: 在列表侧边继续维护 GB 域、传输协议和设备级 SIP 密码
 - **协议锁定**: 存在产品上下文时，`streamMode` 自动锁定为产品协议，不允许在创建设备时切换
 - **错误回显**: 创建、编辑、播放、目录查询等操作会直接展示后端返回的业务校验消息，不再把 `R.code != 0` 的响应当作成功处理

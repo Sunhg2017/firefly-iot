@@ -708,6 +708,14 @@ ipcMain.handle('video:listDevices', async (_e, baseUrl: string, query: any, toke
   return httpJsonRequest('POST', `${baseUrl}/api/v1/video/devices/list`, query || {}, token);
 });
 
+ipcMain.handle('video:getDevice', async (_e, baseUrl: string, deviceId: number, token?: string) => {
+  return httpJsonRequest('GET', `${baseUrl}/api/v1/video/devices/${deviceId}`, undefined, token);
+});
+
+ipcMain.handle('video:updateDevice', async (_e, baseUrl: string, deviceId: number, dto: any, token?: string) => {
+  return httpJsonRequest('PUT', `${baseUrl}/api/v1/video/devices/${deviceId}`, dto, token);
+});
+
 ipcMain.handle('video:startStream', async (_e, baseUrl: string, deviceId: number, dto?: any, token?: string) => {
   return httpJsonRequest('POST', `${baseUrl}/api/v1/video/devices/${deviceId}/start`, dto || {}, token);
 });
@@ -730,6 +738,10 @@ ipcMain.handle('video:listChannels', async (_e, baseUrl: string, deviceId: numbe
 
 ipcMain.handle('video:queryCatalog', async (_e, baseUrl: string, deviceId: number, token?: string) => {
   return httpJsonRequest('POST', `${baseUrl}/api/v1/video/devices/${deviceId}/catalog`, {}, token);
+});
+
+ipcMain.handle('video:queryDeviceInfo', async (_e, baseUrl: string, deviceId: number, token?: string) => {
+  return httpJsonRequest('POST', `${baseUrl}/api/v1/video/devices/${deviceId}/device-info`, {}, token);
 });
 
 ipcMain.handle('video:startRecording', async (_e, baseUrl: string, deviceId: number, token?: string) => {

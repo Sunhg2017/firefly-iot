@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 import dayjs from 'dayjs';
 import type { ThingModelSimulationRuleMap } from './utils/thingModel';
+import { normalizeVideoStreamMode, resolveVideoDeviceName, type SimulatorVideoStreamMode } from './utils/video';
 import { simulatorStateStorage } from './storage';
 
 // ============================================================
@@ -65,12 +66,16 @@ export interface SimDevice {
   coapBaseUrl: string;
   // Video config
   mediaBaseUrl: string;
-  streamMode: 'GB28181' | 'RTSP_PROXY';
+  streamMode: SimulatorVideoStreamMode;
   gbDeviceId: string;
   gbDomain: string;
-  rtspUrl: string;
+  sourceUrl: string;
   streamUrl: string;
   videoDeviceId: number | null;
+  ip: string;
+  manufacturer: string;
+  model: string;
+  firmware: string;
   // SIP (GB28181) config
   sipServerIp: string;
   sipServerPort: number;
@@ -121,6 +126,10 @@ export interface SimDevice {
   dynamicRegistered: boolean;
   thingModelSimulationRules: ThingModelSimulationRuleMap;
 }
+
+type SimDeviceDraft = Partial<SimDevice> & {
+  rtspUrl?: string;
+};
 
 export interface LogEntry {
   id: string;
@@ -184,15 +193,17 @@ function trimText(value?: string | null): string {
   return (value ?? '').trim();
 }
 
-function resolveStoredDeviceName(partial: Partial<SimDevice>): string {
+function resolveStoredDeviceName(partial: SimDeviceDraft): string {
   if (partial.protocol === 'Video') {
     const currentValue = trimText(partial.deviceName);
     if (currentValue) {
       return currentValue;
     }
-    return partial.streamMode === 'RTSP_PROXY'
-      ? trimText(partial.name)
-      : trimText(partial.gbDeviceId);
+    return resolveVideoDeviceName({
+      name: partial.name,
+      gbDeviceId: partial.gbDeviceId,
+      streamMode: partial.streamMode,
+    });
   }
   return trimText(partial.deviceName);
 }
@@ -373,84 +384,89 @@ export const useSimStore = create<SimulatorState>()(
   selectedDeviceId: null,
 
   addDevice: (partial) => {
+    const draft = partial as SimDeviceDraft;
     const id = uuidv4();
     const device: SimDevice = {
       id,
-      nickname: partial.nickname || partial.name || `device-${get().devices.length + 1}`,
-      name: partial.name || `设备-${get().devices.length + 1}`,
-      protocol: partial.protocol || 'HTTP',
+      nickname: draft.nickname || draft.name || `device-${get().devices.length + 1}`,
+      name: draft.name || `设备-${get().devices.length + 1}`,
+      protocol: draft.protocol || 'HTTP',
       status: 'offline',
-      restoreOnLaunch: partial.restoreOnLaunch ?? false,
-      httpBaseUrl: partial.httpBaseUrl || 'http://localhost:9070',
-      httpAuthMode: partial.httpAuthMode || 'DEVICE_SECRET',
-      httpRegisterBaseUrl: partial.httpRegisterBaseUrl || 'http://localhost:9070',
-      productKey: partial.productKey || '',
-      productSecret: partial.productSecret || '',
-      deviceName: resolveStoredDeviceName(partial),
-      deviceSecret: partial.deviceSecret || '',
-      locators: partial.locators || [],
+      restoreOnLaunch: draft.restoreOnLaunch ?? false,
+      httpBaseUrl: draft.httpBaseUrl || 'http://localhost:9070',
+      httpAuthMode: draft.httpAuthMode || 'DEVICE_SECRET',
+      httpRegisterBaseUrl: draft.httpRegisterBaseUrl || 'http://localhost:9070',
+      productKey: draft.productKey || '',
+      productSecret: draft.productSecret || '',
+      deviceName: resolveStoredDeviceName(draft),
+      deviceSecret: draft.deviceSecret || '',
+      locators: draft.locators || [],
       token: '',
-      mqttAuthMode: partial.mqttAuthMode || 'DEVICE_SECRET',
-      mqttRegisterBaseUrl: partial.mqttRegisterBaseUrl || 'http://localhost:9070',
-      mqttBrokerUrl: partial.mqttBrokerUrl || 'mqtt://localhost:1883',
-      mqttClientId: partial.mqttClientId || '',
-      mqttUsername: partial.mqttUsername || '',
-      mqttPassword: partial.mqttPassword || '',
-      mqttClean: partial.mqttClean ?? true,
-      mqttKeepalive: partial.mqttKeepalive || 60,
-      mqttWillTopic: partial.mqttWillTopic || '',
-      mqttWillPayload: partial.mqttWillPayload || '',
-      mqttWillQos: partial.mqttWillQos ?? 1,
-      mqttWillRetain: partial.mqttWillRetain ?? false,
-      coapBaseUrl: partial.coapBaseUrl || 'http://localhost:9070',
-      mediaBaseUrl: partial.mediaBaseUrl || 'http://localhost:9040',
-      streamMode: partial.streamMode || 'GB28181',
-      gbDeviceId: partial.gbDeviceId || '',
-      gbDomain: partial.gbDomain || '3402000000',
-      rtspUrl: partial.rtspUrl || '',
-      streamUrl: partial.streamUrl || '',
-      videoDeviceId: partial.videoDeviceId || null,
-      sipServerIp: partial.sipServerIp || '127.0.0.1',
-      sipServerPort: partial.sipServerPort || 5060,
-      sipServerId: partial.sipServerId || '34020000002000000001',
-      sipLocalPort: partial.sipLocalPort || 5080,
-      sipKeepaliveInterval: partial.sipKeepaliveInterval || 60,
-      sipPassword: partial.sipPassword || '',
-      sipTransport: partial.sipTransport || 'UDP',
-      sipChannels: partial.sipChannels || [],
+      mqttAuthMode: draft.mqttAuthMode || 'DEVICE_SECRET',
+      mqttRegisterBaseUrl: draft.mqttRegisterBaseUrl || 'http://localhost:9070',
+      mqttBrokerUrl: draft.mqttBrokerUrl || 'mqtt://localhost:1883',
+      mqttClientId: draft.mqttClientId || '',
+      mqttUsername: draft.mqttUsername || '',
+      mqttPassword: draft.mqttPassword || '',
+      mqttClean: draft.mqttClean ?? true,
+      mqttKeepalive: draft.mqttKeepalive || 60,
+      mqttWillTopic: draft.mqttWillTopic || '',
+      mqttWillPayload: draft.mqttWillPayload || '',
+      mqttWillQos: draft.mqttWillQos ?? 1,
+      mqttWillRetain: draft.mqttWillRetain ?? false,
+      coapBaseUrl: draft.coapBaseUrl || 'http://localhost:9070',
+      mediaBaseUrl: draft.mediaBaseUrl || 'http://localhost:9040',
+      streamMode: normalizeVideoStreamMode(draft.streamMode),
+      gbDeviceId: draft.gbDeviceId || '',
+      gbDomain: draft.gbDomain || '3402000000',
+      sourceUrl: draft.sourceUrl || draft.rtspUrl || '',
+      streamUrl: draft.streamUrl || '',
+      videoDeviceId: draft.videoDeviceId || null,
+      ip: draft.ip || '',
+      manufacturer: draft.manufacturer || '',
+      model: draft.model || '',
+      firmware: draft.firmware || '',
+      sipServerIp: draft.sipServerIp || '127.0.0.1',
+      sipServerPort: draft.sipServerPort || 5060,
+      sipServerId: draft.sipServerId || '34020000002000000001',
+      sipLocalPort: draft.sipLocalPort || 5080,
+      sipKeepaliveInterval: draft.sipKeepaliveInterval || 60,
+      sipPassword: draft.sipPassword || '',
+      sipTransport: draft.sipTransport || 'UDP',
+      sipChannels: draft.sipChannels || [],
       sipRegistered: false,
-      snmpConnectorUrl: partial.snmpConnectorUrl || 'http://localhost:9070',
-      snmpHost: partial.snmpHost || '',
-      snmpPort: partial.snmpPort || 161,
-      snmpVersion: partial.snmpVersion || 2,
-      snmpCommunity: partial.snmpCommunity || 'public',
-      modbusConnectorUrl: partial.modbusConnectorUrl || 'http://localhost:9070',
-      modbusHost: partial.modbusHost || '',
-      modbusPort: partial.modbusPort || 502,
-      modbusSlaveId: partial.modbusSlaveId || 1,
-      modbusMode: partial.modbusMode || 'TCP',
-      wsConnectorUrl: partial.wsConnectorUrl || 'http://localhost:9070',
-      wsEndpoint: partial.wsEndpoint || 'ws://localhost:9070/ws/device',
-      wsDeviceId: partial.wsDeviceId || '',
-      wsProductId: partial.wsProductId || '',
-      wsTenantId: partial.wsTenantId || '',
-      tcpHost: partial.tcpHost || 'localhost',
-      tcpPort: partial.tcpPort || 8900,
-      udpHost: partial.udpHost || 'localhost',
-      udpPort: partial.udpPort || 8901,
-      loraWebhookUrl: partial.loraWebhookUrl || 'http://localhost:9070/api/v1/lorawan/webhook/up',
-      loraDevEui: partial.loraDevEui || '',
-      loraAppId: partial.loraAppId || '',
-      loraFPort: partial.loraFPort || 1,
+      snmpConnectorUrl: draft.snmpConnectorUrl || 'http://localhost:9070',
+      snmpHost: draft.snmpHost || '',
+      snmpPort: draft.snmpPort || 161,
+      snmpVersion: draft.snmpVersion || 2,
+      snmpCommunity: draft.snmpCommunity || 'public',
+      modbusConnectorUrl: draft.modbusConnectorUrl || 'http://localhost:9070',
+      modbusHost: draft.modbusHost || '',
+      modbusPort: draft.modbusPort || 502,
+      modbusSlaveId: draft.modbusSlaveId || 1,
+      modbusMode: draft.modbusMode || 'TCP',
+      wsConnectorUrl: draft.wsConnectorUrl || 'http://localhost:9070',
+      wsEndpoint: draft.wsEndpoint || 'ws://localhost:9070/ws/device',
+      wsDeviceId: draft.wsDeviceId || '',
+      wsProductId: draft.wsProductId || '',
+      wsTenantId: draft.wsTenantId || '',
+      tcpHost: draft.tcpHost || 'localhost',
+      tcpPort: draft.tcpPort || 8900,
+      udpHost: draft.udpHost || 'localhost',
+      udpPort: draft.udpPort || 8901,
+      loraWebhookUrl: draft.loraWebhookUrl || 'http://localhost:9070/api/v1/lorawan/webhook/up',
+      loraDevEui: draft.loraDevEui || '',
+      loraAppId: draft.loraAppId || '',
+      loraFPort: draft.loraFPort || 1,
       autoReport: false,
       autoIntervalSec: 5,
       autoTimerId: null,
-      heartbeatIntervalSec: partial.heartbeatIntervalSec || 30,
+      heartbeatIntervalSec: draft.heartbeatIntervalSec || 30,
       heartbeatTimerId: null,
       sentCount: 0,
       errorCount: 0,
-      dynamicRegistered: partial.dynamicRegistered ?? false,
-      thingModelSimulationRules: partial.thingModelSimulationRules || {},
+      dynamicRegistered: draft.dynamicRegistered ?? false,
+      thingModelSimulationRules: draft.thingModelSimulationRules || {},
     };
     set((s) => ({ devices: [...s.devices, device], selectedDeviceId: id }));
   },
@@ -502,7 +518,6 @@ export const useSimStore = create<SimulatorState>()(
           heartbeatTimerId: null,
           sentCount: 0,
           errorCount: 0,
-          videoDeviceId: null,
           streamUrl: '',
           sipRegistered: false,
         })),

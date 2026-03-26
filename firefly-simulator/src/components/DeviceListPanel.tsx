@@ -43,6 +43,7 @@ import {
 } from '../utils/mqtt';
 import { getDeviceAccessMissingFields } from '../utils/deviceAccess';
 import { connectSimDevice, disconnectSimDevice } from '../utils/runtime';
+import { normalizeVideoStreamMode } from '../utils/video';
 
 const { Search } = Input;
 const { Paragraph, Text, Title } = Typography;
@@ -273,8 +274,12 @@ export default function DeviceListPanel() {
             streamMode: device.streamMode,
             gbDeviceId: device.gbDeviceId,
             gbDomain: device.gbDomain,
-            rtspUrl: device.rtspUrl,
+            sourceUrl: device.sourceUrl,
+            ip: device.ip,
             streamUrl: device.streamUrl,
+            manufacturer: device.manufacturer,
+            model: device.model,
+            firmware: device.firmware,
             sipServerIp: device.sipServerIp,
             sipServerPort: device.sipServerPort,
             sipServerId: device.sipServerId,
@@ -377,6 +382,24 @@ export default function DeviceListPanel() {
           mqttUsername: row.mqttUsername || row.username || '',
           mqttPassword: row.mqttPassword || row.password || '',
           coapBaseUrl: row.coapBaseUrl || row.baseUrl || String(environmentDefaults.coapBaseUrl),
+          streamMode: normalizeVideoStreamMode(row.streamMode),
+          gbDeviceId: row.gbDeviceId || '',
+          gbDomain: row.gbDomain || '3402000000',
+          sourceUrl: row.sourceUrl || row.rtspUrl || '',
+          ip: row.ip || '',
+          manufacturer: row.manufacturer || '',
+          model: row.model || '',
+          firmware: row.firmware || '',
+          sipServerIp: row.sipServerIp || '127.0.0.1',
+          sipServerPort: Number(row.sipServerPort) || 5060,
+          sipServerId: row.sipServerId || '34020000002000000001',
+          sipLocalPort: Number(row.sipLocalPort) || 5080,
+          sipKeepaliveInterval: Number(row.sipKeepaliveInterval) || 60,
+          sipPassword: row.sipPassword || '',
+          sipTransport: (row.sipTransport as never) || 'UDP',
+          sipChannels: Array.isArray((row as { sipChannels?: unknown[] }).sipChannels)
+            ? ((row as { sipChannels?: SimDevice['sipChannels'] }).sipChannels || [])
+            : [],
           snmpConnectorUrl: row.snmpConnectorUrl || String(environmentDefaults.snmpConnectorUrl),
           snmpHost: row.snmpHost || '',
           snmpPort: Number(row.snmpPort) || 161,
@@ -490,6 +513,9 @@ export default function DeviceListPanel() {
       mqttClientId: '',
       mqttUsername: '',
       mqttPassword: '',
+      videoDeviceId: null,
+      streamUrl: '',
+      sipRegistered: false,
       dynamicRegistered: false,
       restoreOnLaunch: false,
     } as never);

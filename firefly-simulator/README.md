@@ -7,7 +7,7 @@
 - **HTTP 协议模拟** — 设备认证（productKey/deviceName/deviceSecret）→ `online`/`heartbeat`/`offline` 生命周期事件 + 属性/事件上报
 - **MQTT 协议模拟** — 直连 `firefly-connector` 内置 MQTT (`mqtt://host:1883`) → Topic 发布/订阅 → 属性/事件上报
 - **CoAP 协议模拟** — CoAP Bridge 认证 (TTL 7d) → 属性/事件/OTA进度上报 + 设备影子拉取
-- **视频设备模拟** — GB28181/RTSP 接入 → 推流/停流、PTZ 云台控制、截图、录制、目录/通道查询
+- **视频设备模拟** — GB28181/RTSP/RTMP 接入 → 推流/停流、PTZ 云台控制、截图、录制、目录/通道查询、设备信息查询
 - **SNMP 协议模拟** — SNMP v1/v2c/v3 设备连接测试、OID 读写
 - **Modbus 协议模拟** — Modbus TCP/RTU 设备连接测试、寄存器读写
 - **WebSocket 协议模拟** — WebSocket 连接 → 实时双向消息收发
@@ -99,15 +99,18 @@ npm run electron:build
 
 ### Video 模式
 
-模拟器通过 `firefly-media` REST API 管理视频设备，支持 GB28181 和 RTSP 代理两种接入方式：
+模拟器通过 `firefly-media` REST API 管理视频设备，支持 GB28181、RTSP、RTMP 三种接入方式：
 
+- Video 设备连接和控制前，必须先登录当前环境；模拟器会复用当前环境的 Bearer Token 调用 `firefly-media`
 - GB28181 模式会自动使用 `国标设备 ID` 作为本地 `DeviceName`
-- RTSP 代理模式会自动使用“模拟设备名称”作为本地 `DeviceName`
+- RTSP / RTMP 模式会自动使用“模拟设备名称”作为本地 `DeviceName`
+- RTSP / RTMP 模式使用完整 `sourceUrl` 创建平台视频设备，同时自动解析并回填平台侧 `IP / 端口`
+- 再次连接同一台视频设备时，模拟器会优先复用已关联的平台视频设备；若平台已存在同一接入标识，则改为同步更新，不再重复创建
 - Video 设备现在也支持先绑定平台产品，再按 `ProductKey` 同步当前产品物模型
 
 | 功能 | API | 说明 |
 |------|-----|------|
-| 1. 注册设备 | `POST /api/v1/video/devices` | 创建视频设备（GB28181 或 RTSP_PROXY） |
+| 1. 同步设备 | `POST /api/v1/video/devices` / `PUT /api/v1/video/devices/{id}` | 首次创建平台视频设备；再次连接时优先更新已存在设备 |
 | 2. 开始推流 | `POST /api/v1/video/devices/{id}/start` | 请求 ZLMediaKit 拉流 |
 | 3. 停止推流 | `POST /api/v1/video/devices/{id}/stop` | 关闭流会话 |
 | 4. PTZ 控制 | `POST /api/v1/video/devices/{id}/ptz` | 云台方向/变焦控制 |
@@ -115,7 +118,8 @@ npm run electron:build
 | 6. 开始录制 | `POST /api/v1/video/devices/{id}/record/start` | 录制视频 |
 | 7. 停止录制 | `POST /api/v1/video/devices/{id}/record/stop` | 停止录制 |
 | 8. 查询目录 | `POST /api/v1/video/devices/{id}/catalog` | GB28181 目录查询 |
-| 9. 通道列表 | `GET /api/v1/video/devices/{id}/channels` | 查询视频通道 |
+| 9. 查询设备信息 | `POST /api/v1/video/devices/{id}/device-info` | GB28181 设备信息查询 |
+| 10. 通道列表 | `GET /api/v1/video/devices/{id}/channels` | 查询视频通道 |
 
 ### GB28181 SIP 模拟
 
@@ -138,11 +142,12 @@ npm run electron:build
 - **自动续注册** — 在 Expires 到期前 80% 时自动刷新注册
 
 **操作流程:**
-1. 添加 Video 设备 → 选择 GB28181 → 配置 SIP 服务器地址/端口/ID/传输/密码
-2. 连接设备（在平台注册视频设备）
-3. 点击「SIP 注册」→ 发送 REGISTER 到平台 SIP 服务器（如需认证会自动完成）
-4. 点击「开启心跳」→ 定时发送 Keepalive
-5. 平台发送 Catalog/DeviceInfo/INVITE/BYE/PTZ 等指令时，模拟器自动响应
+1. 切换到目标环境，并先完成当前环境登录
+2. 添加 Video 设备 → 选择 GB28181 → 配置 SIP 服务器地址/端口/ID/传输/密码
+3. 连接设备（在平台注册或同步视频设备）
+4. 点击「SIP 注册」→ 发送 REGISTER 到平台 SIP 服务器（如需认证会自动完成）
+5. 点击「开启心跳」→ 定时发送 Keepalive
+6. 平台发送 Catalog/DeviceInfo/INVITE/BYE/PTZ 等指令时，模拟器自动响应
 
 ### SNMP Mode
 

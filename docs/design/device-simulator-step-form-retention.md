@@ -37,6 +37,6 @@
 
 - Video 协议第二步不再保留空的 `DeviceName` 状态。
 - GB28181 模式统一使用 `gbDeviceId` 作为 Video 设备的本地 `DeviceName`。
-- RTSP 代理模式统一复用第一步填写的“模拟设备名称”作为本地 `DeviceName`。
+- RTSP / RTMP 模式统一复用第一步填写的“模拟设备名称”作为本地 `DeviceName`。
 - 第三步“配置摘要”直接展示自动生成后的 `DeviceName`，用户不需要额外手工输入。
 - `addDevice(...)` 同步补齐 Video 设备的 `deviceName`，确保创建、导入和复制场景使用同一套口径。

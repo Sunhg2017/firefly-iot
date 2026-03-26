@@ -72,12 +72,15 @@ interface ElectronAPI {
 
   videoCreateDevice: (baseUrl: string, dto: any, token?: string) => Promise<any>;
   videoListDevices: (baseUrl: string, query: any, token?: string) => Promise<any>;
+  videoGetDevice: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
+  videoUpdateDevice: (baseUrl: string, deviceId: number, dto: any, token?: string) => Promise<any>;
   videoStartStream: (baseUrl: string, deviceId: number, dto?: any, token?: string) => Promise<any>;
   videoStopStream: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
   videoPtzControl: (baseUrl: string, deviceId: number, dto: any, token?: string) => Promise<any>;
   videoSnapshot: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
   videoListChannels: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
   videoQueryCatalog: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
+  videoQueryDeviceInfo: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
   videoStartRecording: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
   videoStopRecording: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
 

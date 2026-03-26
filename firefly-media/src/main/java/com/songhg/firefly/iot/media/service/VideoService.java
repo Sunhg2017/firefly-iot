@@ -84,7 +84,7 @@ public class VideoService {
         // 否则保存成功后会因为 device_id 为空而立即从列表中消失。
         device.setDeviceId(resolveLinkedDeviceId(dto, device));
         device.setTenantId(tenantId);
-        device.setStatus(VideoDeviceStatus.OFFLINE);
+        alignManagedStatus(device);
         device.setCreatedBy(AppContextHolder.getUserId());
         persistVideoDevice(device, true);
         log.info("Video device created: id={}, name={}, mode={}", device.getId(), dto.getName(), dto.getStreamMode());
@@ -109,7 +109,8 @@ public class VideoService {
         if (query.getKeyword() != null && !query.getKeyword().isBlank()) {
             wrapper.and(w -> w.like(VideoDevice::getName, query.getKeyword())
                     .or().like(VideoDevice::getGbDeviceId, query.getKeyword())
-                    .or().like(VideoDevice::getIp, query.getKeyword()));
+                    .or().like(VideoDevice::getIp, query.getKeyword())
+                    .or().like(VideoDevice::getSourceUrl, query.getKeyword()));
         }
         if (query.getStreamMode() != null) {
             wrapper.eq(VideoDevice::getStreamMode, query.getStreamMode());
@@ -131,6 +132,7 @@ public class VideoService {
         }
         VideoConvert.INSTANCE.updateDeviceEntity(dto, device);
         normalizeDevice(device, dto.getSipAuthEnabled());
+        alignManagedStatus(device);
         assertDeviceIdentityAvailable(device, id);
         persistVideoDevice(device, false);
         return VideoConvert.INSTANCE.toDeviceVO(device);
@@ -202,10 +204,11 @@ public class VideoService {
 
         // 根据接入方式调用不同的 ZLM API
         try {
-            if (device.getStreamMode() == StreamMode.RTSP) {
-                // RTSP 拉流代理
-                String rtspUrl = "rtsp://" + device.getIp() + ":" + (device.getPort() != null ? device.getPort() : 554) + "/";
-                ZlmResponse<Map<String, Object>> resp = zlmApiClient.addStreamProxy(app, streamId, rtspUrl);
+            if (device.getStreamMode() == StreamMode.RTSP || device.getStreamMode() == StreamMode.RTMP) {
+                // RTSP / RTMP 设备优先使用完整源地址拉流，兼容模拟器和带路径的代理源；
+                // 若历史数据仍只有 ip + port，则回退到旧的 endpoint 拼接方式。
+                String sourceUrl = resolvePullSourceUrl(device);
+                ZlmResponse<Map<String, Object>> resp = zlmApiClient.addStreamProxy(app, streamId, sourceUrl);
                 if (!resp.isSuccess()) {
                     log.error("ZLM addStreamProxy failed: {}", resp.getMsg());
                     throw new BizException(ResultCode.STREAM_START_FAILED);
@@ -408,6 +411,7 @@ public class VideoService {
         device.setTransport(trimToNull(device.getTransport()));
         device.setSipPassword(trimToNull(device.getSipPassword()));
         device.setIp(trimToNull(device.getIp()));
+        device.setSourceUrl(trimToNull(device.getSourceUrl()));
         device.setManufacturer(trimToNull(device.getManufacturer()));
         device.setModel(trimToNull(device.getModel()));
         device.setFirmware(trimToNull(device.getFirmware()));
@@ -432,6 +436,14 @@ public class VideoService {
         }
 
         device.setSipPassword(null);
+    }
+
+    private void alignManagedStatus(VideoDevice device) {
+        if (device.getStreamMode() == StreamMode.RTSP || device.getStreamMode() == StreamMode.RTMP) {
+            device.setStatus(VideoDeviceStatus.ONLINE);
+            return;
+        }
+        device.setStatus(VideoDeviceStatus.OFFLINE);
     }
 
     private Long resolveLinkedDeviceId(VideoDeviceCreateDTO dto, VideoDevice device) {
@@ -481,15 +493,20 @@ public class VideoService {
         if (device.getStreamMode() == StreamMode.GB28181 && device.getGbDeviceId() != null) {
             wrapper.eq(VideoDevice::getGbDeviceId, device.getGbDeviceId());
             checkable = true;
-        } else if ((device.getStreamMode() == StreamMode.RTSP || device.getStreamMode() == StreamMode.RTMP)
-                && device.getIp() != null) {
-            wrapper.eq(VideoDevice::getIp, device.getIp());
-            if (device.getPort() == null) {
-                wrapper.isNull(VideoDevice::getPort);
-            } else {
-                wrapper.eq(VideoDevice::getPort, device.getPort());
+        } else if (device.getStreamMode() == StreamMode.RTSP || device.getStreamMode() == StreamMode.RTMP) {
+            String sourceUrl = trimToNull(device.getSourceUrl());
+            if (sourceUrl != null) {
+                wrapper.eq(VideoDevice::getSourceUrl, sourceUrl);
+                checkable = true;
+            } else if (device.getIp() != null) {
+                wrapper.eq(VideoDevice::getIp, device.getIp());
+                if (device.getPort() == null) {
+                    wrapper.isNull(VideoDevice::getPort);
+                } else {
+                    wrapper.eq(VideoDevice::getPort, device.getPort());
+                }
+                checkable = true;
             }
-            checkable = true;
         }
         if (!checkable) {
             return;
@@ -613,6 +630,10 @@ public class VideoService {
             return "当前 GB 设备编号已存在视频设备";
         }
         if ((device.getStreamMode() == StreamMode.RTSP || device.getStreamMode() == StreamMode.RTMP)
+                && trimToNull(device.getSourceUrl()) != null) {
+            return "当前视频源地址已存在视频设备";
+        }
+        if ((device.getStreamMode() == StreamMode.RTSP || device.getStreamMode() == StreamMode.RTMP)
                 && device.getIp() != null) {
             if (device.getPort() == null) {
                 return "当前接入地址已存在视频设备";
@@ -620,6 +641,24 @@ public class VideoService {
             return "当前接入地址与端口已存在视频设备";
         }
         return ResultCode.VIDEO_DEVICE_EXISTS.getMessage();
+    }
+
+    private String resolvePullSourceUrl(VideoDevice device) {
+        String sourceUrl = trimToNull(device.getSourceUrl());
+        if (sourceUrl != null) {
+            return sourceUrl;
+        }
+
+        String host = trimToNull(device.getIp());
+        if (host == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "视频源地址不能为空");
+        }
+
+        String protocol = device.getStreamMode() == StreamMode.RTMP ? "rtmp" : "rtsp";
+        int port = device.getPort() != null
+                ? device.getPort()
+                : (device.getStreamMode() == StreamMode.RTMP ? 1935 : 554);
+        return protocol + "://" + host + ":" + port + "/";
     }
 
     private String trimToNull(String value) {

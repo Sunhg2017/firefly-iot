@@ -47,6 +47,9 @@ public class VideoDeviceVO {
     @Schema(description = "端口")
     private Integer port;
 
+    @Schema(description = "视频源地址")
+    private String sourceUrl;
+
     @Schema(description = "厂商")
     private String manufacturer;
 

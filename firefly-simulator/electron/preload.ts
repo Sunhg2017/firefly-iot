@@ -112,6 +112,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('video:createDevice', baseUrl, dto, token),
   videoListDevices: (baseUrl: string, query: any, token?: string) =>
     ipcRenderer.invoke('video:listDevices', baseUrl, query, token),
+  videoGetDevice: (baseUrl: string, deviceId: number, token?: string) =>
+    ipcRenderer.invoke('video:getDevice', baseUrl, deviceId, token),
+  videoUpdateDevice: (baseUrl: string, deviceId: number, dto: any, token?: string) =>
+    ipcRenderer.invoke('video:updateDevice', baseUrl, deviceId, dto, token),
   videoStartStream: (baseUrl: string, deviceId: number, dto?: any, token?: string) =>
     ipcRenderer.invoke('video:startStream', baseUrl, deviceId, dto, token),
   videoStopStream: (baseUrl: string, deviceId: number, token?: string) =>
@@ -124,6 +128,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('video:listChannels', baseUrl, deviceId, token),
   videoQueryCatalog: (baseUrl: string, deviceId: number, token?: string) =>
     ipcRenderer.invoke('video:queryCatalog', baseUrl, deviceId, token),
+  videoQueryDeviceInfo: (baseUrl: string, deviceId: number, token?: string) =>
+    ipcRenderer.invoke('video:queryDeviceInfo', baseUrl, deviceId, token),
   videoStartRecording: (baseUrl: string, deviceId: number, token?: string) =>
     ipcRenderer.invoke('video:startRecording', baseUrl, deviceId, token),
   videoStopRecording: (baseUrl: string, deviceId: number, token?: string) =>

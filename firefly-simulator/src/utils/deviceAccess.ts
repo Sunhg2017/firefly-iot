@@ -1,5 +1,6 @@
 import type { SimDevice } from '../store';
 import { validateMqttDevice } from './mqtt';
+import { getVideoSourceFieldLabel, isProxyVideoMode, normalizeVideoStreamMode, parseVideoSourceUrl } from './video';
 
 export interface AccessOverviewItem {
   label: string;
@@ -99,11 +100,11 @@ export function getDeviceAccessMissingFields(device: SimDevice): string[] {
       if (!trim(device.productKey)) missing.push('ProductKey');
       if (!trim(device.mediaBaseUrl)) missing.push('媒体服务地址');
       if (!trim(device.deviceName)) missing.push('DeviceName');
-      if (device.streamMode === 'GB28181') {
+      if (normalizeVideoStreamMode(device.streamMode) === 'GB28181') {
         if (!trim(device.gbDeviceId)) missing.push('国标设备 ID');
         if (!trim(device.gbDomain)) missing.push('国标域');
-      } else if (!trim(device.rtspUrl)) {
-        missing.push('RTSP 源地址');
+      } else if (!trim(device.sourceUrl)) {
+        missing.push(getVideoSourceFieldLabel(device.streamMode));
       }
       return missing;
     }
@@ -119,6 +120,14 @@ export function getDeviceAccessValidationError(device: SimDevice): string | null
       return translateMqttValidation(mqttError);
     }
     return null;
+  }
+
+  if (device.protocol === 'Video' && isProxyVideoMode(device.streamMode) && trim(device.sourceUrl)) {
+    try {
+      parseVideoSourceUrl(device.streamMode, device.sourceUrl);
+    } catch (error) {
+      return error instanceof Error ? error.message : '视频源地址不正确';
+    }
   }
 
   const missing = getDeviceAccessMissingFields(device);
@@ -198,9 +207,28 @@ export function getDeviceAccessOverviewItems(device: SimDevice): AccessOverviewI
         { label: 'ProductKey', value: trim(device.productKey) || '未配置' },
         { label: 'DeviceName', value: trim(device.deviceName) || '未配置' },
         { label: '媒体服务', value: trim(device.mediaBaseUrl) || '未配置' },
-        { label: '模式', value: device.streamMode === 'GB28181' ? 'GB28181' : 'RTSP 代理', highlight: true },
-        { label: device.streamMode === 'GB28181' ? '国标设备 ID' : 'RTSP 地址', value: trim(device.streamMode === 'GB28181' ? device.gbDeviceId : device.rtspUrl) || '未配置' },
-        { label: device.streamMode === 'GB28181' ? '国标域' : '平台设备 ID', value: trim(device.streamMode === 'GB28181' ? device.gbDomain : String(device.videoDeviceId ?? '')) || '未设置' },
+        { label: '模式', value: normalizeVideoStreamMode(device.streamMode), highlight: true },
+        {
+          label: normalizeVideoStreamMode(device.streamMode) === 'GB28181' ? '国标设备 ID' : getVideoSourceFieldLabel(device.streamMode),
+          value: trim(normalizeVideoStreamMode(device.streamMode) === 'GB28181' ? device.gbDeviceId : device.sourceUrl) || '未配置',
+        },
+        {
+          label: normalizeVideoStreamMode(device.streamMode) === 'GB28181' ? '国标域' : '平台接入地址',
+          value: normalizeVideoStreamMode(device.streamMode) === 'GB28181'
+            ? trim(device.gbDomain) || '未配置'
+            : (() => {
+              try {
+                const parsed = parseVideoSourceUrl(device.streamMode, device.sourceUrl);
+                return parsed ? `${parsed.host}:${parsed.port}` : '未设置';
+              } catch {
+                return '未设置';
+              }
+            })(),
+        },
+        {
+          label: '平台视频设备',
+          value: trim(String(device.videoDeviceId ?? '')) || '未设置',
+        },
       ];
     default:
       return [];
