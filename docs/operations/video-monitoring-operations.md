@@ -49,7 +49,6 @@
    - Producer 已注册 `KafkaAuthContextProducerInterceptor`
    - Listener 容器已注册 `KafkaAuthContextRecordInterceptor`
    - 消费端按记录恢复并清理 `AppContextHolder`，而不是复用整批 `poll` 线程上下文
-11. 若通过脚本、Postman 或第三方系统调 `POST /api/v1/video/devices`，SIP 密码字段除 `sipPassword` 外，也兼容 `sip_password`、`sippassword`。
 
 ## 监控与日志
 
@@ -130,7 +129,7 @@
 
 排查：
 
-1. 优先确认请求体字段名是否为 `sipPassword`；历史脚本如果使用 `sip_password` 或 `sippassword`，当前版本也已兼容。
+1. 优先确认请求体字段名是否为 `sipPassword`，并核对请求体实际进入后端的 JSON。
 2. 确认同时传入了 `sipAuthEnabled=true` 和 `gbDeviceId`。
 3. 若页面仍提示成功但实际未创建，确认前端是否已部署到本次修复版本；当前版本会直接显示后端业务校验消息，不再吞掉 `R.code != 0` 的失败响应。
 

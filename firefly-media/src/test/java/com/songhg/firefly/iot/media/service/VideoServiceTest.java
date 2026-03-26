@@ -12,6 +12,7 @@ import com.songhg.firefly.iot.common.mybatis.DataScopeContext;
 import com.songhg.firefly.iot.common.mybatis.DataScopeResolver;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.media.dto.video.VideoDeviceCreateDTO;
+import com.songhg.firefly.iot.media.entity.VideoDevice;
 import com.songhg.firefly.iot.media.gb28181.SipCommandSender;
 import com.songhg.firefly.iot.media.mapper.StreamSessionMapper;
 import com.songhg.firefly.iot.media.mapper.VideoChannelMapper;
@@ -95,5 +96,37 @@ class VideoServiceTest {
         assertThat(captor.getValue().getProjectId()).isEqualTo(501L);
         assertThat(captor.getValue().getGroupIds()).containsExactly(601L, 602L);
         assertThat(captor.getValue().getNickname()).isEqualTo("南门摄像头");
+    }
+
+    @Test
+    void createDeviceShouldRetainSipPasswordWhenSipAuthEnabled() {
+        AppContextHolder.setTenantId(11L);
+        AppContextHolder.setUserId(22L);
+
+        ProductBasicVO product = new ProductBasicVO();
+        product.setId(301L);
+        product.setProductKey("camera.pk");
+        product.setProtocol("GB28181");
+        product.setProjectId(701L);
+
+        DeviceBasicVO deviceBasic = new DeviceBasicVO();
+        deviceBasic.setId(401L);
+
+        when(productClient.getProductBasicByProductKey("camera.pk")).thenReturn(R.ok(product));
+        when(deviceClient.createDevice(any(InternalDeviceCreateDTO.class))).thenReturn(R.ok(deviceBasic));
+
+        VideoDeviceCreateDTO dto = new VideoDeviceCreateDTO();
+        dto.setProductKey("camera.pk");
+        dto.setName("南门摄像头");
+        dto.setStreamMode(StreamMode.GB28181);
+        dto.setGbDeviceId("34020000001320000001");
+        dto.setSipAuthEnabled(true);
+        dto.setSipPassword("sip-secret");
+
+        service.createDevice(dto);
+
+        ArgumentCaptor<VideoDevice> captor = ArgumentCaptor.forClass(VideoDevice.class);
+        verify(videoDeviceMapper).insert(captor.capture());
+        assertThat(captor.getValue().getSipPassword()).isEqualTo("sip-secret");
     }
 }

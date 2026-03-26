@@ -210,7 +210,6 @@ STOP(0), UP(1), DOWN(2), LEFT(3), RIGHT(4), ZOOM_IN(5), ZOOM_OUT(6)
 补充约束：
 
 - 创建/更新视频设备时，SIP 密码字段统一口径仍为 `sipPassword`。
-- 为兼容历史脚本和手工调试，请求体同时兼容 `sip_password`、`sippassword` 别名；`sipAuthEnabled`、`gbDeviceId`、`gbDomain`、`streamMode` 也兼容对应 snake_case/小写连写别名。
 
 ### 6.2 通道管理
 
