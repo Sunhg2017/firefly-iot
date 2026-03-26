@@ -207,6 +207,11 @@ STOP(0), UP(1), DOWN(2), LEFT(3), RIGHT(4), ZOOM_IN(5), ZOOM_OUT(6)
 | PUT | `/api/v1/video/devices/{id}` | `video:update` | 更新设备 |
 | DELETE | `/api/v1/video/devices/{id}` | `video:delete` | 删除设备 |
 
+补充约束：
+
+- 创建/更新视频设备时，SIP 密码字段统一口径仍为 `sipPassword`。
+- 为兼容历史脚本和手工调试，请求体同时兼容 `sip_password`、`sippassword` 别名；`sipAuthEnabled`、`gbDeviceId`、`gbDomain`、`streamMode` 也兼容对应 snake_case/小写连写别名。
+
 ### 6.2 通道管理
 
 | 方法 | 路径 | 权限 | 说明 |
@@ -283,6 +288,7 @@ firefly-system/src/main/java/.../system/
 - **创建设备抽屉**: 使用抽屉而非弹窗，分组展示基础字段、GB28181 专属字段、SIP 鉴权开关和产品上下文
 - **编辑设备抽屉**: 在列表侧边继续维护 GB 域、传输协议和设备级 SIP 密码
 - **协议锁定**: 存在产品上下文时，`streamMode` 自动锁定为产品协议，不允许在创建设备时切换
+- **错误回显**: 创建、编辑、播放、目录查询等操作会直接展示后端返回的业务校验消息，不再把 `R.code != 0` 的响应当作成功处理
 - **实时预览**: 选择设备/通道，使用 FLV.js 播放实时视频流
 - **PTZ 控制面板**: 方向控制按钮 + 变焦按钮
 - **路由**: `/video`

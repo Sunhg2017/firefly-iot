@@ -1,5 +1,6 @@
 package com.songhg.firefly.iot.media.dto.video;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.songhg.firefly.iot.common.enums.StreamMode;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
@@ -16,22 +17,27 @@ public class VideoDeviceUpdateDTO {
     private String name;
 
     @Schema(description = "国标设备编号")
+    @JsonAlias({"gb_device_id", "gbdeviceid"})
     private String gbDeviceId;
 
     @Schema(description = "国标域")
+    @JsonAlias({"gb_domain", "gbdomain"})
     private String gbDomain;
 
     @Schema(description = "传输协议")
     private String transport;
 
     @Schema(description = "启用 SIP 密码鉴权")
+    @JsonAlias({"sip_auth_enabled", "sipauthenabled"})
     private Boolean sipAuthEnabled;
 
     @Schema(description = "SIP 密码")
     @Size(max = 128)
+    @JsonAlias({"sip_password", "sippassword"})
     private String sipPassword;
 
     @Schema(description = "流模式")
+    @JsonAlias({"stream_mode", "streammode"})
     private StreamMode streamMode;
 
     @Schema(description = "网络地址")

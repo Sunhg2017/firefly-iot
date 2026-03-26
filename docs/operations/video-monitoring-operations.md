@@ -49,6 +49,7 @@
    - Producer 已注册 `KafkaAuthContextProducerInterceptor`
    - Listener 容器已注册 `KafkaAuthContextRecordInterceptor`
    - 消费端按记录恢复并清理 `AppContextHolder`，而不是复用整批 `poll` 线程上下文
+11. 若通过脚本、Postman 或第三方系统调 `POST /api/v1/video/devices`，SIP 密码字段除 `sipPassword` 外，也兼容 `sip_password`、`sippassword`。
 
 ## 监控与日志
 
@@ -124,6 +125,14 @@
 2. 确认设备端使用 `GB 设备编号` 作为 SIP 用户名。
 3. 抓包或看平台日志，确认第一次 `REGISTER` 收到 `401 Unauthorized`，第二次带 `Authorization` 的 `REGISTER` 是否校验通过。
 4. 如果仍失败，继续检查设备编号、域、传输协议、平台监听 IP/端口是否配置一致。
+
+### 6.1 创建设备时提示 SIP 密码为空，但请求里已经带了值
+
+排查：
+
+1. 优先确认请求体字段名是否为 `sipPassword`；历史脚本如果使用 `sip_password` 或 `sippassword`，当前版本也已兼容。
+2. 确认同时传入了 `sipAuthEnabled=true` 和 `gbDeviceId`。
+3. 若页面仍提示成功但实际未创建，确认前端是否已部署到本次修复版本；当前版本会直接显示后端业务校验消息，不再吞掉 `R.code != 0` 的失败响应。
 
 ### 7. Kafka 消费链路出现租户或用户上下文丢失
 

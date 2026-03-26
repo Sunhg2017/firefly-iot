@@ -129,6 +129,29 @@ const normalizeOptionalPort = (value?: number | string) => {
   return Number.isFinite(normalized) ? normalized : undefined;
 };
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const response = (error as { response?: { data?: { message?: string } } }).response;
+    if (response?.data?.message) {
+      return response.data.message;
+    }
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+};
+
+const unwrapBusinessResponse = <T,>(
+  response: { data?: { code?: number; message?: string; data?: T } },
+  fallback: string,
+): T => {
+  if (response.data?.code !== 0) {
+    throw new Error(response.data?.message || fallback);
+  }
+  return response.data?.data as T;
+};
+
 const parseVideoProductContext = (searchParams: URLSearchParams): VideoProductContext | null => {
   const protocol = trimOptionalValue(searchParams.get('protocol') || undefined);
   const productKey = trimOptionalValue(searchParams.get('productKey') || undefined);
@@ -232,7 +255,8 @@ const VideoList: React.FC = () => {
   const fetchProductOptions = async () => {
     try {
       const res = await productApi.list({ pageNum: 1, pageSize: 500, category: 'CAMERA' });
-      const records = (res.data.data.records || []) as Array<Record<string, unknown>>;
+      const page = unwrapBusinessResponse<{ records?: Array<Record<string, unknown>> }>(res, '加载产品列表失败');
+      const records = (page.records || []) as Array<Record<string, unknown>>;
       setProductOptions(
         records
           .map((item) => ({
@@ -257,11 +281,11 @@ const VideoList: React.FC = () => {
         streamMode: filterMode,
         status: filterStatus,
       });
-      const page = res.data.data;
+      const page = unwrapBusinessResponse<{ records?: VideoDeviceRecord[]; total?: number }>(res, '加载视频设备列表失败');
       setData(page.records || []);
       setTotal(page.total || 0);
-    } catch {
-      message.error('加载视频设备列表失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载视频设备列表失败'));
     } finally {
       setLoading(false);
     }
@@ -330,13 +354,13 @@ const VideoList: React.FC = () => {
     setEditorLoading(true);
     try {
       const res = await videoApi.get(record.id);
-      const detail = res.data.data as VideoDeviceRecord;
+      const detail = unwrapBusinessResponse<VideoDeviceRecord>(res, '加载视频设备详情失败');
       setEditorMode('edit');
       setEditingDevice(detail);
       setPendingEditorValues(buildEditorInitialValues(productContext, detail));
       setEditorOpen(true);
-    } catch {
-      message.error('加载视频设备详情失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载视频设备详情失败'));
     } finally {
       setEditorLoading(false);
     }
@@ -360,24 +384,19 @@ const VideoList: React.FC = () => {
     setEditorLoading(true);
     try {
       if (editorMode === 'edit' && editingDevice) {
-        await videoApi.update(editingDevice.id, buildEditorPayload(values));
+        const response = await videoApi.update(editingDevice.id, buildEditorPayload(values));
+        unwrapBusinessResponse(response, '视频设备更新失败');
         message.success('视频设备更新成功');
       } else {
-        await videoApi.create(buildEditorPayload(values));
+        const response = await videoApi.create(buildEditorPayload(values));
+        unwrapBusinessResponse(response, '视频设备创建失败');
         setParams((current) => ({ ...current, pageNum: 1 }));
         message.success('视频设备创建成功');
       }
       closeEditorDrawer();
       void fetchData();
     } catch (error) {
-      if (typeof error === 'object' && error !== null && 'response' in error) {
-        const response = (error as { response?: { data?: { message?: string } } }).response;
-        if (response?.data?.message) {
-          message.error(response.data.message);
-          return;
-        }
-      }
-      message.error(editorMode === 'edit' ? '更新失败' : '创建失败');
+      message.error(getErrorMessage(error, editorMode === 'edit' ? '更新失败' : '创建失败'));
     } finally {
       setEditorLoading(false);
     }
@@ -388,7 +407,8 @@ const VideoList: React.FC = () => {
       title: '确认删除视频设备？',
       content: `删除「${record.name}」？关联的通道和流会话将一并删除。`,
       onOk: async () => {
-        await videoApi.delete(record.id);
+        const response = await videoApi.delete(record.id);
+        unwrapBusinessResponse(response, '删除视频设备失败');
         message.success('删除成功');
         void fetchData();
       },
@@ -402,10 +422,10 @@ const VideoList: React.FC = () => {
     setStreamInfo(null);
     try {
       const res = await videoApi.startStream(record.id);
-      const session = res.data.data;
+      const session = unwrapBusinessResponse<StreamInfo>(res, '启动视频流失败');
       setStreamInfo({ flvUrl: session.flvUrl, hlsUrl: session.hlsUrl, webrtcUrl: session.webrtcUrl });
-    } catch {
-      message.error('启动视频流失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '启动视频流失败'));
     } finally {
       setPlayerLoading(false);
     }
@@ -416,18 +436,20 @@ const VideoList: React.FC = () => {
       return;
     }
     try {
-      await videoApi.stopStream(playerDevice.id);
+      const response = await videoApi.stopStream(playerDevice.id);
+      unwrapBusinessResponse(response, '停止视频流失败');
       message.success('视频流已停止');
       setStreamInfo(null);
-    } catch {
-      message.error('停止视频流失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '停止视频流失败'));
     }
   };
 
   const handleClosePlayer = async () => {
     if (playerDevice && streamInfo) {
       try {
-        await videoApi.stopStream(playerDevice.id);
+        const response = await videoApi.stopStream(playerDevice.id);
+        unwrapBusinessResponse(response, '停止视频流失败');
       } catch {
         // ignore close cleanup failure
       }
@@ -443,7 +465,8 @@ const VideoList: React.FC = () => {
     }
     try {
       const res = await videoApi.snapshot(playerDevice.id);
-      const url = res.data.data?.imageUrl;
+      const data = unwrapBusinessResponse<{ imageUrl?: string }>(res, '截图失败');
+      const url = data?.imageUrl;
       if (url && url !== 'snapshot_failed' && url !== 'no_active_stream') {
         message.success('截图成功');
         Modal.info({
@@ -454,8 +477,8 @@ const VideoList: React.FC = () => {
       } else {
         message.warning('截图失败，请确保有活跃的视频流');
       }
-    } catch {
-      message.error('截图失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '截图失败'));
     }
   };
 
@@ -464,27 +487,30 @@ const VideoList: React.FC = () => {
       return;
     }
     try {
-      await videoApi.ptz(playerDevice.id, { command: ptzCmdMap[command] || 'STOP', speed });
-    } catch {
-      message.error('PTZ 控制失败');
+      const response = await videoApi.ptz(playerDevice.id, { command: ptzCmdMap[command] || 'STOP', speed });
+      unwrapBusinessResponse(response, 'PTZ 控制失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, 'PTZ 控制失败'));
     }
   };
 
   const handleQueryCatalog = async (record: VideoDeviceRecord) => {
     try {
-      await videoApi.queryCatalog(record.id);
+      const response = await videoApi.queryCatalog(record.id);
+      unwrapBusinessResponse(response, '目录查询失败');
       message.success('目录查询指令已发送，通道列表将自动更新');
-    } catch {
-      message.error('目录查询失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '目录查询失败'));
     }
   };
 
   const handleQueryDeviceInfo = async (record: VideoDeviceRecord) => {
     try {
-      await videoApi.queryDeviceInfo(record.id);
+      const response = await videoApi.queryDeviceInfo(record.id);
+      unwrapBusinessResponse(response, '设备信息查询失败');
       message.success('设备信息查询指令已发送');
-    } catch {
-      message.error('设备信息查询失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '设备信息查询失败'));
     }
   };
 
