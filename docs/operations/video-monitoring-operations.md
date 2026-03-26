@@ -131,8 +131,7 @@
 
 1. 优先确认请求体字段名是否为 `sipPassword`，并核对请求体实际进入后端的 JSON。
 2. 确认同时传入了 `sipAuthEnabled=true` 和 `gbDeviceId`。
-3. 检查 `VideoConvert` 转换后的 `VideoDevice` 对象，确认 `sipPassword / gbDeviceId / transport / streamMode` 等字段在进入 `normalizeDevice(...)` 前未被带丢；当前版本已改成显式字段映射。
-4. 若页面仍提示成功但实际未创建，确认前端是否已部署到本次修复版本；当前版本会直接显示后端业务校验消息，不再吞掉 `R.code != 0` 的失败响应。
+3. 若页面仍提示成功但实际未创建，确认前端是否已部署到本次修复版本；当前版本会直接显示后端业务校验消息，不再吞掉 `R.code != 0` 的失败响应。
 
 ### 7. Kafka 消费链路出现租户或用户上下文丢失
 
