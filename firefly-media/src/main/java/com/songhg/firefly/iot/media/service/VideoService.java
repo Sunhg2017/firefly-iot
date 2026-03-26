@@ -41,6 +41,7 @@ import com.songhg.firefly.iot.media.zlm.ZlmResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -78,13 +79,14 @@ public class VideoService {
         Long tenantId = AppContextHolder.getTenantId();
         VideoDevice device = VideoConvert.INSTANCE.toDeviceEntity(dto);
         normalizeDevice(device, dto.getSipAuthEnabled());
+        assertDeviceIdentityAvailable(device, null);
         // 视频设备列表按 device_id 参与数据权限过滤，新增时必须先挂到设备资产主链路，
         // 否则保存成功后会因为 device_id 为空而立即从列表中消失。
         device.setDeviceId(resolveLinkedDeviceId(dto, device));
         device.setTenantId(tenantId);
         device.setStatus(VideoDeviceStatus.OFFLINE);
         device.setCreatedBy(AppContextHolder.getUserId());
-        videoDeviceMapper.insert(device);
+        persistVideoDevice(device, true);
         log.info("Video device created: id={}, name={}, mode={}", device.getId(), dto.getName(), dto.getStreamMode());
         return VideoConvert.INSTANCE.toDeviceVO(device);
     }
@@ -129,7 +131,8 @@ public class VideoService {
         }
         VideoConvert.INSTANCE.updateDeviceEntity(dto, device);
         normalizeDevice(device, dto.getSipAuthEnabled());
-        videoDeviceMapper.updateById(device);
+        assertDeviceIdentityAvailable(device, id);
+        persistVideoDevice(device, false);
         return VideoConvert.INSTANCE.toDeviceVO(device);
     }
 
@@ -462,6 +465,52 @@ public class VideoService {
         return response.getData().getId();
     }
 
+    private void assertDeviceIdentityAvailable(VideoDevice device, Long excludeId) {
+        Long tenantId = AppContextHolder.getTenantId();
+        if (tenantId == null || device.getStreamMode() == null) {
+            return;
+        }
+        LambdaQueryWrapper<VideoDevice> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(VideoDevice::getTenantId, tenantId)
+                .eq(VideoDevice::getStreamMode, device.getStreamMode());
+        if (excludeId != null) {
+            wrapper.ne(VideoDevice::getId, excludeId);
+        }
+
+        boolean checkable = false;
+        if (device.getStreamMode() == StreamMode.GB28181 && device.getGbDeviceId() != null) {
+            wrapper.eq(VideoDevice::getGbDeviceId, device.getGbDeviceId());
+            checkable = true;
+        } else if ((device.getStreamMode() == StreamMode.RTSP || device.getStreamMode() == StreamMode.RTMP)
+                && device.getIp() != null) {
+            wrapper.eq(VideoDevice::getIp, device.getIp());
+            if (device.getPort() == null) {
+                wrapper.isNull(VideoDevice::getPort);
+            } else {
+                wrapper.eq(VideoDevice::getPort, device.getPort());
+            }
+            checkable = true;
+        }
+        if (!checkable) {
+            return;
+        }
+        if (videoDeviceMapper.selectCount(wrapper) > 0) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_EXISTS, buildDuplicateDeviceMessage(device));
+        }
+    }
+
+    private void persistVideoDevice(VideoDevice device, boolean create) {
+        try {
+            if (create) {
+                videoDeviceMapper.insert(device);
+                return;
+            }
+            videoDeviceMapper.updateById(device);
+        } catch (DuplicateKeyException ex) {
+            throw new BizException(ResultCode.VIDEO_DEVICE_EXISTS, buildDuplicateDeviceMessage(device));
+        }
+    }
+
     private ProductBasicVO loadProductBasic(String productKey) {
         R<ProductBasicVO> response = productClient.getProductBasicByProductKey(productKey);
         if (response == null || response.getCode() != 0 || response.getData() == null || response.getData().getId() == null) {
@@ -557,6 +606,20 @@ public class VideoService {
             return "视频设备接入自动创建";
         }
         return "视频设备接入自动创建: " + name;
+    }
+
+    private String buildDuplicateDeviceMessage(VideoDevice device) {
+        if (device.getStreamMode() == StreamMode.GB28181 && device.getGbDeviceId() != null) {
+            return "当前 GB 设备编号已存在视频设备";
+        }
+        if ((device.getStreamMode() == StreamMode.RTSP || device.getStreamMode() == StreamMode.RTMP)
+                && device.getIp() != null) {
+            if (device.getPort() == null) {
+                return "当前接入地址已存在视频设备";
+            }
+            return "当前接入地址与端口已存在视频设备";
+        }
+        return ResultCode.VIDEO_DEVICE_EXISTS.getMessage();
     }
 
     private String trimToNull(String value) {

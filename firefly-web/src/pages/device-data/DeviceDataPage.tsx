@@ -190,16 +190,16 @@ const EventsTab: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
-  const [deviceId, setDeviceId] = useState<string>('');
-  const [filterLevel, setFilterLevel] = useState<string | undefined>();
+  const [draftFilters, setDraftFilters] = useState<{ deviceId: string; level?: string }>({ deviceId: '' });
+  const [filters, setFilters] = useState<{ deviceId: string; level?: string }>({ deviceId: '' });
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const res = await deviceDataApi.listEvents({
         ...params,
-        deviceId: deviceId ? Number(deviceId) : undefined,
-        level: filterLevel,
+        deviceId: filters.deviceId ? Number(filters.deviceId) : undefined,
+        level: filters.level,
       });
       const page = res.data.data;
       setData(page.records || []);
@@ -207,7 +207,21 @@ const EventsTab: React.FC = () => {
     } catch { message.error('加载事件列表失败'); } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, [params.pageNum, params.pageSize, filterLevel]);
+  useEffect(() => { fetchData(); }, [filters, params.pageNum, params.pageSize]);
+
+  const applyFilters = () => {
+    setFilters({
+      deviceId: draftFilters.deviceId.trim(),
+      level: draftFilters.level,
+    });
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
+
+  const resetFilters = () => {
+    setDraftFilters({ deviceId: '' });
+    setFilters({ deviceId: '' });
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
 
   const columns: ColumnsType<EventRecord> = [
     { title: '事件类型', dataIndex: 'eventType', width: 140 },
@@ -220,14 +234,30 @@ const EventsTab: React.FC = () => {
 
   return (
     <>
-      <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Space wrap>
-          <Input placeholder="设备ID" style={{ width: 140 }} value={deviceId} onChange={(e) => setDeviceId(e.target.value)} />
-          <Select placeholder="级别" allowClear style={{ width: 120 }}
+      <Card className="ff-query-card">
+        <div className="ff-query-bar">
+          <Input
+            className="ff-query-field"
+            placeholder="设备ID"
+            style={{ width: 140 }}
+            value={draftFilters.deviceId}
+            onChange={(event) => setDraftFilters((current) => ({ ...current, deviceId: event.target.value }))}
+            onPressEnter={applyFilters}
+          />
+          <Select
+            className="ff-query-field"
+            placeholder="级别"
+            allowClear
+            style={{ width: 120 }}
+            value={draftFilters.level}
             options={[{ value: 'INFO', label: 'INFO' }, { value: 'WARNING', label: 'WARNING' }, { value: 'CRITICAL', label: 'CRITICAL' }]}
-            onChange={(v) => { setFilterLevel(v); setParams({ ...params, pageNum: 1 }); }} />
-          <Button type="primary" icon={<SearchOutlined />} onClick={() => { setParams({ ...params, pageNum: 1 }); fetchData(); }}>搜索</Button>
-        </Space>
+            onChange={(value) => setDraftFilters((current) => ({ ...current, level: value }))}
+          />
+          <div className="ff-query-actions">
+            <Button onClick={resetFilters}>重置</Button>
+            <Button type="primary" icon={<SearchOutlined />} onClick={applyFilters}>查询</Button>
+          </div>
+        </div>
       </Card>
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Table rowKey="id" columns={columns} dataSource={data} loading={loading} scroll={{ x: 1000 }}

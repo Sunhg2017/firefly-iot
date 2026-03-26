@@ -45,7 +45,7 @@ import PageHeader from '../../components/PageHeader';
 import { productApi } from '../../services/api';
 import useAuthStore from '../../store/useAuthStore';
 
-const { Search, TextArea } = Input;
+const { TextArea } = Input;
 const ProductThingModelDrawer = React.lazy(() => import('./ProductThingModelDrawer'));
 const ProductAccessDrawer = React.lazy(() => import('./ProductAccessDrawer'));
 
@@ -78,6 +78,13 @@ interface ProductFormValues {
   nodeType: string;
   dataFormat: string;
   deviceAuthType: string;
+}
+
+interface ProductListFilters {
+  keyword: string;
+  category?: string;
+  protocol?: string;
+  status?: string;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -220,6 +227,7 @@ const DEFAULT_FORM_VALUES: ProductFormValues = {
   dataFormat: 'JSON',
   deviceAuthType: 'PRODUCT_SECRET',
 };
+const EMPTY_PRODUCT_FILTERS: ProductListFilters = { keyword: '' };
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (typeof error === 'object' && error !== null && 'response' in error) {
@@ -384,11 +392,8 @@ const ProductList: React.FC = () => {
   const [editingProduct, setEditingProduct] = useState<ProductRecord | null>(null);
   const [createUploading, setCreateUploading] = useState(false);
   const [editUploading, setEditUploading] = useState(false);
-  const [keyword, setKeyword] = useState('');
-  const [searchText, setSearchText] = useState('');
-  const [filterCategory, setFilterCategory] = useState<string | undefined>();
-  const [filterProtocol, setFilterProtocol] = useState<string | undefined>();
-  const [filterStatus, setFilterStatus] = useState<string | undefined>();
+  const [draftFilters, setDraftFilters] = useState<ProductListFilters>(EMPTY_PRODUCT_FILTERS);
+  const [filters, setFilters] = useState<ProductListFilters>(EMPTY_PRODUCT_FILTERS);
   const [thingModelProduct, setThingModelProduct] = useState<ProductRecord | null>(null);
   const [accessProduct, setAccessProduct] = useState<ProductRecord | null>(null);
   const [accessMode, setAccessMode] = useState<'secret' | 'register' | null>(null);
@@ -407,10 +412,10 @@ const ProductList: React.FC = () => {
     try {
       const res = await productApi.list({
         ...params,
-        keyword: keyword || undefined,
-        category: filterCategory,
-        protocol: filterProtocol,
-        status: filterStatus,
+        keyword: filters.keyword || undefined,
+        category: filters.category,
+        protocol: filters.protocol,
+        status: filters.status,
       });
       const page = res.data.data;
       setData(page.records || []);
@@ -424,7 +429,23 @@ const ProductList: React.FC = () => {
 
   useEffect(() => {
     void fetchData();
-  }, [params.pageNum, params.pageSize, keyword, filterCategory, filterProtocol, filterStatus]);
+  }, [filters, params.pageNum, params.pageSize]);
+
+  const applyFilters = () => {
+    setFilters({
+      keyword: draftFilters.keyword.trim(),
+      category: draftFilters.category,
+      protocol: draftFilters.protocol,
+      status: draftFilters.status,
+    });
+    setParams((prev) => ({ ...prev, pageNum: 1 }));
+  };
+
+  const resetFilters = () => {
+    setDraftFilters(EMPTY_PRODUCT_FILTERS);
+    setFilters({ ...EMPTY_PRODUCT_FILTERS });
+    setParams((prev) => ({ ...prev, pageNum: 1 }));
+  };
 
   useEffect(() => {
     const currentProtocol = createForm.getFieldValue('protocol');
@@ -521,21 +542,21 @@ const ProductList: React.FC = () => {
   const activeFilterTags = useMemo(() => {
     const tags: Array<{ key: string; label: string }> = [];
 
-    if (keyword) {
-      tags.push({ key: 'keyword', label: `关键词: ${keyword}` });
+    if (filters.keyword) {
+      tags.push({ key: 'keyword', label: `关键词: ${filters.keyword}` });
     }
-    if (filterCategory) {
-      tags.push({ key: 'category', label: `分类: ${CATEGORY_LABELS[filterCategory] || filterCategory}` });
+    if (filters.category) {
+      tags.push({ key: 'category', label: `分类: ${CATEGORY_LABELS[filters.category] || filters.category}` });
     }
-    if (filterProtocol) {
-      tags.push({ key: 'protocol', label: `协议: ${filterProtocol}` });
+    if (filters.protocol) {
+      tags.push({ key: 'protocol', label: `协议: ${filters.protocol}` });
     }
-    if (filterStatus) {
-      tags.push({ key: 'status', label: `状态: ${STATUS_LABELS[filterStatus] || filterStatus}` });
+    if (filters.status) {
+      tags.push({ key: 'status', label: `状态: ${STATUS_LABELS[filters.status] || filters.status}` });
     }
 
     return tags;
-  }, [filterCategory, filterProtocol, filterStatus, keyword]);
+  }, [filters]);
 
   const resetCreateForm = () => {
     createForm.resetFields();
@@ -1084,79 +1105,62 @@ const ProductList: React.FC = () => {
       <Card
         title="筛选条件"
         size="small"
-        styles={{ body: { padding: 14 } }}
+        className="ff-query-card"
         style={{
           borderRadius: 18,
-          marginBottom: 16,
-          border: 'none',
           boxShadow: '0 6px 24px rgba(15,23,42,0.04)',
         }}
       >
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Row gutter={[12, 12]} align="middle">
-            <Col xs={24} md={10} lg={9}>
-              <Search
-                value={searchText}
-                placeholder="搜索产品名称 / 型号 / ProductKey"
-                allowClear
-                enterButton="查询"
-                style={{ width: '100%' }}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setSearchText(nextValue);
-                  if (!nextValue) {
-                    setKeyword('');
-                    setParams((prev) => ({ ...prev, pageNum: 1 }));
-                  }
-                }}
-                onSearch={(value) => {
-                  setSearchText(value);
-                  setKeyword(value.trim());
-                  setParams((prev) => ({ ...prev, pageNum: 1 }));
-                }}
-              />
-            </Col>
-            <Col xs={24} sm={8} md={5}>
-              <Select
-                value={filterCategory}
-                allowClear
-                placeholder="产品分类"
-                style={{ width: '100%' }}
-                options={CATEGORY_OPTIONS}
-                onChange={(value) => {
-                  setFilterCategory(value);
-                  setParams((prev) => ({ ...prev, pageNum: 1 }));
-                }}
-              />
-            </Col>
-            <Col xs={24} sm={8} md={5}>
-              <Select
-                value={filterProtocol}
-                allowClear
-                placeholder="接入协议"
-                style={{ width: '100%' }}
-                options={ALL_PROTOCOL_OPTIONS}
-                onChange={(value) => {
-                  setFilterProtocol(value);
-                  setParams((prev) => ({ ...prev, pageNum: 1 }));
-                }}
-              />
-            </Col>
-            <Col xs={24} sm={8} md={4}>
-              <Select
-                value={filterStatus}
-                allowClear
-                placeholder="状态"
-                style={{ width: '100%' }}
-                options={STATUS_OPTIONS}
-                onChange={(value) => {
-                  setFilterStatus(value);
-                  setParams((prev) => ({ ...prev, pageNum: 1 }));
-                }}
-              />
-            </Col>
-            <Col xs={24} md={1} />
-          </Row>
+          <div className="ff-query-bar">
+            <Input
+              className="ff-query-field ff-query-field--grow"
+              value={draftFilters.keyword}
+              placeholder="搜索产品名称 / 型号 / ProductKey"
+              allowClear
+              onChange={(event) => {
+                setDraftFilters((current) => ({ ...current, keyword: event.target.value }));
+              }}
+              onPressEnter={applyFilters}
+            />
+            <Select
+              className="ff-query-field"
+              value={draftFilters.category}
+              allowClear
+              placeholder="产品分类"
+              style={{ width: 180 }}
+              options={CATEGORY_OPTIONS}
+              onChange={(value) => {
+                setDraftFilters((current) => ({ ...current, category: value }));
+              }}
+            />
+            <Select
+              className="ff-query-field"
+              value={draftFilters.protocol}
+              allowClear
+              placeholder="接入协议"
+              style={{ width: 180 }}
+              options={ALL_PROTOCOL_OPTIONS}
+              onChange={(value) => {
+                setDraftFilters((current) => ({ ...current, protocol: value }));
+              }}
+            />
+            <Select
+              className="ff-query-field"
+              value={draftFilters.status}
+              allowClear
+              placeholder="状态"
+              style={{ width: 150 }}
+              options={STATUS_OPTIONS}
+              onChange={(value) => {
+                setDraftFilters((current) => ({ ...current, status: value }));
+              }}
+            />
+            <div className="ff-query-actions">
+              <Button onClick={resetFilters}>重置</Button>
+              <Button type="primary" onClick={applyFilters}>查询</Button>
+            </div>
+          </div>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             优先用分类、协议和状态筛选，再按关键词缩小范围，避免在卡片里反复扫重复字段。
           </Typography.Text>

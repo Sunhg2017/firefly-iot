@@ -1,5 +1,6 @@
 package com.songhg.firefly.iot.media.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.songhg.firefly.iot.api.client.DeviceClient;
 import com.songhg.firefly.iot.api.client.FileClient;
 import com.songhg.firefly.iot.api.client.ProductClient;
@@ -10,7 +11,9 @@ import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.StreamMode;
 import com.songhg.firefly.iot.common.mybatis.DataScopeContext;
 import com.songhg.firefly.iot.common.mybatis.DataScopeResolver;
+import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.R;
+import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.media.dto.video.VideoDeviceCreateDTO;
 import com.songhg.firefly.iot.media.entity.VideoDevice;
 import com.songhg.firefly.iot.media.gb28181.SipCommandSender;
@@ -26,8 +29,10 @@ import org.springframework.beans.factory.ObjectProvider;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -128,5 +133,29 @@ class VideoServiceTest {
         ArgumentCaptor<VideoDevice> captor = ArgumentCaptor.forClass(VideoDevice.class);
         verify(videoDeviceMapper).insert(captor.capture());
         assertThat(captor.getValue().getSipPassword()).isEqualTo("sip-secret");
+    }
+
+    @Test
+    void createDeviceShouldRejectDuplicatedGb28181Identity() {
+        AppContextHolder.setTenantId(11L);
+        AppContextHolder.setUserId(22L);
+        when(videoDeviceMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(1L);
+
+        VideoDeviceCreateDTO dto = new VideoDeviceCreateDTO();
+        dto.setProductKey("camera.pk");
+        dto.setName("南门摄像头");
+        dto.setStreamMode(StreamMode.GB28181);
+        dto.setGbDeviceId("34020000001320000001");
+
+        assertThatThrownBy(() -> service.createDevice(dto))
+                .isInstanceOf(BizException.class)
+                .satisfies(error -> {
+                    BizException bizException = (BizException) error;
+                    assertThat(bizException.getCode()).isEqualTo(ResultCode.VIDEO_DEVICE_EXISTS.getCode());
+                    assertThat(bizException.getMessage()).isEqualTo("当前 GB 设备编号已存在视频设备");
+                });
+
+        verify(deviceClient, never()).createDevice(any(InternalDeviceCreateDTO.class));
+        verify(videoDeviceMapper, never()).insert(any(VideoDevice.class));
     }
 }

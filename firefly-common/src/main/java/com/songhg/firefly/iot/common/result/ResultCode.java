@@ -90,7 +90,8 @@ public enum ResultCode {
     VIDEO_DEVICE_OFFLINE(12002, "视频设备离线"),
     VIDEO_CHANNEL_NOT_FOUND(12003, "视频通道不存在"),
     STREAM_START_FAILED(12004, "视频流启动失败"),
-    STREAM_NOT_FOUND(12005, "视频流会话不存在");
+    STREAM_NOT_FOUND(12005, "视频流会话不存在"),
+    VIDEO_DEVICE_EXISTS(12006, "视频设备已存在");
 
     private final int code;
     private final String message;

@@ -106,6 +106,10 @@ CREATE TABLE video_devices (
 - 当前 `video_devices` 仍未单独持久化 `product_id / product_key`；产品归属通过关联的设备资产主设备反查，不再只依赖 URL 参数。
 - 自动补建的视频设备资产会优先沿用产品自身 `projectId`；若产品未绑定项目且当前数据权限只命中一个项目，则使用当前数据范围中的唯一项目作为兜底项目。
 - 自动补建链路会透传当前数据范围中的分组 ID，设备侧仅同步静态分组，并在保存后立即重算动态分组，避免记录刚创建就被分组数据权限过滤。
+- `video_devices` 的业务唯一性按接入标识控制：
+  - `GB28181`：`tenant_id + stream_mode + gb_device_id`
+  - `RTSP / RTMP`：`tenant_id + stream_mode + ip + port`
+- `firefly-media` 通过 `V3__enforce_video_device_identity_unique.sql` 建立唯一索引，并在服务层提前拦截重复创建。
 
 ### 3.2 video_channels 表
 
@@ -210,6 +214,7 @@ STOP(0), UP(1), DOWN(2), LEFT(3), RIGHT(4), ZOOM_IN(5), ZOOM_OUT(6)
 补充约束：
 
 - 创建/更新视频设备时，SIP 密码字段统一口径仍为 `sipPassword`。
+- 当接入标识已被当前租户下同协议的视频设备占用时，接口直接返回业务冲突，不允许创建重复视频设备。
 
 ### 6.2 通道管理
 

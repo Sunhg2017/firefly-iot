@@ -26,6 +26,11 @@ interface AsyncTaskItem {
   completedAt: string;
 }
 
+interface ExportPageFilters {
+  taskType?: string;
+  status?: string;
+}
+
 const statusLabels: Record<string, string> = { PENDING: '等待中', PROCESSING: '处理中', COMPLETED: '已完成', FAILED: '失败', CANCELLED: '已取消' };
 const statusColors: Record<string, string> = { PENDING: 'default', PROCESSING: 'processing', COMPLETED: 'success', FAILED: 'error', CANCELLED: 'warning' };
 
@@ -40,20 +45,34 @@ const ExportPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
-  const [taskTypeFilter, setTaskTypeFilter] = useState<string | undefined>(undefined);
-  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const [draftFilters, setDraftFilters] = useState<ExportPageFilters>({});
+  const [filters, setFilters] = useState<ExportPageFilters>({});
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await asyncTaskApi.list({ ...params, taskType: taskTypeFilter, status: statusFilter });
+      const res = await asyncTaskApi.list({ ...params, taskType: filters.taskType, status: filters.status });
       const page = res.data.data;
       setData(page.records || []);
       setTotal(page.total || 0);
     } catch { message.error('加载失败'); } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, [params.pageNum, params.pageSize, taskTypeFilter, statusFilter]);
+  useEffect(() => { fetchData(); }, [filters, params.pageNum, params.pageSize]);
+
+  const applyFilters = () => {
+    setFilters({
+      taskType: draftFilters.taskType,
+      status: draftFilters.status,
+    });
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
+
+  const resetFilters = () => {
+    setDraftFilters({});
+    setFilters({});
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
 
   const stats = useMemo(() => ({
     total,
@@ -178,14 +197,15 @@ const ExportPage: React.FC = () => {
       </Row>
 
       {/* Filters */}
-      <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Space>
+      <Card className="ff-query-card">
+        <div className="ff-query-bar">
           <Select
+            className="ff-query-field"
             placeholder="任务类型"
             allowClear
             style={{ width: 140 }}
-            value={taskTypeFilter}
-            onChange={(v) => { setTaskTypeFilter(v); setParams({ ...params, pageNum: 1 }); }}
+            value={draftFilters.taskType}
+            onChange={(value) => { setDraftFilters((current) => ({ ...current, taskType: value })); }}
             options={[
               { value: 'EXPORT', label: '导出' },
               { value: 'IMPORT', label: '导入' },
@@ -194,11 +214,12 @@ const ExportPage: React.FC = () => {
             ]}
           />
           <Select
+            className="ff-query-field"
             placeholder="任务状态"
             allowClear
             style={{ width: 120 }}
-            value={statusFilter}
-            onChange={(v) => { setStatusFilter(v); setParams({ ...params, pageNum: 1 }); }}
+            value={draftFilters.status}
+            onChange={(value) => { setDraftFilters((current) => ({ ...current, status: value })); }}
             options={[
               { value: 'PENDING', label: '等待中' },
               { value: 'PROCESSING', label: '处理中' },
@@ -207,7 +228,11 @@ const ExportPage: React.FC = () => {
               { value: 'CANCELLED', label: '已取消' },
             ]}
           />
-        </Space>
+          <div className="ff-query-actions">
+            <Button onClick={resetFilters}>重置</Button>
+            <Button type="primary" onClick={applyFilters}>查询</Button>
+          </div>
+        </div>
       </Card>
 
       {/* Table */}

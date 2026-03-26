@@ -32,8 +32,6 @@ import type { DataNode } from 'antd/es/tree';
 import PageHeader from '../../components/PageHeader';
 import { deviceApi, deviceGroupApi, productApi } from '../../services/api';
 
-const { Search } = Input;
-
 interface ProductOption {
   id: number;
   name: string;
@@ -79,6 +77,14 @@ interface DeviceTopologyNodeRecord {
   lastOnlineAt?: string;
   createdAt?: string;
   children?: DeviceTopologyNodeRecord[];
+}
+
+interface DeviceTopologyFilters {
+  keyword: string;
+  productId?: number;
+  groupId?: number;
+  status?: string;
+  onlineStatus?: string;
 }
 
 interface DeviceTopologyResponse {
@@ -155,12 +161,8 @@ const indexNodes = (
 
 const DeviceTopologyPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
-  const [searchText, setSearchText] = useState('');
-  const [keyword, setKeyword] = useState('');
-  const [filterProduct, setFilterProduct] = useState<number | undefined>();
-  const [filterGroup, setFilterGroup] = useState<number | undefined>();
-  const [filterStatus, setFilterStatus] = useState<string | undefined>();
-  const [filterOnline, setFilterOnline] = useState<string | undefined>();
+  const [draftFilters, setDraftFilters] = useState<DeviceTopologyFilters>({ keyword: '' });
+  const [filters, setFilters] = useState<DeviceTopologyFilters>({ keyword: '' });
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [groups, setGroups] = useState<DeviceGroupRecord[]>([]);
   const [topology, setTopology] = useState<DeviceTopologyResponse>({});
@@ -192,11 +194,11 @@ const DeviceTopologyPage: React.FC = () => {
     setLoading(true);
     try {
       const res = await deviceApi.topology({
-        keyword: keyword || undefined,
-        productId: filterProduct,
-        groupId: filterGroup,
-        status: filterStatus,
-        onlineStatus: filterOnline,
+        keyword: filters.keyword || undefined,
+        productId: filters.productId,
+        groupId: filters.groupId,
+        status: filters.status,
+        onlineStatus: filters.onlineStatus,
       });
       const nextTopology = (res.data.data || {}) as DeviceTopologyResponse;
       setTopology({
@@ -219,7 +221,22 @@ const DeviceTopologyPage: React.FC = () => {
 
   useEffect(() => {
     void loadTopology();
-  }, [keyword, filterProduct, filterGroup, filterStatus, filterOnline]);
+  }, [filters]);
+
+  const applyFilters = () => {
+    setFilters({
+      keyword: draftFilters.keyword.trim(),
+      productId: draftFilters.productId,
+      groupId: draftFilters.groupId,
+      status: draftFilters.status,
+      onlineStatus: draftFilters.onlineStatus,
+    });
+  };
+
+  const resetFilters = () => {
+    setDraftFilters({ keyword: '' });
+    setFilters({ keyword: '' });
+  };
 
   const groupOptions = useMemo(
     () => groups.map((item) => ({ value: item.id, label: item.name })),
@@ -423,69 +440,81 @@ const DeviceTopologyPage: React.FC = () => {
         </Row>
       </Card>
 
-      <Card style={{ marginBottom: 16, borderRadius: 24 }}>
-        <Space wrap size={[12, 12]}>
-          <Search
-            value={searchText}
+      <Card className="ff-query-card" style={{ borderRadius: 24 }}>
+        <div className="ff-query-bar">
+          <Input
+            className="ff-query-field ff-query-field--grow"
+            value={draftFilters.keyword}
             allowClear
-            enterButton="查询"
             placeholder="搜索设备名称、别名、产品名称或产品 Key"
-            style={{ width: 320 }}
             onChange={(event) => {
-              const nextValue = event.target.value;
-              setSearchText(nextValue);
-              if (!nextValue) {
-                setKeyword('');
-              }
+              setDraftFilters((current) => ({ ...current, keyword: event.target.value }));
             }}
-            onSearch={(value) => {
-              setSearchText(value);
-              setKeyword(value.trim());
-            }}
+            onPressEnter={applyFilters}
           />
           <Select
+            className="ff-query-field"
             allowClear
             showSearch
             optionFilterProp="label"
             placeholder="所属产品"
             style={{ width: 240 }}
+            value={draftFilters.productId}
             options={products.map((item) => ({
               value: item.id,
               label: `${item.name} (${item.productKey})`,
             }))}
-            onChange={setFilterProduct}
+            onChange={(value) => {
+              setDraftFilters((current) => ({ ...current, productId: value }));
+            }}
           />
           <Select
+            className="ff-query-field"
             allowClear
             showSearch
             optionFilterProp="label"
             placeholder="所属分组"
             style={{ width: 220 }}
+            value={draftFilters.groupId}
             options={groupOptions}
-            onChange={setFilterGroup}
+            onChange={(value) => {
+              setDraftFilters((current) => ({ ...current, groupId: value }));
+            }}
           />
           <Select
+            className="ff-query-field"
             allowClear
             placeholder="设备状态"
             style={{ width: 140 }}
+            value={draftFilters.status}
             options={[
               { value: 'INACTIVE', label: '未激活' },
               { value: 'ACTIVE', label: '已激活' },
               { value: 'DISABLED', label: '已禁用' },
             ]}
-            onChange={setFilterStatus}
+            onChange={(value) => {
+              setDraftFilters((current) => ({ ...current, status: value }));
+            }}
           />
           <Select
+            className="ff-query-field"
             allowClear
             placeholder="在线状态"
             style={{ width: 140 }}
+            value={draftFilters.onlineStatus}
             options={[
               { value: 'ONLINE', label: '在线' },
               { value: 'OFFLINE', label: '离线' },
             ]}
-            onChange={setFilterOnline}
+            onChange={(value) => {
+              setDraftFilters((current) => ({ ...current, onlineStatus: value }));
+            }}
           />
-        </Space>
+          <div className="ff-query-actions">
+            <Button onClick={resetFilters}>重置</Button>
+            <Button type="primary" onClick={applyFilters}>查询</Button>
+          </div>
+        </div>
       </Card>
 
       <Row gutter={[16, 16]}>

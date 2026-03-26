@@ -93,6 +93,12 @@ interface VideoEditorFormValues {
   model?: string;
 }
 
+interface VideoListFilters {
+  keyword: string;
+  streamMode?: string;
+  status?: string;
+}
+
 const statusLabels: Record<string, string> = { ONLINE: '在线', OFFLINE: '离线' };
 const statusColors: Record<string, string> = { ONLINE: 'success', OFFLINE: 'default' };
 const modeLabels: Record<string, string> = { GB28181: 'GB/T 28181', RTSP: 'RTSP', RTMP: 'RTMP' };
@@ -103,6 +109,7 @@ const VIDEO_MODE_OPTIONS = [
 ];
 const VIDEO_CONTEXT_PARAM_KEYS = ['source', 'autoCreate', 'productId', 'productKey', 'productName', 'protocol'] as const;
 const VIDEO_PROTOCOL_VALUES = new Set(VIDEO_MODE_OPTIONS.map((item) => item.value));
+const EMPTY_VIDEO_FILTERS: VideoListFilters = { keyword: '' };
 const ptzCmdMap: Record<number, string> = {
   0: 'STOP',
   1: 'UP',
@@ -235,9 +242,8 @@ const VideoList: React.FC = () => {
   const currentEditorProductKey = Form.useWatch('productKey', editorForm);
   const currentEditorStreamMode = Form.useWatch('streamMode', editorForm) || productContext?.protocol || 'GB28181';
   const currentSipAuthEnabled = Boolean(Form.useWatch('sipAuthEnabled', editorForm));
-  const [keyword, setKeyword] = useState('');
-  const [filterMode, setFilterMode] = useState<string | undefined>();
-  const [filterStatus, setFilterStatus] = useState<string | undefined>();
+  const [draftFilters, setDraftFilters] = useState<VideoListFilters>(EMPTY_VIDEO_FILTERS);
+  const [filters, setFilters] = useState<VideoListFilters>(EMPTY_VIDEO_FILTERS);
 
   const [playerOpen, setPlayerOpen] = useState(false);
   const [playerDevice, setPlayerDevice] = useState<VideoDeviceRecord | null>(null);
@@ -277,9 +283,9 @@ const VideoList: React.FC = () => {
     try {
       const res = await videoApi.list({
         ...params,
-        keyword: keyword || undefined,
-        streamMode: filterMode,
-        status: filterStatus,
+        keyword: filters.keyword || undefined,
+        streamMode: filters.streamMode,
+        status: filters.status,
       });
       const page = unwrapBusinessResponse<{ records?: VideoDeviceRecord[]; total?: number }>(res, '加载视频设备列表失败');
       setData(page.records || []);
@@ -297,7 +303,7 @@ const VideoList: React.FC = () => {
 
   useEffect(() => {
     void fetchData();
-  }, [keyword, params.pageNum, params.pageSize, filterMode, filterStatus]);
+  }, [filters, params.pageNum, params.pageSize]);
 
   useEffect(() => {
     if (!productContext?.autoCreate) {
@@ -348,6 +354,21 @@ const VideoList: React.FC = () => {
     setEditorLoading(false);
     setPendingEditorValues(buildEditorInitialValues(productContext));
     setEditorOpen(true);
+  };
+
+  const applyFilters = () => {
+    setFilters({
+      keyword: trimOptionalValue(draftFilters.keyword) || '',
+      streamMode: draftFilters.streamMode,
+      status: draftFilters.status,
+    });
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
+
+  const resetFilters = () => {
+    setDraftFilters(EMPTY_VIDEO_FILTERS);
+    setFilters({ ...EMPTY_VIDEO_FILTERS });
+    setParams((current) => ({ ...current, pageNum: 1 }));
   };
 
   const openEditDrawer = async (record: VideoDeviceRecord) => {
@@ -639,45 +660,50 @@ const VideoList: React.FC = () => {
         ))}
       </Row>
 
-      <Card
-        bodyStyle={{ padding: '12px 16px' }}
-        style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-      >
-        <Space wrap>
-          <Input.Search
+      <Card className="ff-query-card">
+        <div className="ff-query-bar">
+          <Input
+            className="ff-query-field ff-query-field--grow"
             placeholder="搜索名称/设备编号/IP"
             allowClear
-            enterButton="查询"
-            style={{ width: 260 }}
-            onSearch={(value: string) => {
-              setKeyword(value);
-              setParams({ ...params, pageNum: 1 });
+            value={draftFilters.keyword}
+            onChange={(event) => {
+              setDraftFilters((current) => ({ ...current, keyword: event.target.value }));
             }}
+            onPressEnter={applyFilters}
           />
           <Select
+            className="ff-query-field"
             placeholder="接入方式"
             allowClear
-            style={{ width: 130 }}
+            style={{ width: 150 }}
             options={VIDEO_MODE_OPTIONS}
-            onChange={(value: string) => {
-              setFilterMode(value);
-              setParams({ ...params, pageNum: 1 });
+            value={draftFilters.streamMode}
+            onChange={(value: string | undefined) => {
+              setDraftFilters((current) => ({ ...current, streamMode: value }));
             }}
           />
           <Select
+            className="ff-query-field"
             placeholder="状态"
             allowClear
-            style={{ width: 100 }}
+            style={{ width: 120 }}
             options={[
               { value: 'ONLINE', label: '在线' },
               { value: 'OFFLINE', label: '离线' },
             ]}
-            onChange={(value: string) => {
-              setFilterStatus(value);
-              setParams({ ...params, pageNum: 1 });
+            value={draftFilters.status}
+            onChange={(value: string | undefined) => {
+              setDraftFilters((current) => ({ ...current, status: value }));
             }}
           />
-        </Space>
+          <div className="ff-query-actions">
+            <Button onClick={resetFilters}>重置</Button>
+            <Button type="primary" onClick={applyFilters}>
+              查询
+            </Button>
+          </div>
+        </div>
       </Card>
 
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>

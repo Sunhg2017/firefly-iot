@@ -87,6 +87,12 @@ interface DerivedRuleRecord extends RuleRecord {
   parsedExpression: ParsedRuleExpression;
 }
 
+interface RuleListFilters {
+  keyword: string;
+  status?: RuleStatus;
+  projectId?: number;
+}
+
 const statusMeta: Record<RuleStatus, { label: string; color: string }> = {
   ENABLED: { label: '运行中', color: 'success' },
   DISABLED: { label: '已停用', color: 'default' },
@@ -321,10 +327,8 @@ const RuleEngineList: React.FC = () => {
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
   const [drawerMode, setDrawerMode] = useState<'create' | 'edit' | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [filterStatus, setFilterStatus] = useState<RuleStatus | undefined>();
-  const [filterProjectId, setFilterProjectId] = useState<number | undefined>();
-  const [keyword, setKeyword] = useState('');
-  const [keywordDraft, setKeywordDraft] = useState('');
+  const [draftFilters, setDraftFilters] = useState<RuleListFilters>({ keyword: '' });
+  const [filters, setFilters] = useState<RuleListFilters>({ keyword: '' });
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [form] = Form.useForm<RuleFormValues>();
 
@@ -422,9 +426,9 @@ const RuleEngineList: React.FC = () => {
     try {
       const res = await ruleApi.list({
         ...params,
-        keyword: normalizeOptionalText(keyword),
-        status: filterStatus,
-        projectId: filterProjectId,
+        keyword: normalizeOptionalText(filters.keyword),
+        status: filters.status,
+        projectId: filters.projectId,
       });
       const page = res.data.data;
       setData(page.records || []);
@@ -442,7 +446,22 @@ const RuleEngineList: React.FC = () => {
 
   useEffect(() => {
     void loadRules();
-  }, [filterProjectId, filterStatus, keyword, params.pageNum, params.pageSize]);
+  }, [filters, params.pageNum, params.pageSize]);
+
+  const applyFilters = () => {
+    setFilters({
+      keyword: draftFilters.keyword.trim(),
+      status: draftFilters.status,
+      projectId: draftFilters.projectId,
+    });
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
+
+  const resetFilters = () => {
+    setDraftFilters({ keyword: '' });
+    setFilters({ keyword: '' });
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
 
   const openCreateDrawer = () => {
     setDrawerMode('create');
@@ -777,22 +796,20 @@ const RuleEngineList: React.FC = () => {
         </div>
       </div>
 
-      <Card bodyStyle={{ padding: '16px 18px' }} style={{ marginBottom: 16 }}>
-        <Space size={[12, 12]} wrap>
-          <Input.Search
+      <Card className="ff-query-card">
+        <div className="ff-query-bar">
+          <Input
+            className="ff-query-field ff-query-field--grow"
             allowClear
-            enterButton="查询"
             placeholder="搜索规则名称"
-            style={{ width: 240 }}
-            value={keywordDraft}
-            onChange={(event) => setKeywordDraft(event.target.value)}
-            onSearch={(value) => {
-              setKeyword(value.trim());
-              setKeywordDraft(value);
-              setParams((current) => ({ ...current, pageNum: 1 }));
+            value={draftFilters.keyword}
+            onChange={(event) => {
+              setDraftFilters((current) => ({ ...current, keyword: event.target.value }));
             }}
+            onPressEnter={applyFilters}
           />
           <Select
+            className="ff-query-field"
             allowClear
             placeholder="状态"
             style={{ width: 140 }}
@@ -800,24 +817,27 @@ const RuleEngineList: React.FC = () => {
               { value: 'ENABLED', label: '运行中' },
               { value: 'DISABLED', label: '已停用' },
             ]}
-            value={filterStatus}
+            value={draftFilters.status}
             onChange={(value) => {
-              setFilterStatus(value);
-              setParams((current) => ({ ...current, pageNum: 1 }));
+              setDraftFilters((current) => ({ ...current, status: value }));
             }}
           />
           <Select
+            className="ff-query-field"
             allowClear
             placeholder="项目范围"
             style={{ width: 220 }}
             options={projectOptions}
-            value={filterProjectId}
+            value={draftFilters.projectId}
             onChange={(value) => {
-              setFilterProjectId(value);
-              setParams((current) => ({ ...current, pageNum: 1 }));
+              setDraftFilters((current) => ({ ...current, projectId: value }));
             }}
           />
-        </Space>
+          <div className="ff-query-actions">
+            <Button onClick={resetFilters}>重置</Button>
+            <Button type="primary" onClick={applyFilters}>查询</Button>
+          </div>
+        </div>
       </Card>
 
       <Card>

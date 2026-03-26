@@ -797,6 +797,13 @@ const formatReleaseSummary = (record: ProtocolParserRecord) => {
   }
 };
 
+interface ProtocolParserListFilters {
+  productId?: number;
+  protocol?: string;
+  transport?: string;
+  status?: string;
+}
+
 const ProtocolParserPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const hasPermission = useAuthStore((state) => state.hasPermission);
@@ -815,10 +822,8 @@ const ProtocolParserPage: React.FC = () => {
   const [pageNum, setPageNum] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
-  const [filterProductId, setFilterProductId] = useState<number | undefined>(initialProductId);
-  const [filterProtocol, setFilterProtocol] = useState<string | undefined>();
-  const [filterTransport, setFilterTransport] = useState<string | undefined>();
-  const [filterStatus, setFilterStatus] = useState<string | undefined>();
+  const [draftFilters, setDraftFilters] = useState<ProtocolParserListFilters>({ productId: initialProductId });
+  const [filters, setFilters] = useState<ProtocolParserListFilters>({ productId: initialProductId });
   const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [runtimeReloading, setRuntimeReloading] = useState(false);
   const [runtimeMetrics, setRuntimeMetrics] = useState<RuntimeMetrics | null>(null);
@@ -878,7 +883,7 @@ const ProtocolParserPage: React.FC = () => {
   const canRead = hasPermission('protocol-parser:read');
 
   const productMap = useMemo(() => new Map(products.map((item) => [item.id, item])), [products]);
-  const selectedProduct = filterProductId ? productMap.get(filterProductId) : undefined;
+  const selectedProduct = filters.productId ? productMap.get(filters.productId) : undefined;
   const currentEditorProduct = currentEditorProductId ? productMap.get(currentEditorProductId) : undefined;
   const currentTenantLabel = currentTenant?.displayName || currentTenant?.name || '当前租户';
   const productOptions = useMemo(
@@ -1161,10 +1166,10 @@ const ProtocolParserPage: React.FC = () => {
       const response = await protocolParserApi.list({
         pageNum,
         pageSize,
-        productId: filterProductId,
-        protocol: filterProtocol,
-        transport: filterTransport,
-        status: filterStatus,
+        productId: filters.productId,
+        protocol: filters.protocol,
+        transport: filters.transport,
+        status: filters.status,
       });
       const page = response.data.data as { records?: ProtocolParserRecord[]; total?: number };
       setRecords(page.records || []);
@@ -1205,7 +1210,24 @@ const ProtocolParserPage: React.FC = () => {
 
   useEffect(() => {
     void fetchData();
-  }, [pageNum, pageSize, filterProductId, filterProtocol, filterTransport, filterStatus]);
+  }, [filters, pageNum, pageSize]);
+
+  const applyFilters = () => {
+    setFilters({
+      productId: draftFilters.productId,
+      protocol: draftFilters.protocol,
+      transport: draftFilters.transport,
+      status: draftFilters.status,
+    });
+    setPageNum(1);
+  };
+
+  const resetFilters = () => {
+    const initialFilters = { productId: initialProductId } as ProtocolParserListFilters;
+    setDraftFilters(initialFilters);
+    setFilters(initialFilters);
+    setPageNum(1);
+  };
 
   useEffect(() => {
     void fetchRuntime();
@@ -1398,8 +1420,8 @@ const ProtocolParserPage: React.FC = () => {
   };
 
   const openCreateModal = () => {
-    const createScopeType = filterProductId ? 'PRODUCT' : DEFAULT_EDITOR_VALUES.scopeType;
-    const defaultProduct = filterProductId ? productMap.get(filterProductId) : undefined;
+    const createScopeType = filters.productId ? 'PRODUCT' : DEFAULT_EDITOR_VALUES.scopeType;
+    const defaultProduct = filters.productId ? productMap.get(filters.productId) : undefined;
     const createBusinessIdentifiers: BusinessIdentifierPatch = {};
     if (currentTenant?.code) {
       createBusinessIdentifiers.tenantCode = currentTenant.code;
@@ -1409,7 +1431,7 @@ const ProtocolParserPage: React.FC = () => {
     editorForm.resetFields();
     editorForm.setFieldsValue({
       ...DEFAULT_EDITOR_VALUES,
-      productId: filterProductId,
+      productId: filters.productId,
       scopeType: createScopeType,
       scopeId: undefined,
       parserConfigJson: injectBusinessIdentifiersIntoJson(DEFAULT_EDITOR_VALUES.parserConfigJson, createBusinessIdentifiers),
@@ -1571,7 +1593,7 @@ const ProtocolParserPage: React.FC = () => {
     uplinkDebugForm.resetFields();
     uplinkDebugForm.setFieldsValue({
       ...DEFAULT_UPLINK_DEBUG_VALUES,
-      productId: record.productId || filterProductId,
+      productId: record.productId || filters.productId,
       protocol: record.protocol,
       transport,
       topic: defaultTopicByTransport(transport, 'UPLINK'),
@@ -1588,7 +1610,7 @@ const ProtocolParserPage: React.FC = () => {
     downlinkDebugForm.resetFields();
     downlinkDebugForm.setFieldsValue({
       ...DEFAULT_DOWNLINK_DEBUG_VALUES,
-      productId: record.productId || filterProductId,
+      productId: record.productId || filters.productId,
       topic: defaultTopicByTransport(record.transport, 'DOWNLINK'),
       payloadText: buildDownlinkPayloadExample(DEFAULT_DOWNLINK_DEBUG_VALUES.messageType),
     });
@@ -1995,76 +2017,71 @@ const ProtocolParserPage: React.FC = () => {
       />
 
       {mainTabKey === 'rules' ? (
-        <Card title="筛选条件" size="small" style={{ marginBottom: 16, borderRadius: 16 }}>
-          <Row gutter={[12, 12]} align="middle">
-            <Col xs={24} md={6}>
+        <Card title="筛选条件" size="small" className="ff-query-card" style={{ marginBottom: 16, borderRadius: 16 }}>
+          <div className="ff-query-bar">
+            <div className="ff-query-field" style={{ width: 240 }}>
               <Select
                 allowClear
                 showSearch
                 loading={productLoading}
-                value={filterProductId}
+                value={draftFilters.productId}
                 style={{ width: '100%' }}
                 placeholder="按产品筛选"
                 options={productOptions}
                 optionFilterProp="label"
                 onChange={(value) => {
-                  setFilterProductId(value);
-                  setPageNum(1);
+                  setDraftFilters((current) => ({ ...current, productId: value }));
                 }}
               />
-            </Col>
-            <Col xs={24} md={5}>
+            </div>
+            <div className="ff-query-field" style={{ width: 180 }}>
               <Select
                 allowClear
                 showSearch
-                value={filterProtocol}
+                value={draftFilters.protocol}
                 style={{ width: '100%' }}
                 placeholder="协议"
                 options={protocolOptions}
                 optionFilterProp="label"
                 onChange={(value) => {
-                  setFilterProtocol(value);
-                  setPageNum(1);
+                  setDraftFilters((current) => ({ ...current, protocol: value }));
                 }}
               />
-            </Col>
-            <Col xs={24} md={5}>
+            </div>
+            <div className="ff-query-field" style={{ width: 180 }}>
               <Select
                 allowClear
                 showSearch
-                value={filterTransport}
+                value={draftFilters.transport}
                 style={{ width: '100%' }}
                 placeholder="传输方式"
                 options={transportOptions}
                 optionFilterProp="label"
                 onChange={(value) => {
-                  setFilterTransport(value);
-                  setPageNum(1);
+                  setDraftFilters((current) => ({ ...current, transport: value }));
                 }}
               />
-            </Col>
-            <Col xs={24} md={4}>
+            </div>
+            <div className="ff-query-field" style={{ width: 150 }}>
               <Select
                 allowClear
-                value={filterStatus}
+                value={draftFilters.status}
                 style={{ width: '100%' }}
                 placeholder="状态"
                 options={Object.entries(STATUS_META).map(([value, meta]) => ({ value, label: meta.label }))}
                 onChange={(value) => {
-                  setFilterStatus(value);
-                  setPageNum(1);
+                  setDraftFilters((current) => ({ ...current, status: value }));
                 }}
               />
-            </Col>
-            <Col xs={24} md={4}>
+            </div>
+            <div className="ff-query-actions">
               <Space wrap>
+                <Button type="primary" onClick={applyFilters}>
+                  查询
+                </Button>
                 <Button
                   onClick={() => {
-                    setFilterProductId(undefined);
-                    setFilterProtocol(undefined);
-                    setFilterTransport(undefined);
-                    setFilterStatus(undefined);
-                    setPageNum(1);
+                    resetFilters();
                   }}
                 >
                   重置
@@ -2073,8 +2090,8 @@ const ProtocolParserPage: React.FC = () => {
                   刷新规则
                 </Button>
               </Space>
-            </Col>
-          </Row>
+            </div>
+          </div>
         </Card>
       ) : null}
 

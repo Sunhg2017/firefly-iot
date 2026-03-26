@@ -659,6 +659,75 @@ a {
   flex-wrap: wrap;
 }
 
+.ff-query-card {
+  margin-bottom: 16px !important;
+  border: none !important;
+  border-radius: 16px !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04) !important;
+}
+
+.ff-query-card .ant-card-body {
+  padding: 12px 16px !important;
+}
+
+.ff-query-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.ff-query-field {
+  flex: 0 0 auto;
+}
+
+.ff-query-field--grow {
+  flex: 1 1 280px;
+  min-width: 220px;
+  max-width: 360px;
+}
+
+.ff-query-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-inline-start: auto;
+}
+
+.ff-query-actions .ant-btn {
+  height: 40px;
+  padding-inline: 18px;
+}
+
+.ff-query-actions .ant-btn-primary {
+  box-shadow: none !important;
+}
+
+.ant-input-search .ant-input-group-addon .ant-btn {
+  height: 40px;
+  box-shadow: none !important;
+}
+
+.ff-query-meta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+}
+
+@media (max-width: 768px) {
+  .ff-query-field,
+  .ff-query-field--grow,
+  .ff-query-actions {
+    width: 100%;
+    max-width: none;
+  }
+
+  .ff-query-actions {
+    margin-inline-start: 0;
+  }
+}
+
 .rule-engine-overview-shell {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

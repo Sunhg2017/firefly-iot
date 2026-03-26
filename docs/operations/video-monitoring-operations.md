@@ -40,7 +40,9 @@
 4. 确认摄像头产品历史数据已执行：
    - `V22__force_camera_products_custom_data_format.sql`
    - `V23__normalize_camera_products_video_access_auth.sql`
-5. 确认 `firefly-media` 已执行 `V2__add_video_device_sip_password.sql`。
+5. 确认 `firefly-media` 已执行：
+   - `V2__add_video_device_sip_password.sql`
+   - `V3__enforce_video_device_identity_unique.sql`
 6. 若 GB28181 设备开启了 SIP 鉴权，确认页面已保存设备级 `SIP 密码`。
 7. `sip_password` 只允许通过 `V2__add_video_device_sip_password.sql` 增量补齐，禁止改写已上线的 `V1__init_video.sql`，否则 Flyway 会因 checksum 不一致阻止服务启动。
 8. 新建视频设备会同步调用 `firefly-device` 内部接口创建设备资产主设备；若 `firefly-device` 不可用或产品不存在，视频设备保存会直接失败。
@@ -49,6 +51,7 @@
    - Producer 已注册 `KafkaAuthContextProducerInterceptor`
    - Listener 容器已注册 `KafkaAuthContextRecordInterceptor`
    - 消费端按记录恢复并清理 `AppContextHolder`，而不是复用整批 `poll` 线程上下文
+11. 如果历史环境已经存在重复视频设备，先清理重复数据，再执行 `V3`；不要通过删除唯一索引继续容忍重复数据。
 
 ## 监控与日志
 
@@ -132,6 +135,17 @@
 1. 优先确认请求体字段名是否为 `sipPassword`，并核对请求体实际进入后端的 JSON。
 2. 确认同时传入了 `sipAuthEnabled=true` 和 `gbDeviceId`。
 3. 若页面仍提示成功但实际未创建，确认前端是否已部署到本次修复版本；当前版本会直接显示后端业务校验消息，不再吞掉 `R.code != 0` 的失败响应。
+
+### 6.2 同一台视频设备可以重复创建
+
+排查：
+
+1. 检查 `firefly-media` 是否已执行 `V3__enforce_video_device_identity_unique.sql`。
+2. 检查当前租户下是否已有重复历史数据；若有，先人工清理后再执行迁移。
+3. 确认创建请求是否复用了同一个接入标识：
+   - `GB28181` 看 `GB 设备编号`
+   - `RTSP / RTMP` 看 `IP + 端口`
+4. 若接口仍然成功创建两条记录，检查服务端是否已部署到包含 `VideoService` 预校验的新版本。
 
 ### 7. Kafka 消费链路出现租户或用户上下文丢失
 

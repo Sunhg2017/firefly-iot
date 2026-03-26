@@ -58,6 +58,7 @@ const FirmwareTab: React.FC = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm] = Form.useForm();
   const [keyword, setKeyword] = useState('');
+  const [keywordDraft, setKeywordDraft] = useState('');
   // 产品选项列表
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
 
@@ -82,7 +83,18 @@ const FirmwareTab: React.FC = () => {
     } catch { message.error('加载固件列表失败'); } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, [params.pageNum, params.pageSize]);
+  useEffect(() => { fetchData(); }, [keyword, params.pageNum, params.pageSize]);
+
+  const applyKeyword = () => {
+    setKeyword(keywordDraft.trim());
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
+
+  const resetKeyword = () => {
+    setKeywordDraft('');
+    setKeyword('');
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
 
   const fwStats = useMemo(() => ({
     draft: data.filter(d => d.status === 'DRAFT').length,
@@ -175,12 +187,22 @@ const FirmwareTab: React.FC = () => {
       </Row>
 
       {/* Filters */}
-      <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Space wrap>
-          <Input.Search placeholder="搜索版本号/名称" allowClear enterButton="查询" style={{ width: 220 }}
-            onSearch={(v) => { setKeyword(v); setParams({ ...params, pageNum: 1 }); fetchData(); }} />
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>上传固件</Button>
-        </Space>
+      <Card className="ff-query-card">
+        <div className="ff-query-bar">
+          <Input
+            className="ff-query-field ff-query-field--grow"
+            placeholder="搜索版本号/名称"
+            allowClear
+            value={keywordDraft}
+            onChange={(event) => setKeywordDraft(event.target.value)}
+            onPressEnter={applyKeyword}
+          />
+          <div className="ff-query-actions">
+            <Button onClick={resetKeyword}>重置</Button>
+            <Button type="primary" onClick={applyKeyword}>查询</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>上传固件</Button>
+          </div>
+        </div>
       </Card>
 
       {/* Table */}
@@ -225,8 +247,8 @@ const OtaTasksTab: React.FC = () => {
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm] = Form.useForm();
-  const [keyword, setKeyword] = useState('');
-  const [filterStatus, setFilterStatus] = useState<string | undefined>();
+  const [draftFilters, setDraftFilters] = useState<{ keyword: string; status?: string }>({ keyword: '' });
+  const [filters, setFilters] = useState<{ keyword: string; status?: string }>({ keyword: '' });
   // 产品和固件选项
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [firmwareOptions, setFirmwareOptions] = useState<FirmwareRecord[]>([]);
@@ -262,14 +284,28 @@ const OtaTasksTab: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await otaTaskApi.list({ ...params, keyword: keyword || undefined, status: filterStatus });
+      const res = await otaTaskApi.list({ ...params, keyword: filters.keyword || undefined, status: filters.status });
       const page = res.data.data;
       setData(page.records || []);
       setTotal(page.total || 0);
     } catch { message.error('加载任务列表失败'); } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, [params.pageNum, params.pageSize, filterStatus]);
+  useEffect(() => { fetchData(); }, [filters, params.pageNum, params.pageSize]);
+
+  const applyFilters = () => {
+    setFilters({
+      keyword: draftFilters.keyword.trim(),
+      status: draftFilters.status,
+    });
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
+
+  const resetFilters = () => {
+    setDraftFilters({ keyword: '' });
+    setFilters({ keyword: '' });
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
 
   const taskStats = useMemo(() => ({
     pending: data.filter(d => d.status === 'PENDING').length,
@@ -356,15 +392,31 @@ const OtaTasksTab: React.FC = () => {
       </Row>
 
       {/* Filters */}
-      <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Space wrap>
-          <Input.Search placeholder="搜索任务名称" allowClear enterButton="查询" style={{ width: 220 }}
-            onSearch={(v) => { setKeyword(v); setParams({ ...params, pageNum: 1 }); fetchData(); }} />
-          <Select placeholder="状态" allowClear style={{ width: 120 }}
+      <Card className="ff-query-card">
+        <div className="ff-query-bar">
+          <Input
+            className="ff-query-field ff-query-field--grow"
+            placeholder="搜索任务名称"
+            allowClear
+            value={draftFilters.keyword}
+            onChange={(event) => setDraftFilters((current) => ({ ...current, keyword: event.target.value }))}
+            onPressEnter={applyFilters}
+          />
+          <Select
+            className="ff-query-field"
+            placeholder="状态"
+            allowClear
+            style={{ width: 120 }}
+            value={draftFilters.status}
             options={[{ value: 'PENDING', label: '待执行' }, { value: 'IN_PROGRESS', label: '执行中' }, { value: 'COMPLETED', label: '已完成' }, { value: 'CANCELLED', label: '已取消' }]}
-            onChange={(v) => { setFilterStatus(v); setParams({ ...params, pageNum: 1 }); }} />
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建任务</Button>
-        </Space>
+            onChange={(value) => setDraftFilters((current) => ({ ...current, status: value }))}
+          />
+          <div className="ff-query-actions">
+            <Button onClick={resetFilters}>重置</Button>
+            <Button type="primary" onClick={applyFilters}>查询</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建任务</Button>
+          </div>
+        </div>
       </Card>
 
       {/* Table */}

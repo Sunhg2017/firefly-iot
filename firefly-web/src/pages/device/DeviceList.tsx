@@ -9,7 +9,7 @@ import DeviceLocatorModal from './DeviceLocatorModal';
 import { asyncTaskApi, deviceApi, deviceGroupApi, deviceTagApi, fileApi, productApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 
-const { Search, TextArea } = Input;
+const { TextArea } = Input;
 
 interface DeviceTagRecord { id: number; tagKey: string; tagValue: string; color?: string; }
 interface DeviceGroupRecord { id: number; name: string; type?: string; }
@@ -36,6 +36,7 @@ interface DeviceBatchCreateFormValues { productId: number; description?: string;
 interface DeviceUpdateFormValues { nickname?: string; description?: string; tagIds?: number[]; groupIds?: number[]; }
 interface AsyncTaskRecord { status: string; progress?: number; errorMessage?: string; }
 interface ShadowDeviceContext { id: number; productId: number; deviceName: string; nickname?: string; productName?: string; productKey?: string; }
+interface DeviceListFilters { keyword: string; productId?: number; groupId?: number; status?: string; onlineStatus?: string; }
 
 const DEVICE_AUTH_LABELS: Record<string, string> = { DEVICE_SECRET: '一机一密', PRODUCT_SECRET: '一型一密' };
 const DEVICE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_.-]{1,63}$/;
@@ -53,6 +54,7 @@ const LOCATOR_TYPE_OPTIONS = [
   { value: 'MAC', label: 'MAC' },
   { value: 'SERIAL', label: 'SERIAL' },
 ];
+const EMPTY_DEVICE_FILTERS: DeviceListFilters = { keyword: '' };
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (typeof error === 'object' && error !== null && 'response' in error) {
@@ -132,12 +134,8 @@ const DeviceList: React.FC = () => {
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [tags, setTags] = useState<DeviceTagRecord[]>([]);
   const [groups, setGroups] = useState<DeviceGroupRecord[]>([]);
-  const [filterProduct, setFilterProduct] = useState<number | undefined>();
-  const [filterGroup, setFilterGroup] = useState<number | undefined>();
-  const [filterStatus, setFilterStatus] = useState<string | undefined>();
-  const [filterOnline, setFilterOnline] = useState<string | undefined>();
-  const [keyword, setKeyword] = useState('');
-  const [searchText, setSearchText] = useState('');
+  const [draftFilters, setDraftFilters] = useState<DeviceListFilters>(EMPTY_DEVICE_FILTERS);
+  const [filters, setFilters] = useState<DeviceListFilters>(EMPTY_DEVICE_FILTERS);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [shadowDevice, setShadowDevice] = useState<ShadowDeviceContext | null>(null);
   const [shadowOpen, setShadowOpen] = useState(false);
@@ -173,11 +171,11 @@ const DeviceList: React.FC = () => {
     try {
       const res = await deviceApi.list({
         ...params,
-        keyword: keyword || undefined,
-        productId: filterProduct,
-        groupId: filterGroup,
-        status: filterStatus,
-        onlineStatus: filterOnline,
+        keyword: filters.keyword || undefined,
+        productId: filters.productId,
+        groupId: filters.groupId,
+        status: filters.status,
+        onlineStatus: filters.onlineStatus,
       });
       setData(res.data.data.records || []);
       setTotal(res.data.data.total || 0);
@@ -186,7 +184,24 @@ const DeviceList: React.FC = () => {
   };
 
   useEffect(() => { void fetchProducts(); void fetchTags(); void fetchGroups(); }, []);
-  useEffect(() => { void fetchData(); }, [params.pageNum, params.pageSize, keyword, filterProduct, filterGroup, filterStatus, filterOnline]);
+  useEffect(() => { void fetchData(); }, [filters, params.pageNum, params.pageSize]);
+
+  const applyFilters = () => {
+    setFilters({
+      keyword: draftFilters.keyword.trim(),
+      productId: draftFilters.productId,
+      groupId: draftFilters.groupId,
+      status: draftFilters.status,
+      onlineStatus: draftFilters.onlineStatus,
+    });
+    setParams((prev) => ({ ...prev, pageNum: 1 }));
+  };
+
+  const resetFilters = () => {
+    setDraftFilters(EMPTY_DEVICE_FILTERS);
+    setFilters({ ...EMPTY_DEVICE_FILTERS });
+    setParams((prev) => ({ ...prev, pageNum: 1 }));
+  };
 
   const ensureManualRegistrationProducts = () => {
     if (manualProducts.length > 0) return true;
@@ -310,7 +325,14 @@ const DeviceList: React.FC = () => {
     if (selectedDeviceIds.length === 0 && total === 0) { message.warning('暂无可导出的设备'); return; }
     try {
       setExporting(true);
-      const payload = selectedDeviceIds.length > 0 ? { deviceIds: selectedDeviceIds } : { keyword: keyword || undefined, productId: filterProduct, status: filterStatus, onlineStatus: filterOnline };
+      const payload = selectedDeviceIds.length > 0
+        ? { deviceIds: selectedDeviceIds }
+        : {
+            keyword: filters.keyword || undefined,
+            productId: filters.productId,
+            status: filters.status,
+            onlineStatus: filters.onlineStatus,
+          };
       const res = await deviceApi.exportTriples(payload);
       const credentials = (res.data.data || []) as DeviceCredentialRecord[];
       if (!credentials.length) { message.warning('没有匹配到可导出的设备三元组'); return; }
@@ -334,11 +356,10 @@ const DeviceList: React.FC = () => {
           {record.groupList.map((item) => (
             <Tag
               key={item.id}
-              color={filterGroup === item.id ? 'blue' : 'geekblue'}
+              color={filters.groupId === item.id ? 'blue' : 'geekblue'}
               style={{ cursor: 'pointer' }}
               onClick={() => {
-                setFilterGroup(item.id);
-                setParams((prev) => ({ ...prev, pageNum: 1 }));
+                setDraftFilters((current) => ({ ...current, groupId: item.id }));
               }}
             >
               {item.name}
@@ -358,15 +379,70 @@ const DeviceList: React.FC = () => {
     <div>
       <PageHeader title="设备管理" description={`共 ${total} 台设备`} extra={<Space wrap><Button icon={<ApartmentOutlined />} onClick={() => navigate('/device-topology')}>设备拓扑</Button><Button icon={<DownloadOutlined />} loading={exporting} onClick={handleExportTriples}>{selectedDeviceIds.length > 0 ? `导出已选三元组 (${selectedDeviceIds.length})` : '导出当前筛选三元组'}</Button><Button icon={<UploadOutlined />} onClick={() => { if (ensureManualRegistrationProducts()) setBatchOpen(true); }}>批量导入</Button><Button type="primary" icon={<PlusOutlined />} onClick={() => { if (ensureManualRegistrationProducts()) setCreateOpen(true); }}>新建设备</Button></Space>} />
 
-      <Card style={{ marginBottom: 16 }}>
-        <Space wrap>
-          <Search value={searchText} allowClear enterButton="查询" placeholder="搜索设备名称/别名" style={{ width: 240 }} onChange={(event) => { const nextValue = event.target.value; setSearchText(nextValue); if (!nextValue) { setKeyword(''); setParams((prev) => ({ ...prev, pageNum: 1 })); } }} onSearch={(value) => { setSearchText(value); setKeyword(value.trim()); setParams((prev) => ({ ...prev, pageNum: 1 })); }} />
-          <Select allowClear placeholder="所属产品" style={{ width: 240 }} options={products.map((item) => ({ value: item.id, label: `${item.name} (${item.productKey})` }))} onChange={(value) => { setFilterProduct(value); setParams((prev) => ({ ...prev, pageNum: 1 })); }} />
-          <Select allowClear placeholder="所属分组" style={{ width: 220 }} options={groupOptions} optionFilterProp="label" showSearch onChange={(value) => { setFilterGroup(value); setParams((prev) => ({ ...prev, pageNum: 1 })); }} />
-          <Select allowClear placeholder="设备状态" style={{ width: 140 }} options={[{ value: 'INACTIVE', label: '未激活' }, { value: 'ACTIVE', label: '已激活' }, { value: 'DISABLED', label: '已禁用' }]} onChange={(value) => { setFilterStatus(value); setParams((prev) => ({ ...prev, pageNum: 1 })); }} />
-          <Select allowClear placeholder="在线状态" style={{ width: 140 }} options={[{ value: 'ONLINE', label: '在线' }, { value: 'OFFLINE', label: '离线' }]} onChange={(value) => { setFilterOnline(value); setParams((prev) => ({ ...prev, pageNum: 1 })); }} />
-          <Tag color="purple">已选择 {selectedDeviceIds.length} 台</Tag>
-        </Space>
+      <Card className="ff-query-card">
+        <div className="ff-query-bar">
+          <Input
+            className="ff-query-field ff-query-field--grow"
+            value={draftFilters.keyword}
+            allowClear
+            placeholder="搜索设备名称/别名"
+            onChange={(event) => {
+              setDraftFilters((current) => ({ ...current, keyword: event.target.value }));
+            }}
+            onPressEnter={applyFilters}
+          />
+          <Select
+            className="ff-query-field"
+            allowClear
+            placeholder="所属产品"
+            style={{ width: 240 }}
+            value={draftFilters.productId}
+            options={products.map((item) => ({ value: item.id, label: `${item.name} (${item.productKey})` }))}
+            onChange={(value) => {
+              setDraftFilters((current) => ({ ...current, productId: value }));
+            }}
+          />
+          <Select
+            className="ff-query-field"
+            allowClear
+            placeholder="所属分组"
+            style={{ width: 220 }}
+            value={draftFilters.groupId}
+            options={groupOptions}
+            optionFilterProp="label"
+            showSearch
+            onChange={(value) => {
+              setDraftFilters((current) => ({ ...current, groupId: value }));
+            }}
+          />
+          <Select
+            className="ff-query-field"
+            allowClear
+            placeholder="设备状态"
+            style={{ width: 140 }}
+            value={draftFilters.status}
+            options={[{ value: 'INACTIVE', label: '未激活' }, { value: 'ACTIVE', label: '已激活' }, { value: 'DISABLED', label: '已禁用' }]}
+            onChange={(value) => {
+              setDraftFilters((current) => ({ ...current, status: value }));
+            }}
+          />
+          <Select
+            className="ff-query-field"
+            allowClear
+            placeholder="在线状态"
+            style={{ width: 140 }}
+            value={draftFilters.onlineStatus}
+            options={[{ value: 'ONLINE', label: '在线' }, { value: 'OFFLINE', label: '离线' }]}
+            onChange={(value) => {
+              setDraftFilters((current) => ({ ...current, onlineStatus: value }));
+            }}
+          />
+          <div className="ff-query-actions">
+            <Tag className="ff-query-meta" color="purple">已选择 {selectedDeviceIds.length} 台</Tag>
+            <Button onClick={resetFilters}>重置</Button>
+            <Button type="primary" onClick={applyFilters}>查询</Button>
+          </div>
+        </div>
       </Card>
 
       <Card>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Space, Card, message, Input, Select, Modal, Descriptions } from 'antd';
+import { Table, Tag, Card, Button, message, Input, Select, Modal, Descriptions } from 'antd';
 import { EyeOutlined, FileSearchOutlined } from '@ant-design/icons';
 import { auditLogApi } from '../../services/api';
 import type { ColumnsType } from 'antd/es/table';
@@ -23,6 +23,13 @@ interface AuditLogRecord {
   duration: number;
   errorMessage: string;
   createdAt: string;
+}
+
+interface AuditLogFilters {
+  keyword: string;
+  module?: string;
+  action?: string;
+  responseStatus?: string;
 }
 
 const moduleLabels: Record<string, string> = {
@@ -54,10 +61,8 @@ const AuditLogPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
-  const [keyword, setKeyword] = useState('');
-  const [filterModule, setFilterModule] = useState<string | undefined>();
-  const [filterAction, setFilterAction] = useState<string | undefined>();
-  const [filterStatus, setFilterStatus] = useState<string | undefined>();
+  const [draftFilters, setDraftFilters] = useState<AuditLogFilters>({ keyword: '' });
+  const [filters, setFilters] = useState<AuditLogFilters>({ keyword: '' });
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailRecord, setDetailRecord] = useState<AuditLogRecord | null>(null);
 
@@ -66,10 +71,10 @@ const AuditLogPage: React.FC = () => {
     try {
       const res = await auditLogApi.list({
         ...params,
-        keyword: keyword || undefined,
-        module: filterModule,
-        action: filterAction,
-        responseStatus: filterStatus,
+        keyword: filters.keyword || undefined,
+        module: filters.module,
+        action: filters.action,
+        responseStatus: filters.responseStatus,
       });
       const page = res.data.data;
       setData(page.records || []);
@@ -77,7 +82,23 @@ const AuditLogPage: React.FC = () => {
     } catch { message.error('加载审计日志失败'); } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, [params.pageNum, params.pageSize, filterModule, filterAction, filterStatus]);
+  useEffect(() => { fetchData(); }, [filters, params.pageNum, params.pageSize]);
+
+  const applyFilters = () => {
+    setFilters({
+      keyword: draftFilters.keyword.trim(),
+      module: draftFilters.module,
+      action: draftFilters.action,
+      responseStatus: draftFilters.responseStatus,
+    });
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
+
+  const resetFilters = () => {
+    setDraftFilters({ keyword: '' });
+    setFilters({ keyword: '' });
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
 
   const handleViewDetail = async (record: AuditLogRecord) => {
     try {
@@ -115,18 +136,56 @@ const AuditLogPage: React.FC = () => {
       <PageHeader title="审计日志" description={`共 ${total} 条审计记录`} extra={<FileSearchOutlined style={{ fontSize: 20, color: '#8c8c8c' }} />} />
 
       {/* Filters */}
-      <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Space wrap>
-          <Input.Search placeholder="搜索用户/描述/路径" allowClear enterButton="查询" style={{ width: 260 }}
-            onSearch={(v: string) => { setKeyword(v); setParams({ ...params, pageNum: 1 }); fetchData(); }} />
-          <Select placeholder="模块" allowClear style={{ width: 130 }} options={moduleOptions}
-            onChange={(v: string) => { setFilterModule(v); setParams({ ...params, pageNum: 1 }); }} />
-          <Select placeholder="操作" allowClear style={{ width: 110 }} options={actionOptions}
-            onChange={(v: string) => { setFilterAction(v); setParams({ ...params, pageNum: 1 }); }} />
-          <Select placeholder="状态" allowClear style={{ width: 100 }}
+      <Card className="ff-query-card">
+        <div className="ff-query-bar">
+          <Input
+            className="ff-query-field ff-query-field--grow"
+            placeholder="搜索用户/描述/路径"
+            allowClear
+            value={draftFilters.keyword}
+            onChange={(event) => {
+              setDraftFilters((current) => ({ ...current, keyword: event.target.value }));
+            }}
+            onPressEnter={applyFilters}
+          />
+          <Select
+            className="ff-query-field"
+            placeholder="模块"
+            allowClear
+            style={{ width: 130 }}
+            options={moduleOptions}
+            value={draftFilters.module}
+            onChange={(value: string | undefined) => {
+              setDraftFilters((current) => ({ ...current, module: value }));
+            }}
+          />
+          <Select
+            className="ff-query-field"
+            placeholder="操作"
+            allowClear
+            style={{ width: 110 }}
+            options={actionOptions}
+            value={draftFilters.action}
+            onChange={(value: string | undefined) => {
+              setDraftFilters((current) => ({ ...current, action: value }));
+            }}
+          />
+          <Select
+            className="ff-query-field"
+            placeholder="状态"
+            allowClear
+            style={{ width: 100 }}
+            value={draftFilters.responseStatus}
             options={[{ value: 'SUCCESS', label: '成功' }, { value: 'FAILED', label: '失败' }]}
-            onChange={(v: string) => { setFilterStatus(v); setParams({ ...params, pageNum: 1 }); }} />
-        </Space>
+            onChange={(value: string | undefined) => {
+              setDraftFilters((current) => ({ ...current, responseStatus: value }));
+            }}
+          />
+          <div className="ff-query-actions">
+            <Button onClick={resetFilters}>重置</Button>
+            <Button type="primary" onClick={applyFilters}>查询</Button>
+          </div>
+        </div>
       </Card>
 
       {/* Table */}

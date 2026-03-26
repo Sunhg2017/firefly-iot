@@ -45,12 +45,17 @@ interface LogItem {
   errorMessage: string | null;
 }
 
+interface ScheduledTaskFilters {
+  status?: number;
+}
+
 const ScheduledTaskPage: React.FC = () => {
   const [data, setData] = useState<TaskItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
-  const [statusFilter, setStatusFilter] = useState<number | undefined>(undefined);
+  const [draftFilters, setDraftFilters] = useState<ScheduledTaskFilters>({});
+  const [filters, setFilters] = useState<ScheduledTaskFilters>({});
 
   // CRUD modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -70,14 +75,25 @@ const ScheduledTaskPage: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await scheduledTaskApi.list({ ...params, status: statusFilter });
+      const res = await scheduledTaskApi.list({ ...params, status: filters.status });
       const page = res.data.data;
       setData(page.records || []);
       setTotal(page.total || 0);
     } catch { message.error('加载失败'); } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, [params.pageNum, params.pageSize, statusFilter]);
+  useEffect(() => { fetchData(); }, [filters, params.pageNum, params.pageSize]);
+
+  const applyFilters = () => {
+    setFilters({ status: draftFilters.status });
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
+
+  const resetFilters = () => {
+    setDraftFilters({});
+    setFilters({});
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
 
   const fetchLogs = async (taskId: number) => {
     setLogLoading(true);
@@ -269,12 +285,22 @@ const ScheduledTaskPage: React.FC = () => {
       </Row>
 
       {/* Filter */}
-      <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Space>
-          <Select placeholder="任务状态" allowClear style={{ width: 130 }} value={statusFilter}
-            onChange={(v) => { setStatusFilter(v); setParams({ ...params, pageNum: 1 }); }}
-            options={[{ value: 1, label: '运行中' }, { value: 0, label: '已停用' }]} />
-        </Space>
+      <Card className="ff-query-card">
+        <div className="ff-query-bar">
+          <Select
+            className="ff-query-field"
+            placeholder="任务状态"
+            allowClear
+            style={{ width: 130 }}
+            value={draftFilters.status}
+            onChange={(value) => { setDraftFilters({ status: value }); }}
+            options={[{ value: 1, label: '运行中' }, { value: 0, label: '已停用' }]}
+          />
+          <div className="ff-query-actions">
+            <Button onClick={resetFilters}>重置</Button>
+            <Button type="primary" onClick={applyFilters}>查询</Button>
+          </div>
+        </div>
       </Card>
 
       {/* Table */}
