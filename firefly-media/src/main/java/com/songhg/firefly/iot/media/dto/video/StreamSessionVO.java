@@ -16,8 +16,8 @@ public class StreamSessionVO {
     @Schema(description = "会话编号")
     private Long id;
 
-    @Schema(description = "视频设备编号")
-    private Long videoDeviceId;
+    @Schema(description = "设备资产编号")
+    private Long deviceId;
 
     @Schema(description = "通道编号")
     private String channelId;

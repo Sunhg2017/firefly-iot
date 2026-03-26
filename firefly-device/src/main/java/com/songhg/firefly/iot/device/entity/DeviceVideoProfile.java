@@ -1,6 +1,5 @@
-package com.songhg.firefly.iot.media.entity;
+package com.songhg.firefly.iot.device.entity;
 
-import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.songhg.firefly.iot.common.enums.StreamMode;
@@ -10,19 +9,17 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("video_devices")
-public class VideoDevice {
+@TableName("device_video_profiles")
+public class DeviceVideoProfile {
 
-    @TableId(type = IdType.AUTO)
-    private Long id;
-    private Long tenantId;
+    @TableId
     private Long deviceId;
-    private String name;
+    private Long tenantId;
+    private StreamMode streamMode;
     private String gbDeviceId;
     private String gbDomain;
     private String transport;
     private String sipPassword;
-    private StreamMode streamMode;
     private String ip;
     private Integer port;
     private String sourceUrl;
@@ -34,8 +31,4 @@ public class VideoDevice {
     private Long createdBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
-
-    public Boolean getSipAuthEnabled() {
-        return sipPassword != null && !sipPassword.isBlank();
-    }
 }

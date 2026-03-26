@@ -1,4 +1,4 @@
-package com.songhg.firefly.iot.media.entity;
+package com.songhg.firefly.iot.device.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -9,12 +9,13 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("video_channels")
-public class VideoChannel {
+@TableName("device_video_channels")
+public class DeviceVideoChannel {
 
     @TableId(type = IdType.AUTO)
     private Long id;
-    private Long videoDeviceId;
+    private Long tenantId;
+    private Long deviceId;
     private String channelId;
     private String name;
     private String manufacturer;

@@ -102,7 +102,13 @@ public class SipServer implements SipListener {
                 SipRegisterAuthService.RegisterAuthorization registerAuthorization =
                         sipRegisterAuthService.authorize(request, sipProperties.getDomain());
                 if (!registerAuthorization.authorized()) {
-                    sendUnauthorizedResponse(request, serverTransaction, registerAuthorization.realm(), registerAuthorization.nonce());
+                    sendUnauthorizedResponse(
+                            request,
+                            serverTransaction,
+                            registerAuthorization.realm(),
+                            registerAuthorization.nonce(),
+                            registerAuthorization.failureReason()
+                    );
                     break;
                 }
                 sipMessageHandler.handleRegister(requestEvent);
@@ -185,13 +191,17 @@ public class SipServer implements SipListener {
             Request request,
             ServerTransaction serverTransaction,
             String realm,
-            String nonce) {
+            String nonce,
+            String failureReason) {
         if (serverTransaction == null || messageFactory == null || headerFactory == null) {
             log.warn("Skip SIP 401 response because runtime factories are unavailable");
             return;
         }
         try {
             Response response = messageFactory.createResponse(Response.UNAUTHORIZED, request);
+            if (failureReason != null && !failureReason.isBlank()) {
+                response.setReasonPhrase(failureReason);
+            }
             WWWAuthenticateHeader authenticateHeader = headerFactory.createWWWAuthenticateHeader("Digest");
             authenticateHeader.setRealm(realm);
             authenticateHeader.setNonce(nonce);

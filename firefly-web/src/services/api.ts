@@ -501,14 +501,18 @@ export const fileApi = {
   delete: (objectName: string) => supportRequest.delete('/files', { params: { objectName } }),
 };
 
-// ==================== Video API ====================
-export const videoApi = {
-  list: (data: Record<string, unknown> = {}) => mediaRequest.post('/video/devices/list', data),
-  get: (id: number) => mediaRequest.get(`/video/devices/${id}`),
-  create: (data: Record<string, unknown>) => mediaRequest.post('/video/devices', data),
-  update: (id: number, data: Record<string, unknown>) => mediaRequest.put(`/video/devices/${id}`, data),
-  delete: (id: number) => mediaRequest.delete(`/video/devices/${id}`),
-  channels: (id: number) => mediaRequest.get(`/video/devices/${id}/channels`),
+// ==================== Device Video API ====================
+export const deviceVideoApi = {
+  list: (data: Record<string, unknown> = {}) => deviceRequest.post('/devices/video/list', data),
+  get: (id: number) => deviceRequest.get(`/devices/video/${id}`),
+  create: (data: Record<string, unknown>) => deviceRequest.post('/devices/video', data),
+  update: (id: number, data: Record<string, unknown>) => deviceRequest.put(`/devices/video/${id}`, data),
+  delete: (id: number) => deviceRequest.delete(`/devices/video/${id}`),
+  channels: (id: number) => deviceRequest.get(`/devices/video/${id}/channels`),
+};
+
+// ==================== Video Control API ====================
+export const videoControlApi = {
   startStream: (id: number, data?: Record<string, unknown>) => mediaRequest.post(`/video/devices/${id}/start`, data || {}),
   stopStream: (id: number) => mediaRequest.post(`/video/devices/${id}/stop`),
   ptz: (id: number, data: Record<string, unknown>) => mediaRequest.post(`/video/devices/${id}/ptz`, data),

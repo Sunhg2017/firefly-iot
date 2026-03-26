@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.device.mapper.DeviceVideoChannelMapper">
+
+    <select id="selectByDeviceIdIgnoreTenant" resultType="com.songhg.firefly.iot.device.entity.DeviceVideoChannel">
+        SELECT *
+        FROM device_video_channels
+        WHERE device_id = #{deviceId}
+        ORDER BY channel_id
+    </select>
+
+</mapper>

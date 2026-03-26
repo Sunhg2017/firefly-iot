@@ -1,4 +1,4 @@
-package com.songhg.firefly.iot.media.dto.video;
+package com.songhg.firefly.iot.device.dto.video;
 
 import com.songhg.firefly.iot.common.enums.StreamMode;
 import com.songhg.firefly.iot.common.enums.VideoDeviceStatus;
@@ -7,24 +7,27 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
-/**
- * Video device view object.
- */
 @Data
-@Schema(description = "视频设备视图对象")
-public class VideoDeviceVO {
+@Schema(description = "视频设备视图")
+public class DeviceVideoVO {
 
-    @Schema(description = "视频设备编号")
+    @Schema(description = "设备资产编号")
     private Long id;
 
-    @Schema(description = "租户编号")
-    private Long tenantId;
+    @Schema(description = "产品编号")
+    private Long productId;
 
-    @Schema(description = "关联设备编号")
-    private Long deviceId;
+    @Schema(description = "产品 ProductKey")
+    private String productKey;
+
+    @Schema(description = "产品名称")
+    private String productName;
 
     @Schema(description = "设备名称")
     private String name;
+
+    @Schema(description = "设备主键名称")
+    private String deviceName;
 
     @Schema(description = "国标设备编号")
     private String gbDeviceId;
@@ -32,19 +35,19 @@ public class VideoDeviceVO {
     @Schema(description = "国标域")
     private String gbDomain;
 
-    @Schema(description = "传输协议")
+    @Schema(description = "传输方式")
     private String transport;
 
-    @Schema(description = "启用 SIP 密码鉴权")
+    @Schema(description = "是否启用 SIP 密码认证")
     private Boolean sipAuthEnabled;
 
-    @Schema(description = "流模式")
+    @Schema(description = "视频接入方式")
     private StreamMode streamMode;
 
-    @Schema(description = "网络地址")
+    @Schema(description = "接入 IP")
     private String ip;
 
-    @Schema(description = "端口")
+    @Schema(description = "接入端口")
     private Integer port;
 
     @Schema(description = "视频源地址")
@@ -59,14 +62,11 @@ public class VideoDeviceVO {
     @Schema(description = "固件版本")
     private String firmware;
 
-    @Schema(description = "设备状态")
+    @Schema(description = "视频在线状态")
     private VideoDeviceStatus status;
 
     @Schema(description = "最近注册时间")
     private LocalDateTime lastRegisteredAt;
-
-    @Schema(description = "创建人编号")
-    private Long createdBy;
 
     @Schema(description = "创建时间")
     private LocalDateTime createdAt;

@@ -1068,8 +1068,8 @@ export default function DeviceControlPanel() {
       if (device.protocol === 'Video') {
         const result = await connectSimDevice(device.id, { silent: true });
         const latest = useSimStore.getState().devices.find((item) => item.id === device.id);
-        if (result.success && latest?.videoDeviceId) {
-          addLog(device.id, device.name, 'success', `视频设备已同步：${latest.videoDeviceId}`);
+        if (result.success && latest?.platformDeviceId) {
+          addLog(device.id, device.name, 'success', `设备资产已同步：${latest.platformDeviceId}`);
         } else {
           updateDevice(device.id, { status: 'error', restoreOnLaunch: false });
           addLog(device.id, device.name, 'error', `视频设备同步失败：${result.message || '未知错误'}`);
@@ -1102,7 +1102,7 @@ export default function DeviceControlPanel() {
         addLog(device.id, device.name, 'info', '已断开连接');
         return;
       }
-      updateDevice(device.id, { status: 'offline', token: '', videoDeviceId: null, streamUrl: '', sipRegistered: false, restoreOnLaunch: false, heartbeatTimerId: null });
+      updateDevice(device.id, { status: 'offline', token: '', platformDeviceId: null, streamUrl: '', sipRegistered: false, restoreOnLaunch: false, heartbeatTimerId: null });
       addLog(device.id, device.name, 'info', '已断开连接');
     } catch (error: any) {
       updateDevice(device.id, { status: 'offline', restoreOnLaunch: false, heartbeatTimerId: null });

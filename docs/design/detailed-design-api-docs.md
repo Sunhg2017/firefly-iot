@@ -302,7 +302,7 @@ signature = HMAC-SHA256(secretKey, method + "\n" + path + "\n" + timestamp + "\n
 | **设备管理** | `/api/v1/devices/**, /api/v1/products/**` | 产品与设备管理 |
 | **规则引擎** | `/api/v1/rules/**` | 规则 CRUD 与管理 |
 | **数据查询** | `/api/v1/telemetry/**` | 时序数据查询 |
-| **视频监控** | `/api/v1/video/**` | 视频设备与流管理 |
+| **视频控制** | `/api/v1/video/**` | 视频流控制与运行态接口 |
 
 ### 6.3 文档访问路径
 

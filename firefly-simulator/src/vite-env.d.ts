@@ -70,19 +70,20 @@ interface ElectronAPI {
   coapReportOtaProgress: (baseUrl: string, token: string, payload: Record<string, any>) => Promise<any>;
   coapGetShadow: (baseUrl: string, token: string) => Promise<any>;
 
-  videoCreateDevice: (baseUrl: string, dto: any, token?: string) => Promise<any>;
-  videoListDevices: (baseUrl: string, query: any, token?: string) => Promise<any>;
-  videoGetDevice: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
-  videoUpdateDevice: (baseUrl: string, deviceId: number, dto: any, token?: string) => Promise<any>;
-  videoStartStream: (baseUrl: string, deviceId: number, dto?: any, token?: string) => Promise<any>;
-  videoStopStream: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
-  videoPtzControl: (baseUrl: string, deviceId: number, dto: any, token?: string) => Promise<any>;
-  videoSnapshot: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
-  videoListChannels: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
-  videoQueryCatalog: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
-  videoQueryDeviceInfo: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
-  videoStartRecording: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
-  videoStopRecording: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
+  deviceVideoCreate: (baseUrl: string, dto: any, token?: string) => Promise<any>;
+  deviceVideoList: (baseUrl: string, query: any, token?: string) => Promise<any>;
+  deviceVideoGet: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
+  deviceVideoUpdate: (baseUrl: string, deviceId: number, dto: any, token?: string) => Promise<any>;
+  deviceVideoDelete: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
+  deviceVideoChannels: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
+  videoControlStartStream: (baseUrl: string, deviceId: number, dto?: any, token?: string) => Promise<any>;
+  videoControlStopStream: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
+  videoControlPtz: (baseUrl: string, deviceId: number, dto: any, token?: string) => Promise<any>;
+  videoControlSnapshot: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
+  videoControlCatalog: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
+  videoControlDeviceInfo: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
+  videoControlStartRecording: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
+  videoControlStopRecording: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
 
   sipStart: (id: string, config: any) => Promise<any>;
   sipRegister: (id: string) => Promise<any>;

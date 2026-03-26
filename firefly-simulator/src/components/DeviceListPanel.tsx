@@ -512,7 +512,7 @@ export default function DeviceListPanel() {
       mqttClientId: '',
       mqttUsername: '',
       mqttPassword: '',
-      videoDeviceId: null,
+      platformDeviceId: null,
       streamUrl: '',
       sipRegistered: false,
       dynamicRegistered: false,

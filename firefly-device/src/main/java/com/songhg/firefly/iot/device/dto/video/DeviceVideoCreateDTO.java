@@ -1,4 +1,5 @@
-package com.songhg.firefly.iot.media.dto.video;
+package com.songhg.firefly.iot.device.dto.video;
+
 import com.songhg.firefly.iot.common.enums.StreamMode;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
@@ -6,22 +7,21 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
-/**
- * Video device creation request.
- */
 @Data
 @Schema(description = "视频设备创建请求")
-public class VideoDeviceCreateDTO {
+public class DeviceVideoCreateDTO {
 
     @Schema(description = "设备名称")
     @NotBlank(message = "设备名称不能为空")
     private String name;
 
-    @Schema(description = "关联设备编号")
-    private Long deviceId;
-
     @Schema(description = "产品 ProductKey")
+    @NotBlank(message = "产品不能为空")
     private String productKey;
+
+    @Schema(description = "视频接入方式")
+    @NotNull(message = "接入方式不能为空")
+    private StreamMode streamMode;
 
     @Schema(description = "国标设备编号")
     private String gbDeviceId;
@@ -29,24 +29,20 @@ public class VideoDeviceCreateDTO {
     @Schema(description = "国标域")
     private String gbDomain;
 
-    @Schema(description = "传输协议")
+    @Schema(description = "传输方式")
     private String transport;
 
-    @Schema(description = "启用 SIP 密码鉴权")
+    @Schema(description = "是否启用 SIP 密码认证")
     private Boolean sipAuthEnabled;
 
-    @Schema(description = "SIP 密码")
+    @Schema(description = "设备级 SIP 密码")
     @Size(max = 128)
     private String sipPassword;
 
-    @Schema(description = "流模式")
-    @NotNull(message = "接入方式不能为空")
-    private StreamMode streamMode;
-
-    @Schema(description = "网络地址")
+    @Schema(description = "接入 IP")
     private String ip;
 
-    @Schema(description = "端口")
+    @Schema(description = "接入端口")
     private Integer port;
 
     @Schema(description = "视频源地址")

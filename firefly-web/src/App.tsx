@@ -14,7 +14,7 @@ const RoleList = React.lazy(() => import('./pages/role/RoleList'));
 const ProjectList = React.lazy(() => import('./pages/project/ProjectList'));
 const ProductList = React.lazy(() => import('./pages/product/ProductList'));
 const ProtocolParserPage = React.lazy(() => import('./pages/protocol-parser/ProtocolParserPage'));
-const DeviceList = React.lazy(() => import('./pages/device/DeviceList'));
+const DevicePage = React.lazy(() => import('./pages/device/DevicePage'));
 const DeviceTopologyPage = React.lazy(() => import('./pages/device-topology/DeviceTopologyPage'));
 const DeviceGroupPage = React.lazy(() => import('./pages/device-group/DeviceGroupPage'));
 const DeviceTagPage = React.lazy(() => import('./pages/device-tag/DeviceTagPage'));
@@ -34,7 +34,6 @@ const AlarmRecordPage = React.lazy(() => import('./pages/alarm/AlarmRecordPage')
 const AlarmRecipientGroupPage = React.lazy(() => import('./pages/alarm/AlarmRecipientGroupPage'));
 const OtaList = React.lazy(() => import('./pages/ota/OtaList'));
 const DeviceDataPage = React.lazy(() => import('./pages/device-data/DeviceDataPage'));
-const VideoList = React.lazy(() => import('./pages/video/VideoList'));
 const AuditLogPage = React.lazy(() => import('./pages/audit/AuditLogPage'));
 const SystemSettingsPage = React.lazy(() => import('./pages/settings/SystemSettingsPage'));
 const NotificationPage = React.lazy(() => import('./pages/notification/NotificationPage'));
@@ -84,7 +83,7 @@ const App: React.FC = () => {
             <Route path="project" element={<ProjectList />} />
             <Route path="product" element={<ProductList />} />
             <Route path="protocol-parser" element={<ProtocolParserPage />} />
-            <Route path="device" element={<DeviceList />} />
+            <Route path="device" element={<DevicePage />} />
             <Route path="device-topology" element={<DeviceTopologyPage />} />
             <Route path="device-group" element={<DeviceGroupPage />} />
             <Route path="device-tag" element={<DeviceTagPage />} />
@@ -104,7 +103,6 @@ const App: React.FC = () => {
             <Route path="alarm-recipient-groups" element={<AlarmRecipientGroupPage />} />
             <Route path="ota" element={<OtaList />} />
             <Route path="device-data" element={<DeviceDataPage />} />
-            <Route path="video" element={<VideoList />} />
             <Route path="audit-log" element={<AuditLogPage />} />
             <Route path="settings" element={<SystemSettingsPage />} />
             <Route path="open-api" element={<OpenApiPage />} />

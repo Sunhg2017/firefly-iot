@@ -1,318 +1,189 @@
-# Firefly-IoT 视频监控模块 — 详细设计文档
-
-> **版本**: v1.0.0  
-> **日期**: 2026-03-26
-> **状态**: Draft  
-> **关联**: [产品设计文档](./product-design.md) §6.6 视频设备接入与推流
-
----
-
-## 目录
-
-1. [模块概述](#1-模块概述)
-2. [核心概念与术语](#2-核心概念与术语)
-3. [数据库设计](#3-数据库设计)
-4. [枚举定义](#4-枚举定义)
-5. [视频接入流程](#5-视频接入流程)
-6. [API 接口设计](#6-api-接口设计)
-7. [后端实现](#7-后端实现)
-8. [前端交互设计](#8-前端交互设计)
-9. [非功能性需求](#9-非功能性需求)
-
----
-
-## 1. 模块概述
-
-### 1.1 模块定位
-
-视频监控模块负责 **视频设备管理、通道管理、实时播放、云台控制 (PTZ)、截图、录像管理**。通过对接 ZLMediaKit 流媒体引擎，实现 GB/T 28181、RTSP、RTMP 等协议的视频流接入与分发。
-
-### 1.2 核心能力
-
-| 能力 | 说明 |
-|------|------|
-| **视频设备管理** | 视频设备 CRUD，支持 GB28181 / RTSP / RTMP 接入方式 |
-| **产品联动预填** | 从摄像头产品跳转时自动带入产品上下文并锁定接入协议 |
-| **设备资产联动** | 新建视频设备时自动补建设备资产主设备，继承当前可见项目/分组范围并回填 `video_devices.device_id` |
-| **通道管理** | 设备下的视频通道列表，支持多通道 NVR |
-| **实时播放** | 发起实时点播，返回 FLV/HLS/WebRTC 播放地址 |
-| **云台控制** | PTZ 方向控制、变焦控制 |
-| **截图** | 远程截图，存储到 MinIO |
-| **录像管理** | 开始/停止录像，录像文件列表查询 |
-| **流会话管理** | 跟踪当前活跃的视频流会话 |
-
-### 1.3 架构依赖
-
-```
-┌────────────────────────────────┐
-│        视频监控模块              │
-│                                 │
-│  ┌──────────┐  ┌────────────┐  │
-│  │ 设备管理  │  │ 流媒体控制  │  │
-│  └──────────┘  └────────────┘  │
-└──────┬──────────────┬──────────┘
-       │              │
-  ┌────▼────┐  ┌──────▼──────┐
-  │PostgreSQL│  │ ZLMediaKit  │
-  └─────────┘  │ (REST API)  │
-               └─────────────┘
-```
-
----
-
-## 2. 核心概念与术语
-
-| 术语 | 英文 | 说明 |
-|------|------|------|
-| **视频设备** | Video Device | IPC 摄像头、NVR、无人机等视频类设备 |
-| **通道** | Channel | 一个视频设备可能有多个视频通道（如 NVR 下多路 IPC） |
-| **流会话** | Stream Session | 一次视频播放的会话，记录播放地址和状态 |
-| **PTZ** | Pan-Tilt-Zoom | 云台控制：水平旋转、垂直旋转、变焦 |
-| **ZLMediaKit** | - | C++ 高性能流媒体服务器，支持协议转封装 |
-
----
-
-## 3. 数据库设计
-
-### 3.1 video_devices 表
-
-```sql
-CREATE TABLE video_devices (
-    id              BIGSERIAL PRIMARY KEY,
-    tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
-    device_id       BIGINT REFERENCES devices(id),
-    name            VARCHAR(256) NOT NULL,
-    gb_device_id    VARCHAR(64),
-    gb_domain       VARCHAR(64),
-    transport       VARCHAR(16) NOT NULL DEFAULT 'UDP',
-    sip_password    VARCHAR(128),
-    stream_mode     VARCHAR(16) NOT NULL DEFAULT 'GB28181',
-    ip              VARCHAR(64),
-    port            INT,
-    source_url      VARCHAR(1024),
-    manufacturer    VARCHAR(128),
-    model           VARCHAR(128),
-    firmware        VARCHAR(64),
-    status          VARCHAR(16) NOT NULL DEFAULT 'OFFLINE',
-    last_registered_at TIMESTAMPTZ,
-    created_by      BIGINT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-说明：
-
-- `video_devices` 通过 `device_id` 关联设备资产主表，视频设备权限与设备资产数据权限保持一致。
-- 当前 `video_devices` 仍未单独持久化 `product_id / product_key`；产品归属通过关联的设备资产主设备反查，不再只依赖 URL 参数。
-- 自动补建的视频设备资产会优先沿用产品自身 `projectId`；若产品未绑定项目且当前数据权限只命中一个项目，则使用当前数据范围中的唯一项目作为兜底项目。
-- 自动补建链路会透传当前数据范围中的分组 ID，设备侧仅同步静态分组，并在保存后立即重算动态分组，避免记录刚创建就被分组数据权限过滤。
-- `video_devices` 的业务唯一性按接入标识控制：
-  - `GB28181`：`tenant_id + stream_mode + gb_device_id`
-  - `RTSP / RTMP`：优先 `tenant_id + stream_mode + source_url`；仅对未落 `source_url` 的旧记录退回 `tenant_id + stream_mode + ip + port`
-- `firefly-media` 通过 `V3__enforce_video_device_identity_unique.sql`、`V4__add_video_device_source_url.sql`、`V5__refine_video_device_proxy_identity_unique.sql` 建立字段和唯一索引，并在服务层提前拦截重复创建。
-
-### 3.2 video_channels 表
-
-```sql
-CREATE TABLE video_channels (
-    id              BIGSERIAL PRIMARY KEY,
-    video_device_id BIGINT NOT NULL REFERENCES video_devices(id) ON DELETE CASCADE,
-    channel_id      VARCHAR(64) NOT NULL,
-    name            VARCHAR(256),
-    manufacturer    VARCHAR(128),
-    model           VARCHAR(128),
-    status          VARCHAR(16) NOT NULL DEFAULT 'OFFLINE',
-    ptz_type        INT DEFAULT 0,
-    sub_count       INT DEFAULT 0,
-    longitude       DOUBLE PRECISION,
-    latitude        DOUBLE PRECISION,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-### 3.3 stream_sessions 表
-
-```sql
-CREATE TABLE stream_sessions (
-    id              BIGSERIAL PRIMARY KEY,
-    tenant_id       BIGINT NOT NULL,
-    video_device_id BIGINT NOT NULL REFERENCES video_devices(id),
-    channel_id      VARCHAR(64),
-    stream_id       VARCHAR(256),
-    status          VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
-    flv_url         VARCHAR(1024),
-    hls_url         VARCHAR(1024),
-    webrtc_url      VARCHAR(1024),
-    started_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    stopped_at      TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
----
-
-## 4. 枚举定义
-
-### 4.1 VideoDeviceStatus
-
-```java
-ONLINE("ONLINE"), OFFLINE("OFFLINE")
-```
-
-### 4.2 StreamMode
-
-```java
-GB28181("GB28181"), RTSP("RTSP"), RTMP("RTMP")
-```
-
-### 4.3 StreamStatus
-
-```java
-ACTIVE("ACTIVE"), CLOSED("CLOSED")
-```
-
-### 4.4 PtzCommand
-
-```java
-STOP(0), UP(1), DOWN(2), LEFT(3), RIGHT(4), ZOOM_IN(5), ZOOM_OUT(6)
-```
-
----
-
-## 5. 视频接入流程
-
-```
-1. 管理员可直接进入 `/video`，或从摄像头产品页跳转进入视频监控
-2. 如果来自产品页，前端自动带入 `productKey / productName / protocol` 并打开“添加视频设备”抽屉
-3. 管理员选择产品或沿用产品上下文，前端自动锁定与产品一致的接入协议
-4. 平台先在设备资产主链路创建设备并回填 `video_devices.device_id`，再保存视频设备记录
-5. `firefly-media -> firefly-device` 的 Feign 调用会透传当前请求的租户、用户与权限头，保证产品查询与设备资产创建落在同一可见范围
-6. 自动补建链路会解析当前用户数据范围，把可见项目与静态分组带到设备资产创建请求中，并在设备侧重算动态分组
-7. 若 GB28181 设备启用了 SIP 鉴权，平台以 `GB 设备编号` 为用户名，对 REGISTER 发起 Digest 挑战并校验设备级 `sip_password`
-8. GB28181 REGISTER 校验通过后，平台更新设备状态为 ONLINE；RTSP / RTMP 设备在保存后直接对齐为受管在线状态
-9. 用户请求实时播放 → 平台调用 ZLMediaKit API 发起点播
-10. RTSP / RTMP 设备优先使用完整 `sourceUrl` 调用 ZLMediaKit；没有 `sourceUrl` 时才回退到 `ip + port`
-11. ZLMediaKit 返回播放地址 → 平台保存流会话并返回前端
-12. 前端使用 FLV.js / HLS.js 播放视频
-13. 用户停止播放 → 平台调用 ZLMediaKit 关闭流 → 更新会话状态
-```
-
----
-
-## 6. API 接口设计
-
-### 6.1 视频设备管理
-
-| 方法 | 路径 | 权限 | 说明 |
-|------|------|------|------|
-| POST | `/api/v1/video/devices` | `video:create` | 创建视频设备 |
-| POST | `/api/v1/video/devices/list` | `video:read` | 分页查询 |
-| GET | `/api/v1/video/devices/{id}` | `video:read` | 查看详情 |
-| PUT | `/api/v1/video/devices/{id}` | `video:update` | 更新设备 |
-| DELETE | `/api/v1/video/devices/{id}` | `video:delete` | 删除设备 |
-
-补充约束：
-
-- 创建/更新视频设备时，SIP 密码字段统一口径仍为 `sipPassword`。
-- 创建/更新 RTSP / RTMP 视频设备时，可直接携带完整 `sourceUrl`。
-- 当接入标识已被当前租户下同协议的视频设备占用时，接口直接返回业务冲突，不允许创建重复视频设备。
-
-### 6.2 通道管理
-
-| 方法 | 路径 | 权限 | 说明 |
-|------|------|------|------|
-| GET | `/api/v1/video/devices/{id}/channels` | `video:read` | 获取通道列表 |
-
-### 6.3 流媒体控制
-
-| 方法 | 路径 | 权限 | 说明 |
-|------|------|------|------|
-| POST | `/api/v1/video/devices/{id}/start` | `video:stream` | 开始播放 |
-| POST | `/api/v1/video/devices/{id}/stop` | `video:stream` | 停止播放 |
-| POST | `/api/v1/video/devices/{id}/ptz` | `video:ptz` | 云台控制 |
-| POST | `/api/v1/video/devices/{id}/snapshot` | `video:stream` | 截图 |
-
-### 6.4 录像管理
-
-| 方法 | 路径 | 权限 | 说明 |
-|------|------|------|------|
-| POST | `/api/v1/video/devices/{id}/record/start` | `video:record` | 开始录像 |
-| POST | `/api/v1/video/devices/{id}/record/stop` | `video:record` | 停止录像 |
-
----
-
-## 7. 后端实现
-
-### 7.1 文件结构
-
-```
-firefly-system/src/main/java/.../system/
-├── entity/
-│   ├── VideoDevice.java
-│   ├── VideoChannel.java
-│   └── StreamSession.java
-├── dto/video/
-│   ├── VideoDeviceVO.java
-│   ├── VideoDeviceCreateDTO.java
-│   ├── VideoDeviceUpdateDTO.java
-│   ├── VideoDeviceQueryDTO.java
-│   ├── VideoChannelVO.java
-│   ├── StreamSessionVO.java
-│   ├── StreamStartDTO.java
-│   └── PtzControlDTO.java
-├── convert/
-│   └── VideoConvert.java
-├── mapper/
-│   ├── VideoDeviceMapper.java
-│   ├── VideoChannelMapper.java
-│   └── StreamSessionMapper.java
-├── service/
-│   └── VideoService.java
-└── controller/
-    └── VideoController.java
-```
-
-### 7.2 上下文传播与可见性控制
-
-- `firefly-media -> firefly-device` 的同步调用统一通过 Feign 头透传 `tenantId / userId / permissions`，避免产品查询与内部建设备落到错误租户或错误权限口径。
-- Kafka 异步链路由 `firefly-common` 统一补齐业务上下文传播：Producer 在消息头写入 `AppContextHolder` 中的租户、用户与权限信息，Consumer 通过 Spring Kafka `RecordInterceptor` 按消息逐条恢复并在处理后清理。
-- 视频设备自动建设备资产时，会读取当前用户的数据范围：
-  - 若产品已绑定项目，直接沿用产品项目。
-  - 若产品未绑定项目且当前范围只命中一个项目，则把该项目写入新建设备。
-  - 当前范围中的分组只把静态分组带入内部创建设备请求，动态分组在设备插入后统一重算。
-- 视频列表的数据权限最终仍以 `video_devices.device_id -> devices` 主链路为准，因此 `device_id`、`project_id`、`device_group_members` 与动态分组结果必须保持一致。
-
----
-
-## 8. 前端交互设计
-
-### 8.1 视频监控页面
-
-- **设备列表**: 视频设备表格，含在线状态
-- **产品联动上下文**: 若从摄像头产品页进入，则在页头下方仅展示产品名称、ProductKey、接入方式，并提供“新增设备 / 清空联动”动作
-- **创建设备抽屉**: 使用抽屉而非弹窗，分组展示基础字段、GB28181 或 RTSP/RTMP 专属字段、SIP 鉴权开关和产品上下文
-- **编辑设备抽屉**: 在列表侧边继续维护 GB 域、传输协议和设备级 SIP 密码
-- **协议锁定**: 存在产品上下文时，`streamMode` 自动锁定为产品协议，不允许在创建设备时切换
-- **错误回显**: 创建、编辑、播放、目录查询等操作会直接展示后端返回的业务校验消息，不再把 `R.code != 0` 的响应当作成功处理
-- **实时预览**: 选择设备/通道，使用 FLV.js 播放实时视频流
-- **PTZ 控制面板**: 方向控制按钮 + 变焦按钮
-- **路由**: `/video`
-
-### 8.2 GB28181 注册口径
-
-- 若视频设备未开启 SIP 鉴权，平台直接对 `REGISTER / MESSAGE / BYE` 返回 `200 OK`。
-- 若视频设备开启 SIP 鉴权，平台以 `GB 设备编号` 作为用户名，基于设备级 `sip_password` 执行 MD5 Digest 校验。
-- 平台不再保留误导性的全局 `gb28181.sip.password` 空配置。
-
----
-
-## 9. 非功能性需求
-
-| 需求 | 指标 |
-|------|------|
-| **并发流** | 单节点 200 路并发播放 |
-| **延迟** | FLV < 2s, WebRTC < 500ms |
-| **协议转换** | ZLMediaKit 自动 RTSP/RTMP/GB28181 → HLS/FLV/WebRTC |
-| **录像存储** | MinIO, 按 `/{tenantId}/{deviceId}/{date}/` 路径组织 |
+# Firefly-IoT 视频设备并入 Device 详细设计
+
+> 版本: v2.0.0
+> 日期: 2026-03-27
+> 状态: Done
+
+## 1. 背景
+
+旧实现把视频设备主数据拆在 `firefly-media` 的独立视频链路里，导致产品、设备资产、视频控制、设备模拟器之间存在四类割裂：
+
+- 视频设备不走统一的 `产品 -> 设备资产` 主链路。
+- Web 端存在独立 `/video` 页面和菜单，和 `/device` 视图割裂。
+- `firefly-media` 同时承担设备主数据和媒体运行态，边界不清。
+- 设备模拟器只能通过 `MEDIA` 直接建视频设备，无法复用平台已有设备资产。
+
+本次重构直接收口到最终实现，不保留旧页面、旧菜单、旧主数据接口，也不做旧数据迁移。
+
+## 2. 目标
+
+- 视频设备主数据统一归 `firefly-device` 管理。
+- `firefly-media` 只保留协议、流会话和运行态控制。
+- Web 端把视频设备视图并入 `/device`。
+- 产品页摄像头接入统一跳到 `/device?assetType=video`。
+- 模拟器先同步设备资产，再按 `deviceId` 执行媒体控制。
+
+## 3. 模块边界
+
+### 3.1 firefly-device
+
+负责：
+
+- 视频设备资产创建、查询、更新、删除
+- 视频通道资产持久化
+- 视频运行态事件回写
+- 对 `firefly-media` 暴露内部查询接口
+
+不负责：
+
+- SIP 会话
+- ZLMediaKit 控制
+- 实时流播放、截图、录像
+
+### 3.2 firefly-media
+
+负责：
+
+- GB28181 SIP 注册、消息处理、目录查询、设备信息查询
+- ZLMediaKit 推流、停流、截图、录像
+- 运行态表 `stream_sessions`
+- 通过 MQ 回写设备在线状态、通道目录、设备信息
+
+不负责：
+
+- 视频设备主数据 CRUD
+- 视频通道主数据 CRUD
+
+## 4. 数据模型
+
+视频设备资产采用三张表：
+
+- `devices`
+  - 平台统一设备资产主表
+- `device_video_profiles`
+  - 视频专属档案，`device_id` 唯一
+- `device_video_channels`
+  - 视频通道档案，按 `device_id + channel_id` 管理
+
+### 4.1 device_video_profiles 关键字段
+
+- `device_id`
+- `tenant_id`
+- `stream_mode`
+- `gb_device_id`
+- `gb_domain`
+- `sip_password`
+- `transport`
+- `ip`
+- `port`
+- `source_url`
+- `manufacturer`
+- `model`
+- `firmware`
+- `status`
+- `last_registered_at`
+
+### 4.2 唯一约束
+
+- `GB28181`: `tenant_id + gb_device_id`
+- `RTSP / RTMP`: `tenant_id + stream_mode + source_url`
+
+旧的 `video_devices`、`video_channels` 不再承担主数据职责。
+
+## 5. 对外接口
+
+### 5.1 设备资产接口
+
+由 `firefly-device` 提供：
+
+- `POST /api/v1/devices/video`
+- `POST /api/v1/devices/video/list`
+- `GET /api/v1/devices/video/{deviceId}`
+- `PUT /api/v1/devices/video/{deviceId}`
+- `DELETE /api/v1/devices/video/{deviceId}`
+- `GET /api/v1/devices/video/{deviceId}/channels`
+
+视频字段不再塞入通用 `DeviceCreateDTO`，而是固定使用视频子资源接口。
+
+### 5.2 内部接口
+
+由 `firefly-device` 提供给 `firefly-media`：
+
+- 按 `deviceId` 查询视频档案
+- 按 `deviceId` 查询视频通道
+- 按 `gbDeviceId + gbDomain` 查询视频档案和设备级 SIP 密码
+
+### 5.3 媒体控制接口
+
+由 `firefly-media` 对外保留：
+
+- `POST /api/v1/video/devices/{deviceId}/catalog`
+- `POST /api/v1/video/devices/{deviceId}/device-info`
+- `POST /api/v1/video/devices/{deviceId}/start`
+- `POST /api/v1/video/devices/{deviceId}/stop`
+- `POST /api/v1/video/devices/{deviceId}/ptz`
+- `POST /api/v1/video/devices/{deviceId}/snapshot`
+- `POST /api/v1/video/devices/{deviceId}/record/start`
+- `POST /api/v1/video/devices/{deviceId}/record/stop`
+
+`firefly-media` 已删除视频设备和通道主数据 CRUD。
+
+## 6. 关键流程
+
+### 6.1 创建视频设备
+
+1. Web 端在 `/device` 的视频设备视图打开抽屉。
+2. 调用 `POST /api/v1/devices/video` 创建视频资产。
+3. `firefly-device` 先校验产品协议和视频唯一键。
+4. 平台创建 `devices` 主记录。
+5. 平台创建 `device_video_profiles` 记录。
+6. 返回统一的 `deviceId` 作为视频设备平台标识。
+
+### 6.2 GB28181 注册认证
+
+1. 设备向 `firefly-media` 发起 REGISTER。
+2. `SipRegisterAuthService` 通过内部接口按 `gbDeviceId + gbDomain` 查询视频档案。
+3. 平台读取设备级 `sip_password` 校验 Digest。
+4. 成功后只更新运行态并发 MQ 事件。
+5. `firefly-device` 消费事件并更新 `device_video_profiles.status` 与 `devices.online_status`。
+
+认证失败原因必须原样返回，不允许吞异常。
+
+### 6.3 运行态回写
+
+`firefly-media -> Kafka -> firefly-device`
+
+事件主题：
+
+- `video.device.status.changed`
+- `video.channels.synced`
+- `video.device.info.synced`
+
+上下文要求：
+
+- 复用现有 Kafka 鉴权与 tracing 透传
+- 消费端逐条恢复并清理租户、用户、权限上下文
+
+## 7. Web 端设计
+
+- 删除独立 `/video` 路由和菜单。
+- `/device` 下新增视频设备视图页签。
+- 首次进入自动查询，后续查询仅在点击 `查询` 按钮后触发。
+- 产品页摄像头接入跳转到 `/device?assetType=video&productKey=...&protocol=...&autoCreate=1`。
+- 视频新增、编辑、通道查看、媒体控制统一使用视频专用抽屉。
+
+## 8. 设备模拟器设计
+
+- 本地平台资产标识统一改为 `platformDeviceId`。
+- 连接 Video 设备时：
+  1. 先通过 `DEVICE` 路由调用 `/api/v1/devices/video*`
+  2. 查重后创建或更新设备资产
+  3. 缓存 `platformDeviceId`
+  4. 再通过 `MEDIA` 路由按 `platformDeviceId` 执行播放、PTZ、截图、录制、目录和设备信息查询
+- GB28181 本地 SIP 模拟仍使用设备级 SIP 密码参与 Digest 认证。
+
+## 9. 风险与约束
+
+- 不处理旧 `video_devices / video_channels` 数据迁移；历史脏数据由运维清理。
+- 旧 `/video` 菜单、旧页面、旧前端 API 不再保留兼容分支。
+- 角色权限中，视频资产管理统一依赖 `device:create/read/update/delete`；视频控制依赖 `video:read/stream/ptz/record`。

@@ -107,33 +107,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
   coapGetShadow: (baseUrl: string, token: string) =>
     ipcRenderer.invoke('coap:shadow', baseUrl, token),
 
-  // Video (firefly-media) API
-  videoCreateDevice: (baseUrl: string, dto: any, token?: string) =>
-    ipcRenderer.invoke('video:createDevice', baseUrl, dto, token),
-  videoListDevices: (baseUrl: string, query: any, token?: string) =>
-    ipcRenderer.invoke('video:listDevices', baseUrl, query, token),
-  videoGetDevice: (baseUrl: string, deviceId: number, token?: string) =>
-    ipcRenderer.invoke('video:getDevice', baseUrl, deviceId, token),
-  videoUpdateDevice: (baseUrl: string, deviceId: number, dto: any, token?: string) =>
-    ipcRenderer.invoke('video:updateDevice', baseUrl, deviceId, dto, token),
-  videoStartStream: (baseUrl: string, deviceId: number, dto?: any, token?: string) =>
-    ipcRenderer.invoke('video:startStream', baseUrl, deviceId, dto, token),
-  videoStopStream: (baseUrl: string, deviceId: number, token?: string) =>
-    ipcRenderer.invoke('video:stopStream', baseUrl, deviceId, token),
-  videoPtzControl: (baseUrl: string, deviceId: number, dto: any, token?: string) =>
-    ipcRenderer.invoke('video:ptzControl', baseUrl, deviceId, dto, token),
-  videoSnapshot: (baseUrl: string, deviceId: number, token?: string) =>
-    ipcRenderer.invoke('video:snapshot', baseUrl, deviceId, token),
-  videoListChannels: (baseUrl: string, deviceId: number, token?: string) =>
-    ipcRenderer.invoke('video:listChannels', baseUrl, deviceId, token),
-  videoQueryCatalog: (baseUrl: string, deviceId: number, token?: string) =>
-    ipcRenderer.invoke('video:queryCatalog', baseUrl, deviceId, token),
-  videoQueryDeviceInfo: (baseUrl: string, deviceId: number, token?: string) =>
-    ipcRenderer.invoke('video:queryDeviceInfo', baseUrl, deviceId, token),
-  videoStartRecording: (baseUrl: string, deviceId: number, token?: string) =>
-    ipcRenderer.invoke('video:startRecording', baseUrl, deviceId, token),
-  videoStopRecording: (baseUrl: string, deviceId: number, token?: string) =>
-    ipcRenderer.invoke('video:stopRecording', baseUrl, deviceId, token),
+  deviceVideoCreate: (baseUrl: string, dto: any, token?: string) =>
+    ipcRenderer.invoke('deviceVideo:create', baseUrl, dto, token),
+  deviceVideoList: (baseUrl: string, query: any, token?: string) =>
+    ipcRenderer.invoke('deviceVideo:list', baseUrl, query, token),
+  deviceVideoGet: (baseUrl: string, deviceId: number, token?: string) =>
+    ipcRenderer.invoke('deviceVideo:get', baseUrl, deviceId, token),
+  deviceVideoUpdate: (baseUrl: string, deviceId: number, dto: any, token?: string) =>
+    ipcRenderer.invoke('deviceVideo:update', baseUrl, deviceId, dto, token),
+  deviceVideoDelete: (baseUrl: string, deviceId: number, token?: string) =>
+    ipcRenderer.invoke('deviceVideo:delete', baseUrl, deviceId, token),
+  deviceVideoChannels: (baseUrl: string, deviceId: number, token?: string) =>
+    ipcRenderer.invoke('deviceVideo:channels', baseUrl, deviceId, token),
+  videoControlStartStream: (baseUrl: string, deviceId: number, dto?: any, token?: string) =>
+    ipcRenderer.invoke('videoControl:startStream', baseUrl, deviceId, dto, token),
+  videoControlStopStream: (baseUrl: string, deviceId: number, token?: string) =>
+    ipcRenderer.invoke('videoControl:stopStream', baseUrl, deviceId, token),
+  videoControlPtz: (baseUrl: string, deviceId: number, dto: any, token?: string) =>
+    ipcRenderer.invoke('videoControl:ptz', baseUrl, deviceId, dto, token),
+  videoControlSnapshot: (baseUrl: string, deviceId: number, token?: string) =>
+    ipcRenderer.invoke('videoControl:snapshot', baseUrl, deviceId, token),
+  videoControlCatalog: (baseUrl: string, deviceId: number, token?: string) =>
+    ipcRenderer.invoke('videoControl:catalog', baseUrl, deviceId, token),
+  videoControlDeviceInfo: (baseUrl: string, deviceId: number, token?: string) =>
+    ipcRenderer.invoke('videoControl:deviceInfo', baseUrl, deviceId, token),
+  videoControlStartRecording: (baseUrl: string, deviceId: number, token?: string) =>
+    ipcRenderer.invoke('videoControl:startRecording', baseUrl, deviceId, token),
+  videoControlStopRecording: (baseUrl: string, deviceId: number, token?: string) =>
+    ipcRenderer.invoke('videoControl:stopRecording', baseUrl, deviceId, token),
 
   // GB28181 SIP Simulation
   sipStart: (id: string, config: any) => ipcRenderer.invoke('sip:start', id, config),

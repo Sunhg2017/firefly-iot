@@ -1,13 +1,14 @@
 package com.songhg.firefly.iot.media.controller;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.songhg.firefly.iot.api.dto.InternalVideoDeviceVO;
 import com.songhg.firefly.iot.common.enums.StreamStatus;
-import com.songhg.firefly.iot.common.enums.VideoDeviceStatus;
+import com.songhg.firefly.iot.common.event.EventPublisher;
+import com.songhg.firefly.iot.common.event.EventTopics;
+import com.songhg.firefly.iot.common.event.VideoDeviceStatusChangedEvent;
 import com.songhg.firefly.iot.media.entity.StreamSession;
-import com.songhg.firefly.iot.media.entity.VideoDevice;
 import com.songhg.firefly.iot.media.mapper.StreamSessionMapper;
-import com.songhg.firefly.iot.media.mapper.VideoDeviceMapper;
+import com.songhg.firefly.iot.media.service.VideoDeviceFacade;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -46,7 +47,8 @@ import java.util.Map;
 public class ZlmHookController {
 
     private final StreamSessionMapper streamSessionMapper;
-    private final VideoDeviceMapper videoDeviceMapper;
+    private final VideoDeviceFacade videoDeviceFacade;
+    private final EventPublisher eventPublisher;
 
     /**
      * 流变化回调 (注册/注销)
@@ -160,17 +162,27 @@ public class ZlmHookController {
     @PostMapping("/on_device_register")
     @Operation(summary = "GB28181 设备注册回调")
     public Map<String, Object> onDeviceRegister(@RequestBody Map<String, Object> params) {
-        String deviceId = (String) params.get("deviceId");
+        String gbDeviceId = (String) params.get("deviceId");
         Boolean online = (Boolean) params.get("online");
 
-        log.info("ZLM hook on_device_register: deviceId={}, online={}", deviceId, online);
+        log.info("ZLM hook on_device_register: deviceId={}, online={}", gbDeviceId, online);
 
-        if (deviceId != null) {
-            LambdaUpdateWrapper<VideoDevice> wrapper = new LambdaUpdateWrapper<>();
-            wrapper.eq(VideoDevice::getGbDeviceId, deviceId)
-                    .set(VideoDevice::getStatus, Boolean.TRUE.equals(online) ? VideoDeviceStatus.ONLINE : VideoDeviceStatus.OFFLINE)
-                    .set(Boolean.TRUE.equals(online), VideoDevice::getLastRegisteredAt, LocalDateTime.now());
-            videoDeviceMapper.update(null, wrapper);
+        if (gbDeviceId != null) {
+            InternalVideoDeviceVO device = videoDeviceFacade.getByGbIdentity(gbDeviceId, null);
+            if (device != null) {
+                eventPublisher.publish(
+                        EventTopics.VIDEO_DEVICE_STATUS_CHANGED,
+                        VideoDeviceStatusChangedEvent.of(
+                                device.getTenantId(),
+                                device.getDeviceId(),
+                                Boolean.TRUE.equals(online) ? "ONLINE" : "OFFLINE",
+                                LocalDateTime.now(),
+                                "firefly-media"
+                        )
+                );
+            } else {
+                log.warn("Ignore ZLM on_device_register because video device is missing: gbDeviceId={}", gbDeviceId);
+            }
         }
 
         return Map.of("code", 0, "msg", "success");

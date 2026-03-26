@@ -1,16 +1,23 @@
 package com.songhg.firefly.iot.media.gb28181;
 
+import com.songhg.firefly.iot.api.dto.InternalVideoDeviceVO;
 import com.songhg.firefly.iot.common.enums.PtzCommand;
 import com.songhg.firefly.iot.media.config.SipProperties;
 import com.songhg.firefly.iot.media.config.ZlmProperties;
-import com.songhg.firefly.iot.media.entity.VideoDevice;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import javax.sip.address.Address;
 import javax.sip.address.SipURI;
-import javax.sip.header.*;
+import javax.sip.header.CSeqHeader;
+import javax.sip.header.CallIdHeader;
+import javax.sip.header.ContactHeader;
+import javax.sip.header.ContentTypeHeader;
+import javax.sip.header.FromHeader;
+import javax.sip.header.MaxForwardsHeader;
+import javax.sip.header.ToHeader;
+import javax.sip.header.ViaHeader;
 import javax.sip.message.Request;
 import java.util.ArrayList;
 import java.util.UUID;
@@ -35,7 +42,7 @@ public class SipCommandSender {
     /**
      * 发送目录查询 (Catalog)
      */
-    public void queryCatalog(VideoDevice device) {
+    public void queryCatalog(InternalVideoDeviceVO device) {
         String xml = "<?xml version=\"1.0\" encoding=\"GB2312\"?>\r\n"
                 + "<Query>\r\n"
                 + "<CmdType>Catalog</CmdType>\r\n"
@@ -50,7 +57,7 @@ public class SipCommandSender {
     /**
      * 发送设备信息查询 (DeviceInfo)
      */
-    public void queryDeviceInfo(VideoDevice device) {
+    public void queryDeviceInfo(InternalVideoDeviceVO device) {
         String xml = "<?xml version=\"1.0\" encoding=\"GB2312\"?>\r\n"
                 + "<Query>\r\n"
                 + "<CmdType>DeviceInfo</CmdType>\r\n"
@@ -65,7 +72,7 @@ public class SipCommandSender {
     /**
      * 发送 PTZ 控制指令
      */
-    public void sendPtzControl(VideoDevice device, String channelId, PtzCommand command, int speed) {
+    public void sendPtzControl(InternalVideoDeviceVO device, String channelId, PtzCommand command, int speed) {
         String ptzCmd = PtzCommandBuilder.build(command, speed);
         String targetChannelId = channelId != null ? channelId : device.getGbDeviceId();
 
@@ -90,7 +97,7 @@ public class SipCommandSender {
      * @param ssrc      SSRC (10 位数字字符串)
      * @return 是否成功发送
      */
-    public boolean sendInvite(VideoDevice device, String channelId, String ssrc) {
+    public boolean sendInvite(InternalVideoDeviceVO device, String channelId, String ssrc) {
         try {
             String targetId = channelId != null ? channelId : device.getGbDeviceId();
             String rtpIp = zlmProperties.getHost();
@@ -115,7 +122,7 @@ public class SipCommandSender {
     /**
      * 发送 BYE 停止播放
      */
-    public boolean sendBye(VideoDevice device, String channelId) {
+    public boolean sendBye(InternalVideoDeviceVO device, String channelId) {
         try {
             Request bye = buildRequest(device, Request.BYE, null, null);
             if (bye == null) return false;
@@ -134,7 +141,7 @@ public class SipCommandSender {
     /**
      * 发送 SIP MESSAGE
      */
-    private void sendMessage(VideoDevice device, String xmlContent) {
+    private void sendMessage(InternalVideoDeviceVO device, String xmlContent) {
         try {
             Request message = buildRequest(device, Request.MESSAGE, xmlContent, "Application/MANSCDP+xml");
             if (message == null) return;
@@ -148,7 +155,7 @@ public class SipCommandSender {
     /**
      * 构建 SIP 请求
      */
-    private Request buildRequest(VideoDevice device, String method, String content, String contentType) {
+    private Request buildRequest(InternalVideoDeviceVO device, String method, String content, String contentType) {
         try {
             var af = sipServer.getAddressFactory();
             var hf = sipServer.getHeaderFactory();

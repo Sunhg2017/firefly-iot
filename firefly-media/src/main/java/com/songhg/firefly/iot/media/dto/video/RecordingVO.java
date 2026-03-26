@@ -12,8 +12,8 @@ import java.time.LocalDateTime;
 @Schema(description = "录像视图对象")
 public class RecordingVO {
 
-    @Schema(description = "视频设备编号")
-    private Long videoDeviceId;
+    @Schema(description = "设备资产编号")
+    private Long deviceId;
 
     @Schema(description = "流编号")
     private String streamId;

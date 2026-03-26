@@ -685,6 +685,7 @@ const ProductList: React.FC = () => {
 
   const openVideoManager = (record: ProductRecord) => {
     const searchParams = new URLSearchParams({
+      assetType: 'video',
       source: 'product',
       autoCreate: '1',
       productId: String(record.id),
@@ -692,7 +693,7 @@ const ProductList: React.FC = () => {
       productName: record.name,
       protocol: record.protocol,
     });
-    navigate(`/video?${searchParams.toString()}`);
+    navigate(`/device?${searchParams.toString()}`);
   };
 
   const renderProductImage = (record: ProductRecord, compact = false) => {
@@ -932,7 +933,7 @@ const ProductList: React.FC = () => {
     const isCameraCategory = currentCategory === 'CAMERA';
     const authExtra =
       isCameraCategory
-        ? '摄像头产品不走普通 IoT 的密钥鉴权和动态注册，创建后请直接到“视频监控”页面按协议添加视频设备。'
+        ? '摄像头产品创建后，请到设备资产的视频设备视图按协议新增设备。'
         : '一机一密需要先创建设备再接入；一型一密在产品发布后可从“设备接入”入口查看 ProductSecret 并调试动态注册。';
 
     return (
@@ -1161,9 +1162,6 @@ const ProductList: React.FC = () => {
               <Button type="primary" onClick={applyFilters}>查询</Button>
             </div>
           </div>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            优先用分类、协议和状态筛选，再按关键词缩小范围，避免在卡片里反复扫重复字段。
-          </Typography.Text>
         </Space>
       </Card>
 

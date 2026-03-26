@@ -116,10 +116,10 @@ Platform Admin (超级管理员)  ── 平台级，管理所有租户
 | 角色 | 角色代码 | userType | 前端空间 | 典型功能域 | 典型路由 |
 |------|---------|----------|----------|------------|----------|
 | 超级管理员 | `PLATFORM_ADMIN` | `SYSTEM_OPS` | 系统运维空间 | 租户管理、用户管理、角色权限、权限资源、系统设置、通知渠道、安全审计、系统监控、定时任务 | `/tenant`, `/user`, `/role`, `/permission`, `/settings`, `/notification`, `/security`, `/audit-log`, `/monitor`, `/scheduled-task` |
-| 租户管理员 | `TENANT_ADMIN` | `TENANT_USER` | 租户业务空间 | 项目管理、设备中心、规则告警、数据洞察、租户运维工具 | `/project`, `/product`, `/device`, `/rule-engine`, `/alarm-rules`, `/alarm-records`, `/device-data`, `/analysis`, `/firmware`, `/ota`, `/video` |
+| 租户管理员 | `TENANT_ADMIN` | `TENANT_USER` | 租户业务空间 | 项目管理、设备中心、规则告警、数据洞察、租户运维工具 | `/project`, `/product`, `/device`, `/rule-engine`, `/alarm-rules`, `/alarm-records`, `/device-data`, `/analysis`, `/firmware`, `/ota` |
 | 项目管理员 | `PROJECT_ADMIN` | `TENANT_USER` | 租户业务空间 | 项目内资源管理、人员协作、设备与规则配置 | `/project`, `/product`, `/device`, `/device-group`, `/rule-engine`, `/notification-records` |
 | 开发者 | `DEVELOPER` | `TENANT_USER` | 租户业务空间 | 设备接入与产品建模、规则开发、消息调试 | `/product`, `/device`, `/device-shadow`, `/device-message`, `/rule-engine`, `/websocket`, `/modbus`, `/tcp-udp` |
-| 运维人员 | `OPERATOR` | `TENANT_USER` | 租户业务空间 | 告警处置、通知记录排障、升级发布、视频巡检、运行保障 | `/alarm-records`, `/notification-records`, `/ota`, `/firmware`, `/video`, `/export` |
+| 运维人员 | `OPERATOR` | `TENANT_USER` | 租户业务空间 | 告警处置、通知记录排障、升级发布、视频巡检、运行保障 | `/alarm-records`, `/notification-records`, `/ota`, `/firmware`, `/device`, `/export` |
 | 只读用户 | `VIEWER` | `TENANT_USER` | 租户业务空间 | 只读查看业务数据与运行状态 | `/dashboard`, `/device`, `/device-data`, `/analysis`, `/alarm-records` |
 
 ### 3.3 权限定义体系

@@ -1,12 +1,12 @@
 package com.songhg.firefly.iot.media.gb28181;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.songhg.firefly.iot.common.enums.VideoDeviceStatus;
-import com.songhg.firefly.iot.media.entity.VideoChannel;
-import com.songhg.firefly.iot.media.entity.VideoDevice;
-import com.songhg.firefly.iot.media.mapper.VideoChannelMapper;
-import com.songhg.firefly.iot.media.mapper.VideoDeviceMapper;
+import com.songhg.firefly.iot.api.dto.InternalVideoDeviceVO;
+import com.songhg.firefly.iot.common.event.EventPublisher;
+import com.songhg.firefly.iot.common.event.EventTopics;
+import com.songhg.firefly.iot.common.event.VideoChannelsSyncedEvent;
+import com.songhg.firefly.iot.common.event.VideoDeviceInfoSyncedEvent;
+import com.songhg.firefly.iot.common.event.VideoDeviceStatusChangedEvent;
+import com.songhg.firefly.iot.media.service.VideoDeviceFacade;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -17,6 +17,7 @@ import org.xml.sax.InputSource;
 
 import javax.sip.RequestEvent;
 import javax.sip.ResponseEvent;
+import javax.sip.address.URI;
 import javax.sip.header.ExpiresHeader;
 import javax.sip.header.FromHeader;
 import javax.sip.message.Request;
@@ -25,6 +26,8 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.StringReader;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * GB/T 28181 SIP 消息处理器
@@ -38,8 +41,8 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class SipMessageHandler {
 
-    private final VideoDeviceMapper videoDeviceMapper;
-    private final VideoChannelMapper videoChannelMapper;
+    private final VideoDeviceFacade videoDeviceFacade;
+    private final EventPublisher eventPublisher;
 
     /**
      * 处理 REGISTER 请求（设备注册/注销）
@@ -47,30 +50,29 @@ public class SipMessageHandler {
     public void handleRegister(RequestEvent event) {
         Request request = event.getRequest();
         try {
-            FromHeader fromHeader = (FromHeader) request.getHeader(FromHeader.NAME);
-            String deviceId = fromHeader.getAddress().getURI().toString();
-            // 从 SIP URI 提取设备编号 (sip:xxx@domain)
-            if (deviceId.contains(":")) {
-                deviceId = deviceId.substring(deviceId.indexOf(":") + 1);
+            SipIdentity identity = resolveIdentity(request);
+            if (identity.deviceId() == null) {
+                return;
             }
-            if (deviceId.contains("@")) {
-                deviceId = deviceId.substring(0, deviceId.indexOf("@"));
-            }
-
-            // 检查 Expires 头判断注册/注销
             ExpiresHeader expiresHeader = (ExpiresHeader) request.getHeader(ExpiresHeader.NAME);
             boolean isRegister = expiresHeader == null || expiresHeader.getExpires() > 0;
-
-            log.info("GB28181 REGISTER: deviceId={}, isRegister={}", deviceId, isRegister);
-
-            // 更新设备状态
-            LambdaUpdateWrapper<VideoDevice> wrapper = new LambdaUpdateWrapper<>();
-            wrapper.eq(VideoDevice::getGbDeviceId, deviceId)
-                    .set(VideoDevice::getStatus, isRegister ? VideoDeviceStatus.ONLINE : VideoDeviceStatus.OFFLINE);
-            if (isRegister) {
-                wrapper.set(VideoDevice::getLastRegisteredAt, LocalDateTime.now());
+            InternalVideoDeviceVO device = videoDeviceFacade.getByGbIdentity(identity.deviceId(), identity.gbDomain());
+            if (device == null) {
+                log.warn("Ignore REGISTER because video device is missing: gbDeviceId={}, gbDomain={}",
+                        identity.deviceId(), identity.gbDomain());
+                return;
             }
-            videoDeviceMapper.update(null, wrapper);
+            LocalDateTime changedAt = LocalDateTime.now();
+            eventPublisher.publish(
+                    EventTopics.VIDEO_DEVICE_STATUS_CHANGED,
+                    VideoDeviceStatusChangedEvent.of(
+                            device.getTenantId(),
+                            device.getDeviceId(),
+                            isRegister ? "ONLINE" : "OFFLINE",
+                            changedAt,
+                            "firefly-media"
+                    )
+            );
         } catch (Exception e) {
             log.error("Error handling REGISTER: {}", e.getMessage(), e);
         }
@@ -123,11 +125,19 @@ public class SipMessageHandler {
      * 处理目录查询响应 — 解析通道列表
      */
     private void handleCatalogResponse(Document doc) {
-        String deviceId = getElementText(doc, "DeviceID");
+        String gbDeviceId = trimToNull(getElementText(doc, "DeviceID"));
         NodeList itemList = doc.getElementsByTagName("Item");
+        if (gbDeviceId == null) {
+            return;
+        }
 
-        log.info("GB28181 Catalog response: deviceId={}, channelCount={}", deviceId, itemList.getLength());
+        InternalVideoDeviceVO device = videoDeviceFacade.getByGbIdentity(gbDeviceId, null);
+        if (device == null) {
+            log.warn("Ignore Catalog because video device is missing: gbDeviceId={}", gbDeviceId);
+            return;
+        }
 
+        List<VideoChannelsSyncedEvent.ChannelItem> channels = new ArrayList<>();
         for (int i = 0; i < itemList.getLength(); i++) {
             Element item = (Element) itemList.item(i);
             String channelId = getElementText(item, "DeviceID");
@@ -139,64 +149,46 @@ public class SipMessageHandler {
             String longitudeStr = getElementText(item, "Longitude");
             String latitudeStr = getElementText(item, "Latitude");
 
-            if (channelId == null) continue;
-
-            // 查找对应的 video_device
-            LambdaQueryWrapper<VideoDevice> deviceWrapper = new LambdaQueryWrapper<>();
-            deviceWrapper.eq(VideoDevice::getGbDeviceId, deviceId);
-            VideoDevice device = videoDeviceMapper.selectOne(deviceWrapper);
-            if (device == null) {
-                log.warn("GB28181 Catalog: device not found for gbDeviceId={}", deviceId);
+            if (channelId == null) {
                 continue;
             }
 
-            // 更新或插入通道
-            LambdaQueryWrapper<VideoChannel> channelWrapper = new LambdaQueryWrapper<>();
-            channelWrapper.eq(VideoChannel::getVideoDeviceId, device.getId())
-                    .eq(VideoChannel::getChannelId, channelId);
-            VideoChannel channel = videoChannelMapper.selectOne(channelWrapper);
-
-            if (channel == null) {
-                channel = new VideoChannel();
-                channel.setVideoDeviceId(device.getId());
-                channel.setChannelId(channelId);
-            }
-            channel.setName(name);
-            channel.setManufacturer(manufacturer);
-            channel.setModel(model);
-            channel.setStatus("ON".equalsIgnoreCase(statusStr) ? VideoDeviceStatus.ONLINE : VideoDeviceStatus.OFFLINE);
-            if (ptzTypeStr != null) {
-                try { channel.setPtzType(Integer.parseInt(ptzTypeStr)); } catch (NumberFormatException ignored) {}
-            }
-            if (longitudeStr != null) {
-                try { channel.setLongitude(Double.parseDouble(longitudeStr)); } catch (NumberFormatException ignored) {}
-            }
-            if (latitudeStr != null) {
-                try { channel.setLatitude(Double.parseDouble(latitudeStr)); } catch (NumberFormatException ignored) {}
-            }
-
-            if (channel.getId() == null) {
-                videoChannelMapper.insert(channel);
-            } else {
-                videoChannelMapper.updateById(channel);
-            }
+            VideoChannelsSyncedEvent.ChannelItem channel = new VideoChannelsSyncedEvent.ChannelItem();
+            channel.setChannelId(channelId);
+            channel.setName(trimToNull(name));
+            channel.setManufacturer(trimToNull(manufacturer));
+            channel.setModel(trimToNull(model));
+            channel.setStatus(parseChannelStatus(statusStr));
+            channel.setPtzType(parseInteger(ptzTypeStr));
+            channel.setLongitude(parseDouble(longitudeStr));
+            channel.setLatitude(parseDouble(latitudeStr));
+            channel.setOccurredAt(LocalDateTime.now());
+            channels.add(channel);
         }
+
+        eventPublisher.publish(
+                EventTopics.VIDEO_CHANNELS_SYNCED,
+                VideoChannelsSyncedEvent.of(device.getTenantId(), device.getDeviceId(), channels, "firefly-media")
+        );
     }
 
     /**
      * 处理设备心跳
      */
     private void handleKeepalive(Document doc) {
-        String deviceId = getElementText(doc, "DeviceID");
-        log.debug("GB28181 Keepalive: deviceId={}", deviceId);
-
-        if (deviceId != null) {
-            LambdaUpdateWrapper<VideoDevice> wrapper = new LambdaUpdateWrapper<>();
-            wrapper.eq(VideoDevice::getGbDeviceId, deviceId)
-                    .set(VideoDevice::getStatus, VideoDeviceStatus.ONLINE)
-                    .set(VideoDevice::getLastRegisteredAt, LocalDateTime.now());
-            videoDeviceMapper.update(null, wrapper);
+        String gbDeviceId = trimToNull(getElementText(doc, "DeviceID"));
+        if (gbDeviceId == null) {
+            return;
         }
+        InternalVideoDeviceVO device = videoDeviceFacade.getByGbIdentity(gbDeviceId, null);
+        if (device == null) {
+            log.warn("Ignore Keepalive because video device is missing: gbDeviceId={}", gbDeviceId);
+            return;
+        }
+        eventPublisher.publish(
+                EventTopics.VIDEO_DEVICE_STATUS_CHANGED,
+                VideoDeviceStatusChangedEvent.of(device.getTenantId(), device.getDeviceId(), "ONLINE", LocalDateTime.now(), "firefly-media")
+        );
     }
 
     /**
@@ -213,21 +205,32 @@ public class SipMessageHandler {
      * 处理设备信息响应
      */
     private void handleDeviceInfo(Document doc) {
-        String deviceId = getElementText(doc, "DeviceID");
+        String gbDeviceId = trimToNull(getElementText(doc, "DeviceID"));
         String manufacturer = getElementText(doc, "Manufacturer");
         String model = getElementText(doc, "Model");
         String firmware = getElementText(doc, "Firmware");
         log.info("GB28181 DeviceInfo: deviceId={}, manufacturer={}, model={}, firmware={}",
-                deviceId, manufacturer, model, firmware);
+                gbDeviceId, manufacturer, model, firmware);
 
-        if (deviceId != null) {
-            LambdaUpdateWrapper<VideoDevice> wrapper = new LambdaUpdateWrapper<>();
-            wrapper.eq(VideoDevice::getGbDeviceId, deviceId);
-            if (manufacturer != null) wrapper.set(VideoDevice::getManufacturer, manufacturer);
-            if (model != null) wrapper.set(VideoDevice::getModel, model);
-            if (firmware != null) wrapper.set(VideoDevice::getFirmware, firmware);
-            videoDeviceMapper.update(null, wrapper);
+        if (gbDeviceId == null) {
+            return;
         }
+        InternalVideoDeviceVO device = videoDeviceFacade.getByGbIdentity(gbDeviceId, null);
+        if (device == null) {
+            log.warn("Ignore DeviceInfo because video device is missing: gbDeviceId={}", gbDeviceId);
+            return;
+        }
+        eventPublisher.publish(
+                EventTopics.VIDEO_DEVICE_INFO_SYNCED,
+                VideoDeviceInfoSyncedEvent.of(
+                        device.getTenantId(),
+                        device.getDeviceId(),
+                        trimToNull(manufacturer),
+                        trimToNull(model),
+                        trimToNull(firmware),
+                        "firefly-media"
+                )
+        );
     }
 
     /**
@@ -273,5 +276,66 @@ public class SipMessageHandler {
             return nodes.item(0).getTextContent();
         }
         return null;
+    }
+
+    private SipIdentity resolveIdentity(Request request) {
+        FromHeader fromHeader = (FromHeader) request.getHeader(FromHeader.NAME);
+        if (fromHeader == null || fromHeader.getAddress() == null) {
+            return new SipIdentity(null, null);
+        }
+        URI uri = fromHeader.getAddress().getURI();
+        if (uri == null) {
+            return new SipIdentity(null, null);
+        }
+        String raw = uri.toString();
+        String deviceId = raw;
+        if (deviceId.contains(":")) {
+            deviceId = deviceId.substring(deviceId.indexOf(':') + 1);
+        }
+        String gbDomain = null;
+        if (deviceId.contains("@")) {
+            gbDomain = deviceId.substring(deviceId.indexOf('@') + 1);
+            deviceId = deviceId.substring(0, deviceId.indexOf('@'));
+        }
+        return new SipIdentity(trimToNull(deviceId), trimToNull(gbDomain));
+    }
+
+    private String parseChannelStatus(String value) {
+        return "ON".equalsIgnoreCase(trimToNull(value)) ? "ONLINE" : "OFFLINE";
+    }
+
+    private Integer parseInteger(String value) {
+        String normalized = trimToNull(value);
+        if (normalized == null) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(normalized);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private Double parseDouble(String value) {
+        String normalized = trimToNull(value);
+        if (normalized == null) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(normalized);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private record SipIdentity(String deviceId, String gbDomain) {
     }
 }

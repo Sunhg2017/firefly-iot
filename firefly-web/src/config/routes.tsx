@@ -37,7 +37,6 @@ import {
   ThunderboltOutlined,
   ToolOutlined,
   UsbOutlined,
-  VideoCameraOutlined,
 } from '@ant-design/icons';
 import { ALARM_TEXT } from '../pages/alarm/alarmText';
 
@@ -184,7 +183,6 @@ const routeConfigs: RouteEntry[] = [
     children: [
       { path: '/device', label: '设备管理', icon: <HddOutlined />, permission: 'device:read', workspace: 'tenant' },
       { path: '/device-topology', label: '设备拓扑', icon: <ApartmentOutlined />, permission: 'device:read', workspace: 'tenant' },
-      { path: '/video', label: '视频监控', icon: <VideoCameraOutlined />, permission: 'video:read', workspace: 'tenant' },
       { path: '/device-group', label: '设备分组', icon: <GroupOutlined />, permission: 'device-group:read', workspace: 'tenant' },
       { path: '/device-tag', label: '设备标签', icon: <TagOutlined />, permission: 'device-tag:read', workspace: 'tenant' },
       { path: '/geo-fence', label: '地理围栏', icon: <AimOutlined />, permission: 'geo-fence:read', workspace: 'tenant' },

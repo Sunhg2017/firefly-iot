@@ -80,7 +80,7 @@ async function findExistingVideoDevice(device: SimDevice) {
     return null;
   }
 
-  const result = await window.electronAPI.videoListDevices(
+  const result = await window.electronAPI.deviceVideoList(
     videoApiContext.baseUrl,
     {
       pageNum: 1,
@@ -91,7 +91,7 @@ async function findExistingVideoDevice(device: SimDevice) {
     videoApiContext.accessToken,
   );
   if (!isVideoBizSuccess(result)) {
-    throw new Error(extractVideoResultMessage(result, '查询平台视频设备失败'));
+    throw new Error(extractVideoResultMessage(result, '查询平台设备资产失败'));
   }
 
   const records = Array.isArray(result.data?.data?.records) ? result.data.data.records : [];
@@ -107,27 +107,27 @@ async function syncVideoDevice(device: SimDevice) {
   const createPayload = buildVideoCreatePayload(device);
   const updatePayload = buildVideoUpdatePayload(device);
 
-  if (device.videoDeviceId) {
-    const detail = await window.electronAPI.videoGetDevice(
+  if (device.platformDeviceId) {
+    const detail = await window.electronAPI.deviceVideoGet(
       videoApiContext.baseUrl,
-      device.videoDeviceId,
+      device.platformDeviceId,
       videoApiContext.accessToken,
     );
     if (isVideoBizSuccess(detail)) {
-      const updateResult = await window.electronAPI.videoUpdateDevice(
+      const updateResult = await window.electronAPI.deviceVideoUpdate(
         videoApiContext.baseUrl,
-        device.videoDeviceId,
+        device.platformDeviceId,
         updatePayload,
         videoApiContext.accessToken,
       );
       if (!isVideoBizSuccess(updateResult)) {
-        throw new Error(extractVideoResultMessage(updateResult, '更新平台视频设备失败'));
+        throw new Error(extractVideoResultMessage(updateResult, '更新平台设备资产失败'));
       }
-      return { id: device.videoDeviceId, reused: true };
+      return { id: device.platformDeviceId, reused: true };
     }
   }
 
-  const createResult = await window.electronAPI.videoCreateDevice(
+  const createResult = await window.electronAPI.deviceVideoCreate(
     videoApiContext.baseUrl,
     createPayload,
     videoApiContext.accessToken,
@@ -136,7 +136,7 @@ async function syncVideoDevice(device: SimDevice) {
     return { id: Number(createResult.data.data.id), reused: false };
   }
 
-  const createMessage = extractVideoResultMessage(createResult, '创建平台视频设备失败');
+  const createMessage = extractVideoResultMessage(createResult, '创建设备资产失败');
   if (!createMessage.includes('已存在')) {
     throw new Error(createMessage);
   }
@@ -146,14 +146,14 @@ async function syncVideoDevice(device: SimDevice) {
     throw new Error(createMessage);
   }
 
-  const updateResult = await window.electronAPI.videoUpdateDevice(
+  const updateResult = await window.electronAPI.deviceVideoUpdate(
     videoApiContext.baseUrl,
     Number(existing.id),
     updatePayload,
     videoApiContext.accessToken,
   );
   if (!isVideoBizSuccess(updateResult)) {
-    throw new Error(extractVideoResultMessage(updateResult, '更新已存在视频设备失败'));
+        throw new Error(extractVideoResultMessage(updateResult, '更新已存在设备资产失败'));
   }
   return { id: Number(existing.id), reused: true };
 }
@@ -373,7 +373,7 @@ export async function connectSimDevice(
       const synced = await syncVideoDevice(device);
       store.updateDevice(device.id, {
         status: 'online',
-        videoDeviceId: synced.id,
+        platformDeviceId: synced.id,
         restoreOnLaunch: false,
       });
       if (!options?.silent) {
@@ -381,7 +381,7 @@ export async function connectSimDevice(
           device.id,
           device.name,
           'success',
-          synced.reused ? `Video device synced: ${synced.id}` : `Video device created: ${synced.id}`,
+          synced.reused ? `视频设备资产已同步: ${synced.id}` : `视频设备资产已创建: ${synced.id}`,
         );
       }
       return { success: true };
@@ -513,12 +513,12 @@ export async function disconnectSimDevice(deviceId: string, options?: { silent?:
     if (device.protocol === 'UDP') {
       await window.electronAPI.udpDisconnect(device.id);
     }
-    if (device.protocol === 'Video' && device.videoDeviceId) {
+    if (device.protocol === 'Video' && device.platformDeviceId) {
       const videoApiContext = getActiveVideoApiContext();
       if (videoApiContext) {
-        await window.electronAPI.videoStopStream(
+        await window.electronAPI.videoControlStopStream(
           videoApiContext.baseUrl,
-          device.videoDeviceId,
+          device.platformDeviceId,
           videoApiContext.accessToken,
         );
       }

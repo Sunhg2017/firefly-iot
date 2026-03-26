@@ -70,7 +70,7 @@ export interface SimDevice {
   gbDomain: string;
   sourceUrl: string;
   streamUrl: string;
-  videoDeviceId: number | null;
+  platformDeviceId: number | null;
   ip: string;
   manufacturer: string;
   model: string;
@@ -211,6 +211,7 @@ function normalizePersistedDevice(device: SimDevice | (SimDevice & { mediaBaseUr
   const { mediaBaseUrl: _mediaBaseUrl, ...normalized } = device as SimDevice & { mediaBaseUrl?: string };
   return {
     ...normalized,
+    platformDeviceId: normalized.platformDeviceId ?? null,
     status: normalized.restoreOnLaunch ? 'connecting' as DeviceStatus : 'offline' as DeviceStatus,
     token: '',
     autoReport: false,
@@ -435,7 +436,7 @@ export const useSimStore = create<SimulatorState>()(
       gbDomain: draft.gbDomain || '3402000000',
       sourceUrl: draft.sourceUrl || draft.rtspUrl || '',
       streamUrl: draft.streamUrl || '',
-      videoDeviceId: draft.videoDeviceId || null,
+      platformDeviceId: draft.platformDeviceId || null,
       ip: draft.ip || '',
       manufacturer: draft.manufacturer || '',
       model: draft.model || '',

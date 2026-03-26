@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.device.mapper.DeviceVideoProfileMapper">
+
+    <select id="selectByDeviceIdIgnoreTenant" resultType="com.songhg.firefly.iot.device.entity.DeviceVideoProfile">
+        SELECT *
+        FROM device_video_profiles
+        WHERE device_id = #{deviceId}
+        LIMIT 1
+    </select>
+
+    <select id="selectByGbIdentityIgnoreTenant" resultType="com.songhg.firefly.iot.device.entity.DeviceVideoProfile">
+        SELECT *
+        FROM device_video_profiles
+        WHERE gb_device_id = #{gbDeviceId}
+        <if test="gbDomain != null and gbDomain != ''">
+            AND (gb_domain = #{gbDomain} OR gb_domain IS NULL OR gb_domain = '')
+        </if>
+        ORDER BY CASE WHEN gb_domain = #{gbDomain} THEN 0 ELSE 1 END, device_id
+        LIMIT 1
+    </select>
+
+</mapper>

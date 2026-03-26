@@ -38,4 +38,7 @@ public class DeviceQueryDTO extends PageQuery {
     /** Filter by online status (ONLINE / OFFLINE) */
     @Schema(description = "在线状态筛选")
     private OnlineStatus onlineStatus;
+
+    @Schema(description = "是否排除视频设备")
+    private Boolean excludeVideo;
 }

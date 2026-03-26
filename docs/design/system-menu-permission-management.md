@@ -1,204 +1,45 @@
-# 系统菜单权限管理设计方案
+# 系统菜单权限台账设计
 
-## 背景
+## 1. 目标
 
-原有菜单、空间归属和角色可分配权限之间长期靠前后端硬编码维持，存在三个核心问题：
+- 菜单结构、权限目录、Flyway 台账保持一致。
+- 视频设备并入 `device` 菜单后，不再保留独立 `video` 菜单记录。
 
-1. 系统运维侧无法把“菜单树”“租户空间授权”“角色权限目录”放在同一个正式配置源里维护。
-2. 某些页面即使已经从租户空间授权里取消，用户仍然可能因为权限码复用而直接访问页面。
-3. 旧的平面目录接口和页面台账与真实运行时菜单树脱节，新增功能时很容易漏改。
+## 2. 当前口径
 
-## 目标
+### 2.1 菜单
 
-1. 引入一套正式的菜单目录模型，统一维护平台空间和租户业务空间的基础菜单树。
-2. 每个菜单节点显式维护可绑定的权限集合，角色授权目录直接基于该配置生成。
-3. 租户空间授权不再维护“页面路径快照”，而是维护授权菜单键集合。
-4. 运行时页面访问同时受权限码和租户菜单授权约束，避免“菜单已取消但还能直达页面”。
-5. 删除旧的平面目录接口与旧文档，避免继续保留双轨实现。
+- 租户空间保留 `device` 菜单
+- 删除租户空间独立 `video` 菜单
 
-## 范围
+### 2.2 权限
 
-本次变更覆盖：
+`device` 菜单下统一维护：
 
-1. `firefly-system` 的菜单目录模型、租户菜单授权模型、角色权限目录生成链路、登录用户授权菜单路径输出。
-2. `firefly-web` 的系统菜单权限管理页面、平台/租户菜单展示、运行时菜单访问控制。
-3. Flyway 迁移 `V24__rebuild_workspace_menu_catalog.sql`、`V33__backfill_device_assets_menu_icon.sql` 与 `V34__move_video_menu_to_device_assets.sql`。
+- `device:create`
+- `device:read`
+- `device:update`
+- `device:delete`
+- `device:control`
+- `device:debug`
+- `device:import`
+- `device:export`
+- `video:read`
+- `video:stream`
+- `video:ptz`
+- `video:record`
 
-## 数据模型
+## 3. 迁移要求
 
-### `workspace_menu_catalog`
+必须执行：
 
-用于维护基础菜单树。
+- `V24__rebuild_workspace_menu_catalog.sql`
+- `V33__backfill_device_assets_menu_icon.sql`
+- `V35__converge_video_permissions_to_device_menu.sql`
 
-关键字段：
+其中 `V35` 负责：
 
-1. `workspace_scope`
-   - `PLATFORM`
-   - `TENANT`
-2. `menu_key`
-   - 菜单业务唯一键，是菜单授权、权限绑定和运行时访问的统一标识。
-3. `parent_menu_key`
-   - 父级菜单键，构建树结构。
-4. `label`
-   - 菜单显示名称。
-5. `icon`
-   - 菜单图标名称；新增菜单时必填，且必须能被前端 `iconMap` 解析。
-6. `route_path`
-   - 前端路由；为空时代表目录节点。
-7. `menu_type`
-   - `GROUP` 或 `PAGE`。
-8. `visible`
-   - 是否在菜单中显示。
-9. `role_catalog_visible`
-   - 是否进入角色授权目录。
-
-### `workspace_menu_permission_catalog`
-
-用于维护菜单与权限点的绑定关系。
-
-关键字段：
-
-1. `workspace_scope`
-2. `menu_key`
-3. `permission_code`
-4. `permission_label`
-5. `permission_sort_order`
-
-唯一键：
-
-1. `workspace_scope + menu_key + permission_code`
-
-### `tenant_menu_configs`
-
-用于维护租户已授权菜单键集合。
-
-关键字段：
-
-1. `tenant_id`
-2. `menu_key`
-
-说明：
-
-1. 不再保存菜单路径。
-2. 只保存租户当前可用的页面菜单键集合。
-
-## 后端链路
-
-### 菜单目录服务
-
-`WorkspaceMenuCatalogService` 负责：
-
-1. 查询基础菜单树。
-2. 查询菜单绑定权限。
-3. 创建、编辑、删除菜单节点。
-4. 替换菜单权限集合。
-5. 计算某个空间可见路由。
-
-### 系统菜单权限管理服务
-
-`SystemMenuPermissionService` 负责：
-
-1. 对系统运维用户开放菜单树管理入口。
-2. 在菜单变更后同步收敛角色权限范围。
-3. 删除租户菜单节点时同步清理租户菜单授权记录。
-
-### 租户空间授权服务
-
-`TenantWorkspaceMenuService` 负责：
-
-1. 维护租户已授权菜单键集合。
-2. 为租户空间授权抽屉返回菜单树和已选菜单键。
-3. 计算租户实际可访问的前端路由路径集合。
-
-### 角色权限目录
-
-`WorkspacePermissionCatalogService` 不再读取旧平面台账，而是：
-
-1. 基于 `workspace_menu_catalog + workspace_menu_permission_catalog` 生成角色权限目录。
-2. 平台空间直接使用平台菜单树。
-3. 租户空间先用 `tenant_menu_configs` 过滤，再生成角色可分配权限。
-
-### 登录态与页面访问
-
-`WorkspaceMenuAccessService` 会为当前用户计算 `authorizedMenuPaths`：
-
-1. 平台用户取平台空间全部可见路由。
-2. 租户用户取当前租户已授权菜单所对应的可见路由。
-
-前端运行时访问规则：
-
-1. 必须满足页面权限码。
-2. 必须满足 `authorizedMenuPaths`。
-
-## 前端设计
-
-### 页面入口
-
-平台空间新增独立菜单：
-
-1. 菜单组：`用户与权限`
-2. 菜单项：`系统菜单权限`
-
-### 页面结构
-
-系统菜单权限页面采用“左树右详情 + 抽屉步骤表单”：
-
-1. 顶部页签切换 `PLATFORM` / `TENANT`。
-2. 左侧展示基础菜单树。
-3. 右侧展示当前菜单详情和权限集合。
-4. 新建、编辑统一使用抽屉。
-
-### 抽屉步骤
-
-复杂表单遵循仓库强制规则，拆为两步：
-
-1. 菜单信息
-   - 所属空间
-   - 父级目录
-   - 菜单键
-   - 菜单名称
-   - 图标
-   - 路由
-   - 排序
-   - 显示
-   - 角色目录展示
-2. 权限集合
-   - 仅页面节点可配置权限。
-   - 目录节点直接提示无需配置权限。
-
-## 关键约束
-
-1. 一个菜单只能属于一个空间，不再使用任何“共享空间”兜底字段。
-2. 新增和编辑菜单时必须显式维护 `icon`，并且该图标名必须已经注册到前端 `iconMap`，否则运行时菜单无法渲染图标。
-3. 目录节点不能绑定权限。
-4. 页面节点不能再拥有子菜单。
-5. 菜单删除会级联删除子树权限绑定，并同步删除租户授权记录。
-6. 不再保留旧平面目录接口和只读页面台账。
-
-## 初始化数据
-
-相关 Flyway 迁移会写入或修正：
-
-1. 平台空间基础菜单树。
-2. 租户业务空间基础菜单树。
-3. 菜单权限绑定种子。
-4. 权限资源：
-   - `workspace-menu:read`
-   - `workspace-menu:update`
-5. 系统运维超级管理员默认授权。
-6. 历史库中 `TENANT/tenant-device-assets` 菜单图标回填为 `HddOutlined`。
-7. 历史库中 `TENANT/video` 菜单父级迁移到 `tenant-device-assets`，并修正仍指向旧父级的租户菜单自定义记录。
-
-## 风险与取舍
-
-### 直接重构，不做旧兼容
-
-本项目当前未正式启用，因此本次直接按最优模型重建：
-
-1. 旧的租户菜单快照逻辑全部废弃。
-2. 旧平面目录接口删除。
-3. 如历史库中已有脏数据，建议在上线前清理数据库后重新跑迁移。
-
-### 访问约束收紧
-
-新增 `authorizedMenuPaths` 后，原先只靠权限码兜底访问的行为会被禁止。这是预期行为，因为菜单授权现在是正式约束，而不是仅影响左侧显示。
+- 删除 `workspace_menu_catalog` 中的 `TENANT/video`
+- 删除 `workspace_menu_permission_catalog` 中 `video` 菜单旧绑定
+- 清理 `workspace_menu_customizations` 和 `tenant_menu_configs` 中的旧 `video` 数据
+- 将视频控制权限挂到 `device` 菜单下

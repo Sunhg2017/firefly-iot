@@ -34,6 +34,8 @@ import com.songhg.firefly.iot.device.dto.devicetag.DeviceTagVO;
 import com.songhg.firefly.iot.device.entity.Device;
 import com.songhg.firefly.iot.device.entity.Product;
 import com.songhg.firefly.iot.device.mapper.DeviceMapper;
+import com.songhg.firefly.iot.device.mapper.DeviceVideoChannelMapper;
+import com.songhg.firefly.iot.device.mapper.DeviceVideoProfileMapper;
 import com.songhg.firefly.iot.device.mapper.ProductMapper;
 import com.songhg.firefly.iot.device.protocolparser.service.DeviceLocatorService;
 import lombok.RequiredArgsConstructor;
@@ -71,6 +73,8 @@ public class DeviceService {
     private final DeviceLocatorService deviceLocatorService;
     private final DeviceTagService deviceTagService;
     private final DeviceGroupService deviceGroupService;
+    private final DeviceVideoProfileMapper deviceVideoProfileMapper;
+    private final DeviceVideoChannelMapper deviceVideoChannelMapper;
 
     @Transactional
     public DeviceCredentialVO createDevice(DeviceCreateDTO dto) {
@@ -314,6 +318,9 @@ public class DeviceService {
         deviceLocatorService.deleteByDeviceId(device.getId());
         deviceTagService.removeDeviceBindings(device.getId());
         deviceGroupService.removeDeviceMemberships(device.getId());
+        deviceVideoChannelMapper.delete(new LambdaQueryWrapper<com.songhg.firefly.iot.device.entity.DeviceVideoChannel>()
+                .eq(com.songhg.firefly.iot.device.entity.DeviceVideoChannel::getDeviceId, device.getId()));
+        deviceVideoProfileMapper.deleteById(device.getId());
         device.setOnlineStatus(OnlineStatus.OFFLINE);
 
         // Device uses MyBatis-Plus logical delete on deletedAt.
@@ -889,6 +896,17 @@ public class DeviceService {
         LambdaQueryWrapper<Device> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Device::getTenantId, tenantId);
         wrapper.isNull(Device::getDeletedAt);
+        if (Boolean.TRUE.equals(query.getExcludeVideo())) {
+            List<Long> videoDeviceIds = deviceVideoProfileMapper.selectList(new LambdaQueryWrapper<com.songhg.firefly.iot.device.entity.DeviceVideoProfile>()
+                            .eq(com.songhg.firefly.iot.device.entity.DeviceVideoProfile::getTenantId, tenantId))
+                    .stream()
+                    .map(com.songhg.firefly.iot.device.entity.DeviceVideoProfile::getDeviceId)
+                    .filter(Objects::nonNull)
+                    .toList();
+            if (!videoDeviceIds.isEmpty()) {
+                wrapper.notIn(Device::getId, videoDeviceIds);
+            }
+        }
         if (query.getKeyword() != null && !query.getKeyword().isBlank()) {
             wrapper.and(w -> w.like(Device::getDeviceName, query.getKeyword())
                     .or().like(Device::getNickname, query.getKeyword()));

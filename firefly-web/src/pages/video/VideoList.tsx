@@ -28,21 +28,26 @@ import {
   PauseCircleOutlined,
   PlayCircleOutlined,
   PlusOutlined,
+  ReloadOutlined,
   UnorderedListOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
-import { productApi, videoApi } from '../../services/api';
+import { deviceVideoApi, productApi, videoControlApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 import VideoPlayer from '../../components/video/VideoPlayer';
 import PtzControlPanel from '../../components/video/PtzControlPanel';
 
 type EditorMode = 'create' | 'edit';
+interface VideoListProps { embedded?: boolean; }
 
 interface VideoDeviceRecord {
   id: number;
+  productKey?: string;
+  productName?: string;
   name: string;
+  deviceName?: string;
   gbDeviceId?: string;
   gbDomain?: string;
   transport?: string;
@@ -50,10 +55,12 @@ interface VideoDeviceRecord {
   sipAuthEnabled?: boolean;
   ip?: string;
   port?: number;
+  sourceUrl?: string;
   manufacturer?: string;
   model?: string;
   firmware?: string;
   status: string;
+  lastRegisteredAt?: string;
   createdAt: string;
 }
 
@@ -61,6 +68,21 @@ interface StreamInfo {
   flvUrl: string;
   hlsUrl: string;
   webrtcUrl: string;
+}
+
+interface VideoChannelRecord {
+  id: number;
+  deviceId: number;
+  channelId: string;
+  name?: string;
+  manufacturer?: string;
+  model?: string;
+  status?: string;
+  ptzType?: number;
+  subCount?: number;
+  longitude?: number;
+  latitude?: number;
+  createdAt?: string;
 }
 
 interface VideoProductContext {
@@ -89,8 +111,10 @@ interface VideoEditorFormValues {
   sipPassword?: string;
   ip?: string;
   port?: number | string;
+  sourceUrl?: string;
   manufacturer?: string;
   model?: string;
+  firmware?: string;
 }
 
 interface VideoListFilters {
@@ -192,8 +216,10 @@ const buildEditorInitialValues = (
       sipPassword: undefined,
       ip: device.ip,
       port: device.port,
+      sourceUrl: device.sourceUrl,
       manufacturer: device.manufacturer,
       model: device.model,
+      firmware: device.firmware,
     };
   }
 
@@ -220,12 +246,14 @@ const buildEditorPayload = (values: VideoEditorFormValues) => {
     sipPassword: sipAuthEnabled ? trimOptionalValue(values.sipPassword) : undefined,
     ip: trimOptionalValue(values.ip),
     port: normalizeOptionalPort(values.port),
+    sourceUrl: trimOptionalValue(values.sourceUrl),
     manufacturer: trimOptionalValue(values.manufacturer),
     model: trimOptionalValue(values.model),
+    firmware: trimOptionalValue(values.firmware),
   };
 };
 
-const VideoList: React.FC = () => {
+const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const productContext = useMemo(() => parseVideoProductContext(searchParams), [searchParams]);
   const [data, setData] = useState<VideoDeviceRecord[]>([]);
@@ -247,8 +275,15 @@ const VideoList: React.FC = () => {
 
   const [playerOpen, setPlayerOpen] = useState(false);
   const [playerDevice, setPlayerDevice] = useState<VideoDeviceRecord | null>(null);
+  const [playerChannel, setPlayerChannel] = useState<VideoChannelRecord | null>(null);
   const [streamInfo, setStreamInfo] = useState<StreamInfo | null>(null);
   const [playerLoading, setPlayerLoading] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordingLoading, setRecordingLoading] = useState(false);
+  const [channelDrawerOpen, setChannelDrawerOpen] = useState(false);
+  const [channelDevice, setChannelDevice] = useState<VideoDeviceRecord | null>(null);
+  const [channelLoading, setChannelLoading] = useState(false);
+  const [channels, setChannels] = useState<VideoChannelRecord[]>([]);
   const selectedEditorProduct = useMemo(
     () => productOptions.find((item) => item.productKey === currentEditorProductKey),
     [currentEditorProductKey, productOptions],
@@ -281,7 +316,7 @@ const VideoList: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await videoApi.list({
+      const res = await deviceVideoApi.list({
         ...params,
         keyword: filters.keyword || undefined,
         streamMode: filters.streamMode,
@@ -374,7 +409,7 @@ const VideoList: React.FC = () => {
   const openEditDrawer = async (record: VideoDeviceRecord) => {
     setEditorLoading(true);
     try {
-      const res = await videoApi.get(record.id);
+      const res = await deviceVideoApi.get(record.id);
       const detail = unwrapBusinessResponse<VideoDeviceRecord>(res, '加载视频设备详情失败');
       setEditorMode('edit');
       setEditingDevice(detail);
@@ -405,11 +440,11 @@ const VideoList: React.FC = () => {
     setEditorLoading(true);
     try {
       if (editorMode === 'edit' && editingDevice) {
-        const response = await videoApi.update(editingDevice.id, buildEditorPayload(values));
+        const response = await deviceVideoApi.update(editingDevice.id, buildEditorPayload(values));
         unwrapBusinessResponse(response, '视频设备更新失败');
         message.success('视频设备更新成功');
       } else {
-        const response = await videoApi.create(buildEditorPayload(values));
+        const response = await deviceVideoApi.create(buildEditorPayload(values));
         unwrapBusinessResponse(response, '视频设备创建失败');
         setParams((current) => ({ ...current, pageNum: 1 }));
         message.success('视频设备创建成功');
@@ -428,7 +463,7 @@ const VideoList: React.FC = () => {
       title: '确认删除视频设备？',
       content: `删除「${record.name}」？关联的通道和流会话将一并删除。`,
       onOk: async () => {
-        const response = await videoApi.delete(record.id);
+        const response = await deviceVideoApi.delete(record.id);
         unwrapBusinessResponse(response, '删除视频设备失败');
         message.success('删除成功');
         void fetchData();
@@ -436,13 +471,38 @@ const VideoList: React.FC = () => {
     });
   };
 
-  const handlePlay = async (record: VideoDeviceRecord) => {
+  const loadChannels = async (record: VideoDeviceRecord) => {
+    setChannelLoading(true);
+    try {
+      const response = await deviceVideoApi.channels(record.id);
+      const records = unwrapBusinessResponse<VideoChannelRecord[]>(response, '加载视频通道失败');
+      setChannels(records || []);
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载视频通道失败'));
+    } finally {
+      setChannelLoading(false);
+    }
+  };
+
+  const handleOpenChannels = async (record: VideoDeviceRecord) => {
+    setChannelDevice(record);
+    setChannels([]);
+    setChannelDrawerOpen(true);
+    await loadChannels(record);
+  };
+
+  const handlePlay = async (record: VideoDeviceRecord, channel?: VideoChannelRecord) => {
     setPlayerDevice(record);
+    setPlayerChannel(channel || null);
     setPlayerOpen(true);
     setPlayerLoading(true);
+    setRecording(false);
     setStreamInfo(null);
     try {
-      const res = await videoApi.startStream(record.id);
+      const res = await videoControlApi.startStream(
+        record.id,
+        channel?.channelId ? { channelId: channel.channelId } : undefined,
+      );
       const session = unwrapBusinessResponse<StreamInfo>(res, '启动视频流失败');
       setStreamInfo({ flvUrl: session.flvUrl, hlsUrl: session.hlsUrl, webrtcUrl: session.webrtcUrl });
     } catch (error) {
@@ -457,9 +517,10 @@ const VideoList: React.FC = () => {
       return;
     }
     try {
-      const response = await videoApi.stopStream(playerDevice.id);
+      const response = await videoControlApi.stopStream(playerDevice.id);
       unwrapBusinessResponse(response, '停止视频流失败');
       message.success('视频流已停止');
+      setRecording(false);
       setStreamInfo(null);
     } catch (error) {
       message.error(getErrorMessage(error, '停止视频流失败'));
@@ -469,15 +530,17 @@ const VideoList: React.FC = () => {
   const handleClosePlayer = async () => {
     if (playerDevice && streamInfo) {
       try {
-        const response = await videoApi.stopStream(playerDevice.id);
+        const response = await videoControlApi.stopStream(playerDevice.id);
         unwrapBusinessResponse(response, '停止视频流失败');
       } catch {
         // ignore close cleanup failure
       }
     }
     setPlayerOpen(false);
+    setRecording(false);
     setStreamInfo(null);
     setPlayerDevice(null);
+    setPlayerChannel(null);
   };
 
   const handleSnapshot = async () => {
@@ -485,10 +548,10 @@ const VideoList: React.FC = () => {
       return;
     }
     try {
-      const res = await videoApi.snapshot(playerDevice.id);
+      const res = await videoControlApi.snapshot(playerDevice.id);
       const data = unwrapBusinessResponse<{ imageUrl?: string }>(res, '截图失败');
       const url = data?.imageUrl;
-      if (url && url !== 'snapshot_failed' && url !== 'no_active_stream') {
+      if (url) {
         message.success('截图成功');
         Modal.info({
           title: '截图',
@@ -508,18 +571,61 @@ const VideoList: React.FC = () => {
       return;
     }
     try {
-      const response = await videoApi.ptz(playerDevice.id, { command: ptzCmdMap[command] || 'STOP', speed });
+      const response = await videoControlApi.ptz(playerDevice.id, {
+        channelId: playerChannel?.channelId,
+        command: ptzCmdMap[command] || 'STOP',
+        speed,
+      });
       unwrapBusinessResponse(response, 'PTZ 控制失败');
     } catch (error) {
       message.error(getErrorMessage(error, 'PTZ 控制失败'));
     }
   };
 
+  const handleStartRecording = async () => {
+    if (!playerDevice) {
+      return;
+    }
+    setRecordingLoading(true);
+    try {
+      const response = await videoControlApi.startRecording(playerDevice.id);
+      unwrapBusinessResponse(response, '开始录像失败');
+      setRecording(true);
+      message.success('已开始录像');
+    } catch (error) {
+      message.error(getErrorMessage(error, '开始录像失败'));
+    } finally {
+      setRecordingLoading(false);
+    }
+  };
+
+  const handleStopRecording = async () => {
+    if (!playerDevice) {
+      return;
+    }
+    setRecordingLoading(true);
+    try {
+      const response = await videoControlApi.stopRecording(playerDevice.id);
+      unwrapBusinessResponse(response, '停止录像失败');
+      setRecording(false);
+      message.success('已停止录像');
+    } catch (error) {
+      message.error(getErrorMessage(error, '停止录像失败'));
+    } finally {
+      setRecordingLoading(false);
+    }
+  };
+
   const handleQueryCatalog = async (record: VideoDeviceRecord) => {
     try {
-      const response = await videoApi.queryCatalog(record.id);
+      const response = await videoControlApi.queryCatalog(record.id);
       unwrapBusinessResponse(response, '目录查询失败');
-      message.success('目录查询指令已发送，通道列表将自动更新');
+      message.success('目录查询指令已发送');
+      if (channelDevice?.id === record.id) {
+        window.setTimeout(() => {
+          void loadChannels(record);
+        }, 1500);
+      }
     } catch (error) {
       message.error(getErrorMessage(error, '目录查询失败'));
     }
@@ -527,7 +633,7 @@ const VideoList: React.FC = () => {
 
   const handleQueryDeviceInfo = async (record: VideoDeviceRecord) => {
     try {
-      const response = await videoApi.queryDeviceInfo(record.id);
+      const response = await videoControlApi.queryDeviceInfo(record.id);
       unwrapBusinessResponse(response, '设备信息查询失败');
       message.success('设备信息查询指令已发送');
     } catch (error) {
@@ -536,6 +642,13 @@ const VideoList: React.FC = () => {
   };
 
   const columns: ColumnsType<VideoDeviceRecord> = [
+    {
+      title: '产品',
+      dataIndex: 'productName',
+      width: 180,
+      ellipsis: true,
+      render: (_: string, record: VideoDeviceRecord) => record.productName || record.productKey || '-',
+    },
     { title: '设备名称', dataIndex: 'name', width: 180, ellipsis: true },
     {
       title: '接入方式',
@@ -555,24 +668,27 @@ const VideoList: React.FC = () => {
     { title: '创建时间', dataIndex: 'createdAt', width: 170 },
     {
       title: '操作',
-      width: 420,
+      width: 500,
       fixed: 'right',
       render: (_: unknown, record: VideoDeviceRecord) => (
         <Space>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => void openEditDrawer(record)}>
             编辑
           </Button>
+          <Button type="link" size="small" icon={<UnorderedListOutlined />} onClick={() => void handleOpenChannels(record)}>
+            通道
+          </Button>
           {record.status === 'ONLINE' ? (
-            <Button type="link" size="small" icon={<PlayCircleOutlined />} onClick={() => handlePlay(record)}>
+            <Button type="link" size="small" icon={<PlayCircleOutlined />} onClick={() => void handlePlay(record)}>
               播放
             </Button>
           ) : null}
           {record.streamMode === 'GB28181' && record.status === 'ONLINE' ? (
             <>
-              <Button type="link" size="small" icon={<UnorderedListOutlined />} onClick={() => handleQueryCatalog(record)}>
+              <Button type="link" size="small" icon={<ReloadOutlined />} onClick={() => void handleQueryCatalog(record)}>
                 目录
               </Button>
-              <Button type="link" size="small" icon={<InfoCircleOutlined />} onClick={() => handleQueryDeviceInfo(record)}>
+              <Button type="link" size="small" icon={<InfoCircleOutlined />} onClick={() => void handleQueryDeviceInfo(record)}>
                 信息
               </Button>
             </>
@@ -588,7 +704,7 @@ const VideoList: React.FC = () => {
   return (
     <div>
       <PageHeader
-        title="视频监控"
+        title="视频设备"
         description={`共 ${total} 台视频设备，${stats.online} 台在线`}
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreateDrawer}>
@@ -712,7 +828,7 @@ const VideoList: React.FC = () => {
           columns={columns}
           dataSource={data}
           loading={loading}
-          scroll={{ x: 1460 }}
+          scroll={{ x: 1640 }}
           pagination={{
             current: params.pageNum,
             pageSize: params.pageSize,
@@ -815,7 +931,11 @@ const VideoList: React.FC = () => {
               <>
                 <Row gutter={16}>
                   <Col xs={24} md={12}>
-                    <Form.Item name="gbDeviceId" label="GB 设备编号">
+                    <Form.Item
+                      name="gbDeviceId"
+                      label="GB 设备编号"
+                      rules={[{ required: true, message: '请输入 GB 设备编号' }]}
+                    >
                       <Input placeholder="20 位国标编号" maxLength={64} />
                     </Form.Item>
                   </Col>
@@ -885,6 +1005,12 @@ const VideoList: React.FC = () => {
               </Col>
             </Row>
 
+            {currentEditorStreamMode !== 'GB28181' ? (
+              <Form.Item name="sourceUrl" label="视频源地址">
+                <Input placeholder="如：rtsp://host:554/live" maxLength={1024} />
+              </Form.Item>
+            ) : null}
+
             <Row gutter={16}>
               <Col xs={24} md={12}>
                 <Form.Item name="manufacturer" label="厂商">
@@ -897,12 +1023,76 @@ const VideoList: React.FC = () => {
                 </Form.Item>
               </Col>
             </Row>
+
+            <Form.Item name="firmware" label="固件版本">
+              <Input maxLength={64} />
+            </Form.Item>
           </Form>
         </Space>
       </Drawer>
 
       <Drawer
-        title={playerDevice ? `实时播放 - ${playerDevice.name}` : '实时播放'}
+        title={channelDevice ? `视频通道 - ${channelDevice.name}` : '视频通道'}
+        placement="right"
+        width={720}
+        open={channelDrawerOpen}
+        destroyOnClose
+        onClose={() => {
+          setChannelDrawerOpen(false);
+          setChannelDevice(null);
+          setChannels([]);
+        }}
+        extra={
+          channelDevice ? (
+            <Space>
+              {channelDevice.streamMode === 'GB28181' && channelDevice.status === 'ONLINE' ? (
+                <Button icon={<ReloadOutlined />} onClick={() => void handleQueryCatalog(channelDevice)}>
+                  目录同步
+                </Button>
+              ) : null}
+              <Button onClick={() => void loadChannels(channelDevice)}>刷新</Button>
+            </Space>
+          ) : undefined
+        }
+      >
+        <Table<VideoChannelRecord>
+          rowKey="id"
+          loading={channelLoading}
+          dataSource={channels}
+          pagination={false}
+          locale={{ emptyText: '暂无通道数据' }}
+          columns={[
+            { title: '通道编号', dataIndex: 'channelId', width: 180, ellipsis: true },
+            { title: '通道名称', dataIndex: 'name', width: 180, ellipsis: true, render: (value: string) => value || '-' },
+            {
+              title: '状态',
+              dataIndex: 'status',
+              width: 100,
+              render: (value: string) => <Tag color={statusColors[value] || 'default'}>{statusLabels[value] || value || '-'}</Tag>,
+            },
+            { title: '厂商', dataIndex: 'manufacturer', width: 120, ellipsis: true, render: (value: string) => value || '-' },
+            { title: '型号', dataIndex: 'model', width: 120, ellipsis: true, render: (value: string) => value || '-' },
+            {
+              title: '操作',
+              width: 120,
+              fixed: 'right',
+              render: (_: unknown, record: VideoChannelRecord) => (
+                <Button type="link" size="small" onClick={() => channelDevice && void handlePlay(channelDevice, record)}>
+                  播放
+                </Button>
+              ),
+            },
+          ]}
+          scroll={{ x: 900 }}
+        />
+      </Drawer>
+
+      <Drawer
+        title={
+          playerDevice
+            ? `实时播放 - ${playerDevice.name}${playerChannel ? ` / ${playerChannel.name || playerChannel.channelId}` : ''}`
+            : '实时播放'
+        }
         placement="right"
         width={720}
         open={playerOpen}
@@ -910,6 +1100,14 @@ const VideoList: React.FC = () => {
         destroyOnClose
         extra={
           <Space>
+            <Button
+              type={recording ? 'default' : 'primary'}
+              loading={recordingLoading}
+              onClick={recording ? handleStopRecording : handleStartRecording}
+              disabled={!streamInfo}
+            >
+              {recording ? '停止录像' : '开始录像'}
+            </Button>
             <Button icon={<CameraOutlined />} onClick={handleSnapshot} disabled={!streamInfo}>
               截图
             </Button>
@@ -937,12 +1135,6 @@ const VideoList: React.FC = () => {
                   children: (
                     <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0' }}>
                       <PtzControlPanel onControl={handlePtzControl} disabled={playerDevice?.streamMode !== 'GB28181'} />
-                      {playerDevice?.streamMode !== 'GB28181' ? (
-                        <div style={{ marginLeft: 16, color: '#999', fontSize: 13, alignSelf: 'center' }}>
-                          PTZ 云台控制仅支持 GB/T 28181 设备。<br />
-                          RTSP/RTMP 设备需通过 ONVIF 协议控制。
-                        </div>
-                      ) : null}
                     </div>
                   ),
                 },

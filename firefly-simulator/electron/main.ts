@@ -733,56 +733,59 @@ function httpJsonRequest(method: string, url: string, body?: any, token?: string
   });
 }
 
-ipcMain.handle('video:createDevice', async (_e, baseUrl: string, dto: any, token?: string) => {
-  // firefly-media 的 Web 上下文由网关注入，视频接口不能直接拿 Bearer 调 media 服务。
-  return gatewayServiceJsonRequest(baseUrl, 'MEDIA', '/api/v1/video/devices', 'POST', token, dto);
+ipcMain.handle('deviceVideo:create', async (_e, baseUrl: string, dto: any, token?: string) => {
+  return gatewayServiceJsonRequest(baseUrl, 'DEVICE', '/api/v1/devices/video', 'POST', token, dto);
 });
 
-ipcMain.handle('video:listDevices', async (_e, baseUrl: string, query: any, token?: string) => {
-  return gatewayServiceJsonRequest(baseUrl, 'MEDIA', '/api/v1/video/devices/list', 'POST', token, query || {});
+ipcMain.handle('deviceVideo:list', async (_e, baseUrl: string, query: any, token?: string) => {
+  return gatewayServiceJsonRequest(baseUrl, 'DEVICE', '/api/v1/devices/video/list', 'POST', token, query || {});
 });
 
-ipcMain.handle('video:getDevice', async (_e, baseUrl: string, deviceId: number, token?: string) => {
-  return gatewayServiceJsonRequest(baseUrl, 'MEDIA', `/api/v1/video/devices/${deviceId}`, 'GET', token);
+ipcMain.handle('deviceVideo:get', async (_e, baseUrl: string, deviceId: number, token?: string) => {
+  return gatewayServiceJsonRequest(baseUrl, 'DEVICE', `/api/v1/devices/video/${deviceId}`, 'GET', token);
 });
 
-ipcMain.handle('video:updateDevice', async (_e, baseUrl: string, deviceId: number, dto: any, token?: string) => {
-  return gatewayServiceJsonRequest(baseUrl, 'MEDIA', `/api/v1/video/devices/${deviceId}`, 'PUT', token, dto);
+ipcMain.handle('deviceVideo:update', async (_e, baseUrl: string, deviceId: number, dto: any, token?: string) => {
+  return gatewayServiceJsonRequest(baseUrl, 'DEVICE', `/api/v1/devices/video/${deviceId}`, 'PUT', token, dto);
 });
 
-ipcMain.handle('video:startStream', async (_e, baseUrl: string, deviceId: number, dto?: any, token?: string) => {
+ipcMain.handle('deviceVideo:delete', async (_e, baseUrl: string, deviceId: number, token?: string) => {
+  return gatewayServiceJsonRequest(baseUrl, 'DEVICE', `/api/v1/devices/video/${deviceId}`, 'DELETE', token);
+});
+
+ipcMain.handle('deviceVideo:channels', async (_e, baseUrl: string, deviceId: number, token?: string) => {
+  return gatewayServiceJsonRequest(baseUrl, 'DEVICE', `/api/v1/devices/video/${deviceId}/channels`, 'GET', token);
+});
+
+ipcMain.handle('videoControl:startStream', async (_e, baseUrl: string, deviceId: number, dto?: any, token?: string) => {
   return gatewayServiceJsonRequest(baseUrl, 'MEDIA', `/api/v1/video/devices/${deviceId}/start`, 'POST', token, dto || {});
 });
 
-ipcMain.handle('video:stopStream', async (_e, baseUrl: string, deviceId: number, token?: string) => {
+ipcMain.handle('videoControl:stopStream', async (_e, baseUrl: string, deviceId: number, token?: string) => {
   return gatewayServiceJsonRequest(baseUrl, 'MEDIA', `/api/v1/video/devices/${deviceId}/stop`, 'POST', token, {});
 });
 
-ipcMain.handle('video:ptzControl', async (_e, baseUrl: string, deviceId: number, dto: any, token?: string) => {
+ipcMain.handle('videoControl:ptz', async (_e, baseUrl: string, deviceId: number, dto: any, token?: string) => {
   return gatewayServiceJsonRequest(baseUrl, 'MEDIA', `/api/v1/video/devices/${deviceId}/ptz`, 'POST', token, dto);
 });
 
-ipcMain.handle('video:snapshot', async (_e, baseUrl: string, deviceId: number, token?: string) => {
+ipcMain.handle('videoControl:snapshot', async (_e, baseUrl: string, deviceId: number, token?: string) => {
   return gatewayServiceJsonRequest(baseUrl, 'MEDIA', `/api/v1/video/devices/${deviceId}/snapshot`, 'POST', token, {});
 });
 
-ipcMain.handle('video:listChannels', async (_e, baseUrl: string, deviceId: number, token?: string) => {
-  return gatewayServiceJsonRequest(baseUrl, 'MEDIA', `/api/v1/video/devices/${deviceId}/channels`, 'GET', token);
-});
-
-ipcMain.handle('video:queryCatalog', async (_e, baseUrl: string, deviceId: number, token?: string) => {
+ipcMain.handle('videoControl:catalog', async (_e, baseUrl: string, deviceId: number, token?: string) => {
   return gatewayServiceJsonRequest(baseUrl, 'MEDIA', `/api/v1/video/devices/${deviceId}/catalog`, 'POST', token, {});
 });
 
-ipcMain.handle('video:queryDeviceInfo', async (_e, baseUrl: string, deviceId: number, token?: string) => {
+ipcMain.handle('videoControl:deviceInfo', async (_e, baseUrl: string, deviceId: number, token?: string) => {
   return gatewayServiceJsonRequest(baseUrl, 'MEDIA', `/api/v1/video/devices/${deviceId}/device-info`, 'POST', token, {});
 });
 
-ipcMain.handle('video:startRecording', async (_e, baseUrl: string, deviceId: number, token?: string) => {
+ipcMain.handle('videoControl:startRecording', async (_e, baseUrl: string, deviceId: number, token?: string) => {
   return gatewayServiceJsonRequest(baseUrl, 'MEDIA', `/api/v1/video/devices/${deviceId}/record/start`, 'POST', token, {});
 });
 
-ipcMain.handle('video:stopRecording', async (_e, baseUrl: string, deviceId: number, token?: string) => {
+ipcMain.handle('videoControl:stopRecording', async (_e, baseUrl: string, deviceId: number, token?: string) => {
   return gatewayServiceJsonRequest(baseUrl, 'MEDIA', `/api/v1/video/devices/${deviceId}/record/stop`, 'POST', token, {});
 });
 

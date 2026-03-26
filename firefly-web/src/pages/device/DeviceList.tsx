@@ -176,6 +176,7 @@ const DeviceList: React.FC = () => {
         groupId: filters.groupId,
         status: filters.status,
         onlineStatus: filters.onlineStatus,
+        excludeVideo: true,
       });
       setData(res.data.data.records || []);
       setTotal(res.data.data.total || 0);

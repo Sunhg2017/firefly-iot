@@ -224,8 +224,8 @@ export function getDeviceAccessOverviewItems(device: SimDevice): AccessOverviewI
             })(),
         },
         {
-          label: '平台视频设备',
-          value: trim(String(device.videoDeviceId ?? '')) || '未设置',
+          label: '平台设备资产',
+          value: trim(String(device.platformDeviceId ?? '')) || '未设置',
         },
       ];
     default:

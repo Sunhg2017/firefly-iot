@@ -15,7 +15,7 @@ public class StreamSession {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long tenantId;
-    private Long videoDeviceId;
+    private Long deviceId;
     private String channelId;
     private String streamId;
     private StreamStatus status;

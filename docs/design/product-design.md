@@ -603,15 +603,18 @@ public interface ProtocolAdapter {
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/api/v1/video/devices/{id}/channels` | GET | 获取设备通道列表 |
+| `/api/v1/devices/video/{id}/channels` | GET | 获取视频设备通道列表 |
+| `/api/v1/devices/video` | POST | 创建设备资产下的视频设备 |
+| `/api/v1/devices/video/list` | POST | 分页查询视频设备资产 |
+| `/api/v1/devices/video/{id}` | GET | 获取视频设备资产详情 |
+| `/api/v1/devices/video/{id}` | PUT | 更新视频设备资产 |
+| `/api/v1/devices/video/{id}` | DELETE | 删除视频设备资产 |
 | `/api/v1/video/devices/{id}/start` | POST | 开始实时播放，返回播放地址 (FLV/HLS/WebRTC) |
 | `/api/v1/video/devices/{id}/stop` | POST | 停止播放 |
 | `/api/v1/video/devices/{id}/ptz` | POST | 云台控制 (PTZ) |
 | `/api/v1/video/devices/{id}/snapshot` | POST | 截图 |
 | `/api/v1/video/devices/{id}/record/start` | POST | 开始录像 |
 | `/api/v1/video/devices/{id}/record/stop` | POST | 停止录像 |
-| `/api/v1/video/devices/{id}/playback` | GET | 历史回放 |
-| `/api/v1/video/records` | GET | 录像文件列表查询 |
 
 #### 6.6.8 多租户视频隔离
 

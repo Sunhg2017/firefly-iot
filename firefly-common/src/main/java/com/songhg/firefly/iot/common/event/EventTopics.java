@@ -17,4 +17,7 @@ public final class EventTopics {
     public static final String AUDIT_EVENTS = "firefly.audit.events";
     public static final String API_ACCESS_LOGS = "firefly.api.access.logs";
     public static final String PROTOCOL_PARSER_CHANGED = "protocol.parser.changed";
+    public static final String VIDEO_DEVICE_STATUS_CHANGED = "video.device.status.changed";
+    public static final String VIDEO_CHANNELS_SYNCED = "video.channels.synced";
+    public static final String VIDEO_DEVICE_INFO_SYNCED = "video.device.info.synced";
 }

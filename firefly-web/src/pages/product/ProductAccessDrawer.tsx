@@ -171,15 +171,15 @@ const buildGuideSteps = (
     return [
       {
         title: '确认产品协议',
-        description: `当前摄像头产品使用 ${product.protocol} 协议，后续视频设备必须按这个协议创建。`,
+        description: `当前产品使用 ${product.protocol} 协议。`,
       },
       {
-        title: '进入视频监控添加设备',
-        description: '从当前产品跳转到视频监控时会自动带入协议，后续只需补齐设备名称、地址、厂商型号等参数。',
+        title: '新增视频设备',
+        description: '跳转到设备资产的视频设备视图后直接新增。',
       },
       {
-        title: '完成视频接入与播放',
-        description: '创建设备后可在视频监控页面发起播放、目录查询、截图和云台控制。',
+        title: '联调媒体控制',
+        description: '保存后可执行播放、目录、设备信息、截图、录像和云台控制。',
       },
     ];
   }
@@ -229,42 +229,39 @@ const buildProtocolGuideSections = (
         return [
           {
             title: '视频设备创建',
-            description: '在视频监控页选择 GB/T 28181 接入方式，并补齐国标设备参数。',
+            description: '在设备资产的视频设备视图中新增 GB/T 28181 设备。',
             rows: [
-              { label: '推荐页面', value: '/video', copyable: true },
+              { label: '推荐页面', value: '/device', copyable: true },
               { label: '接入方式', value: 'GB/T 28181', copyable: true },
-              { label: '认证方式', value: '视频协议接入（不使用 ProductSecret / 动态注册）' },
+              { label: '认证方式', value: '设备级 SIP 密码' },
               { label: '必填参数', value: '设备名称、GB 设备编号、GB 域、传输协议、IP、端口' },
             ],
-            tips: ['从产品页跳转时，视频监控页会自动锁定为 GB/T 28181 创建设备。', '设备上线后可在视频监控页执行目录查询、设备信息查询和实时播放。'],
           },
         ];
       case 'RTSP':
         return [
           {
             title: '视频设备创建',
-            description: '在视频监控页选择 RTSP 接入方式，平台会通过流代理拉取设备视频流。',
+            description: '在设备资产的视频设备视图中新增 RTSP 设备。',
             rows: [
-              { label: '推荐页面', value: '/video', copyable: true },
+              { label: '推荐页面', value: '/device', copyable: true },
               { label: '接入方式', value: 'RTSP', copyable: true },
-              { label: '认证方式', value: '视频协议接入（不使用 ProductSecret / 动态注册）' },
-              { label: '必填参数', value: '设备名称、IP、端口' },
+              { label: '认证方式', value: '按设备参数新增' },
+              { label: '必填参数', value: '设备名称、视频源地址或 IP/端口' },
             ],
-            tips: ['从产品页跳转时，视频监控页会自动锁定为 RTSP 创建设备。', '创建后可在视频监控页直接发起播放，并查看 FLV、HLS、WebRTC 地址。'],
           },
         ];
       case 'RTMP':
         return [
           {
             title: '视频设备创建',
-            description: '在视频监控页选择 RTMP 接入方式，设备向流媒体服务主动推流。',
+            description: '在设备资产的视频设备视图中新增 RTMP 设备。',
             rows: [
-              { label: '推荐页面', value: '/video', copyable: true },
+              { label: '推荐页面', value: '/device', copyable: true },
               { label: '接入方式', value: 'RTMP', copyable: true },
-              { label: '认证方式', value: '视频协议接入（不使用 ProductSecret / 动态注册）' },
-              { label: '必填参数', value: '设备名称、IP、端口' },
+              { label: '认证方式', value: '按设备参数新增' },
+              { label: '必填参数', value: '设备名称、视频源地址或 IP/端口' },
             ],
-            tips: ['从产品页跳转时，视频监控页会自动锁定为 RTMP 创建设备。', 'RTMP 设备创建后可直接在视频监控页管理播放和截图。'],
           },
         ];
       default:
@@ -462,7 +459,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
     if (isVideoProductAccess) {
       return {
         type: 'info' as const,
-        message: '当前产品属于视频协议接入，请跳转到视频监控页面创建设备；系统会自动带入当前产品协议，不再走 ProductSecret 和动态注册。',
+        message: '当前产品请在设备资产的视频设备视图中新增，系统会自动带入产品和协议。',
       };
     }
     if (supportsProductSecret) {
@@ -635,17 +632,14 @@ const ProductAccessDrawer: React.FC<Props> = ({
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               {isVideoProductAccess ? (
                 <>
-                  <Typography.Text type="secondary">
-                    摄像头产品不走设备密钥和动态注册，统一在视频监控页面按协议创建视频设备。
-                  </Typography.Text>
                   <Descriptions column={1} size="small">
                     <Descriptions.Item label="接入协议">{product.protocol}</Descriptions.Item>
-                    <Descriptions.Item label="推荐页面">视频监控</Descriptions.Item>
-                    <Descriptions.Item label="下一步">创建视频设备并完成播放联调</Descriptions.Item>
+                    <Descriptions.Item label="推荐页面">设备资产 / 视频设备</Descriptions.Item>
+                    <Descriptions.Item label="下一步">新增视频设备并联调控制</Descriptions.Item>
                   </Descriptions>
                   {onOpenVideoManager ? (
                     <Button type="primary" icon={<VideoCameraOutlined />} onClick={handleOpenVideoManager}>
-                      去视频监控
+                      去视频设备
                     </Button>
                   ) : null}
                 </>
@@ -701,7 +695,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
             <Space wrap>
               {isVideoProductAccess && onOpenVideoManager ? (
                 <Button icon={<VideoCameraOutlined />} onClick={handleOpenVideoManager}>
-                  视频监控
+                  视频设备
                 </Button>
               ) : null}
               {!isVideoProductAccess && onOpenDeviceManager ? <Button onClick={handleOpenDeviceManager}>设备管理</Button> : null}
@@ -724,11 +718,6 @@ const ProductAccessDrawer: React.FC<Props> = ({
       ),
       children: product ? (
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message={`以下示例基于 ${product.protocol} 协议整理，示例设备名称使用 ${DEVICE_NAME_EXAMPLE} 占位。`}
-          />
           {protocolGuideSections.map((section) => (
             <Card key={section.title} size="small" title={section.title} style={{ borderRadius: 16 }}>
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -740,18 +729,6 @@ const ProductAccessDrawer: React.FC<Props> = ({
                     </Descriptions.Item>
                   ))}
                 </Descriptions>
-                {section.tips?.length ? (
-                  <>
-                    <Divider style={{ margin: '4px 0' }} />
-                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                      {section.tips.map((tip) => (
-                        <Typography.Text key={tip} type="secondary" style={{ fontSize: 12 }}>
-                          {tip}
-                        </Typography.Text>
-                      ))}
-                    </Space>
-                  </>
-                ) : null}
               </Space>
             </Card>
           ))}
