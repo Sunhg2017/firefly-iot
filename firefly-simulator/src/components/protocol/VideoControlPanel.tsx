@@ -31,7 +31,7 @@ export default function VideoControlPanel({ device }: Props) {
   const activeEnvironment = getActiveEnvironment(environments, activeEnvironmentId);
   const activeSession = sessions[activeEnvironment.id];
   const isOnline = device.status === 'online';
-  const mediaBaseUrl = activeEnvironment.mediaBaseUrl;
+  const gatewayBaseUrl = activeEnvironment.gatewayBaseUrl;
   const token = activeSession?.accessToken;
   const isGb28181 = device.streamMode === 'GB28181';
 
@@ -52,7 +52,7 @@ export default function VideoControlPanel({ device }: Props) {
                   addLog(device.id, device.name, 'error', '未登录当前环境，无法调用视频接口');
                   return;
                 }
-                const res = await window.electronAPI.videoStartStream(mediaBaseUrl, device.videoDeviceId!, {}, token);
+                const res = await window.electronAPI.videoStartStream(gatewayBaseUrl, device.videoDeviceId!, {}, token);
                 if (isVideoBizSuccess(res) && res.data?.data) {
                   const session = res.data.data;
                   const url = session.playUrl || session.rtspUrl || session.flvUrl || '';
@@ -74,7 +74,7 @@ export default function VideoControlPanel({ device }: Props) {
                   addLog(device.id, device.name, 'error', '未登录当前环境，无法调用视频接口');
                   return;
                 }
-                const res = await window.electronAPI.videoStopStream(mediaBaseUrl, device.videoDeviceId!, token);
+                const res = await window.electronAPI.videoStopStream(gatewayBaseUrl, device.videoDeviceId!, token);
                 if (isVideoBizSuccess(res)) {
                   updateDevice(device.id, { streamUrl: '' });
                   addLog(device.id, device.name, 'success', '推流已停止');
@@ -93,7 +93,7 @@ export default function VideoControlPanel({ device }: Props) {
                   addLog(device.id, device.name, 'error', '未登录当前环境，无法调用视频接口');
                   return;
                 }
-                const res = await window.electronAPI.videoSnapshot(mediaBaseUrl, device.videoDeviceId!, token);
+                const res = await window.electronAPI.videoSnapshot(gatewayBaseUrl, device.videoDeviceId!, token);
                 if (isVideoBizSuccess(res) && res.data?.data?.imageUrl) {
                   addLog(device.id, device.name, 'success', `截图成功: ${res.data.data.imageUrl}`);
                 } else {
@@ -124,7 +124,7 @@ export default function VideoControlPanel({ device }: Props) {
                 disabled={!isGb28181 || !token}
                 onClick={async () => {
                   addLog(device.id, device.name, 'info', `PTZ: ${cmd}`);
-                  const res = await window.electronAPI.videoPtzControl(mediaBaseUrl, device.videoDeviceId!, { command: cmd, speed: 50 }, token);
+                  const res = await window.electronAPI.videoPtzControl(gatewayBaseUrl, device.videoDeviceId!, { command: cmd, speed: 50 }, token);
                   if (isVideoBizSuccess(res)) {
                     addLog(device.id, device.name, 'success', `PTZ ${cmd} 执行成功`);
                   } else {
@@ -143,7 +143,7 @@ export default function VideoControlPanel({ device }: Props) {
               disabled={!isGb28181 || !token}
               onClick={async () => {
                 addLog(device.id, device.name, 'info', '查询 GB28181 设备目录...');
-                const res = await window.electronAPI.videoQueryCatalog(mediaBaseUrl, device.videoDeviceId!, token);
+                const res = await window.electronAPI.videoQueryCatalog(gatewayBaseUrl, device.videoDeviceId!, token);
                 if (isVideoBizSuccess(res)) {
                   addLog(device.id, device.name, 'success', `目录查询已发送`);
                 } else {
@@ -158,7 +158,7 @@ export default function VideoControlPanel({ device }: Props) {
               disabled={!isGb28181 || !token}
               onClick={async () => {
                 addLog(device.id, device.name, 'info', '查询 GB28181 设备信息...');
-                const res = await window.electronAPI.videoQueryDeviceInfo(mediaBaseUrl, device.videoDeviceId!, token);
+                const res = await window.electronAPI.videoQueryDeviceInfo(gatewayBaseUrl, device.videoDeviceId!, token);
                 if (isVideoBizSuccess(res)) {
                   addLog(device.id, device.name, 'success', '设备信息查询已发送');
                 } else {
@@ -173,7 +173,7 @@ export default function VideoControlPanel({ device }: Props) {
               disabled={!token}
               onClick={async () => {
                 addLog(device.id, device.name, 'info', '查询通道列表...');
-                const res = await window.electronAPI.videoListChannels(mediaBaseUrl, device.videoDeviceId!, token);
+                const res = await window.electronAPI.videoListChannels(gatewayBaseUrl, device.videoDeviceId!, token);
                 if (isVideoBizSuccess(res) && res.data?.data) {
                   const channels = res.data.data;
                   addLog(device.id, device.name, 'success', `通道数: ${Array.isArray(channels) ? channels.length : 0}, ${JSON.stringify(channels).slice(0, 200)}`);
@@ -191,7 +191,7 @@ export default function VideoControlPanel({ device }: Props) {
               disabled={!token}
               onClick={async () => {
                 addLog(device.id, device.name, 'info', '开始录制...');
-                const res = await window.electronAPI.videoStartRecording(mediaBaseUrl, device.videoDeviceId!, token);
+                const res = await window.electronAPI.videoStartRecording(gatewayBaseUrl, device.videoDeviceId!, token);
                 if (isVideoBizSuccess(res) && res.data?.data) {
                   addLog(device.id, device.name, 'success', `录制已开始: ${JSON.stringify(res.data.data).slice(0, 150)}`);
                 } else {
@@ -208,7 +208,7 @@ export default function VideoControlPanel({ device }: Props) {
               disabled={!token}
               onClick={async () => {
                 addLog(device.id, device.name, 'info', '停止录制...');
-                const res = await window.electronAPI.videoStopRecording(mediaBaseUrl, device.videoDeviceId!, token);
+                const res = await window.electronAPI.videoStopRecording(gatewayBaseUrl, device.videoDeviceId!, token);
                 if (isVideoBizSuccess(res)) {
                   addLog(device.id, device.name, 'success', '录制已停止');
                 } else {

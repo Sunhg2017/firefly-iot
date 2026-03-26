@@ -99,9 +99,9 @@ npm run electron:build
 
 ### Video 模式
 
-模拟器通过 `firefly-media` REST API 管理视频设备，支持 GB28181、RTSP、RTMP 三种接入方式：
+模拟器通过当前环境网关的 `MEDIA` 路由管理视频设备，支持 GB28181、RTSP、RTMP 三种接入方式：
 
-- Video 设备连接和控制前，必须先登录当前环境；模拟器会复用当前环境的 Bearer Token 调用 `firefly-media`
+- Video 设备连接和控制前，必须先登录当前环境；模拟器会复用当前环境登录态，通过 `/MEDIA/api/**` 调用视频接口
 - GB28181 模式会自动使用 `国标设备 ID` 作为本地 `DeviceName`
 - RTSP / RTMP 模式会自动使用“模拟设备名称”作为本地 `DeviceName`
 - RTSP / RTMP 模式使用完整 `sourceUrl` 创建平台视频设备，同时自动解析并回填平台侧 `IP / 端口`
@@ -110,16 +110,16 @@ npm run electron:build
 
 | 功能 | API | 说明 |
 |------|-----|------|
-| 1. 同步设备 | `POST /api/v1/video/devices` / `PUT /api/v1/video/devices/{id}` | 首次创建平台视频设备；再次连接时优先更新已存在设备 |
-| 2. 开始推流 | `POST /api/v1/video/devices/{id}/start` | 请求 ZLMediaKit 拉流 |
-| 3. 停止推流 | `POST /api/v1/video/devices/{id}/stop` | 关闭流会话 |
-| 4. PTZ 控制 | `POST /api/v1/video/devices/{id}/ptz` | 云台方向/变焦控制 |
-| 5. 截图 | `POST /api/v1/video/devices/{id}/snapshot` | 拍照截图 |
-| 6. 开始录制 | `POST /api/v1/video/devices/{id}/record/start` | 录制视频 |
-| 7. 停止录制 | `POST /api/v1/video/devices/{id}/record/stop` | 停止录制 |
-| 8. 查询目录 | `POST /api/v1/video/devices/{id}/catalog` | GB28181 目录查询 |
-| 9. 查询设备信息 | `POST /api/v1/video/devices/{id}/device-info` | GB28181 设备信息查询 |
-| 10. 通道列表 | `GET /api/v1/video/devices/{id}/channels` | 查询视频通道 |
+| 1. 同步设备 | `POST /MEDIA/api/v1/video/devices` / `PUT /MEDIA/api/v1/video/devices/{id}` | 首次创建平台视频设备；再次连接时优先更新已存在设备 |
+| 2. 开始推流 | `POST /MEDIA/api/v1/video/devices/{id}/start` | 请求 ZLMediaKit 拉流 |
+| 3. 停止推流 | `POST /MEDIA/api/v1/video/devices/{id}/stop` | 关闭流会话 |
+| 4. PTZ 控制 | `POST /MEDIA/api/v1/video/devices/{id}/ptz` | 云台方向/变焦控制 |
+| 5. 截图 | `POST /MEDIA/api/v1/video/devices/{id}/snapshot` | 拍照截图 |
+| 6. 开始录制 | `POST /MEDIA/api/v1/video/devices/{id}/record/start` | 录制视频 |
+| 7. 停止录制 | `POST /MEDIA/api/v1/video/devices/{id}/record/stop` | 停止录制 |
+| 8. 查询目录 | `POST /MEDIA/api/v1/video/devices/{id}/catalog` | GB28181 目录查询 |
+| 9. 查询设备信息 | `POST /MEDIA/api/v1/video/devices/{id}/device-info` | GB28181 设备信息查询 |
+| 10. 通道列表 | `GET /MEDIA/api/v1/video/devices/{id}/channels` | 查询视频通道 |
 
 ### GB28181 SIP 模拟
 

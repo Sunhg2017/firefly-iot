@@ -65,7 +65,6 @@ export interface SimDevice {
   // CoAP config
   coapBaseUrl: string;
   // Video config
-  mediaBaseUrl: string;
   streamMode: SimulatorVideoStreamMode;
   gbDeviceId: string;
   gbDomain: string;
@@ -206,6 +205,22 @@ function resolveStoredDeviceName(partial: SimDeviceDraft): string {
     });
   }
   return trimText(partial.deviceName);
+}
+
+function normalizePersistedDevice(device: SimDevice | (SimDevice & { mediaBaseUrl?: string })) {
+  const { mediaBaseUrl: _mediaBaseUrl, ...normalized } = device as SimDevice & { mediaBaseUrl?: string };
+  return {
+    ...normalized,
+    status: normalized.restoreOnLaunch ? 'connecting' as DeviceStatus : 'offline' as DeviceStatus,
+    token: '',
+    autoReport: false,
+    autoTimerId: null,
+    heartbeatTimerId: null,
+    sentCount: 0,
+    errorCount: 0,
+    streamUrl: '',
+    sipRegistered: false,
+  };
 }
 
 // ============================================================
@@ -415,7 +430,6 @@ export const useSimStore = create<SimulatorState>()(
       mqttWillQos: draft.mqttWillQos ?? 1,
       mqttWillRetain: draft.mqttWillRetain ?? false,
       coapBaseUrl: draft.coapBaseUrl || 'http://localhost:9070',
-      mediaBaseUrl: draft.mediaBaseUrl || 'http://localhost:9040',
       streamMode: normalizeVideoStreamMode(draft.streamMode),
       gbDeviceId: draft.gbDeviceId || '',
       gbDomain: draft.gbDomain || '3402000000',
@@ -508,22 +522,24 @@ export const useSimStore = create<SimulatorState>()(
       name: 'firefly-sim-store',
       storage: createJSONStorage(() => simulatorStateStorage),
       partialize: (state) => ({
-        devices: state.devices.map((d) => ({
-          ...d,
-          // Reset transient runtime fields
-          status: d.restoreOnLaunch ? 'connecting' as DeviceStatus : 'offline' as DeviceStatus,
-          token: '',
-          autoReport: false,
-          autoTimerId: null,
-          heartbeatTimerId: null,
-          sentCount: 0,
-          errorCount: 0,
-          streamUrl: '',
-          sipRegistered: false,
-        })),
+        devices: state.devices.map((device) => normalizePersistedDevice(device)),
         templates: state.templates,
         selectedDeviceId: state.selectedDeviceId,
       }),
+      merge: (persistedState, currentState) => {
+        const incoming = (persistedState || {}) as Partial<{
+          devices: Array<SimDevice & { mediaBaseUrl?: string }>;
+          templates: DataTemplate[];
+          selectedDeviceId: string | null;
+        }>;
+        return {
+          ...currentState,
+          ...incoming,
+          devices: Array.isArray(incoming.devices)
+            ? incoming.devices.map((device) => normalizePersistedDevice(device))
+            : currentState.devices,
+        };
+      },
     },
   ),
 );

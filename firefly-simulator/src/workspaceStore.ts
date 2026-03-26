@@ -8,7 +8,6 @@ export interface SimulatorEnvironment {
   name: string;
   gatewayBaseUrl: string;
   protocolBaseUrl: string;
-  mediaBaseUrl: string;
   mqttBrokerUrl: string;
 }
 
@@ -53,7 +52,6 @@ const DEFAULT_ENVIRONMENT: SimulatorEnvironment = {
   name: '本地开发',
   gatewayBaseUrl: 'http://localhost:8080',
   protocolBaseUrl: 'http://localhost:9070',
-  mediaBaseUrl: 'http://localhost:9040',
   mqttBrokerUrl: 'mqtt://localhost:1883',
 };
 
@@ -78,9 +76,6 @@ function normalizeEnvironmentPatch(
   if (patch.protocolBaseUrl !== undefined) {
     nextPatch.protocolBaseUrl = trimHttpBaseUrl(patch.protocolBaseUrl);
   }
-  if (patch.mediaBaseUrl !== undefined) {
-    nextPatch.mediaBaseUrl = trimHttpBaseUrl(patch.mediaBaseUrl);
-  }
   if (patch.mqttBrokerUrl !== undefined) {
     nextPatch.mqttBrokerUrl = trimText(patch.mqttBrokerUrl);
   }
@@ -95,8 +90,14 @@ function buildDefaultSimulatorEnvironment(
     name: normalized.name || DEFAULT_ENVIRONMENT.name,
     gatewayBaseUrl: normalized.gatewayBaseUrl || DEFAULT_ENVIRONMENT.gatewayBaseUrl,
     protocolBaseUrl: normalized.protocolBaseUrl || DEFAULT_ENVIRONMENT.protocolBaseUrl,
-    mediaBaseUrl: normalized.mediaBaseUrl || DEFAULT_ENVIRONMENT.mediaBaseUrl,
     mqttBrokerUrl: normalized.mqttBrokerUrl || DEFAULT_ENVIRONMENT.mqttBrokerUrl,
+  };
+}
+
+function normalizeStoredEnvironment(environment: Partial<SimulatorEnvironment> & { id?: string }) {
+  return {
+    id: environment.id || uuidv4(),
+    ...buildDefaultSimulatorEnvironment(environment),
   };
 }
 
@@ -122,7 +123,6 @@ function buildLoraWebhookUrl(protocolBaseUrl: string): string {
 export function buildEnvironmentDeviceDefaults(environment?: SimulatorEnvironment | null) {
   const activeEnvironment = environment || DEFAULT_ENVIRONMENT;
   const protocolBaseUrl = trimHttpBaseUrl(activeEnvironment.protocolBaseUrl) || DEFAULT_ENVIRONMENT.protocolBaseUrl;
-  const mediaBaseUrl = trimHttpBaseUrl(activeEnvironment.mediaBaseUrl) || DEFAULT_ENVIRONMENT.mediaBaseUrl;
   const mqttBrokerUrl = trimText(activeEnvironment.mqttBrokerUrl) || DEFAULT_ENVIRONMENT.mqttBrokerUrl;
 
   return {
@@ -131,7 +131,6 @@ export function buildEnvironmentDeviceDefaults(environment?: SimulatorEnvironmen
     coapBaseUrl: protocolBaseUrl,
     mqttRegisterBaseUrl: protocolBaseUrl,
     mqttBrokerUrl,
-    mediaBaseUrl,
     snmpConnectorUrl: protocolBaseUrl,
     modbusConnectorUrl: protocolBaseUrl,
     wsConnectorUrl: protocolBaseUrl,
@@ -259,10 +258,7 @@ export const useSimWorkspaceStore = create<SimulatorWorkspaceState>()(
       name: 'firefly-sim-workspace-store',
       storage: createJSONStorage(() => simulatorStateStorage),
       partialize: (state) => ({
-        environments: state.environments.map((environment) => ({
-          ...environment,
-          ...buildDefaultSimulatorEnvironment(environment),
-        })),
+        environments: state.environments.map((environment) => normalizeStoredEnvironment(environment)),
         activeEnvironmentId: state.activeEnvironmentId,
         sessions: Object.fromEntries(
           Object.entries(state.sessions).filter(([environmentId]) => Boolean(state.rememberedLogins[environmentId])),
@@ -272,10 +268,7 @@ export const useSimWorkspaceStore = create<SimulatorWorkspaceState>()(
       merge: (persistedState, currentState) => {
         const incoming = (persistedState || {}) as Partial<SimulatorWorkspaceState>;
         const persistedEnvironments = Array.isArray(incoming.environments) && incoming.environments.length > 0
-          ? incoming.environments.map((environment) => ({
-              ...environment,
-              ...buildDefaultSimulatorEnvironment(environment),
-            }))
+          ? incoming.environments.map((environment) => normalizeStoredEnvironment(environment))
           : currentState.environments;
         const activeEnvironmentId = persistedEnvironments.some((item) => item.id === incoming.activeEnvironmentId)
           ? (incoming.activeEnvironmentId as string)

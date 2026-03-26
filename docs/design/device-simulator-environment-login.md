@@ -7,7 +7,7 @@
 
 设备模拟器此前只有本地静态地址和手工录入 `ProductKey` 的方式：
 
-- 无法按不同联调环境快速切换网关、协议服务、媒体服务和 Broker。
+- 无法按不同联调环境快速切换网关、协议服务和 Broker。
 - 新建设备时必须手工记忆并输入当前租户下的产品标识。
 - 模拟器没有独立登录态，无法直接复用平台现有租户产品列表接口。
 
@@ -51,12 +51,12 @@
 - `name`
 - `gatewayBaseUrl`
 - `protocolBaseUrl`
-- `mediaBaseUrl`
 - `mqttBrokerUrl`
 
 设备默认值按环境自动派生：
 
 - `openApiBaseUrl` 取 `gatewayBaseUrl`
+- 视频接口统一复用 `gatewayBaseUrl` 下的 `/MEDIA/api/**`
 - `httpBaseUrl`、`httpRegisterBaseUrl`、`coapBaseUrl`、`mqttRegisterBaseUrl`、`snmpConnectorUrl`、`modbusConnectorUrl`、`wsConnectorUrl` 取 `protocolBaseUrl`
 - `wsEndpoint` 由 `protocolBaseUrl` 推导
 - `loraWebhookUrl` 由 `protocolBaseUrl` 推导

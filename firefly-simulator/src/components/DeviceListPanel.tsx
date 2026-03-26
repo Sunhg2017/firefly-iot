@@ -270,7 +270,6 @@ export default function DeviceListPanel() {
       thingModelSimulationRules: device.thingModelSimulationRules,
       ...(device.protocol === 'Video'
         ? {
-            mediaBaseUrl: device.mediaBaseUrl,
             streamMode: device.streamMode,
             gbDeviceId: device.gbDeviceId,
             gbDomain: device.gbDomain,
@@ -529,7 +528,6 @@ export default function DeviceListPanel() {
       name: '',
       gatewayBaseUrl: activeEnvironment.gatewayBaseUrl,
       protocolBaseUrl: activeEnvironment.protocolBaseUrl,
-      mediaBaseUrl: activeEnvironment.mediaBaseUrl,
       mqttBrokerUrl: activeEnvironment.mqttBrokerUrl,
     });
     setWorkspaceDrawerOpen(true);
@@ -545,7 +543,6 @@ export default function DeviceListPanel() {
       name: target.name,
       gatewayBaseUrl: target.gatewayBaseUrl,
       protocolBaseUrl: target.protocolBaseUrl,
-      mediaBaseUrl: target.mediaBaseUrl,
       mqttBrokerUrl: target.mqttBrokerUrl,
     });
     setWorkspaceDrawerOpen(true);
@@ -1015,9 +1012,6 @@ export default function DeviceListPanel() {
               <Form.Item name="protocolBaseUrl" label="协议服务地址" rules={[{ required: true, message: '请输入协议服务地址' }]}>
                 <Input placeholder="http://localhost:9070" />
               </Form.Item>
-              <Form.Item name="mediaBaseUrl" label="媒体服务地址" rules={[{ required: true, message: '请输入媒体服务地址' }]}>
-                <Input placeholder="http://localhost:9040" />
-              </Form.Item>
               <Form.Item name="mqttBrokerUrl" label="MQTT Broker 地址" rules={[{ required: true, message: '请输入 MQTT Broker 地址' }]}>
                 <Input placeholder="mqtt://localhost:1883" />
               </Form.Item>
@@ -1059,7 +1053,6 @@ export default function DeviceListPanel() {
                   <Space direction="vertical" size={4} style={{ width: '100%' }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>网关 {environment.gatewayBaseUrl}</Text>
                     <Text type="secondary" style={{ fontSize: 12 }}>协议 {environment.protocolBaseUrl}</Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>媒体 {environment.mediaBaseUrl}</Text>
                     <Text type="secondary" style={{ fontSize: 12 }}>Broker {environment.mqttBrokerUrl}</Text>
                   </Space>
                   <Space size={8} wrap>

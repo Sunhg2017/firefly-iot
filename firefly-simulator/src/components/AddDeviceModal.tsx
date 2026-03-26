@@ -180,7 +180,7 @@ function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, 
       case 'MQTT':
         return ['productKey', 'deviceName', 'mqttBrokerUrl', ...(mqttAuthMode === 'PRODUCT_SECRET' ? ['mqttRegisterBaseUrl', 'productSecret'] : ['deviceSecret'])];
       case 'Video':
-        return ['productKey', 'mediaBaseUrl', 'streamMode', ...(isProxyVideoMode(streamMode) ? ['sourceUrl'] : ['gbDeviceId', 'gbDomain'])];
+        return ['productKey', 'streamMode', ...(isProxyVideoMode(streamMode) ? ['sourceUrl'] : ['gbDeviceId', 'gbDomain'])];
       case 'CoAP':
         return ['coapBaseUrl', 'productKey', 'deviceName', 'deviceSecret'];
       case 'SNMP':
@@ -226,7 +226,7 @@ function buildSummary(values: Record<string, unknown>, products: TenantProductRe
       label: '接入地址',
       value: protocol === 'Video'
         ? videoEndpoint || '-'
-        : values.httpBaseUrl || values.coapBaseUrl || values.mqttBrokerUrl || values.mediaBaseUrl || values.loraWebhookUrl || '-',
+        : values.httpBaseUrl || values.coapBaseUrl || values.mqttBrokerUrl || values.loraWebhookUrl || '-',
     },
   ];
   return items;
@@ -706,7 +706,6 @@ export default function AddDeviceModal({ open, onClose }: Props) {
         return (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
             {renderProductField()}
-            <Form.Item name="mediaBaseUrl" label="媒体服务地址" rules={[{ required: true, message: '请输入媒体服务地址' }]}><Input placeholder={activeEnvironment.mediaBaseUrl} /></Form.Item>
             <Form.Item name="streamMode" label="视频模式">
               <Radio.Group>
                 <Radio.Button value="GB28181">GB28181</Radio.Button>

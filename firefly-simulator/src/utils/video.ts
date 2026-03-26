@@ -183,7 +183,7 @@ export function getActiveVideoApiContext() {
     return null;
   }
   return {
-    baseUrl: activeEnvironment.mediaBaseUrl,
+    baseUrl: activeEnvironment.gatewayBaseUrl,
     accessToken: activeSession.accessToken,
     environmentName: activeEnvironment.name,
   };

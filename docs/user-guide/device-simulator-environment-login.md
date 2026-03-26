@@ -17,7 +17,6 @@
 
 - 平台网关地址
 - 协议服务地址
-- 媒体服务地址
 - MQTT Broker 地址
 
 切换环境后，新建设备抽屉会自动带出当前环境的地址默认值。
@@ -76,6 +75,7 @@ CoAP 目前仍沿用 `deviceSecret` 录入方式。
 当前环境会影响：
 
 - 新建设备时的 HTTP / CoAP / MQTT / SNMP / Modbus / WebSocket / LoRaWAN 地址默认值
+- Video 设备的网关接口调用地址
 - OpenAPI 网关默认值
 - 导入设备时缺失地址字段的默认回填
 
