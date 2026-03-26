@@ -270,6 +270,7 @@ firefly-system/src/main/java/.../system/
 
 - `firefly-media -> firefly-device` 的同步调用统一通过 Feign 头透传 `tenantId / userId / permissions`，避免产品查询与内部建设备落到错误租户或错误权限口径。
 - Kafka 异步链路由 `firefly-common` 统一补齐业务上下文传播：Producer 在消息头写入 `AppContextHolder` 中的租户、用户与权限信息，Consumer 通过 Spring Kafka `RecordInterceptor` 按消息逐条恢复并在处理后清理。
+- `VideoConvert` 对视频设备创建、更新、详情返回改为显式字段映射，创建链路中的 `gbDeviceId / gbDomain / transport / sipPassword / streamMode / ip / port / manufacturer / model / firmware` 不再依赖生成式转换实现。
 - 视频设备自动建设备资产时，会读取当前用户的数据范围：
   - 若产品已绑定项目，直接沿用产品项目。
   - 若产品未绑定项目且当前范围只命中一个项目，则把该项目写入新建设备。

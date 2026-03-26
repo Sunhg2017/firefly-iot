@@ -76,7 +76,7 @@ public class VideoService {
     @Transactional
     public VideoDeviceVO createDevice(VideoDeviceCreateDTO dto) {
         Long tenantId = AppContextHolder.getTenantId();
-        VideoDevice device = VideoConvert.INSTANCE.toDeviceEntity(dto);
+        VideoDevice device = VideoConvert.toDeviceEntity(dto);
         normalizeDevice(device, dto.getSipAuthEnabled());
         // 视频设备列表按 device_id 参与数据权限过滤，新增时必须先挂到设备资产主链路，
         // 否则保存成功后会因为 device_id 为空而立即从列表中消失。
@@ -86,7 +86,7 @@ public class VideoService {
         device.setCreatedBy(AppContextHolder.getUserId());
         videoDeviceMapper.insert(device);
         log.info("Video device created: id={}, name={}, mode={}", device.getId(), dto.getName(), dto.getStreamMode());
-        return VideoConvert.INSTANCE.toDeviceVO(device);
+        return VideoConvert.toDeviceVO(device);
     }
 
     public VideoDeviceVO getDeviceById(Long id) {
@@ -94,7 +94,7 @@ public class VideoService {
         if (device == null) {
             throw new BizException(ResultCode.VIDEO_DEVICE_NOT_FOUND);
         }
-        return VideoConvert.INSTANCE.toDeviceVO(device);
+        return VideoConvert.toDeviceVO(device);
     }
 
     @DataScope(projectColumn = "", productColumn = "", deviceColumn = "device_id", groupColumn = "")
@@ -118,7 +118,7 @@ public class VideoService {
         wrapper.orderByDesc(VideoDevice::getCreatedAt);
 
         IPage<VideoDevice> result = videoDeviceMapper.selectPage(page, wrapper);
-        return result.convert(VideoConvert.INSTANCE::toDeviceVO);
+        return result.convert(VideoConvert::toDeviceVO);
     }
 
     @Transactional
@@ -127,10 +127,10 @@ public class VideoService {
         if (device == null) {
             throw new BizException(ResultCode.VIDEO_DEVICE_NOT_FOUND);
         }
-        VideoConvert.INSTANCE.updateDeviceEntity(dto, device);
+        VideoConvert.updateDeviceEntity(dto, device);
         normalizeDevice(device, dto.getSipAuthEnabled());
         videoDeviceMapper.updateById(device);
-        return VideoConvert.INSTANCE.toDeviceVO(device);
+        return VideoConvert.toDeviceVO(device);
     }
 
     @Transactional
@@ -154,7 +154,7 @@ public class VideoService {
         LambdaQueryWrapper<VideoChannel> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(VideoChannel::getVideoDeviceId, videoDeviceId).orderByAsc(VideoChannel::getChannelId);
         return videoChannelMapper.selectList(wrapper)
-                .stream().map(VideoConvert.INSTANCE::toChannelVO).collect(Collectors.toList());
+                .stream().map(VideoConvert::toChannelVO).collect(Collectors.toList());
     }
 
     // ==================== GB28181 Queries ====================
@@ -236,7 +236,7 @@ public class VideoService {
         streamSessionMapper.insert(session);
 
         log.info("Stream started: deviceId={}, streamId={}, mode={}", videoDeviceId, streamId, device.getStreamMode());
-        return VideoConvert.INSTANCE.toSessionVO(session);
+        return VideoConvert.toSessionVO(session);
     }
 
     @Transactional
