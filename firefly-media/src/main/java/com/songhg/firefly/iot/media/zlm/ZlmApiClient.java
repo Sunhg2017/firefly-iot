@@ -55,6 +55,7 @@ public class ZlmApiClient {
                     .build();
             HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
             log.debug("ZLM GET {} -> {}", path, response.statusCode());
+            ensureSuccessStatus(path, response.statusCode(), response.body());
             return response.body();
         } catch (IOException | InterruptedException e) {
             log.error("ZLM API GET error: path={}, error={}", path, e.getMessage());
@@ -77,6 +78,7 @@ public class ZlmApiClient {
                     .build();
             HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
             log.debug("ZLM POST {} -> {}", path, response.statusCode());
+            ensureSuccessStatus(path, response.statusCode(), response.body());
             return response.body();
         } catch (IOException | InterruptedException e) {
             log.error("ZLM API POST error: path={}, error={}", path, e.getMessage());
@@ -85,6 +87,27 @@ public class ZlmApiClient {
             }
             throw new BizException(ResultCode.INTERNAL_ERROR, "ZLMediaKit API 调用失败: " + e.getMessage());
         }
+    }
+
+    private void ensureSuccessStatus(String path, int statusCode, String body) {
+        if (statusCode >= 200 && statusCode < 300) {
+            return;
+        }
+        String briefBody = abbreviateBody(body);
+        log.warn("ZLM API returned non-success status: path={}, status={}, body={}", path, statusCode, briefBody);
+        throw new BizException(ResultCode.INTERNAL_ERROR,
+                "ZLMediaKit API 调用失败: path=" + path + ", status=" + statusCode + ", body=" + briefBody);
+    }
+
+    private String abbreviateBody(String body) {
+        if (body == null) {
+            return "null";
+        }
+        String normalized = body.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= 300) {
+            return normalized;
+        }
+        return normalized.substring(0, 300) + "...";
     }
 
     // ==================== 服务器信息 ====================

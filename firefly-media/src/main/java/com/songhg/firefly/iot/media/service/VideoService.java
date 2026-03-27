@@ -308,8 +308,14 @@ public class VideoService {
         int tcpMode = "TCP".equalsIgnoreCase(trimToNull(device.getTransport())) ? 1 : 0;
         ZlmOpenRtpServerResponse response = zlmApiClient.openRtpServer(0, tcpMode, streamId);
         if (response == null || !response.isSuccess()) {
+            if (response != null) {
+                log.warn("GB28181 openRtpServer returned unexpected response: streamId={}, code={}, msg={}, portValue={}, data={}",
+                        streamId, response.getCode(), response.getMsg(), response.resolvePortValue(), response.getData());
+            }
             throw new BizException(ResultCode.STREAM_START_FAILED,
-                    "GB28181 RTP 收流端口打开失败: " + (response == null ? "empty response" : response.getMsg()));
+                    "GB28181 RTP 收流端口打开失败: "
+                            + (response == null ? "empty response"
+                            : ("code=" + response.getCode() + ", msg=" + response.getMsg())));
         }
         Integer port = response.resolvePort();
         if (port == null || port <= 0) {

@@ -53,8 +53,9 @@ cd ../firefly-simulator && npm run build:vite
 4. Kafka 鉴权和 tracing 上下文透传已启用。
 5. 历史环境如残留旧 `video` 菜单、自定义菜单或重复视频设备，先清理旧数据后再联调。
 6. `firefly-media` 已正确配置 `spring.kafka.bootstrap-servers`；开发环境默认对齐 `192.168.123.102:9092`，生产环境通过 `SPRING_KAFKA_BOOTSTRAP_SERVERS` 注入。
-7. `firefly-media` 的 `zlmediakit.public-host/public-port/public-scheme` 已配置为浏览器可访问地址，禁止保留 `localhost` 对外下发给前端。
-8. `GB28181` 联调时，`firefly-media` 必须能调用 ZLM `openRtpServer/closeRtpServer`，并允许设备向分配的 RTP 端口发流。
+7. `firefly-media` 的 `zlmediakit.host/port` 必须直连 ZLMediaKit API；若当前机器 `8080` 被网关等服务占用，必须改成真实 ZLM 地址，禁止继续使用默认 `localhost:8080`。
+8. `firefly-media` 的 `zlmediakit.public-host/public-port/public-scheme` 已配置为浏览器可访问地址，禁止保留 `localhost` 对外下发给前端。
+9. `GB28181` 联调时，`firefly-media` 必须能调用 ZLM `openRtpServer/closeRtpServer`，并允许设备向分配的 RTP 端口发流。
 
 ## 5. 回归验证
 
@@ -109,11 +110,12 @@ cd ../firefly-simulator && npm run build:vite
 排查：
 
 1. 检查 `firefly-media` 是否已升级到包含 `openRtpServer` 最新链路的版本。
-2. 检查 `firefly-media` 日志是否先打印 RTP 收流端口，再发送 INVITE。
-3. 若日志提示 `GB28181 RTP 收流端口返回不正确`，优先核对 ZLM `openRtpServer` 实际返回体，确认 `port` 是否位于顶层或 `data.port`，并检查是否被代理层转成字符串。
-4. 检查 ZLM `getMediaList` 中是否能看到 `app=rtp`、`stream={streamId}` 的流，而不是只检查 `live` 应用。
-5. 检查设备是否已按 INVITE 中分配的 RTP 端口向媒体服务发流。
-6. 若是跨机器联调，检查 INVITE SDP 中下发给设备的媒体地址是否可达，禁止误填成对端不可访问的 `localhost`。
+2. 若日志提示 `ZLMediaKit API 调用失败` 且状态码为 `404`，优先检查 `zlmediakit.host/port` 是否误指向网关或其他 Spring Boot 服务。
+3. 检查 `firefly-media` 日志是否先打印 RTP 收流端口，再发送 INVITE。
+4. 若日志提示 `GB28181 RTP 收流端口返回不正确`，优先核对 ZLM `openRtpServer` 实际返回体，确认 `port` 是否位于顶层或 `data.port`，并检查是否被代理层转成字符串。
+5. 检查 ZLM `getMediaList` 中是否能看到 `app=rtp`、`stream={streamId}` 的流，而不是只检查 `live` 应用。
+6. 检查设备是否已按 INVITE 中分配的 RTP 端口向媒体服务发流。
+7. 若是跨机器联调，检查 INVITE SDP 中下发给设备的媒体地址是否可达，禁止误填成对端不可访问的 `localhost`。
 
 ### 6.6 视频状态没有回写到设备资产
 

@@ -7,11 +7,11 @@ import lombok.Data;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ZlmResponse<T> {
 
-    private int code;
+    private Integer code;
     private String msg;
     private T data;
 
     public boolean isSuccess() {
-        return code == 0;
+        return Integer.valueOf(0).equals(code);
     }
 }

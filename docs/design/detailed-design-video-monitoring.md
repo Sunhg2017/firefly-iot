@@ -167,6 +167,7 @@
 ### 6.4 播放地址与开流时序
 
 - `firefly-media` 调用 ZLM REST 时继续使用 `zlmediakit.host/port` 内网地址。
+- `zlmediakit.host/port` 必须直接指向 ZLMediaKit API 服务，禁止误配到 `firefly-gateway` 或其他只返回业务包装结果的 HTTP 服务。
 - 对前端下发播放地址时，固定使用 `zlmediakit.public-host/public-port/public-scheme` 作为基准地址。
 - 若未配置 `public-host`，默认回落到 `host`，仅适用于本机联调。
 - `RTSP / RTMP` 代理流继续使用 `live/{streamId}` 作为 ZLM 应用名和播放地址。
