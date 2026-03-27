@@ -20,7 +20,7 @@ import {
   message,
 } from 'antd';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
-import type { Protocol } from '../store';
+import type { Protocol, SimDevice, SimDeviceLocator, SipChannel } from '../store';
 import { useSimStore } from '../store';
 import {
   buildEnvironmentDeviceDefaults,
@@ -36,12 +36,14 @@ import {
   resolveVideoDeviceName,
   resolveVideoProductProtocol,
 } from '../utils/video';
+import { disconnectSimDevice } from '../utils/runtime';
 
 const { Paragraph, Text } = Typography;
 
 interface Props {
   open: boolean;
   onClose: () => void;
+  editingDevice?: SimDevice | null;
 }
 
 interface TenantProductRecord {
@@ -239,6 +241,219 @@ function buildInitialValues(
   };
 }
 
+function resolveNumberValue(value: unknown, fallback: number): number {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : fallback;
+}
+
+function resolveBooleanValue(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function cloneLocators(locators: SimDeviceLocator[] | undefined): SimDeviceLocator[] {
+  if (!Array.isArray(locators)) {
+    return [];
+  }
+  return locators.map((item) => ({
+    locatorType: trimText(item.locatorType),
+    locatorValue: trimText(item.locatorValue),
+    primaryLocator: Boolean(item.primaryLocator),
+  }));
+}
+
+function cloneSipChannels(channels: SipChannel[] | undefined): SipChannel[] {
+  if (!Array.isArray(channels)) {
+    return [];
+  }
+  return channels.map((item) => ({
+    channelId: trimText(item.channelId),
+    name: trimText(item.name),
+    manufacturer: trimText(item.manufacturer),
+    model: trimText(item.model),
+    status: item.status === 'OFF' ? 'OFF' : 'ON',
+    ptzType: resolveNumberValue(item.ptzType, 1),
+    longitude: resolveNumberValue(item.longitude, 0),
+    latitude: resolveNumberValue(item.latitude, 0),
+  }));
+}
+
+function buildEditableDeviceValues(
+  device: SimDevice,
+  environment: ReturnType<typeof getActiveEnvironment>,
+): Record<string, unknown> {
+  return {
+    ...buildInitialValues(environment),
+    name: device.name,
+    protocol: device.protocol,
+    httpBaseUrl: device.httpBaseUrl,
+    httpAuthMode: device.httpAuthMode,
+    httpRegisterBaseUrl: device.httpRegisterBaseUrl,
+    productKey: device.productKey,
+    productSecret: device.productSecret,
+    deviceName: device.deviceName,
+    deviceSecret: device.deviceSecret,
+    locators: cloneLocators(device.locators),
+    mqttAuthMode: device.mqttAuthMode,
+    mqttRegisterBaseUrl: device.mqttRegisterBaseUrl,
+    mqttBrokerUrl: device.mqttBrokerUrl,
+    mqttClientId: device.mqttClientId,
+    mqttUsername: device.mqttUsername,
+    mqttPassword: device.mqttPassword,
+    mqttClean: device.mqttClean,
+    mqttKeepalive: device.mqttKeepalive,
+    mqttWillTopic: device.mqttWillTopic,
+    mqttWillPayload: device.mqttWillPayload,
+    mqttWillQos: device.mqttWillQos,
+    mqttWillRetain: device.mqttWillRetain,
+    coapBaseUrl: device.coapBaseUrl,
+    streamMode: device.streamMode,
+    videoSourceType: device.videoSourceType,
+    gbDeviceId: device.gbDeviceId,
+    gbDomain: device.gbDomain,
+    sourceUrl: device.sourceUrl,
+    ip: device.ip,
+    manufacturer: device.manufacturer,
+    model: device.model,
+    firmware: device.firmware,
+    sipServerIp: device.sipServerIp,
+    sipServerPort: device.sipServerPort,
+    sipServerId: device.sipServerId,
+    sipLocalPort: device.sipLocalPort,
+    sipKeepaliveInterval: device.sipKeepaliveInterval,
+    sipPassword: device.sipPassword,
+    sipTransport: device.sipTransport,
+    cameraDevice: device.cameraDevice,
+    mediaFps: device.mediaFps,
+    mediaWidth: device.mediaWidth,
+    mediaHeight: device.mediaHeight,
+    sipChannels: cloneSipChannels(device.sipChannels),
+    snmpConnectorUrl: device.snmpConnectorUrl,
+    snmpHost: device.snmpHost,
+    snmpPort: device.snmpPort,
+    snmpVersion: device.snmpVersion,
+    snmpCommunity: device.snmpCommunity,
+    modbusConnectorUrl: device.modbusConnectorUrl,
+    modbusHost: device.modbusHost,
+    modbusPort: device.modbusPort,
+    modbusSlaveId: device.modbusSlaveId,
+    modbusMode: device.modbusMode,
+    wsConnectorUrl: device.wsConnectorUrl,
+    wsEndpoint: device.wsEndpoint,
+    wsDeviceId: device.wsDeviceId,
+    wsProductId: device.wsProductId,
+    wsTenantId: device.wsTenantId,
+    tcpHost: device.tcpHost,
+    tcpPort: device.tcpPort,
+    udpHost: device.udpHost,
+    udpPort: device.udpPort,
+    loraWebhookUrl: device.loraWebhookUrl,
+    loraDevEui: device.loraDevEui,
+    loraAppId: device.loraAppId,
+    loraFPort: device.loraFPort,
+  };
+}
+
+function buildNormalizedDeviceDraft(values: Record<string, unknown>): Partial<SimDevice> {
+  const protocol = (values.protocol || 'HTTP') as Protocol;
+  const normalizedStreamMode = normalizeVideoStreamMode(typeof values.streamMode === 'string' ? values.streamMode : undefined);
+  const normalizedVideoSourceType = normalizeVideoSourceType(values.videoSourceType);
+  const effectiveDeviceName = resolveEffectiveDeviceName(values);
+
+  return {
+    name: trimText(values.name),
+    nickname: trimText(values.name),
+    protocol,
+    httpBaseUrl: trimText(values.httpBaseUrl as string | undefined),
+    httpAuthMode: values.httpAuthMode === 'PRODUCT_SECRET' ? 'PRODUCT_SECRET' : 'DEVICE_SECRET',
+    httpRegisterBaseUrl: trimText(values.httpRegisterBaseUrl as string | undefined),
+    productKey: trimText(values.productKey as string | undefined),
+    productSecret: trimText(values.productSecret as string | undefined),
+    deviceName: effectiveDeviceName,
+    deviceSecret: trimText(values.deviceSecret as string | undefined),
+    locators: cloneLocators(values.locators as SimDeviceLocator[] | undefined),
+    mqttAuthMode: values.mqttAuthMode === 'PRODUCT_SECRET' ? 'PRODUCT_SECRET' : 'DEVICE_SECRET',
+    mqttRegisterBaseUrl: trimText(values.mqttRegisterBaseUrl as string | undefined),
+    mqttBrokerUrl: trimText(values.mqttBrokerUrl as string | undefined),
+    mqttClientId: trimText(values.mqttClientId as string | undefined),
+    mqttUsername: trimText(values.mqttUsername as string | undefined),
+    mqttPassword: trimText(values.mqttPassword as string | undefined),
+    mqttClean: resolveBooleanValue(values.mqttClean, true),
+    mqttKeepalive: resolveNumberValue(values.mqttKeepalive, 60),
+    mqttWillTopic: trimText(values.mqttWillTopic as string | undefined),
+    mqttWillPayload: trimText(values.mqttWillPayload as string | undefined),
+    mqttWillQos: resolveNumberValue(values.mqttWillQos, 1),
+    mqttWillRetain: resolveBooleanValue(values.mqttWillRetain, false),
+    coapBaseUrl: trimText(values.coapBaseUrl as string | undefined),
+    streamMode: normalizedStreamMode,
+    videoSourceType: normalizedVideoSourceType,
+    gbDeviceId: trimText(values.gbDeviceId as string | undefined),
+    gbDomain: trimText(values.gbDomain as string | undefined),
+    sourceUrl: protocol === 'Video'
+      && isProxyVideoMode(normalizedStreamMode)
+      && normalizedVideoSourceType === 'LOCAL_CAMERA'
+      ? ''
+      : trimText(values.sourceUrl as string | undefined),
+    ip: trimText(values.ip as string | undefined),
+    manufacturer: trimText(values.manufacturer as string | undefined),
+    model: trimText(values.model as string | undefined),
+    firmware: trimText(values.firmware as string | undefined),
+    sipServerIp: trimText(values.sipServerIp as string | undefined),
+    sipServerPort: resolveNumberValue(values.sipServerPort, 5060),
+    sipServerId: trimText(values.sipServerId as string | undefined),
+    sipLocalPort: resolveNumberValue(values.sipLocalPort, 5080),
+    sipKeepaliveInterval: resolveNumberValue(values.sipKeepaliveInterval, 60),
+    sipPassword: trimText(values.sipPassword as string | undefined),
+    sipTransport: values.sipTransport === 'TCP' ? 'TCP' : 'UDP',
+    cameraDevice: trimText(values.cameraDevice as string | undefined),
+    mediaFps: resolveNumberValue(values.mediaFps, 15),
+    mediaWidth: resolveNumberValue(values.mediaWidth, 1280),
+    mediaHeight: resolveNumberValue(values.mediaHeight, 720),
+    sipChannels: cloneSipChannels(values.sipChannels as SipChannel[] | undefined),
+    snmpConnectorUrl: trimText(values.snmpConnectorUrl as string | undefined),
+    snmpHost: trimText(values.snmpHost as string | undefined),
+    snmpPort: resolveNumberValue(values.snmpPort, 161),
+    snmpVersion: resolveNumberValue(values.snmpVersion, 2),
+    snmpCommunity: trimText(values.snmpCommunity as string | undefined),
+    modbusConnectorUrl: trimText(values.modbusConnectorUrl as string | undefined),
+    modbusHost: trimText(values.modbusHost as string | undefined),
+    modbusPort: resolveNumberValue(values.modbusPort, 502),
+    modbusSlaveId: resolveNumberValue(values.modbusSlaveId, 1),
+    modbusMode: values.modbusMode === 'RTU_OVER_TCP' ? 'RTU_OVER_TCP' : 'TCP',
+    wsConnectorUrl: trimText(values.wsConnectorUrl as string | undefined),
+    wsEndpoint: trimText(values.wsEndpoint as string | undefined),
+    wsDeviceId: trimText(values.wsDeviceId as string | undefined),
+    wsProductId: trimText(values.wsProductId as string | undefined),
+    wsTenantId: trimText(values.wsTenantId as string | undefined),
+    tcpHost: trimText(values.tcpHost as string | undefined),
+    tcpPort: resolveNumberValue(values.tcpPort, 8900),
+    udpHost: trimText(values.udpHost as string | undefined),
+    udpPort: resolveNumberValue(values.udpPort, 8901),
+    loraWebhookUrl: trimText(values.loraWebhookUrl as string | undefined),
+    loraDevEui: trimText(values.loraDevEui as string | undefined),
+    loraAppId: trimText(values.loraAppId as string | undefined),
+    loraFPort: resolveNumberValue(values.loraFPort, 1),
+  };
+}
+
+function buildVideoBindingKey(device: Pick<SimDevice, 'protocol' | 'streamMode' | 'videoSourceType' | 'gbDeviceId' | 'sourceUrl'>): string | null {
+  if (device.protocol !== 'Video') {
+    return null;
+  }
+  const streamMode = normalizeVideoStreamMode(device.streamMode);
+  if (streamMode === 'GB28181') {
+    return `GB28181:${trimText(device.gbDeviceId)}`;
+  }
+  const videoSourceType = normalizeVideoSourceType(device.videoSourceType);
+  if (videoSourceType === 'LOCAL_CAMERA') {
+    return `LOCAL_CAMERA:${streamMode}`;
+  }
+  try {
+    return `REMOTE_SOURCE:${streamMode}:${parseVideoSourceUrl(streamMode, device.sourceUrl)?.normalizedUrl || trimText(device.sourceUrl)}`;
+  } catch {
+    return `REMOTE_SOURCE:${streamMode}:${trimText(device.sourceUrl)}`;
+  }
+}
+
 function getStepFields(
   protocol: Protocol,
   step: number,
@@ -323,8 +538,9 @@ function buildSummary(values: Record<string, unknown>, products: TenantProductRe
   return items;
 }
 
-export default function AddDeviceModal({ open, onClose }: Props) {
+export default function AddDeviceModal({ open, onClose, editingDevice = null }: Props) {
   const addLog = useSimStore((state) => state.addLog);
+  const updateDevice = useSimStore((state) => state.updateDevice);
   const environments = useSimWorkspaceStore((state) => state.environments);
   const activeEnvironmentId = useSimWorkspaceStore((state) => state.activeEnvironmentId);
   const sessions = useSimWorkspaceStore((state) => state.sessions);
@@ -374,8 +590,13 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     && !productLoadError
     && (productLoading || products.length > 0);
 
+  const drawerTitle = editingDevice ? '编辑设备' : '新建设备';
+  const submitButtonLabel = editingDevice ? '保存修改' : '创建设备';
+
   const resetForm = () => {
-    const nextValues = buildInitialValues(activeEnvironment);
+    const nextValues = editingDevice
+      ? buildEditableDeviceValues(editingDevice, activeEnvironment)
+      : buildInitialValues(activeEnvironment);
     form.resetFields();
     form.setFieldsValue(nextValues);
     setCurrentStep(0);
@@ -399,7 +620,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
       return;
     }
     resetForm();
-  }, [open]);
+  }, [activeEnvironment, editingDevice, open]);
 
   useEffect(() => {
     if (!open) {
@@ -614,7 +835,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     setCurrentStep((prev) => Math.min(prev + 1, STEP_TITLES.length - 1));
   };
 
-  const handleCreateDevice = async () => {
+  const handleSubmitDevice = async () => {
     const submitFields = Array.from(new Set([
       ...getStepFields(protocol, 0, mqttAuthMode, streamMode, httpAuthMode),
       ...getStepFields(protocol, 1, mqttAuthMode, streamMode, httpAuthMode, videoSourceType),
@@ -625,31 +846,47 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     }
 
     const values = form.getFieldsValue(true);
-    const effectiveDeviceName = resolveEffectiveDeviceName(values);
-    const normalizedVideoStreamMode = protocol === 'Video'
-      ? normalizeVideoStreamMode(typeof values.streamMode === 'string' ? values.streamMode : undefined)
-      : undefined;
-    const normalizedVideoSourceType = protocol === 'Video'
-      ? normalizeVideoSourceType(values.videoSourceType)
-      : undefined;
-    const normalizedValues = {
-      ...values,
-      streamMode: protocol === 'Video' ? normalizedVideoStreamMode : values.streamMode,
-      videoSourceType: protocol === 'Video' ? normalizedVideoSourceType : values.videoSourceType,
-      sourceUrl: protocol === 'Video'
-        && isProxyVideoMode(normalizedVideoStreamMode)
-        && normalizedVideoSourceType === 'LOCAL_CAMERA'
-        ? ''
-        : values.sourceUrl,
-      // Video 设备不再保留空的 DeviceName，而是统一映射到当前可识别的业务标识。
-      deviceName: effectiveDeviceName,
-      // 模拟设备名称就是平台侧昵称口径，避免再维护一个重复输入框。
-      nickname: trimText(values.name),
-    };
+    const normalizedDraft = buildNormalizedDeviceDraft(values);
 
-    useSimStore.getState().addDevice(normalizedValues);
-    addLog('system', 'System', 'info', `新增模拟设备：${normalizedValues.name}`);
-    message.success(`已新增模拟设备：${normalizedValues.name}`);
+    if (editingDevice) {
+      const nextVideoBindingKey = buildVideoBindingKey({
+        protocol: normalizedDraft.protocol || editingDevice.protocol,
+        streamMode: normalizedDraft.streamMode || editingDevice.streamMode,
+        videoSourceType: normalizedDraft.videoSourceType || editingDevice.videoSourceType,
+        gbDeviceId: normalizedDraft.gbDeviceId || '',
+        sourceUrl: normalizedDraft.sourceUrl || '',
+      } as Pick<SimDevice, 'protocol' | 'streamMode' | 'videoSourceType' | 'gbDeviceId' | 'sourceUrl'>);
+      const currentVideoBindingKey = buildVideoBindingKey(editingDevice);
+      const editingRequiresReconnect = editingDevice.status !== 'offline';
+      if (editingRequiresReconnect) {
+        const disconnectResult = await disconnectSimDevice(editingDevice.id, { silent: true });
+        if (!disconnectResult.success) {
+          addLog(
+            editingDevice.id,
+            editingDevice.name,
+            'warn',
+            `编辑前断开连接存在告警：${disconnectResult.message || 'unknown warning'}`,
+          );
+        }
+      }
+      updateDevice(editingDevice.id, {
+        ...normalizedDraft,
+        ...(currentVideoBindingKey !== nextVideoBindingKey ? { platformDeviceId: null } : {}),
+      });
+      addLog('system', 'System', 'info', `更新模拟设备：${normalizedDraft.name}`);
+      message.success(editingRequiresReconnect
+        ? `已更新模拟设备：${normalizedDraft.name}，当前连接已断开，请重新连接以应用新配置`
+        : `已更新模拟设备：${normalizedDraft.name}`);
+      if (currentVideoBindingKey !== nextVideoBindingKey) {
+        addLog(editingDevice.id, normalizedDraft.name || editingDevice.name, 'info', '视频设备身份已更新，已清空旧的平台设备关联');
+      }
+      closeDrawer();
+      return;
+    }
+
+    useSimStore.getState().addDevice(normalizedDraft);
+    addLog('system', 'System', 'info', `新增模拟设备：${normalizedDraft.name}`);
+    message.success(`已新增模拟设备：${normalizedDraft.name}`);
     closeDrawer();
   };
 
@@ -1241,7 +1478,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     <Drawer
       title={(
         <Space direction="vertical" size={0}>
-          <Text strong style={{ fontSize: 18, color: '#0f172a' }}>新建设备</Text>
+          <Text strong style={{ fontSize: 18, color: '#0f172a' }}>{drawerTitle}</Text>
           <Text style={{ fontSize: 12, color: '#64748b' }}>{activeEnvironment.name}</Text>
         </Space>
       )}
@@ -1260,7 +1497,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
             {currentStep < STEP_TITLES.length - 1 ? (
               <Button type="primary" onClick={() => void nextStep()}>下一步</Button>
             ) : (
-              <Button type="primary" onClick={() => void handleCreateDevice()}>创建设备</Button>
+              <Button type="primary" onClick={() => void handleSubmitDevice()}>{submitButtonLabel}</Button>
             )}
           </Space>
         </Space>

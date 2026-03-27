@@ -18,6 +18,7 @@
 - **自定义 JSON** — 支持手动编写任意 JSON 作为上报数据
 - **自动上报** — 可配置定时间隔自动发送数据（1s ~ 3600s）
 - **多设备管理** — 同时模拟多个设备并发接入
+- **设备编辑** — 支持直接编辑已有模拟设备，保存时只更新配置字段
 - **批量导入/导出** — JSON/CSV 文件批量导入设备，一键导出当前设备配置
 - **压力测试** — 并发 N 台设备×M 轮发送，实时统计 TPS/成功率/耗时
 - **配置持久化** — 设备配置和自定义模板自动保存到 localStorage，刷新后恢复
@@ -112,6 +113,8 @@ npm run electron:build
 - 使用 `本地摄像头` 时，可在高级配置里选择具体摄像头设备；macOS 下还会同步列出可选采集模式
 - 再次连接同一台视频设备时，模拟器会优先复用已关联的 `platformDeviceId`
 - Video 设备现在也支持先绑定平台产品，再按 `ProductKey` 同步当前产品物模型
+- 左侧设备卡片支持直接编辑已有设备；如果设备当前已连接，保存时会先断开旧连接，保存后再按新配置重连
+- Video 设备编辑后若修改了身份键（如 `gbDeviceId`、视频模式、媒体源类型、外部源地址），模拟器会清空旧 `platformDeviceId`，下一次连接重新绑定平台资产
 
 | 功能 | API | 说明 |
 |------|-----|------|
@@ -255,7 +258,7 @@ name,protocol,productKey,deviceName,deviceSecret,httpBaseUrl
 温湿度传感器-01,HTTP,pk_001,dev_01,secret_01,http://localhost:9070
 ```
 
-支持的字段: `name`, `protocol` (HTTP/MQTT/CoAP/Video/SNMP/Modbus/WebSocket/TCP/UDP/LoRaWAN), `productKey`, `deviceName`, `deviceSecret`, `httpBaseUrl`, `coapBaseUrl`, `mqttBrokerUrl`, `mqttClientId`, `mqttUsername`, `mqttPassword`, `tcpHost`, `tcpPort`, `udpHost`, `udpPort`, `loraWebhookUrl`, `loraDevEui`, `loraAppId`, `loraFPort`
+支持的字段: `name`, `protocol` (HTTP/MQTT/CoAP/Video/SNMP/Modbus/WebSocket/TCP/UDP/LoRaWAN), `productKey`, `deviceName`, `deviceSecret`, `httpBaseUrl`, `coapBaseUrl`, `mqttBrokerUrl`, `mqttClientId`, `mqttUsername`, `mqttPassword`, `streamMode`, `videoSourceType`, `gbDeviceId`, `gbDomain`, `sourceUrl`, `sipServerIp`, `sipServerPort`, `sipServerId`, `sipLocalPort`, `sipKeepaliveInterval`, `sipPassword`, `sipTransport`, `cameraDevice`, `mediaFps`, `mediaWidth`, `mediaHeight`, `tcpHost`, `tcpPort`, `udpHost`, `udpPort`, `loraWebhookUrl`, `loraDevEui`, `loraAppId`, `loraFPort`
 
 示例文件: `samples/devices.json`, `samples/devices.csv`
 

@@ -22,6 +22,7 @@ import {
   CopyOutlined,
   DeleteOutlined,
   DisconnectOutlined,
+  EditOutlined,
   ExportOutlined,
   ImportOutlined,
   LoginOutlined,
@@ -200,6 +201,7 @@ export default function DeviceListPanel() {
   const activeSession = sessions[activeEnvironment.id];
   const activeRememberedLogin = rememberedLogins[activeEnvironment.id];
   const [addOpen, setAddOpen] = useState(false);
+  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
   const [filterProto, setFilterProto] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchKey, setSearchKey] = useState('');
@@ -211,6 +213,10 @@ export default function DeviceListPanel() {
   const [logoutSubmitting, setLogoutSubmitting] = useState(false);
   const [environmentForm] = Form.useForm();
   const [loginForm] = Form.useForm<LoginFormValues>();
+  const editingDevice = useMemo(
+    () => devices.find((item) => item.id === editingDeviceId) || null,
+    [devices, editingDeviceId],
+  );
 
   const filteredDevices = useMemo(() => {
     let list = devices;
@@ -287,6 +293,10 @@ export default function DeviceListPanel() {
             sipKeepaliveInterval: device.sipKeepaliveInterval,
             sipPassword: device.sipPassword,
             sipTransport: device.sipTransport,
+            cameraDevice: device.cameraDevice,
+            mediaFps: device.mediaFps,
+            mediaWidth: device.mediaWidth,
+            mediaHeight: device.mediaHeight,
             sipChannels: device.sipChannels,
           }
         : {}),
@@ -402,6 +412,10 @@ export default function DeviceListPanel() {
           sipKeepaliveInterval: Number(row.sipKeepaliveInterval) || 60,
           sipPassword: row.sipPassword || '',
           sipTransport: (row.sipTransport as never) || 'UDP',
+          cameraDevice: row.cameraDevice || '',
+          mediaFps: Number(row.mediaFps) || 15,
+          mediaWidth: Number(row.mediaWidth) || 1280,
+          mediaHeight: Number(row.mediaHeight) || 720,
           sipChannels: Array.isArray((row as { sipChannels?: unknown[] }).sipChannels)
             ? ((row as { sipChannels?: SimDevice['sipChannels'] }).sipChannels || [])
             : [],
@@ -443,6 +457,10 @@ export default function DeviceListPanel() {
 
   const handleRemove = async (device: SimDevice) => {
     try {
+      if (editingDeviceId === device.id) {
+        setAddOpen(false);
+        setEditingDeviceId(null);
+      }
       if (device.status === 'online') {
         await disconnectSimDevice(device.id, { silent: true });
       }
@@ -527,6 +545,21 @@ export default function DeviceListPanel() {
     } as never);
     addLog('system', 'System', 'info', `已复制模拟设备：${device.name}`);
     message.success(`已复制 ${device.name}`);
+  };
+
+  const openCreateDevice = () => {
+    setEditingDeviceId(null);
+    setAddOpen(true);
+  };
+
+  const openEditDevice = (deviceId: string) => {
+    setEditingDeviceId(deviceId);
+    setAddOpen(true);
+  };
+
+  const closeDeviceDrawer = () => {
+    setAddOpen(false);
+    setEditingDeviceId(null);
   };
 
   const openCreateEnvironment = () => {
@@ -676,7 +709,7 @@ export default function DeviceListPanel() {
   };
 
   useEffect(() => {
-    const onAdd = () => setAddOpen(true);
+    const onAdd = () => openCreateDevice();
     const onBatchConnect = () => {
       void handleBatchConnect();
     };
@@ -721,7 +754,7 @@ export default function DeviceListPanel() {
                   导出
                 </Button>
               </Tooltip>
-              <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
+              <Button type="primary" size="small" icon={<PlusOutlined />} onClick={openCreateDevice}>
                 新建
               </Button>
             </Space>
@@ -943,6 +976,17 @@ export default function DeviceListPanel() {
                       </Space>
 
                       <Space size={2}>
+                        <Tooltip title="编辑设备">
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<EditOutlined />}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openEditDevice(device.id);
+                            }}
+                          />
+                        </Tooltip>
                         <Tooltip title="复制设备">
                           <Button
                             type="text"
@@ -1129,7 +1173,7 @@ export default function DeviceListPanel() {
         </Space>
       </Drawer>
 
-      <AddDeviceModal open={addOpen} onClose={() => setAddOpen(false)} />
+      <AddDeviceModal open={addOpen} editingDevice={editingDevice} onClose={closeDeviceDrawer} />
     </div>
   );
 }

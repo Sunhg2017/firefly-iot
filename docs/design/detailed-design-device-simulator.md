@@ -9,6 +9,7 @@
 - 模拟器继续覆盖 HTTP、MQTT、CoAP、Video、SNMP、Modbus、WebSocket、TCP、UDP、LoRaWAN。
 - Video 模式对齐平台最新视频资产链路。
 - 视频设备同步统一走 `DEVICE`，媒体控制统一走 `MEDIA`。
+- 设备列表支持直接编辑已有模拟设备，编辑和新建统一复用同一个抽屉表单。
 
 ## 2. Video 模式设计
 
@@ -80,3 +81,26 @@
 
 - 不为旧 `videoDeviceId`、旧 `/MEDIA` 主数据接口保留双轨兼容。
 - 不增加模拟器私有主数据接口，直接复用平台 `device` 与 `media` 正式接口。
+- 编辑已连接设备时，先断开当前连接再保存新配置，不做“热更新配置但连接仍沿用旧参数”的不一致实现。
+- Video 设备编辑后若身份键发生变化，会同步清空旧 `platformDeviceId`，确保下一次连接重新按新身份查重和绑定平台资产。
+
+## 5. 设备编辑
+
+### 5.1 入口
+
+- 左侧设备卡片增加 `编辑` 动作。
+- 点击后打开与“新建”共用的分步抽屉，并回填当前设备配置。
+
+### 5.2 保存规则
+
+1. 表单只更新可持久化配置字段。
+2. `status`、`token`、`streamUrl`、`sipRegistered`、`sipKeepaliveEnabled` 等运行态字段不允许直接由表单覆盖。
+3. 若设备当前不是离线态，保存前先执行断开连接，保存完成后由用户按新配置重新连接。
+
+### 5.3 导入导出一致性
+
+- Video 设备导入导出补齐以下本地采集字段：
+  - `cameraDevice`
+  - `mediaFps`
+  - `mediaWidth`
+  - `mediaHeight`
