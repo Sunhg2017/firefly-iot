@@ -62,6 +62,80 @@ load_env() {
     done < "$ENV_FILE"
 }
 
+compose_project_name() {
+    echo "${COMPOSE_PROJECT_NAME:-firefly-iot}"
+}
+
+volume_name_for() {
+    case "$1" in
+        postgres_data) echo "${POSTGRES_VOLUME_NAME:-firefly-postgres-data}" ;;
+        redis_data) echo "${REDIS_VOLUME_NAME:-firefly-redis-data}" ;;
+        kafka_data) echo "${KAFKA_VOLUME_NAME:-firefly-kafka-data}" ;;
+        minio_data) echo "${MINIO_VOLUME_NAME:-firefly-minio-data}" ;;
+        connector_mqtt_data) echo "${CONNECTOR_MQTT_VOLUME_NAME:-firefly-connector-mqtt-data}" ;;
+        *)
+            log_error "Unsupported managed volume key: $1"
+            exit 1
+            ;;
+    esac
+}
+
+ensure_named_volumes() {
+    local compose_project
+    compose_project="$(compose_project_name)"
+
+    for volume_key in postgres_data redis_data kafka_data minio_data connector_mqtt_data; do
+        local volume_name
+        volume_name="$(volume_name_for "$volume_key")"
+
+        if docker volume inspect "$volume_name" >/dev/null 2>&1; then
+            continue
+        fi
+
+        log_info "Creating volume ${volume_name}"
+        docker volume create \
+            --label "com.docker.compose.project=${compose_project}" \
+            --label "com.docker.compose.volume=${volume_key}" \
+            "$volume_name" >/dev/null
+    done
+}
+
+check_container_conflicts() {
+    local compose_project
+    compose_project="$(compose_project_name)"
+    local has_conflict=0
+
+    for service in "$@"; do
+        local container_name="firefly-${service}"
+        local container_id
+        container_id="$(docker ps -aq --filter "name=^/${container_name}$")"
+
+        if [ -z "$container_id" ]; then
+            continue
+        fi
+
+        local owner_project owner_config
+        owner_project="$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' "$container_id" 2>/dev/null || true)"
+        owner_config="$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.config_files" }}' "$container_id" 2>/dev/null || true)"
+
+        if [ -n "$owner_project" ] && [ "$owner_project" = "$compose_project" ]; then
+            continue
+        fi
+
+        has_conflict=1
+        if [ -n "$owner_project" ]; then
+            log_error "Container ${container_name} belongs to compose project '${owner_project}' (${owner_config:-unknown config}), not '${compose_project}'."
+        else
+            log_error "Container ${container_name} already exists and was not created by compose project '${compose_project}'."
+        fi
+    done
+
+    if [ "$has_conflict" -ne 0 ]; then
+        log_error "Retire the conflicting containers first, then rerun deploy.sh."
+        exit 1
+    fi
+}
+
 prepare_zlm_config() {
     local runtime_dir="$SCRIPT_DIR/runtime/zlmediakit"
     local config_file="$runtime_dir/config.ini"
@@ -148,7 +222,9 @@ dc() {
 
 cmd_infra() {
     load_env
+    ensure_named_volumes
     prepare_zlm_config
+    check_container_conflicts postgres redis kafka nacos minio sentinel zlmediakit
     log_step "Starting infrastructure services..."
     dc up -d --build postgres redis kafka nacos minio sentinel zlmediakit
     log_info "Waiting for PostgreSQL to become ready..."
@@ -168,7 +244,9 @@ cmd_build() {
 
 cmd_up() {
     load_env
+    ensure_named_volumes
     prepare_zlm_config
+    check_container_conflicts postgres redis kafka nacos minio sentinel zlmediakit gateway system device rule media data support connector web
     log_step "=== Firefly IoT full deployment ==="
 
     log_step "[1/4] Building backend..."

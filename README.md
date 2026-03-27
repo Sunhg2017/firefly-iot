@@ -45,6 +45,7 @@ docker compose -f deploy/docker-compose.yml up -d
 ```
 
 这会启动 PostgreSQL、Redis、Kafka、Nacos、MinIO、Sentinel。
+如果需要本地验证视频监控链路，当前 `deploy/docker-compose.yml` 也会一并启动 `zlmediakit`。
 
 如果本地也想用容器跑 `firefly-connector` 并直接暴露 MQTT 1883，可以额外执行：
 
@@ -127,6 +128,12 @@ cp .env.example .env
 bash deploy.sh up
 ```
 
+首次接管历史宿主机时，先确认不存在其他 Compose 工程创建的同名 `firefly-*` 容器；当前脚本会在启动前直接拦截这类冲突，避免把旧容器和新部署混在一起。
+
+- 持久化卷名称通过 `POSTGRES_VOLUME_NAME`、`REDIS_VOLUME_NAME`、`KAFKA_VOLUME_NAME`、`MINIO_VOLUME_NAME`、`CONNECTOR_MQTT_VOLUME_NAME` 固定下来，默认不会再跟 Compose 工程名绑定。
+- 如果宿主机以前跑过旧版 `/home/<user>/docker-compose.yml`，请先迁移或保留原数据卷，再移除旧容器后执行 `bash deploy.sh infra` / `bash deploy.sh up`。
+- 旧版独立 `firefly-emqx` 不应继续和当前部署并存；现在由 `firefly-connector` 内置 Broker 占用 `1883`。
+
 部署完成后默认可访问：
 
 - 前端: [http://localhost](http://localhost)
@@ -169,6 +176,9 @@ bash deploy.sh up
 ## 文档
 
 - [架构文档](ARCHITECTURE.md)
+- [Docker Compose 部署设计](docs/design/docker-compose-deployment.md)
+- [Docker Compose 部署运维说明](docs/operations/docker-compose-deployment.md)
+- [Docker Compose 部署使用说明](docs/user-guide/docker-compose-deployment.md)
 - [产品设计](docs/design/product-design.md)
 - [用户权限详细设计](docs/design/detailed-design-user-permissions.md)
 - [租户管理详细设计](docs/design/detailed-design-tenant-management.md)
