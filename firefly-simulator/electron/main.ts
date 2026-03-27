@@ -320,6 +320,53 @@ function isDarwinCompatibilityWarningLine(line: string): boolean {
     || normalized.includes('overriding selected pixel format');
 }
 
+function isDarwinSupportedModeDetailLine(line: string): boolean {
+  const normalized = (line || '').trim();
+  return /^(?:\[.*?\]\s*)?\d+x\d+@\[(.+?)\]fps$/i.test(normalized);
+}
+
+function isDarwinSupportedPixelFormatDetailLine(line: string): boolean {
+  const normalized = (line || '').trim();
+  return /^(?:\[.*?\]\s*)?[0-9a-z_]+$/i.test(normalized);
+}
+
+function splitDarwinCompatibilityLines(stderrText: string): {
+  compatibilityLines: string[];
+  nonCompatibilityLines: string[];
+} {
+  const lines = (stderrText || '')
+    .split(/\r?\n/g)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const compatibilityLines: string[] = [];
+  const nonCompatibilityLines: string[] = [];
+  let inSupportedModesSection = false;
+  let inSupportedPixelFormatsSection = false;
+  for (const line of lines) {
+    if (isDarwinCompatibilityWarningLine(line)) {
+      compatibilityLines.push(line);
+      inSupportedModesSection = line.toLowerCase().includes('supported modes');
+      inSupportedPixelFormatsSection = line.toLowerCase().includes('supported pixel formats');
+      continue;
+    }
+    if (inSupportedModesSection && isDarwinSupportedModeDetailLine(line)) {
+      compatibilityLines.push(line);
+      continue;
+    }
+    if (inSupportedPixelFormatsSection && isDarwinSupportedPixelFormatDetailLine(line)) {
+      compatibilityLines.push(line);
+      continue;
+    }
+    inSupportedModesSection = false;
+    inSupportedPixelFormatsSection = false;
+    nonCompatibilityLines.push(line);
+  }
+  return {
+    compatibilityLines,
+    nonCompatibilityLines,
+  };
+}
+
 function classifyLocalVideoStderrMessage(stderrText: string): 'warn' | 'error' {
   const lines = (stderrText || '')
     .split(/\r?\n/g)
@@ -328,15 +375,14 @@ function classifyLocalVideoStderrMessage(stderrText: string): 'warn' | 'error' {
   if (lines.length === 0) {
     return 'warn';
   }
-  let hasCompatibilityWarning = false;
-  for (const line of lines) {
-    if (isDarwinCompatibilityWarningLine(line)) {
-      hasCompatibilityWarning = true;
-      continue;
+  if (process.platform === 'darwin') {
+    const { compatibilityLines, nonCompatibilityLines } = splitDarwinCompatibilityLines(stderrText);
+    if (nonCompatibilityLines.length > 0) {
+      return 'error';
     }
-    return 'error';
+    return compatibilityLines.length > 0 ? 'warn' : 'error';
   }
-  return hasCompatibilityWarning ? 'warn' : 'error';
+  return 'error';
 }
 
 function parseDarwinSupportedModes(stderrText: string): Array<{ width: number; height: number; fps: number }> {
@@ -733,7 +779,7 @@ function extractLocalVideoStartFailure(stderrText: string, fallbackMessage: stri
     return fallbackMessage;
   }
   if (process.platform === 'darwin') {
-    const failureLines = lines.filter((line) => !isDarwinCompatibilityWarningLine(line));
+    const failureLines = splitDarwinCompatibilityLines(stderrText).nonCompatibilityLines;
     if (failureLines.length > 0) {
       return failureLines[failureLines.length - 1];
     }
