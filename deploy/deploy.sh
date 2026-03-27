@@ -77,9 +77,13 @@ dc() {
 cmd_infra() {
     check_env
     log_step "Starting infrastructure services..."
-    dc up -d postgres redis kafka nacos minio sentinel
+    dc up -d postgres redis kafka nacos minio sentinel zlmediakit
     log_info "Waiting for PostgreSQL to become ready..."
     dc exec postgres sh -c 'until pg_isready -U firefly; do sleep 2; done' 2>/dev/null
+    log_info "Waiting for ZLMediaKit API to become ready..."
+    until curl -fsS "http://localhost:${ZLM_PORT:-18080}/index/api/getServerConfig?secret=${ZLM_SECRET:-035c73f7-bb6b-4889-a715-d9eb2d1925cc}" >/dev/null 2>&1; do
+        sleep 2
+    done
     log_info "Infrastructure services are ready"
 }
 
@@ -97,7 +101,7 @@ cmd_up() {
     build_backend
 
     log_step "[2/4] Starting infrastructure..."
-    dc up -d postgres redis kafka nacos minio sentinel
+    dc up -d postgres redis kafka nacos minio sentinel zlmediakit
     log_info "Waiting for infrastructure health checks..."
     sleep 15
 
@@ -118,6 +122,7 @@ cmd_up() {
     echo "  Nacos console:       http://localhost:8848/nacos"
     echo "  MinIO console:       http://localhost:9001"
     echo "  Sentinel dashboard:  http://localhost:8858"
+    echo "  ZLMediaKit HTTP:     http://localhost:${ZLM_PORT:-18080}"
     echo ""
     dc ps
 }
@@ -166,7 +171,7 @@ case "${1:-up}" in
     *)
         echo "Usage: $0 {infra|build|up|down|restart|logs|status|clean}"
         echo ""
-        echo "  infra    Start PostgreSQL, Redis, Kafka, Nacos, MinIO, Sentinel"
+        echo "  infra    Start PostgreSQL, Redis, Kafka, Nacos, MinIO, Sentinel, ZLMediaKit"
         echo "  build    Build backend jars and frontend assets"
         echo "  up       Full deployment (default)"
         echo "  down     Stop all services"

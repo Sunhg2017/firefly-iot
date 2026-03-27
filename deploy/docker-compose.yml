@@ -121,6 +121,20 @@ services:
       - "8858:8858"
 
   # ============================================================
+  # ZLMediaKit
+  # ============================================================
+  zlmediakit:
+    image: zlmediakit/zlmediakit:master
+    container_name: firefly-zlmediakit
+    ports:
+      - "${ZLM_PORT:-18080}:80"
+      - "${ZLM_SSL_PORT:-18443}:443"
+      - "${ZLM_RTSP_PORT:-18554}:554"
+      - "${ZLM_RTMP_PORT:-1935}:1935"
+      - "${ZLM_RTP_PORT:-10000}:10000/tcp"
+      - "${ZLM_RTP_PORT:-10000}:10000/udp"
+
+  # ============================================================
   # Optional: firefly-connector with embedded MQTT broker
   # Start with:
   #   mvn -pl firefly-connector -am -DskipTests package

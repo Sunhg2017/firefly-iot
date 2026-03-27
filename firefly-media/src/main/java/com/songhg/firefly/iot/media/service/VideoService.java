@@ -7,6 +7,7 @@ import com.songhg.firefly.iot.common.enums.StreamMode;
 import com.songhg.firefly.iot.common.enums.StreamStatus;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
+import com.songhg.firefly.iot.media.config.ZlmProperties;
 import com.songhg.firefly.iot.media.dto.video.PtzControlDTO;
 import com.songhg.firefly.iot.media.dto.video.RecordingVO;
 import com.songhg.firefly.iot.media.dto.video.StreamSessionVO;
@@ -41,6 +42,7 @@ public class VideoService {
     private final VideoDeviceFacade videoDeviceFacade;
     private final StreamSessionMapper streamSessionMapper;
     private final ZlmApiClient zlmApiClient;
+    private final ZlmProperties zlmProperties;
     private final FileClient fileClient;
     private final SipCommandSender sipCommandSender;
 
@@ -306,7 +308,7 @@ public class VideoService {
 
     private int openGb28181RtpServer(InternalVideoDeviceVO device, String streamId) {
         int tcpMode = "TCP".equalsIgnoreCase(trimToNull(device.getTransport())) ? 1 : 0;
-        ZlmOpenRtpServerResponse response = zlmApiClient.openRtpServer(0, tcpMode, streamId);
+        ZlmOpenRtpServerResponse response = zlmApiClient.openRtpServer(zlmProperties.getRtpPort(), tcpMode, streamId);
         if (response == null || !response.isSuccess()) {
             if (response != null) {
                 log.warn("GB28181 openRtpServer returned unexpected response: streamId={}, code={}, msg={}, portValue={}, data={}",

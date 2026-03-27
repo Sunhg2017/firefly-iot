@@ -164,6 +164,20 @@ services:
     networks:
       - firefly-net
 
+  zlmediakit:
+    image: zlmediakit/zlmediakit:master
+    container_name: firefly-zlmediakit
+    restart: unless-stopped
+    ports:
+      - "${ZLM_PORT:-18080}:80"
+      - "${ZLM_SSL_PORT:-18443}:443"
+      - "${ZLM_RTSP_PORT:-18554}:554"
+      - "${ZLM_RTMP_PORT:-1935}:1935"
+      - "${ZLM_RTP_PORT:-10000}:10000/tcp"
+      - "${ZLM_RTP_PORT:-10000}:10000/udp"
+    networks:
+      - firefly-net
+
   # ======================== Services ========================
 
   gateway:
@@ -237,9 +251,28 @@ services:
       - "5060:5060/udp"
     environment:
       <<: *java-env
-      ZLMEDIAKIT_HOST: ${ZLM_HOST:-zlmediakit}
-      ZLMEDIAKIT_PORT: ${ZLM_PORT:-8080}
+      ZLMEDIAKIT_HOST: ${ZLM_HOST:-localhost}
+      ZLMEDIAKIT_PORT: ${ZLM_PORT:-18080}
+      ZLMEDIAKIT_API_HOST: ${ZLM_API_HOST:-zlmediakit}
+      ZLMEDIAKIT_API_PORT: ${ZLM_API_PORT:-80}
       ZLMEDIAKIT_SECRET: ${ZLM_SECRET:-035c73f7-bb6b-4889-a715-d9eb2d1925cc}
+      ZLMEDIAKIT_SSL_PORT: ${ZLM_SSL_PORT:-18443}
+      ZLMEDIAKIT_RTSP_PORT: ${ZLM_RTSP_PORT:-18554}
+      ZLMEDIAKIT_RTP_PORT: ${ZLM_RTP_PORT:-10000}
+      ZLMEDIAKIT_PUBLIC_HOST: ${ZLM_PUBLIC_HOST:-localhost}
+      ZLMEDIAKIT_PUBLIC_PORT: ${ZLM_PUBLIC_PORT:-18080}
+      ZLMEDIAKIT_PUBLIC_SSL_PORT: ${ZLM_PUBLIC_SSL_PORT:-18443}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+      zlmediakit:
+        condition: service_started
 
   data:
     <<: *java-service

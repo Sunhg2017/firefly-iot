@@ -166,12 +166,15 @@
 
 ### 6.4 播放地址与开流时序
 
-- `firefly-media` 调用 ZLM REST 时继续使用 `zlmediakit.host/port` 内网地址。
-- `zlmediakit.host/port` 必须直接指向 ZLMediaKit API 服务，禁止误配到 `firefly-gateway` 或其他只返回业务包装结果的 HTTP 服务。
+- `firefly-media` 调用 ZLM REST 时优先使用 `zlmediakit.api-host/api-port`；未显式配置时才回落到 `zlmediakit.host/port`。
+- `zlmediakit.api-host/api-port` 只用于媒体服务访问 ZLM REST，可配置为容器服务名。
+- `zlmediakit.host/port` 必须保持为摄像头、浏览器和需要直连 RTSP 的组件可访问地址，禁止误配到 `firefly-gateway` 或其他只返回业务包装结果的 HTTP 服务。
 - 对前端下发播放地址时，固定使用 `zlmediakit.public-host/public-port/public-scheme` 作为基准地址。
 - 若未配置 `public-host`，默认回落到 `host`，仅适用于本机联调。
+- `compose` 部署默认内置 `zlmediakit` 基础设施，HTTP API 暴露为宿主机 `18080`，RTSP 暴露为宿主机 `18554`。
 - `RTSP / RTMP` 代理流继续使用 `live/{streamId}` 作为 ZLM 应用名和播放地址。
 - `GB28181` 开流前必须先调用 ZLM `openRtpServer` 打开 RTP 收流端口，并显式绑定自定义 `streamId`。
+- `compose` 示例为保证宿主机端口可达，默认使用固定 `zlmediakit.rtp-port` 打开 RTP 收流口，并要求宿主机同步暴露该端口。
 - `openRtpServer` 的端口返回值需兼容 ZLM 不同版本的顶层 `port` 与 `data.port` 两种结构，并允许字符串端口。
 - `GB28181` 收流后的 ZLM 应用名固定为 `rtp`，因此短轮询、播放地址、截图和录制都必须按 `rtp/{streamId}` 处理，不能继续复用 `live/{streamId}`。
 - `startStream` 在返回播放地址前会短轮询 ZLM `getMediaList`，确认流已出现，避免“刚返回地址就播放失败”。

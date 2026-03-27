@@ -398,6 +398,6 @@ public class ZlmApiClient {
      * 构建 RTSP 地址 (用于内部拉流)
      */
     public String buildRtspUrl(String app, String stream) {
-        return "rtsp://" + zlmProperties.getHost() + ":554/" + app + "/" + stream;
+        return "rtsp://" + zlmProperties.getHost() + ":" + zlmProperties.getRtspPort() + "/" + app + "/" + stream;
     }
 }

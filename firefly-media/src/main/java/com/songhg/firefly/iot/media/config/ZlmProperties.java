@@ -13,9 +13,12 @@ import java.util.Locale;
 public class ZlmProperties {
 
     private String host = "localhost";
-    private int port = 8080;
+    private int port = 18080;
+    private String apiHost = "";
+    private Integer apiPort;
     private String secret = "";
-    private int sslPort = 8443;
+    private int sslPort = 18443;
+    private int rtspPort = 18554;
     private int rtpPort = 10000;
     private String hookUrl = "";
     private String publicHost = "";
@@ -24,7 +27,9 @@ public class ZlmProperties {
     private String publicScheme = "http";
 
     public String getApiUrl() {
-        return "http://" + host + ":" + port;
+        String resolvedApiHost = StringUtils.hasText(apiHost) ? apiHost : host;
+        int resolvedApiPort = apiPort != null ? apiPort : port;
+        return "http://" + resolvedApiHost + ":" + resolvedApiPort;
     }
 
     public String getPlayBaseUrl() {
