@@ -38,7 +38,8 @@
 - 如媒体服务返回的 RTP 端口字段位置或类型存在差异，平台会自动兼容顶层 `port`、`data.port` 以及字符串端口。
 - 若平台日志提示 `ZLMediaKit API` 返回 `404`，通常表示媒体服务地址配错到了网关或其他 HTTP 服务，需要运维修正 `zlmediakit.api-host/api-port`。
 - 当前开发环境默认连接 `192.168.123.102:18080` 的 ZLM；若你本地没有覆盖配置，但日志仍显示连接 `localhost:18080`，说明服务还未使用最新配置启动。
-- 若日志出现 `code=-100, msg=Please login first`，说明平台已经连到 ZLM，但运维仍需校准 `zlmediakit.secret` 或对应登录策略。
+- 若日志出现 `code=-100, msg=Please login first`，说明当前节点上的 ZLM 很可能还是旧的 `master` 容器，需让运维按最新 compose 重建到仓库内置的稳定版 `firefly-zlmediakit:8.0-588d9de`。
+- 若日志出现 `创建rtp端口 :::10000 失败:address already in use`，说明运维仍在使用错误的 ZLM `rtp_proxy.port` 配置，需要把该值改回 `0` 后重启 ZLM。
 - 若平台通过 compose 部署，运维需先确认 `zlmediakit` 基础设施已启动，且 `ZLM_RTP_PORT` 与媒体服务配置一致。
 - GB28181 流在平台内统一挂到 `rtp/{streamId}`，因此网页播放、截图、录像都基于这一路流。
 

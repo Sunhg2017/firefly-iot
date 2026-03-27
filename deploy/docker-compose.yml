@@ -130,7 +130,10 @@ services:
   # ZLMediaKit
   # ============================================================
   zlmediakit:
-    image: zlmediakit/zlmediakit:master
+    image: firefly-zlmediakit:8.0-588d9de
+    build:
+      context: ./zlmediakit
+      dockerfile: Dockerfile
     container_name: firefly-zlmediakit
     restart: unless-stopped
     volumes:

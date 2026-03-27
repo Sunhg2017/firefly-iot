@@ -43,37 +43,73 @@ check_env() {
 
 load_env() {
     check_env
-    # Export deployment variables so helper commands like curl use the same
-    # ZLM/DB host, port and secret values as docker compose.
-    set -a
-    . "$ENV_FILE"
-    set +a
+    # Parse Docker-style KEY=VALUE lines verbatim so values like
+    # JAVA_OPTS=-Xms256m -Xmx512m work without shell quoting.
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        case "$line" in
+            ''|\#*) continue ;;
+        esac
+
+        local key="${line%%=*}"
+        local value="${line#*=}"
+        key="${key#"${key%%[![:space:]]*}"}"
+        key="${key%"${key##*[![:space:]]}"}"
+
+        if [ -n "$key" ]; then
+            export "$key=$value"
+        fi
+    done < "$ENV_FILE"
 }
 
 prepare_zlm_config() {
     local runtime_dir="$SCRIPT_DIR/runtime/zlmediakit"
     local config_file="$runtime_dir/config.ini"
+    local template_file="$SCRIPT_DIR/zlmediakit/config.template.ini"
 
     mkdir -p "$runtime_dir"
 
     if [ ! -f "$config_file" ]; then
         log_step "Generating ZLMediaKit config template..."
-        docker image inspect zlmediakit/zlmediakit:master >/dev/null 2>&1 || docker pull zlmediakit/zlmediakit:master >/dev/null
-        docker run --rm zlmediakit/zlmediakit:master cat /opt/media/conf/config.ini > "$config_file"
+        cp "$template_file" "$config_file"
     fi
 
     python3 - "$config_file" "${ZLM_SECRET:-035c73f7bb6b4889a715d9eb2d1925cc}" <<'PY'
 from pathlib import Path
-import re
 import sys
 
 config_path = Path(sys.argv[1])
 secret = sys.argv[2]
-content = config_path.read_text()
-updated, count = re.subn(r"(?m)^secret=.*$", f"secret={secret}", content, count=1)
-if count != 1:
+lines = config_path.read_text().splitlines()
+updated = []
+in_api = False
+in_rtp_proxy = False
+secret_updated = False
+rtp_port_updated = False
+
+for line in lines:
+    stripped = line.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        in_api = stripped == "[api]"
+        in_rtp_proxy = stripped == "[rtp_proxy]"
+
+    if in_api and stripped.startswith("secret="):
+        updated.append(f"secret={secret}")
+        secret_updated = True
+    elif in_rtp_proxy and stripped.startswith("port="):
+        # Firefly uses openRtpServer to claim the fixed receive port on demand,
+        # so the default RTP proxy listener must stay disabled.
+        updated.append("port=0")
+        rtp_port_updated = True
+    else:
+        updated.append(line)
+
+if not secret_updated:
     raise SystemExit("Failed to locate api.secret in ZLMediaKit config.ini")
-config_path.write_text(updated)
+if not rtp_port_updated:
+    raise SystemExit("Failed to locate rtp_proxy.port in ZLMediaKit config.ini")
+
+config_path.write_text("\n".join(updated) + "\n")
 PY
 }
 
@@ -114,7 +150,7 @@ cmd_infra() {
     load_env
     prepare_zlm_config
     log_step "Starting infrastructure services..."
-    dc up -d postgres redis kafka nacos minio sentinel zlmediakit
+    dc up -d --build postgres redis kafka nacos minio sentinel zlmediakit
     log_info "Waiting for PostgreSQL to become ready..."
     dc exec postgres sh -c 'until pg_isready -U firefly; do sleep 2; done' 2>/dev/null
     log_info "Waiting for ZLMediaKit API to become ready..."
@@ -139,7 +175,7 @@ cmd_up() {
     build_backend
 
     log_step "[2/4] Starting infrastructure..."
-    dc up -d postgres redis kafka nacos minio sentinel zlmediakit
+    dc up -d --build postgres redis kafka nacos minio sentinel zlmediakit
     log_info "Waiting for infrastructure health checks..."
     sleep 15
 

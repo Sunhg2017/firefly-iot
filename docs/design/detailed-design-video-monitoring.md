@@ -173,11 +173,13 @@
 - 对前端下发播放地址时，固定使用 `zlmediakit.public-host/public-port/public-scheme` 作为基准地址。
 - 若未配置 `public-host`，默认回落到 `host`，仅适用于本机联调。
 - 当 ZLM 与 `firefly-media` 分机部署时，`zlmediakit.hook-url` 不能继续写死 `localhost`，必须通过 `ZLMEDIAKIT_HOOK_URL` 覆盖为 ZLM 可回调的媒体服务地址。
-- 部署脚本会在 `deploy/runtime/zlmediakit/config.ini` 生成并维护 ZLM 配置，再通过 compose 挂载到容器内，保证 `api.secret` 与 `ZLM_SECRET` 保持一致，而不是依赖镜像随机生成值；`ZLM_SECRET` 必须使用纯字母数字格式，禁止继续使用带连字符的 UUID。
+- compose 内置的 `zlmediakit` 服务不再拉取 `zlmediakit/zlmediakit:master`，而是基于仓库内置源码包本地构建并固定到官方稳定线 `8.0@588d9de2b212ce6630718430ceecd8d05794625c`，避免 `master` 新增 cookie 登录鉴权后破坏 Firefly 现有 `secret` 鉴权调用，也避免部署阶段再动态拉取上游源码。
+- 部署脚本会从仓库内的 `deploy/zlmediakit/config.template.ini` 生成并维护 `deploy/runtime/zlmediakit/config.ini`，再通过 compose 挂载到容器内，保证 `api.secret` 与 `ZLM_SECRET` 保持一致，而不是依赖镜像随机生成值；`ZLM_SECRET` 必须使用纯字母数字格式，禁止继续使用带连字符的 UUID。
 - `compose` 部署默认内置 `zlmediakit` 基础设施，HTTP API 暴露为宿主机 `18080`，RTSP 暴露为宿主机 `18554`。
 - `RTSP / RTMP` 代理流继续使用 `live/{streamId}` 作为 ZLM 应用名和播放地址。
 - `GB28181` 开流前必须先调用 ZLM `openRtpServer` 打开 RTP 收流端口，并显式绑定自定义 `streamId`。
 - `compose` 示例为保证宿主机端口可达，默认使用固定 `zlmediakit.rtp-port` 打开 RTP 收流口，并要求宿主机同步暴露该端口。
+- 由于 Firefly 采用 `openRtpServer` 按需占用固定 RTP 口，ZLM 配置里的 `rtp_proxy.port` 必须保持为 `0`，禁止再预占同一个 `10000` 端口，否则 `openRtpServer` 会直接返回 `address already in use`。
 - `openRtpServer` 的端口返回值需兼容 ZLM 不同版本的顶层 `port` 与 `data.port` 两种结构，并允许字符串端口。
 - `GB28181` 收流后的 ZLM 应用名固定为 `rtp`，因此短轮询、播放地址、截图和录制都必须按 `rtp/{streamId}` 处理，不能继续复用 `live/{streamId}`。
 - `startStream` 在返回播放地址前会短轮询 ZLM `getMediaList`，确认流已出现，避免“刚返回地址就播放失败”。
