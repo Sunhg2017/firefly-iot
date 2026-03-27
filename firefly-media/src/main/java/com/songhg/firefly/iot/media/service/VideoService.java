@@ -15,6 +15,7 @@ import com.songhg.firefly.iot.media.entity.StreamSession;
 import com.songhg.firefly.iot.media.gb28181.SipCommandSender;
 import com.songhg.firefly.iot.media.mapper.StreamSessionMapper;
 import com.songhg.firefly.iot.media.zlm.ZlmApiClient;
+import com.songhg.firefly.iot.media.zlm.ZlmOpenRtpServerResponse;
 import com.songhg.firefly.iot.media.zlm.ZlmResponse;
 import com.songhg.firefly.iot.media.zlm.ZlmStreamInfo;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class VideoService {
 
     private static final String LIVE_APP = "live";
+    private static final String RTP_APP = "rtp";
     private static final long STREAM_READY_TIMEOUT_MS = 8000L;
     private static final long STREAM_READY_POLL_INTERVAL_MS = 300L;
 
@@ -59,26 +61,36 @@ public class VideoService {
         String channelId = trimToNull(dto == null ? null : dto.getChannelId());
         Long tenantId = resolveTenantId(device);
         String streamId = buildStreamId(tenantId, deviceId, channelId);
+        String streamApp = resolveStreamApp(streamMode);
+        boolean gb28181RtpServerOpened = false;
 
         try {
             if (streamMode == StreamMode.RTSP || streamMode == StreamMode.RTMP) {
                 String sourceUrl = resolvePullSourceUrl(device, streamMode);
-                ZlmResponse<Map<String, Object>> response = zlmApiClient.addStreamProxy(LIVE_APP, streamId, sourceUrl);
+                ZlmResponse<Map<String, Object>> response = zlmApiClient.addStreamProxy(streamApp, streamId, sourceUrl);
                 if (!response.isSuccess()) {
                     throw new BizException(ResultCode.STREAM_START_FAILED, "视频流启动失败: " + response.getMsg());
                 }
             } else if (streamMode == StreamMode.GB28181) {
+                int rtpPort = openGb28181RtpServer(device, streamId);
+                gb28181RtpServerOpened = true;
                 String ssrc = String.format("%010d", ThreadLocalRandom.current().nextLong(1_000_000_000L, 10_000_000_000L));
-                if (!sipCommandSender.sendInvite(device, channelId, ssrc)) {
+                if (!sipCommandSender.sendInvite(device, channelId, ssrc, rtpPort)) {
                     throw new BizException(ResultCode.STREAM_START_FAILED, "GB28181 INVITE 发送失败");
                 }
             } else {
                 throw new BizException(ResultCode.PARAM_ERROR, "当前接入方式暂不支持播放控制");
             }
-            waitUntilStreamReady(streamId, streamMode);
+            waitUntilStreamReady(streamApp, streamId, streamMode);
         } catch (BizException ex) {
+            if (gb28181RtpServerOpened) {
+                releaseGb28181RtpServer(streamId);
+            }
             throw ex;
         } catch (Exception ex) {
+            if (gb28181RtpServerOpened) {
+                releaseGb28181RtpServer(streamId);
+            }
             log.error("Start video stream failed: deviceId={}, channelId={}, mode={}", deviceId, channelId, streamMode, ex);
             throw new BizException(ResultCode.STREAM_START_FAILED, "视频流启动失败");
         }
@@ -89,13 +101,14 @@ public class VideoService {
         session.setChannelId(channelId);
         session.setStreamId(streamId);
         session.setStatus(StreamStatus.ACTIVE);
-        session.setFlvUrl(zlmApiClient.buildFlvUrl(LIVE_APP, streamId));
-        session.setHlsUrl(zlmApiClient.buildHlsUrl(LIVE_APP, streamId));
-        session.setWebrtcUrl(zlmApiClient.buildWebrtcUrl(LIVE_APP, streamId));
+        session.setFlvUrl(zlmApiClient.buildFlvUrl(streamApp, streamId));
+        session.setHlsUrl(zlmApiClient.buildHlsUrl(streamApp, streamId));
+        session.setWebrtcUrl(zlmApiClient.buildWebrtcUrl(streamApp, streamId));
         session.setStartedAt(LocalDateTime.now());
         streamSessionMapper.insert(session);
 
-        log.info("Stream started: deviceId={}, channelId={}, streamId={}, mode={}", deviceId, channelId, streamId, streamMode);
+        log.info("Stream started: deviceId={}, channelId={}, streamId={}, app={}, mode={}",
+                deviceId, channelId, streamId, streamApp, streamMode);
         return toSessionVO(session);
     }
 
@@ -107,12 +120,14 @@ public class VideoService {
         LambdaQueryWrapper<StreamSession> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(StreamSession::getDeviceId, deviceId)
                 .eq(StreamSession::getStatus, StreamStatus.ACTIVE);
+        String streamApp = resolveStreamApp(streamMode);
         for (StreamSession session : streamSessionMapper.selectList(wrapper)) {
             try {
                 if (streamMode == StreamMode.GB28181) {
                     sipCommandSender.sendBye(device, session.getChannelId());
+                    releaseGb28181RtpServer(session.getStreamId());
                 }
-                zlmApiClient.closeStream(LIVE_APP, session.getStreamId(), null);
+                zlmApiClient.closeStream(streamApp, session.getStreamId(), null);
             } catch (Exception ex) {
                 log.warn("Stop stream runtime cleanup failed: deviceId={}, streamId={}, error={}",
                         deviceId, session.getStreamId(), ex.getMessage());
@@ -135,9 +150,10 @@ public class VideoService {
 
     public String snapshot(Long deviceId) {
         InternalVideoDeviceVO device = requireOnlineDevice(deviceId);
+        StreamMode streamMode = videoDeviceFacade.requireStreamMode(device);
         StreamSession session = requireLatestActiveSession(deviceId, "无活跃的视频流，请先开始播放");
         try {
-            String rtspUrl = zlmApiClient.buildRtspUrl(LIVE_APP, session.getStreamId());
+            String rtspUrl = zlmApiClient.buildRtspUrl(resolveStreamApp(streamMode), session.getStreamId());
             byte[] snapData = zlmApiClient.getSnap(rtspUrl, 10, 3);
             if (snapData == null || snapData.length == 0) {
                 throw new BizException(ResultCode.PARAM_ERROR, "截图失败");
@@ -159,10 +175,15 @@ public class VideoService {
     }
 
     public RecordingVO startRecording(Long deviceId) {
-        requireOnlineDevice(deviceId);
+        InternalVideoDeviceVO device = requireOnlineDevice(deviceId);
+        StreamMode streamMode = videoDeviceFacade.requireStreamMode(device);
         StreamSession session = requireLatestActiveSession(deviceId, "无活跃的视频流，请先开始播放");
         try {
-            ZlmResponse<Map<String, Object>> response = zlmApiClient.startRecord(LIVE_APP, session.getStreamId(), 1);
+            ZlmResponse<Map<String, Object>> response = zlmApiClient.startRecord(
+                    resolveStreamApp(streamMode),
+                    session.getStreamId(),
+                    1
+            );
             if (!response.isSuccess()) {
                 throw new BizException(ResultCode.PARAM_ERROR, "开始录像失败: " + response.getMsg());
             }
@@ -176,10 +197,15 @@ public class VideoService {
     }
 
     public RecordingVO stopRecording(Long deviceId) {
-        videoDeviceFacade.requireVideoDevice(deviceId);
+        InternalVideoDeviceVO device = videoDeviceFacade.requireVideoDevice(deviceId);
+        StreamMode streamMode = videoDeviceFacade.requireStreamMode(device);
         StreamSession session = requireLatestActiveSession(deviceId, "无活跃的视频流");
         try {
-            ZlmResponse<Map<String, Object>> response = zlmApiClient.stopRecord(LIVE_APP, session.getStreamId(), 1);
+            ZlmResponse<Map<String, Object>> response = zlmApiClient.stopRecord(
+                    resolveStreamApp(streamMode),
+                    session.getStreamId(),
+                    1
+            );
             if (!response.isSuccess()) {
                 log.warn("Stop recording returned non-success: deviceId={}, streamId={}, msg={}",
                         deviceId, session.getStreamId(), response.getMsg());
@@ -274,10 +300,42 @@ public class VideoService {
         return device.getTenantId();
     }
 
-    private void waitUntilStreamReady(String streamId, StreamMode streamMode) {
+    private String resolveStreamApp(StreamMode streamMode) {
+        return streamMode == StreamMode.GB28181 ? RTP_APP : LIVE_APP;
+    }
+
+    private int openGb28181RtpServer(InternalVideoDeviceVO device, String streamId) {
+        int tcpMode = "TCP".equalsIgnoreCase(trimToNull(device.getTransport())) ? 1 : 0;
+        ZlmOpenRtpServerResponse response = zlmApiClient.openRtpServer(0, tcpMode, streamId);
+        if (response == null || !response.isSuccess()) {
+            throw new BizException(ResultCode.STREAM_START_FAILED,
+                    "GB28181 RTP 收流端口打开失败: " + (response == null ? "empty response" : response.getMsg()));
+        }
+        Integer port = response.resolvePort();
+        if (port == null || port <= 0) {
+            log.warn("GB28181 RTP server port missing or invalid: streamId={}, code={}, msg={}, portValue={}, data={}",
+                    streamId, response.getCode(), response.getMsg(), response.resolvePortValue(), response.getData());
+            throw new BizException(ResultCode.STREAM_START_FAILED, "GB28181 RTP 收流端口返回不正确");
+        }
+        return port;
+    }
+
+    private void releaseGb28181RtpServer(String streamId) {
+        try {
+            ZlmResponse<Map<String, Object>> response = zlmApiClient.closeRtpServer(streamId);
+            if (response != null && !response.isSuccess()) {
+                log.warn("Close GB28181 RTP server returned non-success: streamId={}, msg={}",
+                        streamId, response.getMsg());
+            }
+        } catch (Exception ex) {
+            log.warn("Close GB28181 RTP server failed: streamId={}, error={}", streamId, ex.getMessage());
+        }
+    }
+
+    private void waitUntilStreamReady(String app, String streamId, StreamMode streamMode) {
         long deadline = System.currentTimeMillis() + STREAM_READY_TIMEOUT_MS;
         while (System.currentTimeMillis() < deadline) {
-            if (isStreamReady(streamId)) {
+            if (isStreamReady(app, streamId)) {
                 return;
             }
             try {
@@ -288,15 +346,15 @@ public class VideoService {
             }
         }
         throw new BizException(ResultCode.STREAM_START_FAILED,
-                "视频流启动超时，请确认设备在线并且媒体服务可访问: mode=" + streamMode);
+                "视频流启动超时，请确认设备在线并且媒体服务可访问: mode=" + streamMode + ", app=" + app);
     }
 
-    private boolean isStreamReady(String streamId) {
+    private boolean isStreamReady(String app, String streamId) {
         try {
-            ZlmResponse<List<ZlmStreamInfo>> response = zlmApiClient.getMediaList(LIVE_APP, streamId, null);
+            ZlmResponse<List<ZlmStreamInfo>> response = zlmApiClient.getMediaList(app, streamId, null);
             return response != null && response.isSuccess() && response.getData() != null && !response.getData().isEmpty();
         } catch (Exception ex) {
-            log.debug("Check stream readiness failed: streamId={}, error={}", streamId, ex.getMessage());
+            log.debug("Check stream readiness failed: app={}, streamId={}, error={}", app, streamId, ex.getMessage());
             return false;
         }
     }

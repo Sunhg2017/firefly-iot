@@ -150,6 +150,42 @@ public class ZlmApiClient {
     // ==================== GB28181 点播 ====================
 
     /**
+     * 打开 GB28181 RTP 接收端口。
+     * 参考 ZLMediaKit 官方接口：/index/api/openRtpServer
+     *
+     * @param port     指定端口，0 表示随机分配
+     * @param tcpMode  0=UDP，1=TCP 被动，2=TCP 主动
+     * @param streamId 绑定到该端口的流 ID
+     */
+    public ZlmOpenRtpServerResponse openRtpServer(int port, int tcpMode, String streamId) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("port", port);
+        body.put("tcp_mode", tcpMode);
+        body.put("stream_id", streamId);
+        String json = doPost("/index/api/openRtpServer", body);
+        try {
+            return objectMapper.readValue(json, ZlmOpenRtpServerResponse.class);
+        } catch (JsonProcessingException e) {
+            throw new BizException(ResultCode.INTERNAL_ERROR, "解析 ZLM openRtpServer 响应失败");
+        }
+    }
+
+    /**
+     * 关闭 GB28181 RTP 接收端口。
+     * 参考 ZLMediaKit 官方接口：/index/api/closeRtpServer
+     */
+    public ZlmResponse<Map<String, Object>> closeRtpServer(String streamId) {
+        Map<String, String> params = new HashMap<>();
+        params.put("stream_id", streamId);
+        String json = doGet("/index/api/closeRtpServer", params);
+        try {
+            return objectMapper.readValue(json, new TypeReference<>() {});
+        } catch (JsonProcessingException e) {
+            throw new BizException(ResultCode.INTERNAL_ERROR, "解析 ZLM closeRtpServer 响应失败");
+        }
+    }
+
+    /**
      * GB28181 实时点播 (通过 ZLM 内置的 GB28181 模块)
      * 需要 ZLMediaKit 开启 GB28181 模块
      * POST /index/api/startSendRtp

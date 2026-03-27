@@ -97,11 +97,10 @@ public class SipCommandSender {
      * @param ssrc      SSRC (10 位数字字符串)
      * @return 是否成功发送
      */
-    public boolean sendInvite(InternalVideoDeviceVO device, String channelId, String ssrc) {
+    public boolean sendInvite(InternalVideoDeviceVO device, String channelId, String ssrc, int rtpPort) {
         try {
             String targetId = channelId != null ? channelId : device.getGbDeviceId();
             String rtpIp = zlmProperties.getHost();
-            int rtpPort = zlmProperties.getRtpPort();
 
             // 构建 SDP
             String sdp = buildPlaySdp(targetId, rtpIp, rtpPort, ssrc);

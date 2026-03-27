@@ -54,6 +54,7 @@ cd ../firefly-simulator && npm run build:vite
 5. 历史环境如残留旧 `video` 菜单、自定义菜单或重复视频设备，先清理旧数据后再联调。
 6. `firefly-media` 已正确配置 `spring.kafka.bootstrap-servers`；开发环境默认对齐 `192.168.123.102:9092`，生产环境通过 `SPRING_KAFKA_BOOTSTRAP_SERVERS` 注入。
 7. `firefly-media` 的 `zlmediakit.public-host/public-port/public-scheme` 已配置为浏览器可访问地址，禁止保留 `localhost` 对外下发给前端。
+8. `GB28181` 联调时，`firefly-media` 必须能调用 ZLM `openRtpServer/closeRtpServer`，并允许设备向分配的 RTP 端口发流。
 
 ## 5. 回归验证
 
@@ -63,7 +64,8 @@ cd ../firefly-simulator && npm run build:vite
 4. 模拟器连接同一台视频设备时优先复用 `platformDeviceId`。
 5. `GB28181` 正确密码能完成 REGISTER、Keepalive、Catalog、DeviceInfo。
 6. 错误密码能看到明确认证失败原因。
-7. 视频上线/离线、目录、设备信息事件能正常回写到 `firefly-device`。
+7. `GB28181` 点击播放后，`firefly-media` 日志中应先打开 RTP 收流口，再发送 INVITE，并能在 ZLM 中看到 `rtp/{streamId}` 流注册。
+8. 视频上线/离线、目录、设备信息事件能正常回写到 `firefly-device`。
 
 ## 6. 常见问题
 
@@ -102,7 +104,18 @@ cd ../firefly-simulator && npm run build:vite
 3. 检查平台唯一约束是否已执行到最新版本。
 4. 检查 `GB28181` 的 `gbDeviceId` 或 `RTSP/RTMP` 的 `sourceUrl` 是否一致。
 
-### 6.5 视频状态没有回写到设备资产
+### 6.5 GB28181 已接受 INVITE 但播放仍超时
+
+排查：
+
+1. 检查 `firefly-media` 是否已升级到包含 `openRtpServer` 最新链路的版本。
+2. 检查 `firefly-media` 日志是否先打印 RTP 收流端口，再发送 INVITE。
+3. 若日志提示 `GB28181 RTP 收流端口返回不正确`，优先核对 ZLM `openRtpServer` 实际返回体，确认 `port` 是否位于顶层或 `data.port`，并检查是否被代理层转成字符串。
+4. 检查 ZLM `getMediaList` 中是否能看到 `app=rtp`、`stream={streamId}` 的流，而不是只检查 `live` 应用。
+5. 检查设备是否已按 INVITE 中分配的 RTP 端口向媒体服务发流。
+6. 若是跨机器联调，检查 INVITE SDP 中下发给设备的媒体地址是否可达，禁止误填成对端不可访问的 `localhost`。
+
+### 6.6 视频状态没有回写到设备资产
 
 排查：
 
@@ -110,7 +123,7 @@ cd ../firefly-simulator && npm run build:vite
 2. 检查消息头是否带租户、用户、权限上下文。
 3. 检查 `DeviceVideoRuntimeConsumer` 是否消费成功。
 
-### 6.6 网页播放提示网络错误
+### 6.7 网页播放提示网络错误
 
 排查：
 
@@ -119,7 +132,7 @@ cd ../firefly-simulator && npm run build:vite
 3. 检查 `firefly-media` 返回的 `flvUrl/hlsUrl/webrtcUrl` 是否已使用对外地址。
 4. 检查开流后是否已出现对应 `streamId` 的媒体流。
 
-### 6.7 云台控制返回服务内部错误
+### 6.8 云台控制返回服务内部错误
 
 排查：
 
