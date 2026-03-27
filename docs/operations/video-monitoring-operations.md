@@ -55,10 +55,13 @@ cd ../firefly-simulator && npm run build:vite
 6. `firefly-media` 已正确配置 `spring.kafka.bootstrap-servers`；开发环境默认对齐 `192.168.123.102:9092`，生产环境通过 `SPRING_KAFKA_BOOTSTRAP_SERVERS` 注入。
 7. `deploy/docker-compose.yml` 与 `deploy/docker-compose.prod.yml` 已内置 `zlmediakit`；若未通过脚本启动基础设施，必须手工补齐同等 ZLM 服务。
 8. `firefly-media` 的 `zlmediakit.api-host/api-port` 必须直连 ZLM REST；容器化部署可写成 `zlmediakit:80`，禁止继续误指向网关 `8080`。
-9. `firefly-media` 的 `zlmediakit.host/port`、`zlmediakit.rtsp-port` 必须是摄像头和平台都可访问的媒体地址；默认 compose 对宿主机暴露 `18080/18554`。
-10. `firefly-media` 的 `zlmediakit.public-host/public-port/public-scheme` 已配置为浏览器可访问地址，禁止保留 `localhost` 对外下发给前端。
-11. `GB28181` 联调时，`firefly-media` 必须能调用 ZLM `openRtpServer/closeRtpServer`，并允许设备向分配的 RTP 端口发流；compose 默认固定暴露 `ZLM_RTP_PORT`。
-12. `deploy/docker-compose.yml` 与 `deploy/docker-compose.prod.yml` 中的长期驻留容器默认已配置 `restart: unless-stopped`；如历史容器创建于旧版本，需重新执行 `docker compose up -d` 使自启动策略生效。
+9. 当前开发环境的共享 ZLM 节点部署在 `192.168.123.102`，本地启动 `firefly-media` 时默认使用 `192.168.123.102:18080/18554/10000`；若切换到其他节点，必须同步覆盖 `ZLMEDIAKIT_HOST`、`ZLMEDIAKIT_API_HOST`、`ZLMEDIAKIT_PUBLIC_HOST`。
+10. `firefly-media` 的 `zlmediakit.host/port`、`zlmediakit.rtsp-port` 必须是摄像头和平台都可访问的媒体地址；默认 compose 对宿主机暴露 `18080/18554`。
+11. 如 ZLM 与 `firefly-media` 分机部署，必须额外配置 `ZLMEDIAKIT_HOOK_URL` 指向媒体服务的真实可达地址，禁止保留 `localhost`。
+12. `firefly-media` 使用的 `zlmediakit.secret` 必须与 ZLM 服务端鉴权配置一致；若 ZLM API 返回 `code=-100, msg=Please login first`，说明当前 secret 或登录策略未对齐，需先在运维侧修正后再联调。
+13. `firefly-media` 的 `zlmediakit.public-host/public-port/public-scheme` 已配置为浏览器可访问地址，禁止保留 `localhost` 对外下发给前端。
+14. `GB28181` 联调时，`firefly-media` 必须能调用 ZLM `openRtpServer/closeRtpServer`，并允许设备向分配的 RTP 端口发流；compose 默认固定暴露 `ZLM_RTP_PORT`。
+15. `deploy/docker-compose.yml` 与 `deploy/docker-compose.prod.yml` 中的长期驻留容器默认已配置 `restart: unless-stopped`；如历史容器创建于旧版本，需重新执行 `docker compose up -d` 使自启动策略生效。
 
 ## 5. 回归验证
 
@@ -114,12 +117,14 @@ cd ../firefly-simulator && npm run build:vite
 
 1. 检查 `firefly-media` 是否已升级到包含 `openRtpServer` 最新链路的版本。
 2. 若日志提示 `ZLMediaKit API 调用失败` 且状态码为 `404`，优先检查 `zlmediakit.api-host/api-port` 是否误指向网关或其他 Spring Boot 服务。
-3. 检查 `firefly-media` 日志是否先打印 RTP 收流端口，再发送 INVITE。
-4. 若日志提示 `GB28181 RTP 收流端口返回不正确`，优先核对 ZLM `openRtpServer` 实际返回体，确认 `port` 是否位于顶层或 `data.port`，并检查是否被代理层转成字符串。
-5. 检查 ZLM `getMediaList` 中是否能看到 `app=rtp`、`stream={streamId}` 的流，而不是只检查 `live` 应用。
-6. 若通过 compose 部署，检查 `ZLM_RTP_PORT` 是否已映射到宿主机，并与 `zlmediakit.rtp-port` 保持一致。
-7. 检查设备是否已按 INVITE 中分配的 RTP 端口向媒体服务发流。
-8. 若是跨机器联调，检查 INVITE SDP 中下发给设备的媒体地址是否可达，禁止误填成对端不可访问的 `localhost`。
+3. 若日志提示 `ZLMediaKit API 调用失败: java.net.ConnectException` 或旧日志仍显示 `error=null`，优先检查当前进程是否仍指向 `localhost:18080`，开发环境应改为 `192.168.123.102:18080` 或显式设置对应环境变量。
+4. 若 ZLM API 返回 `code=-100, msg=Please login first`，说明请求已到达 `192.168.123.102`，但 `zlmediakit.secret` 或服务端登录策略未对齐，不能再继续从网络连通性方向排查。
+5. 检查 `firefly-media` 日志是否先打印 RTP 收流端口，再发送 INVITE。
+6. 若日志提示 `GB28181 RTP 收流端口返回不正确`，优先核对 ZLM `openRtpServer` 实际返回体，确认 `port` 是否位于顶层或 `data.port`，并检查是否被代理层转成字符串。
+7. 检查 ZLM `getMediaList` 中是否能看到 `app=rtp`、`stream={streamId}` 的流，而不是只检查 `live` 应用。
+8. 若通过 compose 部署，检查 `ZLM_RTP_PORT` 是否已映射到宿主机，并与 `zlmediakit.rtp-port` 保持一致。
+9. 检查设备是否已按 INVITE 中分配的 RTP 端口向媒体服务发流。
+10. 若是跨机器联调，检查 INVITE SDP 中下发给设备的媒体地址是否可达，禁止误填成对端不可访问的 `localhost`。
 
 ### 6.6 视频状态没有回写到设备资产
 

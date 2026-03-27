@@ -168,9 +168,11 @@
 
 - `firefly-media` 调用 ZLM REST 时优先使用 `zlmediakit.api-host/api-port`；未显式配置时才回落到 `zlmediakit.host/port`。
 - `zlmediakit.api-host/api-port` 只用于媒体服务访问 ZLM REST，可配置为容器服务名。
+- 当前开发环境默认把 `zlmediakit.host/api-host/public-host` 对齐到 `192.168.123.102`，以匹配共享 ZLM 节点；如切换环境，必须通过环境变量显式覆盖。
 - `zlmediakit.host/port` 必须保持为摄像头、浏览器和需要直连 RTSP 的组件可访问地址，禁止误配到 `firefly-gateway` 或其他只返回业务包装结果的 HTTP 服务。
 - 对前端下发播放地址时，固定使用 `zlmediakit.public-host/public-port/public-scheme` 作为基准地址。
 - 若未配置 `public-host`，默认回落到 `host`，仅适用于本机联调。
+- 当 ZLM 与 `firefly-media` 分机部署时，`zlmediakit.hook-url` 不能继续写死 `localhost`，必须通过 `ZLMEDIAKIT_HOOK_URL` 覆盖为 ZLM 可回调的媒体服务地址。
 - `compose` 部署默认内置 `zlmediakit` 基础设施，HTTP API 暴露为宿主机 `18080`，RTSP 暴露为宿主机 `18554`。
 - `RTSP / RTMP` 代理流继续使用 `live/{streamId}` 作为 ZLM 应用名和播放地址。
 - `GB28181` 开流前必须先调用 ZLM `openRtpServer` 打开 RTP 收流端口，并显式绑定自定义 `streamId`。

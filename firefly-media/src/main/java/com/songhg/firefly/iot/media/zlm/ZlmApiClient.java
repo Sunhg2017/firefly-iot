@@ -58,11 +58,12 @@ public class ZlmApiClient {
             ensureSuccessStatus(path, response.statusCode(), response.body());
             return response.body();
         } catch (IOException | InterruptedException e) {
-            log.error("ZLM API GET error: path={}, error={}", path, e.getMessage());
+            log.error("ZLM API GET error: path={}, url={}, exception={}, error={}",
+                    path, url, e.getClass().getName(), resolveExceptionMessage(e), e);
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            throw new BizException(ResultCode.INTERNAL_ERROR, "ZLMediaKit API 调用失败: " + e.getMessage());
+            throw new BizException(ResultCode.INTERNAL_ERROR, "ZLMediaKit API 调用失败: " + resolveExceptionMessage(e));
         }
     }
 
@@ -81,11 +82,12 @@ public class ZlmApiClient {
             ensureSuccessStatus(path, response.statusCode(), response.body());
             return response.body();
         } catch (IOException | InterruptedException e) {
-            log.error("ZLM API POST error: path={}, error={}", path, e.getMessage());
+            log.error("ZLM API POST error: path={}, url={}, exception={}, error={}",
+                    path, url, e.getClass().getName(), resolveExceptionMessage(e), e);
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            throw new BizException(ResultCode.INTERNAL_ERROR, "ZLMediaKit API 调用失败: " + e.getMessage());
+            throw new BizException(ResultCode.INTERNAL_ERROR, "ZLMediaKit API 调用失败: " + resolveExceptionMessage(e));
         }
     }
 
@@ -108,6 +110,11 @@ public class ZlmApiClient {
             return normalized;
         }
         return normalized.substring(0, 300) + "...";
+    }
+
+    private String resolveExceptionMessage(Exception exception) {
+        String message = exception.getMessage();
+        return message == null || message.isBlank() ? exception.getClass().getName() : message;
     }
 
     // ==================== 服务器信息 ====================
