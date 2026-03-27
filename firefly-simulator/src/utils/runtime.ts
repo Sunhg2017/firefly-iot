@@ -531,6 +531,7 @@ export async function disconnectSimDevice(deviceId: string, options?: { silent?:
       token: '',
       streamUrl: '',
       sipRegistered: false,
+      sipKeepaliveEnabled: false,
       autoReport: false,
       autoTimerId: null,
       heartbeatTimerId: null,
@@ -544,6 +545,7 @@ export async function disconnectSimDevice(deviceId: string, options?: { silent?:
     const message = error instanceof Error ? error.message : 'unknown error';
     store.updateDevice(device.id, {
       status: 'offline',
+      sipKeepaliveEnabled: false,
       autoReport: false,
       autoTimerId: null,
       heartbeatTimerId: null,

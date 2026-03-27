@@ -85,6 +85,7 @@ export interface SimDevice {
   sipTransport: 'UDP' | 'TCP';
   sipChannels: SipChannel[];
   sipRegistered: boolean;
+  sipKeepaliveEnabled: boolean;
   // SNMP config
   snmpConnectorUrl: string;
   snmpHost: string;
@@ -221,6 +222,7 @@ function normalizePersistedDevice(device: SimDevice | (SimDevice & { mediaBaseUr
     errorCount: 0,
     streamUrl: '',
     sipRegistered: false,
+    sipKeepaliveEnabled: false,
   };
 }
 
@@ -450,6 +452,7 @@ export const useSimStore = create<SimulatorState>()(
       sipTransport: draft.sipTransport || 'UDP',
       sipChannels: draft.sipChannels || [],
       sipRegistered: false,
+      sipKeepaliveEnabled: false,
       snmpConnectorUrl: draft.snmpConnectorUrl || 'http://localhost:9070',
       snmpHost: draft.snmpHost || '',
       snmpPort: draft.snmpPort || 161,

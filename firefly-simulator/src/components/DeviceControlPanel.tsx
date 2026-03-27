@@ -142,6 +142,60 @@ function supportsThingModelReport(protocol?: string): boolean {
   return protocol === 'HTTP' || protocol === 'CoAP' || protocol === 'MQTT';
 }
 
+function isVideoDevice(device?: SimDevice | null): boolean {
+  return device?.protocol === 'Video';
+}
+
+function isGb28181VideoDevice(device?: SimDevice | null): boolean {
+  return isVideoDevice(device) && device?.streamMode === 'GB28181';
+}
+
+function resolveVideoSyncMetric(device: SimDevice) {
+  if (isGb28181VideoDevice(device)) {
+    return {
+      label: 'SIP 心跳',
+      value: device.sipKeepaliveEnabled ? '已开启' : '未开启',
+      color: device.sipKeepaliveEnabled ? '#15803d' : '#64748b',
+      background: device.sipKeepaliveEnabled ? '#f0fdf4' : '#f8fafc',
+    };
+  }
+
+  const synced = Boolean(device.platformDeviceId) && device.status === 'online';
+  return {
+    label: '平台同步',
+    value: synced ? '已完成' : device.status === 'connecting' ? '同步中' : '待同步',
+    color: synced ? '#15803d' : '#64748b',
+    background: synced ? '#f0fdf4' : '#f8fafc',
+  };
+}
+
+function resolveVideoConnectionMetric(device: SimDevice) {
+  if (isGb28181VideoDevice(device)) {
+    if (device.sipRegistered) {
+      return {
+        label: 'SIP 注册',
+        value: '已注册',
+        color: '#0f766e',
+        background: '#ecfeff',
+      };
+    }
+    return {
+      label: 'SIP 注册',
+      value: device.platformDeviceId ? '待注册' : device.status === 'connecting' ? '同步中' : '待连接',
+      color: '#0f766e',
+      background: '#ecfeff',
+    };
+  }
+
+  const connected = Boolean(device.platformDeviceId) && device.status === 'online';
+  return {
+    label: '连接状态',
+    value: connected ? '已连接' : device.status === 'connecting' ? '同步中' : '待连接',
+    color: '#0f766e',
+    background: '#ecfeff',
+  };
+}
+
 export default function DeviceControlPanel() {
   const { devices, selectedDeviceId, updateDevice, addLog } = useSimStore();
   const environments = useSimWorkspaceStore((state) => state.environments);
@@ -571,14 +625,15 @@ export default function DeviceControlPanel() {
       const store = useSimStore.getState();
       switch (event.type) {
         case 'registered':
-          store.updateDevice(id, { sipRegistered: true });
+          store.updateDevice(id, { sipRegistered: true, sipKeepaliveEnabled: false });
           store.addLog(id, current.name, 'success', `SIP 注册成功（${event.expires}秒）`);
           break;
         case 'unregistered':
-          store.updateDevice(id, { sipRegistered: false });
+          store.updateDevice(id, { sipRegistered: false, sipKeepaliveEnabled: false });
           store.addLog(id, current.name, 'info', 'SIP 已注销');
           break;
         case 'keepalive_sent':
+          store.updateDevice(id, { sipKeepaliveEnabled: true });
           store.addLog(id, current.name, 'info', `SIP 心跳已发送（${event.sn}）`);
           break;
         case 'catalog_response_sent':
@@ -1098,14 +1153,31 @@ export default function DeviceControlPanel() {
       if (device.protocol === 'UDP') await window.electronAPI.udpDisconnect(device.id);
       if (device.protocol === 'Video') {
         await disconnectSimDevice(device.id, { silent: true });
-        updateDevice(device.id, { status: 'offline', token: '', streamUrl: '', sipRegistered: false, restoreOnLaunch: false, heartbeatTimerId: null });
+        updateDevice(device.id, {
+          status: 'offline',
+          token: '',
+          streamUrl: '',
+          sipRegistered: false,
+          sipKeepaliveEnabled: false,
+          restoreOnLaunch: false,
+          heartbeatTimerId: null,
+        });
         addLog(device.id, device.name, 'info', '已断开连接');
         return;
       }
-      updateDevice(device.id, { status: 'offline', token: '', platformDeviceId: null, streamUrl: '', sipRegistered: false, restoreOnLaunch: false, heartbeatTimerId: null });
+      updateDevice(device.id, {
+        status: 'offline',
+        token: '',
+        platformDeviceId: null,
+        streamUrl: '',
+        sipRegistered: false,
+        sipKeepaliveEnabled: false,
+        restoreOnLaunch: false,
+        heartbeatTimerId: null,
+      });
       addLog(device.id, device.name, 'info', '已断开连接');
     } catch (error: any) {
-      updateDevice(device.id, { status: 'offline', restoreOnLaunch: false, heartbeatTimerId: null });
+      updateDevice(device.id, { status: 'offline', restoreOnLaunch: false, heartbeatTimerId: null, sipKeepaliveEnabled: false });
       addLog(device.id, device.name, 'warn', `断开连接时出现告警：${error?.message || '未知错误'}`);
     }
   };
@@ -1521,11 +1593,17 @@ export default function DeviceControlPanel() {
   } as const;
 
   const statusTone = statusToneMap[device.status];
-  const heroMetrics = [
-    { label: '发送次数', value: String(device.sentCount), color: '#2563eb', background: '#eff6ff' },
-    { label: '错误次数', value: String(device.errorCount), color: '#dc2626', background: '#fef2f2' },
-    { label: '自动上报', value: device.autoReport ? '已开启' : '未开启', color: device.autoReport ? '#15803d' : '#64748b', background: device.autoReport ? '#f0fdf4' : '#f8fafc' },
-    {
+  const syncMetric = isVideoDevice(device)
+    ? resolveVideoSyncMetric(device)
+    : {
+      label: '自动上报',
+      value: device.autoReport ? '已开启' : '未开启',
+      color: device.autoReport ? '#15803d' : '#64748b',
+      background: device.autoReport ? '#f0fdf4' : '#f8fafc',
+    };
+  const connectionMetric = isVideoDevice(device)
+    ? resolveVideoConnectionMetric(device)
+    : {
       label: supportsThingModelReport(device.protocol) ? '心跳周期' : '认证状态',
       value: supportsThingModelReport(device.protocol)
         ? `${device.heartbeatIntervalSec || 30} 秒`
@@ -1534,7 +1612,12 @@ export default function DeviceControlPanel() {
           : '待连接',
       color: supportsThingModelReport(device.protocol) ? '#7c3aed' : '#0f766e',
       background: supportsThingModelReport(device.protocol) ? '#f5f3ff' : '#ecfeff',
-    },
+    };
+  const heroMetrics = [
+    { label: '发送次数', value: String(device.sentCount), color: '#2563eb', background: '#eff6ff' },
+    { label: '错误次数', value: String(device.errorCount), color: '#dc2626', background: '#fef2f2' },
+    syncMetric,
+    connectionMetric,
   ];
   const basicInfoCardStyle = {
     marginBottom: 18,

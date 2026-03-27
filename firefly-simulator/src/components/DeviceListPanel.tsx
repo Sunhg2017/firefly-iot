@@ -515,6 +515,7 @@ export default function DeviceListPanel() {
       platformDeviceId: null,
       streamUrl: '',
       sipRegistered: false,
+      sipKeepaliveEnabled: false,
       dynamicRegistered: false,
       restoreOnLaunch: false,
     } as never);

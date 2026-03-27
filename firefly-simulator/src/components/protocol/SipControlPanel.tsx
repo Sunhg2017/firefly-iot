@@ -127,7 +127,12 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
               size="small"
               disabled={!device.sipRegistered}
               onClick={async () => {
-                await window.electronAPI.sipStartKeepalive(device.id);
+                const res = await window.electronAPI.sipStartKeepalive(device.id);
+                if (!res.success) {
+                  addLog(device.id, device.name, 'error', `开启 SIP 心跳失败: ${res.message || '未知错误'}`);
+                  return;
+                }
+                updateDevice(device.id, { sipKeepaliveEnabled: true });
                 addLog(device.id, device.name, 'info', `SIP 心跳已开启 (间隔 ${device.sipKeepaliveInterval}s)`);
               }}
             >
@@ -136,7 +141,12 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
             <Button
               size="small"
               onClick={async () => {
-                await window.electronAPI.sipStopKeepalive(device.id);
+                const res = await window.electronAPI.sipStopKeepalive(device.id);
+                if (!res.success) {
+                  addLog(device.id, device.name, 'error', `停止 SIP 心跳失败: ${res.message || '未知错误'}`);
+                  return;
+                }
+                updateDevice(device.id, { sipKeepaliveEnabled: false });
                 addLog(device.id, device.name, 'info', 'SIP 心跳已停止');
               }}
             >
@@ -148,8 +158,12 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
               disabled={!device.sipRegistered}
               onClick={async () => {
                 await window.electronAPI.sipStopKeepalive(device.id);
-                await window.electronAPI.sipUnregister(device.id);
-                updateDevice(device.id, { sipRegistered: false });
+                const unregisterRes = await window.electronAPI.sipUnregister(device.id);
+                if (!unregisterRes.success) {
+                  addLog(device.id, device.name, 'error', `SIP 注销失败: ${unregisterRes.message || '未知错误'}`);
+                  return;
+                }
+                updateDevice(device.id, { sipRegistered: false, sipKeepaliveEnabled: false });
               }}
             >
               SIP 注销
@@ -159,8 +173,12 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
               danger
               ghost
               onClick={async () => {
-                await window.electronAPI.sipStop(device.id);
-                updateDevice(device.id, { sipRegistered: false });
+                const stopRes = await window.electronAPI.sipStop(device.id);
+                if (!stopRes.success) {
+                  addLog(device.id, device.name, 'error', `关闭 SIP 客户端失败: ${stopRes.message || '未知错误'}`);
+                  return;
+                }
+                updateDevice(device.id, { sipRegistered: false, sipKeepaliveEnabled: false });
                 addLog(device.id, device.name, 'info', 'SIP 客户端已关闭');
               }}
             >

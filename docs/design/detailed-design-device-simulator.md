@@ -52,11 +52,18 @@
 - `videoControlStartRecording`
 - `videoControlStopRecording`
 
+### 2.5 Video 状态口径
+
+- `GB28181` 设备状态卡显示 `SIP 注册`、`SIP 心跳`。
+- `RTSP / RTMP` 设备状态卡显示 `平台同步`、`连接状态`。
+- 不再复用通用设备的 `认证状态`、`自动上报` 口径展示 Video 状态。
+
 ## 3. GB28181 SIP 模拟
 
 - 保留本地 SIP 客户端能力
 - REGISTER 使用设备级 SIP 密码参与 Digest 认证（强制，禁止无密码注册）
 - Keepalive、Catalog、DeviceInfo、INVITE、BYE、PTZ 响应逻辑保持不变
+- 当前范围不包含本地摄像头采集、编码与 RTP 码流发送；GB28181 模拟仅覆盖信令联调链路
 
 ## 4. 设计取舍
 

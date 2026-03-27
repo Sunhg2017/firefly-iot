@@ -12,6 +12,9 @@ npm run build:vite
 1. 当前环境登录、环境切换、登录态缓存正常。
 2. Video 模式 IPC 已拆分为 `DEVICE` 资产同步和 `MEDIA` 控制两组。
 3. 本地状态字段已统一为 `platformDeviceId`。
+4. Video 顶部状态卡口径正确：
+   - `GB28181` 显示 `SIP 注册`、`SIP 心跳`
+   - `RTSP / RTMP` 显示 `平台同步`、`连接状态`
 
 ## 3. 联调检查
 
@@ -50,3 +53,11 @@ npm run build:vite
 1. 检查 `MEDIA` 路由是否可达
 2. 检查 `platformDeviceId` 是否已回填
 3. 检查 `firefly-media` 是否已部署到控制型视频接口版本
+
+### 4.4 GB28181 已注册但播放超时/网络错误
+
+排查：
+
+1. 确认当前是否在用模拟器 `GB28181` 模式（该模式只模拟 SIP，不发 RTP 码流）
+2. 如需验证真实播放链路，改用 `RTSP / RTMP` 并配置可用 `sourceUrl`
+3. 或改用真实 GB28181 设备进行推流联调
