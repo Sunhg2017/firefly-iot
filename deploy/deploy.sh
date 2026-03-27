@@ -62,7 +62,7 @@ prepare_zlm_config() {
         docker run --rm zlmediakit/zlmediakit:master cat /opt/media/conf/config.ini > "$config_file"
     fi
 
-    python3 - "$config_file" "${ZLM_SECRET:-035c73f7-bb6b-4889-a715-d9eb2d1925cc}" <<'PY'
+    python3 - "$config_file" "${ZLM_SECRET:-035c73f7bb6b4889a715d9eb2d1925cc}" <<'PY'
 from pathlib import Path
 import re
 import sys
@@ -118,7 +118,7 @@ cmd_infra() {
     log_info "Waiting for PostgreSQL to become ready..."
     dc exec postgres sh -c 'until pg_isready -U firefly; do sleep 2; done' 2>/dev/null
     log_info "Waiting for ZLMediaKit API to become ready..."
-    until curl -fsS "http://localhost:${ZLM_PORT:-18080}/index/api/getServerConfig?secret=${ZLM_SECRET:-035c73f7-bb6b-4889-a715-d9eb2d1925cc}" >/dev/null 2>&1; do
+    until curl -fsS "http://localhost:${ZLM_PORT:-18080}/index/api/getServerConfig?secret=${ZLM_SECRET:-035c73f7bb6b4889a715d9eb2d1925cc}" >/dev/null 2>&1; do
         sleep 2
     done
     log_info "Infrastructure services are ready"

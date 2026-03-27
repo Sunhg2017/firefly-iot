@@ -44,7 +44,7 @@ zlmediakit:
   port: ${ZLMEDIAKIT_PORT:18080}
   api-host: ${ZLMEDIAKIT_API_HOST:}
   api-port: ${ZLMEDIAKIT_API_PORT:}
-  secret: ${ZLMEDIAKIT_SECRET:035c73f7-bb6b-4889-a715-d9eb2d1925cc}
+  secret: ${ZLMEDIAKIT_SECRET:035c73f7bb6b4889a715d9eb2d1925cc}
   ssl-port: ${ZLMEDIAKIT_SSL_PORT:18443}
   rtsp-port: ${ZLMEDIAKIT_RTSP_PORT:18554}
   rtp-port: ${ZLMEDIAKIT_RTP_PORT:10000}

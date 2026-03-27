@@ -58,7 +58,7 @@ cd ../firefly-simulator && npm run build:vite
 9. 当前开发环境的共享 ZLM 节点部署在 `192.168.123.102`，本地启动 `firefly-media` 时默认使用 `192.168.123.102:18080/18554/10000`；若切换到其他节点，必须同步覆盖 `ZLMEDIAKIT_HOST`、`ZLMEDIAKIT_API_HOST`、`ZLMEDIAKIT_PUBLIC_HOST`。
 10. `firefly-media` 的 `zlmediakit.host/port`、`zlmediakit.rtsp-port` 必须是摄像头和平台都可访问的媒体地址；默认 compose 对宿主机暴露 `18080/18554`。
 11. 如 ZLM 与 `firefly-media` 分机部署，必须额外配置 `ZLMEDIAKIT_HOOK_URL` 指向媒体服务的真实可达地址，禁止保留 `localhost`。
-12. `firefly-media` 使用的 `zlmediakit.secret` 必须与 ZLM 服务端鉴权配置一致；若 ZLM API 返回 `code=-100, msg=Please login first`，说明当前 secret 或登录策略未对齐，需先在运维侧修正后再联调。
+12. `firefly-media` 使用的 `zlmediakit.secret` 必须与 ZLM 服务端鉴权配置一致，且 `ZLM_SECRET` 需保持纯字母数字格式；带连字符的 UUID 可能被当前 ZLM 镜像启动时自动改写。
 13. `deploy/deploy.sh` 现会主动加载 `deploy/.env`，因此若自定义了 `ZLM_SECRET`，脚本内的 ZLM 就绪探测也会使用同一份 secret；修改 `.env` 后需重新执行脚本。
 14. `deploy/deploy.sh` 会在 `deploy/runtime/zlmediakit/config.ini` 生成 ZLM 配置，并把 `api.secret` 改写成 `.env` 里的 `ZLM_SECRET`；若修改了 `ZLM_SECRET`，需重新执行 `bash deploy.sh infra` 或 `bash deploy.sh up` 让配置重新挂载。
 15. `firefly-media` 的 `zlmediakit.public-host/public-port/public-scheme` 已配置为浏览器可访问地址，禁止保留 `localhost` 对外下发给前端。
