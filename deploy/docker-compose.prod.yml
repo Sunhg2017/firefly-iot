@@ -49,6 +49,7 @@ services:
   postgres:
     image: timescale/timescaledb:latest-pg16
     container_name: firefly-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-firefly}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-firefly123}
@@ -69,6 +70,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: firefly-redis
+    restart: unless-stopped
     command: >
       redis-server
       --requirepass "${REDIS_PASSWORD:-}"
@@ -89,6 +91,7 @@ services:
   kafka:
     image: apache/kafka:3.7.1
     container_name: firefly-kafka
+    restart: unless-stopped
     environment:
       KAFKA_NODE_ID: 0
       KAFKA_PROCESS_ROLES: controller,broker
@@ -119,6 +122,7 @@ services:
   nacos:
     image: nacos/nacos-server:v2.3.2
     container_name: firefly-nacos
+    restart: unless-stopped
     environment:
       MODE: standalone
       SPRING_DATASOURCE_PLATFORM: ''
@@ -139,6 +143,7 @@ services:
   minio:
     image: minio/minio:latest
     container_name: firefly-minio
+    restart: unless-stopped
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin123}
@@ -159,6 +164,7 @@ services:
   sentinel:
     image: bladex/sentinel-dashboard:1.8.7
     container_name: firefly-sentinel
+    restart: unless-stopped
     ports:
       - "8858:8858"
     networks:
