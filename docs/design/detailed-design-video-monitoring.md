@@ -143,7 +143,7 @@
 
 1. 设备向 `firefly-media` 发起 REGISTER。
 2. `SipRegisterAuthService` 通过内部接口按 `gbDeviceId + gbDomain` 查询视频档案。
-3. 平台读取设备级 `sip_password` 校验 Digest。
+3. 平台读取设备级 `sip_password` 校验 Digest；GB28181 设备不再允许无密码注册。
 4. 成功后只更新运行态并发 MQ 事件。
 5. `firefly-device` 消费事件并更新 `device_video_profiles.status` 与 `devices.online_status`。
 

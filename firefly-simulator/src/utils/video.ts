@@ -120,7 +120,6 @@ export function buildVideoCreatePayload(device: SimDevice): Record<string, unkno
     payload.gbDeviceId = normalizeOptionalText(device.gbDeviceId);
     payload.gbDomain = normalizeOptionalText(device.gbDomain);
     payload.transport = normalizeOptionalText(device.sipTransport) || 'UDP';
-    payload.sipAuthEnabled = Boolean(sipPassword);
     payload.sipPassword = sipPassword;
     payload.ip = normalizeOptionalText(device.ip) || '127.0.0.1';
     payload.port = normalizeOptionalPort(device.sipLocalPort) || 5060;

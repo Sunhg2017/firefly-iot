@@ -65,7 +65,7 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
             <Space direction="vertical" size={2}>
               <Text type="secondary">SIP Server: {device.sipServerIp}:{device.sipServerPort} ({device.sipTransport})</Text>
               <Text type="secondary">Server ID: {device.sipServerId}</Text>
-              <Text type="secondary">本地端口: {device.sipLocalPort}{device.sipPassword ? ' | 认证: ✓' : ''} | 通道: {device.sipChannels.length || 1}</Text>
+              <Text type="secondary">本地端口: {device.sipLocalPort} | 鉴权: {device.sipPassword ? '已配置' : '未配置'} | 通道: {device.sipChannels.length || 1}</Text>
               <Text type="secondary">状态: {device.sipRegistered ?
                 <Tag color="green" style={{ fontSize: 11 }}>已注册</Tag> :
                 <Tag color="default" style={{ fontSize: 11 }}>未注册</Tag>}
@@ -78,6 +78,10 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
               type="primary"
               disabled={device.sipRegistered}
               onClick={async () => {
+                if (!device.sipPassword?.trim()) {
+                  addLog(device.id, device.name, 'error', 'SIP 注册失败：缺少设备级 SIP 密码');
+                  return;
+                }
                 addLog(device.id, device.name, 'info', '启动 SIP 客户端...');
                 const config = {
                   deviceId: device.gbDeviceId,
@@ -464,7 +468,7 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
         destroyOnHidden
         onCancel={() => setSipParamOpen(false)}
         onOk={async () => {
-          const vals = sipParamForm.getFieldsValue();
+          const vals = await sipParamForm.validateFields();
           updateDevice(device.id, {
             sipServerIp: vals.sipServerIp,
             sipServerPort: vals.sipServerPort,
@@ -521,8 +525,13 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="sipPassword" label="认证密码" style={{ marginBottom: 0 }}>
-                <Input.Password placeholder="可选" />
+              <Form.Item
+                name="sipPassword"
+                label="认证密码"
+                rules={[{ required: true, message: '请输入 SIP 认证密码' }]}
+                style={{ marginBottom: 0 }}
+              >
+                <Input.Password placeholder="请输入 SIP 认证密码" />
               </Form.Item>
             </Col>
           </Row>

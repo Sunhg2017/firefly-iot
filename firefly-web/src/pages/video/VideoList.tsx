@@ -12,7 +12,6 @@ import {
   Row,
   Select,
   Space,
-  Switch,
   Table,
   Tabs,
   Tag,
@@ -107,7 +106,6 @@ interface VideoEditorFormValues {
   gbDeviceId?: string;
   gbDomain?: string;
   transport?: string;
-  sipAuthEnabled?: boolean;
   sipPassword?: string;
   ip?: string;
   port?: number | string;
@@ -203,7 +201,6 @@ const buildEditorInitialValues = (
       gbDeviceId: device.gbDeviceId,
       gbDomain: device.gbDomain,
       transport: device.streamMode === 'GB28181' ? device.transport || 'UDP' : undefined,
-      sipAuthEnabled: Boolean(device.sipAuthEnabled),
       sipPassword: undefined,
       ip: device.ip,
       port: device.port,
@@ -219,13 +216,11 @@ const buildEditorInitialValues = (
     productKey: productContext?.productKey,
     streamMode,
     transport: streamMode === 'GB28181' ? 'UDP' : undefined,
-    sipAuthEnabled: false,
   };
 };
 
 const buildEditorPayload = (values: VideoEditorFormValues) => {
   const streamMode = values.streamMode || 'GB28181';
-  const sipAuthEnabled = streamMode === 'GB28181' ? Boolean(values.sipAuthEnabled) : false;
   return {
     productKey: trimOptionalValue(values.productKey),
     name: values.name?.trim(),
@@ -233,8 +228,7 @@ const buildEditorPayload = (values: VideoEditorFormValues) => {
     gbDeviceId: trimOptionalValue(values.gbDeviceId),
     gbDomain: trimOptionalValue(values.gbDomain),
     transport: streamMode === 'GB28181' ? trimOptionalValue(values.transport) || 'UDP' : undefined,
-    sipAuthEnabled,
-    sipPassword: sipAuthEnabled ? trimOptionalValue(values.sipPassword) : undefined,
+    sipPassword: streamMode === 'GB28181' ? trimOptionalValue(values.sipPassword) : undefined,
     ip: trimOptionalValue(values.ip),
     port: normalizeOptionalPort(values.port),
     sourceUrl: trimOptionalValue(values.sourceUrl),
@@ -260,7 +254,6 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
   const [productOptions, setProductOptions] = useState<VideoProductOption[]>([]);
   const currentEditorProductKey = Form.useWatch('productKey', editorForm);
   const currentEditorStreamMode = Form.useWatch('streamMode', editorForm) || productContext?.protocol || 'GB28181';
-  const currentSipAuthEnabled = Boolean(Form.useWatch('sipAuthEnabled', editorForm));
   const [draftFilters, setDraftFilters] = useState<VideoListFilters>(EMPTY_VIDEO_FILTERS);
   const [filters, setFilters] = useState<VideoListFilters>(EMPTY_VIDEO_FILTERS);
 
@@ -360,7 +353,6 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
       editorForm.setFieldValue('transport', 'UDP');
     }
     if (currentEditorStreamMode !== 'GB28181') {
-      editorForm.setFieldValue('sipAuthEnabled', false);
       editorForm.setFieldValue('sipPassword', undefined);
     }
   }, [currentEditorStreamMode, editorForm]);
@@ -948,38 +940,32 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
                       />
                     </Form.Item>
                   </Col>
-                  <Col xs={24} md={12}>
-                    <Form.Item name="sipAuthEnabled" label="SIP 鉴权" valuePropName="checked">
-                      <Switch checkedChildren="启用" unCheckedChildren="关闭" />
-                    </Form.Item>
-                  </Col>
+                  <Col xs={24} md={12} />
                 </Row>
 
-                {currentSipAuthEnabled ? (
-                  <Form.Item
-                    name="sipPassword"
-                    label="SIP 密码"
-                    rules={[
-                      {
-                        validator: async (_, value) => {
-                          const trimmed = typeof value === 'string' ? value.trim() : '';
-                          if (trimmed) {
-                            return;
-                          }
-                          if (editorMode === 'edit' && editingDevice?.sipAuthEnabled) {
-                            return;
-                          }
-                          throw new Error('请输入SIP密码');
-                        },
+                <Form.Item
+                  name="sipPassword"
+                  label="SIP 密码"
+                  rules={[
+                    {
+                      validator: async (_, value) => {
+                        const trimmed = typeof value === 'string' ? value.trim() : '';
+                        if (trimmed) {
+                          return;
+                        }
+                        if (editorMode === 'edit' && editingDevice?.sipAuthEnabled) {
+                          return;
+                        }
+                        throw new Error('请输入SIP密码');
                       },
-                    ]}
-                  >
-                    <Input.Password
-                      placeholder={editorMode === 'edit' && editingDevice?.sipAuthEnabled ? '留空则保持原密码' : '请输入SIP密码'}
-                      maxLength={128}
-                    />
-                  </Form.Item>
-                ) : null}
+                    },
+                  ]}
+                >
+                  <Input.Password
+                    placeholder={editorMode === 'edit' && editingDevice?.sipAuthEnabled ? '留空则保持原密码' : '请输入SIP密码'}
+                    maxLength={128}
+                  />
+                </Form.Item>
               </>
             ) : null}
 

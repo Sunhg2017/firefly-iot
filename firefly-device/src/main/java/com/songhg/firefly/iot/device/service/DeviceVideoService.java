@@ -79,7 +79,7 @@ public class DeviceVideoService {
 
         DeviceVideoProfile profile = new DeviceVideoProfile();
         fillProfile(profile, dto);
-        normalizeProfile(profile, dto.getSipAuthEnabled());
+        normalizeProfile(profile);
         profile.setTenantId(tenantId);
         profile.setCreatedBy(AppContextHolder.getUserId());
         alignManagedStatus(profile);
@@ -141,7 +141,7 @@ public class DeviceVideoService {
         Device device = getDeviceOrThrow(deviceId, false);
 
         fillProfile(profile, dto);
-        normalizeProfile(profile, dto.getSipAuthEnabled());
+        normalizeProfile(profile);
         alignManagedStatus(profile);
         assertIdentityAvailable(profile, deviceId);
 
@@ -346,7 +346,7 @@ public class DeviceVideoService {
         if (dto.getTransport() != null) {
             profile.setTransport(trimToNull(dto.getTransport()));
         }
-        if (dto.getSipPassword() != null || Boolean.FALSE.equals(dto.getSipAuthEnabled())) {
+        if (dto.getSipPassword() != null) {
             profile.setSipPassword(trimToNull(dto.getSipPassword()));
         }
         if (dto.getIp() != null) {
@@ -369,7 +369,7 @@ public class DeviceVideoService {
         }
     }
 
-    private void normalizeProfile(DeviceVideoProfile profile, Boolean sipAuthEnabled) {
+    private void normalizeProfile(DeviceVideoProfile profile) {
         if (profile.getStreamMode() == null) {
             throw new BizException(ResultCode.PARAM_ERROR, "接入方式不能为空");
         }
@@ -380,14 +380,11 @@ public class DeviceVideoService {
             if (trimToNull(profile.getTransport()) == null) {
                 profile.setTransport("UDP");
             }
-            boolean authEnabled = Boolean.TRUE.equals(sipAuthEnabled)
-                    || (sipAuthEnabled == null && trimToNull(profile.getSipPassword()) != null);
-            if (authEnabled && trimToNull(profile.getSipPassword()) == null) {
-                throw new BizException(ResultCode.PARAM_ERROR, "启用 SIP 密码鉴权时必须填写 SIP 密码");
+            String sipPassword = trimToNull(profile.getSipPassword());
+            if (sipPassword == null) {
+                throw new BizException(ResultCode.PARAM_ERROR, "GB28181 设备必须填写设备级 SIP 密码");
             }
-            if (!authEnabled) {
-                profile.setSipPassword(null);
-            }
+            profile.setSipPassword(sipPassword);
             return;
         }
 

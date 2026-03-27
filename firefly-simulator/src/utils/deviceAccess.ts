@@ -102,6 +102,7 @@ export function getDeviceAccessMissingFields(device: SimDevice): string[] {
       if (normalizeVideoStreamMode(device.streamMode) === 'GB28181') {
         if (!trim(device.gbDeviceId)) missing.push('国标设备 ID');
         if (!trim(device.gbDomain)) missing.push('国标域');
+        if (!trim(device.sipPassword)) missing.push('SIP 密码');
       } else if (!trim(device.sourceUrl)) {
         missing.push(getVideoSourceFieldLabel(device.streamMode));
       }
@@ -227,6 +228,9 @@ export function getDeviceAccessOverviewItems(device: SimDevice): AccessOverviewI
           label: '平台设备资产',
           value: trim(String(device.platformDeviceId ?? '')) || '未设置',
         },
+        ...(normalizeVideoStreamMode(device.streamMode) === 'GB28181'
+          ? [{ label: 'SIP 密码', value: maskSecret(device.sipPassword) }]
+          : []),
       ];
     default:
       return [];

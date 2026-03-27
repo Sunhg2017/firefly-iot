@@ -200,7 +200,7 @@ function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, 
     }
   }
   if (step === 2 && protocol === 'Video' && streamMode === 'GB28181') {
-    return ['sipServerIp', 'sipServerPort', 'sipServerId', 'sipLocalPort'];
+    return ['sipServerIp', 'sipServerPort', 'sipServerId', 'sipLocalPort', 'sipPassword'];
   }
   return [];
 }
@@ -866,7 +866,13 @@ export default function AddDeviceModal({ open, onClose }: Props) {
               <Col span={12}><Form.Item name="sipKeepaliveInterval" label="心跳间隔（秒）"><InputNumber min={10} max={300} style={{ width: '100%' }} /></Form.Item></Col>
               <Col span={12}><Form.Item name="sipTransport" label="传输协议"><Radio.Group><Radio.Button value="UDP">UDP</Radio.Button><Radio.Button value="TCP">TCP</Radio.Button></Radio.Group></Form.Item></Col>
             </Row>
-            <Form.Item name="sipPassword" label="SIP 密码"><Input.Password placeholder="留空表示不做 Digest 鉴权" /></Form.Item>
+            <Form.Item
+              name="sipPassword"
+              label="SIP 密码"
+              rules={[{ required: true, message: '请输入 SIP 密码' }]}
+            >
+              <Input.Password placeholder="请输入设备级 SIP 密码" />
+            </Form.Item>
           </Card>
           <Card size="small" title="通道配置" style={drawerSectionCardStyle}>
             <Form.List name="sipChannels">

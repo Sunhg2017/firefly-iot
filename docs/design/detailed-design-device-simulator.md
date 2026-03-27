@@ -55,7 +55,7 @@
 ## 3. GB28181 SIP 模拟
 
 - 保留本地 SIP 客户端能力
-- REGISTER 使用设备级 SIP 密码参与 Digest 认证
+- REGISTER 使用设备级 SIP 密码参与 Digest 认证（强制，禁止无密码注册）
 - Keepalive、Catalog、DeviceInfo、INVITE、BYE、PTZ 响应逻辑保持不变
 
 ## 4. 设计取舍

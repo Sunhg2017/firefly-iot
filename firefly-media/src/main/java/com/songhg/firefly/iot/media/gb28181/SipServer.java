@@ -171,7 +171,7 @@ public class SipServer implements SipListener {
     public MessageFactory getMessageFactory() { return messageFactory; }
 
     /**
-     * 对已通过鉴权或无需鉴权的 REGISTER / MESSAGE / BYE 明确返回 200 OK，
+     * 对已通过鉴权的 REGISTER 和常规 MESSAGE / BYE 明确返回 200 OK，
      * 否则部分国标设备会把超时或无响应直接显示成“认证失败”。
      */
     private void sendOkResponse(Request request, ServerTransaction serverTransaction, String method) {

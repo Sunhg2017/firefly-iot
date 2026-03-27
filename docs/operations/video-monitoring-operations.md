@@ -88,7 +88,7 @@ cd ../firefly-simulator && npm run build:vite
 
 排查：
 
-1. 检查设备资产里是否已保存设备级 `sip_password`。
+1. 检查设备资产里是否已保存设备级 `sip_password`（GB28181 现为强制项）。
 2. 检查设备端是否使用 `gbDeviceId` 作为 SIP 用户名。
 3. 检查 `gbDomain`、传输方式、平台 SIP 监听地址是否一致。
 4. 检查 `SipServer` 返回的失败原因是否已透传。

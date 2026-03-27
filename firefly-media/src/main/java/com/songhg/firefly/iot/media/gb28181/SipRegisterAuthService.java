@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * GB28181 REGISTER Digest 鉴权服务。
  * <p>
- * 当前用户名固定使用视频设备的 GB 设备编号，只有开启设备级 SIP 密码后才发起 401 挑战。
+ * 当前用户名固定使用视频设备的 GB 设备编号，GB28181 设备统一强制 Digest 鉴权。
  */
 @Slf4j
 @Component
@@ -39,7 +39,8 @@ public class SipRegisterAuthService {
     public RegisterAuthorization authorize(Request request, String defaultRealm) {
         SipIdentity identity = resolveIdentity(request);
         if (identity.deviceId() == null) {
-            return RegisterAuthorization.allow(null);
+            return RegisterAuthorization.challenge(null, resolveRealm(null, null, defaultRealm),
+                    issueNonce("unknown"), "缺少 GB 设备编号");
         }
 
         InternalVideoDeviceVO device = videoDeviceFacade.getByGbIdentity(identity.deviceId(), identity.gbDomain());
@@ -50,7 +51,10 @@ public class SipRegisterAuthService {
 
         String sipPassword = trimToNull(device.getSipPassword());
         if (sipPassword == null) {
-            return RegisterAuthorization.allow(identity.deviceId());
+            log.warn("Reject REGISTER without SIP password: gbDeviceId={}, gbDomain={}",
+                    identity.deviceId(), identity.gbDomain());
+            return RegisterAuthorization.challenge(identity.deviceId(), realm, issueNonce(identity.deviceId()),
+                    "设备未配置 SIP 密码，禁止无鉴权注册");
         }
 
         AuthorizationHeader authorizationHeader =
@@ -143,7 +147,8 @@ public class SipRegisterAuthService {
             return realm;
         }
         realm = trimToNull(gbDomain);
-        return realm != null ? realm : defaultRealm;
+        realm = realm != null ? realm : trimToNull(defaultRealm);
+        return realm != null ? realm : "firefly";
     }
 
     private String trimToNull(String value) {
