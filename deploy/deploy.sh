@@ -41,6 +41,15 @@ check_env() {
     fi
 }
 
+load_env() {
+    check_env
+    # Export deployment variables so helper commands like curl use the same
+    # ZLM/DB host, port and secret values as docker compose.
+    set -a
+    . "$ENV_FILE"
+    set +a
+}
+
 find_mvn() {
     if [ -x "$PROJECT_ROOT/mvnw" ]; then
         echo "$PROJECT_ROOT/mvnw"
@@ -75,7 +84,7 @@ dc() {
 }
 
 cmd_infra() {
-    check_env
+    load_env
     log_step "Starting infrastructure services..."
     dc up -d postgres redis kafka nacos minio sentinel zlmediakit
     log_info "Waiting for PostgreSQL to become ready..."
@@ -94,7 +103,7 @@ cmd_build() {
 }
 
 cmd_up() {
-    check_env
+    load_env
     log_step "=== Firefly IoT full deployment ==="
 
     log_step "[1/4] Building backend..."
