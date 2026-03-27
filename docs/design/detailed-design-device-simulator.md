@@ -66,7 +66,7 @@
 - `GB28181` 默认 `LOCAL_CAMERA`，收到 INVITE 后自动按 SDP 目标地址发送本地 RTP 码流。
 - `RTSP / RTMP` 选择 `LOCAL_CAMERA` 时，模拟器自动生成 `sourceUrl`，并在开始推流前先启动本地摄像头推流进程。
 - Electron 主进程负责拉起并托管本地推流子进程，断开、停流、注销时统一回收。
-- macOS 摄像头采集默认先使用显式 `framerate + video_size`；若 `avfoundation` 返回参数不支持，会先按 `Supported modes` 选择兼容分辨率与帧率重试，再降级到设备默认采集模式，避免因机型差异导致启动失败。
+- macOS 摄像头采集默认先使用显式 `framerate + video_size`；若 `avfoundation` 返回参数不支持，会先根据本次失败日志里的实际被拒绝模式，按 `Supported modes` 选择兼容分辨率与帧率重试，再降级到设备默认采集模式，避免因机型差异导致启动失败。
 
 ## 3. GB28181 SIP 模拟
 

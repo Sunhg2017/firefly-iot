@@ -270,6 +270,40 @@ function parseDarwinSupportedModes(stderrText: string): Array<{ width: number; h
   return candidates;
 }
 
+function parseDarwinRejectedSelection(stderrText: string): {
+  fps?: number;
+  width?: number;
+  height?: number;
+} | null {
+  const lines = (stderrText || '').split(/\r?\n/g);
+  let fps: number | undefined;
+  let width: number | undefined;
+  let height: number | undefined;
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    const fpsMatch = line.match(/Selected framerate \(([\d.]+)\) is not supported/i);
+    if (fpsMatch) {
+      const parsedFps = Number(fpsMatch[1]);
+      if (Number.isFinite(parsedFps) && parsedFps > 0) {
+        fps = parsedFps;
+      }
+    }
+    const sizeMatch = line.match(/Selected video size \((\d+)x(\d+)\) is not supported/i);
+    if (sizeMatch) {
+      const parsedWidth = Number(sizeMatch[1]);
+      const parsedHeight = Number(sizeMatch[2]);
+      if (Number.isFinite(parsedWidth) && parsedWidth > 0 && Number.isFinite(parsedHeight) && parsedHeight > 0) {
+        width = parsedWidth;
+        height = parsedHeight;
+      }
+    }
+  }
+  if (fps === undefined && width === undefined && height === undefined) {
+    return null;
+  }
+  return { fps, width, height };
+}
+
 function selectDarwinCompatibleMode(
   stderrText: string,
   preferred: { fps: number; width: number; height: number },
@@ -292,6 +326,30 @@ function selectDarwinCompatibleMode(
     return scoreA - scoreB;
   });
   return sorted[0] || null;
+}
+
+function shouldRetryDarwinSupportedMode(
+  selectedMode: { fps: number; width: number; height: number } | null,
+  preferred: { fps: number; width: number; height: number },
+  rejected: { fps?: number; width?: number; height?: number } | null,
+): selectedMode is { fps: number; width: number; height: number } {
+  if (!selectedMode) {
+    return false;
+  }
+  if (!rejected) {
+    return selectedMode.width !== preferred.width
+      || selectedMode.height !== preferred.height
+      || Math.abs(selectedMode.fps - preferred.fps) > 0.01;
+  }
+  if (rejected.width !== undefined && rejected.height !== undefined) {
+    if (selectedMode.width !== rejected.width || selectedMode.height !== rejected.height) {
+      return true;
+    }
+  }
+  if (rejected.fps !== undefined && Math.abs(selectedMode.fps - rejected.fps) > 0.01) {
+    return true;
+  }
+  return false;
 }
 
 function extractLocalVideoStartFailure(stderrText: string, fallbackMessage: string): string {
@@ -459,15 +517,8 @@ async function startLocalVideoSession(
   }
 
   const selectedDarwinMode = selectDarwinCompatibleMode(primaryStderr, { fps, width, height });
-  const canTrySupportedMode = Boolean(
-    selectedDarwinMode
-    && (
-      selectedDarwinMode.width !== width
-      || selectedDarwinMode.height !== height
-      || Math.abs(selectedDarwinMode.fps - fps) > 0.01
-    ),
-  );
-  if (canTrySupportedMode && selectedDarwinMode) {
+  const rejectedDarwinMode = parseDarwinRejectedSelection(primaryStderr);
+  if (shouldRetryDarwinSupportedMode(selectedDarwinMode, { fps, width, height }, rejectedDarwinMode)) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('sip:event', deviceId, {
         type: 'local_media_retry',
