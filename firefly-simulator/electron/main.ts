@@ -199,6 +199,7 @@ function buildCameraInputArgs(config: {
     width: number;
     height: number;
   };
+  forceDarwinPixelFormat?: string;
 }): string[] {
   const fps = Math.max(5, Math.min(30, Number(config.fps) || 15));
   const width = Math.max(320, Math.min(1920, Number(config.width) || 1280));
@@ -207,10 +208,16 @@ function buildCameraInputArgs(config: {
   if (process.platform === 'darwin') {
     const avfoundationInput = `${cameraDevice || '0'}:none`;
     const forcedMode = options?.forceDarwinMode;
+    const forcedPixelFormat = (options?.forceDarwinPixelFormat || '').trim();
+    const baseArgs = ['-f', 'avfoundation'];
+    if (forcedPixelFormat) {
+      // avfoundation 的输入像素格式默认是 yuv420p，但部分摄像头仅支持 nv12/uyvy422 等格式，
+      // 这里显式传入兼容像素格式，避免采集阶段直接协商失败。
+      baseArgs.push('-pixel_format', forcedPixelFormat);
+    }
     if (forcedMode) {
       return [
-        '-f',
-        'avfoundation',
+        ...baseArgs,
         '-framerate',
         formatDarwinFps(forcedMode.fps),
         '-video_size',
@@ -222,9 +229,9 @@ function buildCameraInputArgs(config: {
     if (options?.useDarwinAutoMode) {
       // 某些摄像头在显式指定 framerate/video_size 时会协商失败，
       // 回退到设备默认模式由驱动自行协商采集参数，提升兼容性。
-      return ['-f', 'avfoundation', '-i', avfoundationInput];
+      return [...baseArgs, '-i', avfoundationInput];
     }
-    return ['-f', 'avfoundation', '-framerate', String(fps), '-video_size', `${width}x${height}`, '-i', `${cameraDevice || '0'}:none`];
+    return [...baseArgs, '-framerate', String(fps), '-video_size', `${width}x${height}`, '-i', `${cameraDevice || '0'}:none`];
   }
   if (process.platform === 'win32') {
     return ['-f', 'dshow', '-i', `video=${cameraDevice || 'default'}`];
@@ -290,7 +297,46 @@ function shouldRetryWithDarwinAutoMode(stderrText: string): boolean {
   const normalized = (stderrText || '').toLowerCase();
   return normalized.includes('selected framerate')
     || normalized.includes('selected video size')
+    || normalized.includes('selected pixel format')
+    || normalized.includes('configuration of video device failed')
     || normalized.includes('not supported by the device');
+}
+
+function isDarwinCompatibilityWarningLine(line: string): boolean {
+  if (process.platform !== 'darwin') {
+    return false;
+  }
+  const normalized = (line || '').trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return (normalized.includes('nskvonotifying_avcapturescreeninput') && normalized.includes('not linked into application'))
+    || normalized.includes('configuration of video device failed')
+    || normalized.includes('selected framerate')
+    || normalized.includes('selected video size')
+    || normalized.includes('supported modes')
+    || normalized.includes('selected pixel format')
+    || normalized.includes('supported pixel formats')
+    || normalized.includes('overriding selected pixel format');
+}
+
+function classifyLocalVideoStderrMessage(stderrText: string): 'warn' | 'error' {
+  const lines = (stderrText || '')
+    .split(/\r?\n/g)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return 'warn';
+  }
+  let hasCompatibilityWarning = false;
+  for (const line of lines) {
+    if (isDarwinCompatibilityWarningLine(line)) {
+      hasCompatibilityWarning = true;
+      continue;
+    }
+    return 'error';
+  }
+  return hasCompatibilityWarning ? 'warn' : 'error';
 }
 
 function parseDarwinSupportedModes(stderrText: string): Array<{ width: number; height: number; fps: number }> {
@@ -321,6 +367,54 @@ function parseDarwinSupportedModes(stderrText: string): Array<{ width: number; h
       uniqueKeys.add(key);
       candidates.push({ width, height, fps: roundedFps });
     }
+  }
+  return candidates;
+}
+
+function parseDarwinRejectedPixelFormat(stderrText: string): string | undefined {
+  const lines = (stderrText || '').split(/\r?\n/g);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    const match = line.match(/Selected pixel format \(([^)]+)\) is not supported/i);
+    if (!match) {
+      continue;
+    }
+    const pixelFormat = match[1]?.trim().toLowerCase();
+    if (pixelFormat) {
+      return pixelFormat;
+    }
+  }
+  return undefined;
+}
+
+function parseDarwinSupportedPixelFormats(stderrText: string): string[] {
+  const candidates: string[] = [];
+  const unique = new Set<string>();
+  const lines = (stderrText || '').split(/\r?\n/g);
+  let inSupportedSection = false;
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    if (/supported pixel formats/i.test(line)) {
+      inSupportedSection = true;
+      continue;
+    }
+    if (!inSupportedSection) {
+      continue;
+    }
+    const match = line.match(/^(?:\[.*?\]\s*)?([0-9a-z_]+)$/i);
+    if (!match) {
+      inSupportedSection = false;
+      continue;
+    }
+    const pixelFormat = match[1].toLowerCase();
+    if (unique.has(pixelFormat)) {
+      continue;
+    }
+    unique.add(pixelFormat);
+    candidates.push(pixelFormat);
   }
   return candidates;
 }
@@ -524,12 +618,125 @@ function selectDarwinCompatibleModes(
   ));
 }
 
+function selectDarwinCompatiblePixelFormats(stderrText: string): string[] {
+  const preferredOrder = ['nv12', 'uyvy422', 'yuyv422', 'bgr0', '0rgb'];
+  const rejectedPixelFormat = parseDarwinRejectedPixelFormat(stderrText);
+  return parseDarwinSupportedPixelFormats(stderrText)
+    .filter((pixelFormat) => pixelFormat !== rejectedPixelFormat)
+    .sort((left, right) => {
+      const leftIndex = preferredOrder.indexOf(left);
+      const rightIndex = preferredOrder.indexOf(right);
+      const leftScore = leftIndex === -1 ? preferredOrder.length : leftIndex;
+      const rightScore = rightIndex === -1 ? preferredOrder.length : rightIndex;
+      if (leftScore !== rightScore) {
+        return leftScore - rightScore;
+      }
+      return left.localeCompare(right, 'en');
+    });
+}
+
+function buildDarwinRetryCandidates(
+  stderrText: string,
+  preferred: { fps: number; width: number; height: number },
+): Array<{
+  inputOptions: {
+    useDarwinAutoMode?: boolean;
+    forceDarwinMode?: {
+      fps: number;
+      width: number;
+      height: number;
+    };
+    forceDarwinPixelFormat?: string;
+  };
+  message: string;
+}> {
+  const compatibleModes = selectDarwinCompatibleModes(stderrText, preferred).slice(0, 2);
+  const compatiblePixelFormats = selectDarwinCompatiblePixelFormats(stderrText).slice(0, 2);
+  const retryCandidates: Array<{
+    inputOptions: {
+      useDarwinAutoMode?: boolean;
+      forceDarwinMode?: {
+        fps: number;
+        width: number;
+        height: number;
+      };
+      forceDarwinPixelFormat?: string;
+    };
+    message: string;
+  }> = [];
+  const dedupe = new Set<string>();
+  const pushCandidate = (inputOptions: {
+    useDarwinAutoMode?: boolean;
+    forceDarwinMode?: {
+      fps: number;
+      width: number;
+      height: number;
+    };
+    forceDarwinPixelFormat?: string;
+  }, message: string) => {
+    const key = [
+      inputOptions.useDarwinAutoMode ? 'auto' : 'manual',
+      inputOptions.forceDarwinMode
+        ? buildVideoModeKey(
+          inputOptions.forceDarwinMode.width,
+          inputOptions.forceDarwinMode.height,
+          inputOptions.forceDarwinMode.fps,
+        )
+        : 'preferred',
+      inputOptions.forceDarwinPixelFormat || 'default',
+    ].join('|');
+    if (dedupe.has(key)) {
+      return;
+    }
+    dedupe.add(key);
+    retryCandidates.push({ inputOptions, message });
+  };
+
+  for (const pixelFormat of compatiblePixelFormats) {
+    pushCandidate(
+      { forceDarwinPixelFormat: pixelFormat },
+      `检测到摄像头像素格式不兼容，改用 ${pixelFormat} 重试`,
+    );
+  }
+  for (const mode of compatibleModes) {
+    pushCandidate(
+      { forceDarwinMode: mode },
+      `检测到摄像头参数不兼容，改用 ${mode.width}x${mode.height}@${formatDarwinFps(mode.fps)} 重试`,
+    );
+  }
+  if (compatiblePixelFormats.length > 0) {
+    const pixelFormat = compatiblePixelFormats[0];
+    for (const mode of compatibleModes) {
+      pushCandidate(
+        { forceDarwinMode: mode, forceDarwinPixelFormat: pixelFormat },
+        `检测到摄像头参数不兼容，改用 ${mode.width}x${mode.height}@${formatDarwinFps(mode.fps)} / ${pixelFormat} 重试`,
+      );
+    }
+    pushCandidate(
+      { useDarwinAutoMode: true, forceDarwinPixelFormat: pixelFormat },
+      `检测到摄像头参数不兼容，已切换设备默认采集模式并改用 ${pixelFormat} 重试`,
+    );
+  }
+  pushCandidate(
+    { useDarwinAutoMode: true },
+    '检测到摄像头参数不兼容，已切换设备默认采集模式重试',
+  );
+  return retryCandidates;
+}
+
 function extractLocalVideoStartFailure(stderrText: string, fallbackMessage: string): string {
   const lines = (stderrText || '')
     .split(/\r?\n/g)
     .map((line) => line.trim())
     .filter(Boolean);
   if (lines.length === 0) {
+    return fallbackMessage;
+  }
+  if (process.platform === 'darwin') {
+    const failureLines = lines.filter((line) => !isDarwinCompatibilityWarningLine(line));
+    if (failureLines.length > 0) {
+      return failureLines[failureLines.length - 1];
+    }
     return fallbackMessage;
   }
   return lines[lines.length - 1];
@@ -606,6 +813,7 @@ async function startLocalVideoSession(
     'veryfast',
     '-tune',
     'zerolatency',
+    // 这里的 pix_fmt 是编码输出格式，和 macOS avfoundation 输入侧的 pixel_format 是两条独立链路。
     '-pix_fmt',
     'yuv420p',
     '-g',
@@ -665,7 +873,7 @@ async function startLocalVideoSession(
       stderrText += message;
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('sip:event', deviceId, {
-          type: 'error',
+          type: classifyLocalVideoStderrMessage(message),
           message: `本地码流告警: ${message.trim()}`,
         });
       }
@@ -688,19 +896,19 @@ async function startLocalVideoSession(
     throw new Error(extractLocalVideoStartFailure(primaryStderr, '本地码流启动失败'));
   }
 
-  const compatibleDarwinModes = selectDarwinCompatibleModes(primaryStderr, { fps, width, height }).slice(0, 3);
+  const retryCandidates = buildDarwinRetryCandidates(primaryStderr, { fps, width, height });
   let lastRetryStderr = primaryStderr;
-  for (const selectedDarwinMode of compatibleDarwinModes) {
+  for (const candidate of retryCandidates) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('sip:event', deviceId, {
         type: 'local_media_retry',
-        message: `检测到摄像头参数不兼容，改用 ${selectedDarwinMode.width}x${selectedDarwinMode.height}@${formatDarwinFps(selectedDarwinMode.fps)} 重试`,
+        message: candidate.message,
       });
     }
     await stopLocalVideoSession(deviceId);
     const compatible = spawnLocalProcess(buildCameraInputArgs(
       { fps, width, height, cameraDevice },
-      { forceDarwinMode: selectedDarwinMode },
+      candidate.inputOptions,
     ));
     const compatibleBootstrap = await waitLocalVideoBootstrap(compatible.child, bootstrapTimeoutMs);
     if (compatibleBootstrap.stable) {
@@ -711,24 +919,7 @@ async function startLocalVideoSession(
       break;
     }
   }
-
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('sip:event', deviceId, {
-      type: 'local_media_retry',
-      message: '检测到摄像头参数不兼容，已切换设备默认采集模式重试',
-    });
-  }
-  await stopLocalVideoSession(deviceId);
-  const fallback = spawnLocalProcess(buildCameraInputArgs(
-    { fps, width, height, cameraDevice },
-    { useDarwinAutoMode: true },
-  ));
-  const fallbackBootstrap = await waitLocalVideoBootstrap(fallback.child, bootstrapTimeoutMs);
-  if (fallbackBootstrap.stable) {
-    return;
-  }
-
-  throw new Error(extractLocalVideoStartFailure(fallback.getStderrText() || lastRetryStderr, '本地码流启动失败'));
+  throw new Error(extractLocalVideoStartFailure(lastRetryStderr, '本地码流启动失败'));
 }
 
 function createWindow() {

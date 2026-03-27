@@ -111,6 +111,7 @@ npm run electron:build
   - `本地摄像头`：自动生成 `sourceUrl` 并回填平台资产
   - `外部源地址`：使用手工填写的 `sourceUrl`
 - 使用 `本地摄像头` 时，可在高级配置里选择具体摄像头设备；macOS 下还会同步列出可选采集模式
+- macOS 本地摄像头起流时，若 `avfoundation` 拒绝默认输入 `pixel_format`，模拟器会按 `Supported pixel formats` 自动重试兼容像素格式
 - 再次连接同一台视频设备时，模拟器会优先复用已关联的 `platformDeviceId`
 - Video 设备现在也支持先绑定平台产品，再按 `ProductKey` 同步当前产品物模型
 - 左侧设备卡片支持直接编辑已有设备；如果设备当前已连接，保存时会先断开旧连接，保存后再按新配置重连
@@ -160,6 +161,11 @@ npm run electron:build
 5. 点击「开启心跳」→ 定时发送 Keepalive
 6. 点击「开始推流」后，平台发送 INVITE 时会自动触发本地码流发送
 7. 平台发送 Catalog/DeviceInfo/INVITE/BYE/PTZ 等指令时，模拟器自动响应
+
+本地摄像头兼容说明：
+
+- macOS 下如果 FFmpeg 输出 `Selected framerate`、`Selected video size` 或 `Selected pixel format` 不兼容，模拟器会先按支持模式/像素格式自动重试
+- 这类 `avfoundation` 兼容性输出会显示为告警；只有最终起流失败才会显示错误
 
 ### SNMP Mode
 

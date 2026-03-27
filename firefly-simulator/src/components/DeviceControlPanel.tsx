@@ -657,6 +657,9 @@ export default function DeviceControlPanel() {
         case 'error':
           store.addLog(id, current.name, 'error', `SIP 异常：${event.message}`);
           break;
+        case 'warn':
+          store.addLog(id, current.name, 'warn', `SIP 提示：${event.message}`);
+          break;
         case 'local_media_retry':
           store.addLog(id, current.name, 'warn', `SIP 提示：${event.message}`);
           break;
