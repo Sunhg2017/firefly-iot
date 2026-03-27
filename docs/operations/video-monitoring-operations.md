@@ -75,7 +75,8 @@ cd ../firefly-simulator && npm run build:vite
 5. `GB28181` 正确密码能完成 REGISTER、Keepalive、Catalog、DeviceInfo。
 6. 错误密码能看到明确认证失败原因。
 7. `GB28181` 点击播放后，`firefly-media` 日志中应先打开 RTP 收流口，再发送 INVITE，并能在 ZLM 中看到 `rtp/{streamId}` 流注册。
-8. 视频上线/离线、目录、设备信息事件能正常回写到 `firefly-device`。
+8. 同一台 `GB28181` 设备在已有活跃流时再次点击播放，接口应直接复用已有会话并返回播放地址，不应再出现 `openRtpServer -> code=-300 -> This stream already exists`。
+9. 视频上线/离线、目录、设备信息事件能正常回写到 `firefly-device`。
 
 ## 6. 常见问题
 
@@ -130,7 +131,16 @@ cd ../firefly-simulator && npm run build:vite
 10. 若是跨机器联调，检查 INVITE SDP 中下发给设备的媒体地址是否可达，禁止误填成对端不可访问的 `localhost`。
 11. 若 ZLM 返回 `创建rtp端口 :::10000 失败:address already in use`，优先检查 `deploy/runtime/zlmediakit/config.ini` 中 `[rtp_proxy] port` 是否仍被写成 `10000`；当前 Firefly 固定口模式要求该配置为 `0`。
 
-### 6.6 视频状态没有回写到设备资产
+### 6.6 GB28181 重复点击播放后网页无画面
+
+排查：
+
+1. 检查 `firefly-media` 日志是否出现 `Reuse existing GB28181 stream session`；若出现，说明平台已直接复用现有 `rtp/{streamId}`。
+2. 若日志出现 `Close stale GB28181 stream sessions before restart`，说明数据库残留了 `ACTIVE` 会话但 ZLM 已无对应流；确认随后是否重新打印了 RTP 收流口和 INVITE 日志。
+3. 若仍出现 `openRtpServer -> code=-300 -> This stream already exists`，说明当前运行中的 `firefly-media` 还不是包含会话复用修复的版本，需要重新发布。
+4. 同时检查 `stream_sessions` 中同一 `stream_id` 是否只保留最新一条 `ACTIVE` 记录，历史残留记录应已被自动改成 `CLOSED`。
+
+### 6.7 视频状态没有回写到设备资产
 
 排查：
 
@@ -138,7 +148,7 @@ cd ../firefly-simulator && npm run build:vite
 2. 检查消息头是否带租户、用户、权限上下文。
 3. 检查 `DeviceVideoRuntimeConsumer` 是否消费成功。
 
-### 6.7 网页播放提示网络错误
+### 6.8 网页播放提示网络错误
 
 排查：
 
@@ -147,7 +157,7 @@ cd ../firefly-simulator && npm run build:vite
 3. 检查 `firefly-media` 返回的 `flvUrl/hlsUrl/webrtcUrl` 是否已使用对外地址。
 4. 检查开流后是否已出现对应 `streamId` 的媒体流。
 
-### 6.8 云台控制返回服务内部错误
+### 6.9 云台控制返回服务内部错误
 
 排查：
 

@@ -183,6 +183,8 @@
 - `openRtpServer` 的端口返回值需兼容 ZLM 不同版本的顶层 `port` 与 `data.port` 两种结构，并允许字符串端口。
 - `GB28181` 收流后的 ZLM 应用名固定为 `rtp`，因此短轮询、播放地址、截图和录制都必须按 `rtp/{streamId}` 处理，不能继续复用 `live/{streamId}`。
 - `startStream` 在返回播放地址前会短轮询 ZLM `getMediaList`，确认流已出现，避免“刚返回地址就播放失败”。
+- `GB28181` 的 `on_stream_none_reader` 不会自动停流，因此重复点击播放时，`startStream` 必须优先检查 `stream_sessions` 与 ZLM 实时流状态；若 `rtp/{streamId}` 仍存在，则直接复用当前会话并返回既有播放地址，禁止再次调用 `openRtpServer` 触发 `This stream already exists`。
+- 若数据库仍有 `ACTIVE` 会话，但 ZLM 已查不到对应 `rtp/{streamId}`，平台会先将该会话按陈旧会话关闭并补发清理，再重新打开 RTP 收流口和发送 INVITE，避免旧运行态卡死后阻塞重播。
 
 ### 6.5 PTZ 请求解码
 

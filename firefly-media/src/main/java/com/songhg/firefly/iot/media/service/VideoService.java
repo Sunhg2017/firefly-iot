@@ -64,6 +64,12 @@ public class VideoService {
         Long tenantId = resolveTenantId(device);
         String streamId = buildStreamId(tenantId, deviceId, channelId);
         String streamApp = resolveStreamApp(streamMode);
+        if (streamMode == StreamMode.GB28181) {
+            StreamSession reusableSession = reuseActiveGb28181Session(device, deviceId, channelId, streamId, streamApp);
+            if (reusableSession != null) {
+                return toSessionVO(reusableSession);
+            }
+        }
         boolean gb28181RtpServerOpened = false;
 
         try {
@@ -118,26 +124,8 @@ public class VideoService {
     public void stopStream(Long deviceId) {
         InternalVideoDeviceVO device = videoDeviceFacade.requireVideoDevice(deviceId);
         StreamMode streamMode = videoDeviceFacade.requireStreamMode(device);
-
-        LambdaQueryWrapper<StreamSession> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(StreamSession::getDeviceId, deviceId)
-                .eq(StreamSession::getStatus, StreamStatus.ACTIVE);
         String streamApp = resolveStreamApp(streamMode);
-        for (StreamSession session : streamSessionMapper.selectList(wrapper)) {
-            try {
-                if (streamMode == StreamMode.GB28181) {
-                    sipCommandSender.sendBye(device, session.getChannelId());
-                    releaseGb28181RtpServer(session.getStreamId());
-                }
-                zlmApiClient.closeStream(streamApp, session.getStreamId(), null);
-            } catch (Exception ex) {
-                log.warn("Stop stream runtime cleanup failed: deviceId={}, streamId={}, error={}",
-                        deviceId, session.getStreamId(), ex.getMessage());
-            }
-            session.setStatus(StreamStatus.CLOSED);
-            session.setStoppedAt(LocalDateTime.now());
-            streamSessionMapper.updateById(session);
-        }
+        closeSessions(device, streamMode, streamApp, listActiveSessions(deviceId, null), "manual-stop");
     }
 
     public void ptzControl(Long deviceId, PtzControlDTO dto) {
@@ -236,16 +224,36 @@ public class VideoService {
     }
 
     private StreamSession requireLatestActiveSession(Long deviceId, String message) {
-        LambdaQueryWrapper<StreamSession> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(StreamSession::getDeviceId, deviceId)
-                .eq(StreamSession::getStatus, StreamStatus.ACTIVE)
-                .orderByDesc(StreamSession::getStartedAt)
-                .last("LIMIT 1");
-        StreamSession session = streamSessionMapper.selectOne(wrapper);
+        StreamSession session = findLatestActiveSession(deviceId, null);
         if (session == null) {
             throw new BizException(ResultCode.PARAM_ERROR, message);
         }
         return session;
+    }
+
+    /**
+     * GB28181 stream stays alive after the browser disconnects, so replay requests should reuse the
+     * existing RTP stream instead of reopening the same ZLM RTP server.
+     */
+    private StreamSession reuseActiveGb28181Session(
+            InternalVideoDeviceVO device,
+            Long deviceId,
+            String channelId,
+            String streamId,
+            String streamApp) {
+        List<StreamSession> activeSessions = listActiveSessions(deviceId, streamId);
+        if (activeSessions.isEmpty()) {
+            return null;
+        }
+        if (isStreamReady(streamApp, streamId)) {
+            log.info("Reuse existing GB28181 stream session: deviceId={}, channelId={}, streamId={}, app={}",
+                    deviceId, channelId, streamId, streamApp);
+            return activeSessions.getFirst();
+        }
+        log.warn("Close stale GB28181 stream sessions before restart: deviceId={}, channelId={}, streamId={}, count={}",
+                deviceId, channelId, streamId, activeSessions.size());
+        closeSessions(device, StreamMode.GB28181, streamApp, activeSessions, "stale-restart");
+        return null;
     }
 
     private StreamSessionVO toSessionVO(StreamSession session) {
@@ -306,6 +314,22 @@ public class VideoService {
         return streamMode == StreamMode.GB28181 ? RTP_APP : LIVE_APP;
     }
 
+    private List<StreamSession> listActiveSessions(Long deviceId, String streamId) {
+        LambdaQueryWrapper<StreamSession> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(StreamSession::getDeviceId, deviceId)
+                .eq(StreamSession::getStatus, StreamStatus.ACTIVE)
+                .orderByDesc(StreamSession::getStartedAt);
+        if (streamId != null) {
+            wrapper.eq(StreamSession::getStreamId, streamId);
+        }
+        return streamSessionMapper.selectList(wrapper);
+    }
+
+    private StreamSession findLatestActiveSession(Long deviceId, String streamId) {
+        List<StreamSession> sessions = listActiveSessions(deviceId, streamId);
+        return sessions.isEmpty() ? null : sessions.getFirst();
+    }
+
     private int openGb28181RtpServer(InternalVideoDeviceVO device, String streamId) {
         int tcpMode = "TCP".equalsIgnoreCase(trimToNull(device.getTransport())) ? 1 : 0;
         ZlmOpenRtpServerResponse response = zlmApiClient.openRtpServer(zlmProperties.getRtpPort(), tcpMode, streamId);
@@ -338,6 +362,42 @@ public class VideoService {
         } catch (Exception ex) {
             log.warn("Close GB28181 RTP server failed: streamId={}, error={}", streamId, ex.getMessage());
         }
+    }
+
+    private void closeSessions(
+            InternalVideoDeviceVO device,
+            StreamMode streamMode,
+            String streamApp,
+            List<StreamSession> sessions,
+            String reason) {
+        for (StreamSession session : sessions) {
+            closeSession(device, streamMode, streamApp, session, reason);
+        }
+    }
+
+    private void closeSession(
+            InternalVideoDeviceVO device,
+            StreamMode streamMode,
+            String streamApp,
+            StreamSession session,
+            String reason) {
+        try {
+            if (streamMode == StreamMode.GB28181) {
+                sipCommandSender.sendBye(device, session.getChannelId());
+                releaseGb28181RtpServer(session.getStreamId());
+            }
+            ZlmResponse<Map<String, Object>> response = zlmApiClient.closeStream(streamApp, session.getStreamId(), null);
+            if (response != null && !response.isSuccess()) {
+                log.warn("Close stream returned non-success: reason={}, deviceId={}, streamId={}, msg={}",
+                        reason, device.getDeviceId(), session.getStreamId(), response.getMsg());
+            }
+        } catch (Exception ex) {
+            log.warn("Close stream runtime cleanup failed: reason={}, deviceId={}, streamId={}, error={}",
+                    reason, device.getDeviceId(), session.getStreamId(), ex.getMessage());
+        }
+        session.setStatus(StreamStatus.CLOSED);
+        session.setStoppedAt(LocalDateTime.now());
+        streamSessionMapper.updateById(session);
     }
 
     private void waitUntilStreamReady(String app, String streamId, StreamMode streamMode) {
