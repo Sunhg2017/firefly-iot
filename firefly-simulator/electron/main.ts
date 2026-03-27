@@ -8,7 +8,6 @@ import https from 'https';
 import WebSocket from 'ws';
 import net from 'net';
 import dgram from 'dgram';
-import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import { Gb28181Client, Gb28181Config, Gb28181Channel, SipClientEvent } from './gb28181-client';
 
 // ============================================================
@@ -126,15 +125,53 @@ function trimRequired(value: string | null | undefined, message: string): string
   return normalized;
 }
 
+function resolveFfmpegPackageName(): string {
+  const os = process.platform;
+  const arch = process.arch;
+  if (os === 'darwin' && arch === 'arm64') return 'darwin-arm64';
+  if (os === 'darwin' && arch === 'x64') return 'darwin-x64';
+  if (os === 'linux' && arch === 'arm64') return 'linux-arm64';
+  if (os === 'linux' && arch === 'x64') return 'linux-x64';
+  if (os === 'win32' && arch === 'x64') return 'win32-x64';
+  if (os === 'win32' && arch === 'ia32') return 'win32-ia32';
+  throw new Error(`当前平台暂不支持内置 ffmpeg: ${os}/${arch}`);
+}
+
+function resolveFfmpegSearchRoots(): string[] {
+  const roots = new Set<string>();
+  // 避免依赖 @ffmpeg-installer/ffmpeg 的动态 require：
+  // vite 打包后会导致平台包 package.json 在运行时无法被动态解析。
+  // 这里显式扫描常见 node_modules 目录，兼容 dev/build 两种运行方式。
+  roots.add(path.resolve(process.cwd(), 'node_modules'));
+  roots.add(path.resolve(__dirname, '..', 'node_modules'));
+  try {
+    roots.add(path.resolve(app.getAppPath(), 'node_modules'));
+  } catch {
+    // Ignore before-ready edge case; other roots still cover dev mode.
+  }
+  if (process.resourcesPath) {
+    roots.add(path.resolve(process.resourcesPath, 'app.asar.unpacked', 'node_modules'));
+  }
+  return Array.from(roots);
+}
+
 function getFfmpegBinaryPath(): string {
   const envPath = (process.env.FFMPEG_PATH || '').trim();
   if (envPath) {
     return envPath;
   }
-  if (ffmpegInstaller?.path) {
-    return ffmpegInstaller.path;
+  const packageName = resolveFfmpegPackageName();
+  const binaryName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  const roots = resolveFfmpegSearchRoots();
+  for (const root of roots) {
+    const candidate = path.join(root, '@ffmpeg-installer', packageName, binaryName);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
   }
-  throw new Error('未找到 ffmpeg 运行时，请检查 @ffmpeg-installer/ffmpeg 安装或设置 FFMPEG_PATH');
+  throw new Error(
+    `未找到 ffmpeg 运行时，请检查 @ffmpeg-installer/${packageName} 安装或设置 FFMPEG_PATH`,
+  );
 }
 
 function buildCameraInputArgs(config: {

@@ -76,3 +76,11 @@ npm run build:vite
 1. 检查平台资产里的 `sourceUrl` 是否为自动生成地址
 2. 检查 `开始推流` 时是否出现 `本地摄像头推流已启动` 日志
 3. 检查媒体服务是否可达自动生成地址中的主机和端口
+
+### 4.6 模拟器启动时报 ffmpeg 运行时缺失
+
+排查：
+
+1. 在 `firefly-simulator` 目录执行 `npm i`，确认 `@ffmpeg-installer/ffmpeg` 及当前平台子包已安装。
+2. 执行 `npm run build:vite`，确认 Electron 主进程打包成功。
+3. 如仍报错，设置环境变量 `FFMPEG_PATH` 指向本机可执行 ffmpeg 文件后再启动模拟器。
