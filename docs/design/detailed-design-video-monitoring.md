@@ -164,6 +164,18 @@
 - 复用现有 Kafka 鉴权与 tracing 透传
 - 消费端逐条恢复并清理租户、用户、权限上下文
 
+### 6.4 播放地址与开流时序
+
+- `firefly-media` 调用 ZLM REST 时继续使用 `zlmediakit.host/port` 内网地址。
+- 对前端下发播放地址时，固定使用 `zlmediakit.public-host/public-port/public-scheme` 作为基准地址。
+- 若未配置 `public-host`，默认回落到 `host`，仅适用于本机联调。
+- `startStream` 在返回播放地址前会短轮询 ZLM `getMediaList`，确认流已出现，避免“刚返回地址就播放失败”。
+
+### 6.5 PTZ 请求解码
+
+- PTZ 请求 `command` 同时支持数字值和枚举名字符串。
+- 请求体反序列化失败时返回 `400`，不再落入通用 `500`。
+
 ## 7. Web 端设计
 
 - 删除独立 `/video` 路由和菜单。

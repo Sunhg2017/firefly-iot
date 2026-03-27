@@ -74,6 +74,10 @@ zlmediakit:
   ssl-port: 8443
   rtp-port: 10000
   hook-url: http://localhost:9040/api/v1/video/hook
+  public-host: ${ZLMEDIAKIT_PUBLIC_HOST:}
+  public-port: ${ZLMEDIAKIT_PUBLIC_PORT:8080}
+  public-ssl-port: ${ZLMEDIAKIT_PUBLIC_SSL_PORT:8443}
+  public-scheme: ${ZLMEDIAKIT_PUBLIC_SCHEME:http}
 
 mybatis-plus:
   configuration:

@@ -5,6 +5,7 @@ import com.songhg.firefly.iot.common.result.ResultCode;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -41,6 +42,15 @@ public class GlobalExceptionHandler {
                 .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
                 .collect(Collectors.joining("; "));
         return R.fail(ResultCode.BAD_REQUEST, msg);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public R<Void> handleHttpMessageNotReadable(HttpMessageNotReadableException e) {
+        Throwable root = e.getMostSpecificCause();
+        String detail = root != null ? root.getMessage() : e.getMessage();
+        log.warn("Request body parse failed: {}", detail);
+        return R.fail(ResultCode.BAD_REQUEST, "请求参数格式错误: " + detail);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)

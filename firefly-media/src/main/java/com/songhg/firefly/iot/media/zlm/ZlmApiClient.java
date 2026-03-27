@@ -317,21 +317,21 @@ public class ZlmApiClient {
      * 构建 FLV 播放地址
      */
     public String buildFlvUrl(String app, String stream) {
-        return zlmProperties.getApiUrl() + "/" + app + "/" + stream + ".live.flv";
+        return zlmProperties.getPlayBaseUrl() + "/" + app + "/" + stream + ".live.flv";
     }
 
     /**
      * 构建 HLS 播放地址
      */
     public String buildHlsUrl(String app, String stream) {
-        return zlmProperties.getApiUrl() + "/" + app + "/" + stream + "/hls.m3u8";
+        return zlmProperties.getPlayBaseUrl() + "/" + app + "/" + stream + "/hls.m3u8";
     }
 
     /**
      * 构建 WebRTC 播放地址
      */
     public String buildWebrtcUrl(String app, String stream) {
-        return zlmProperties.getApiUrl() + "/index/api/webrtc?app=" + app + "&stream=" + stream
+        return zlmProperties.getPlayBaseUrl() + "/index/api/webrtc?app=" + app + "&stream=" + stream
                 + "&type=play&secret=" + zlmProperties.getSecret();
     }
 

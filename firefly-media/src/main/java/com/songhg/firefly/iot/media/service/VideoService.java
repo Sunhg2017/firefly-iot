@@ -16,12 +16,14 @@ import com.songhg.firefly.iot.media.gb28181.SipCommandSender;
 import com.songhg.firefly.iot.media.mapper.StreamSessionMapper;
 import com.songhg.firefly.iot.media.zlm.ZlmApiClient;
 import com.songhg.firefly.iot.media.zlm.ZlmResponse;
+import com.songhg.firefly.iot.media.zlm.ZlmStreamInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -31,6 +33,8 @@ import java.util.concurrent.ThreadLocalRandom;
 public class VideoService {
 
     private static final String LIVE_APP = "live";
+    private static final long STREAM_READY_TIMEOUT_MS = 8000L;
+    private static final long STREAM_READY_POLL_INTERVAL_MS = 300L;
 
     private final VideoDeviceFacade videoDeviceFacade;
     private final StreamSessionMapper streamSessionMapper;
@@ -71,6 +75,7 @@ public class VideoService {
             } else {
                 throw new BizException(ResultCode.PARAM_ERROR, "当前接入方式暂不支持播放控制");
             }
+            waitUntilStreamReady(streamId, streamMode);
         } catch (BizException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -267,6 +272,33 @@ public class VideoService {
 
     private Long resolveTenantId(InternalVideoDeviceVO device) {
         return device.getTenantId();
+    }
+
+    private void waitUntilStreamReady(String streamId, StreamMode streamMode) {
+        long deadline = System.currentTimeMillis() + STREAM_READY_TIMEOUT_MS;
+        while (System.currentTimeMillis() < deadline) {
+            if (isStreamReady(streamId)) {
+                return;
+            }
+            try {
+                Thread.sleep(STREAM_READY_POLL_INTERVAL_MS);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new BizException(ResultCode.STREAM_START_FAILED, "等待视频流就绪被中断");
+            }
+        }
+        throw new BizException(ResultCode.STREAM_START_FAILED,
+                "视频流启动超时，请确认设备在线并且媒体服务可访问: mode=" + streamMode);
+    }
+
+    private boolean isStreamReady(String streamId) {
+        try {
+            ZlmResponse<List<ZlmStreamInfo>> response = zlmApiClient.getMediaList(LIVE_APP, streamId, null);
+            return response != null && response.isSuccess() && response.getData() != null && !response.getData().isEmpty();
+        } catch (Exception ex) {
+            log.debug("Check stream readiness failed: streamId={}, error={}", streamId, ex.getMessage());
+            return false;
+        }
     }
 
     private String trimToNull(String value) {

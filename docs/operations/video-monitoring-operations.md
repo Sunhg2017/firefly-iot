@@ -53,6 +53,7 @@ cd ../firefly-simulator && npm run build:vite
 4. Kafka 鉴权和 tracing 上下文透传已启用。
 5. 历史环境如残留旧 `video` 菜单、自定义菜单或重复视频设备，先清理旧数据后再联调。
 6. `firefly-media` 已正确配置 `spring.kafka.bootstrap-servers`；开发环境默认对齐 `192.168.123.102:9092`，生产环境通过 `SPRING_KAFKA_BOOTSTRAP_SERVERS` 注入。
+7. `firefly-media` 的 `zlmediakit.public-host/public-port/public-scheme` 已配置为浏览器可访问地址，禁止保留 `localhost` 对外下发给前端。
 
 ## 5. 回归验证
 
@@ -108,6 +109,23 @@ cd ../firefly-simulator && npm run build:vite
 1. 检查 Kafka 主题是否收到视频事件。
 2. 检查消息头是否带租户、用户、权限上下文。
 3. 检查 `DeviceVideoRuntimeConsumer` 是否消费成功。
+
+### 6.6 网页播放提示网络错误
+
+排查：
+
+1. 检查 `zlmediakit.public-host/public-port/public-scheme` 是否配置为浏览器可访问地址。
+2. 如果仍是 `localhost`，浏览器会访问客户端本机导致播放失败。
+3. 检查 `firefly-media` 返回的 `flvUrl/hlsUrl/webrtcUrl` 是否已使用对外地址。
+4. 检查开流后是否已出现对应 `streamId` 的媒体流。
+
+### 6.7 云台控制返回服务内部错误
+
+排查：
+
+1. 检查请求体 `command` 是否为合法 PTZ 指令（支持数字值和枚举名）。
+2. 如果参数反序列化失败，接口会返回 `400`，根据返回明细修正请求。
+3. 检查设备是否为 `GB28181` 且在线。
 
 ## 7. 回滚说明
 

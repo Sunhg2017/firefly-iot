@@ -134,15 +134,6 @@ const VIDEO_MODE_OPTIONS = [
 const VIDEO_CONTEXT_PARAM_KEYS = ['source', 'autoCreate', 'productId', 'productKey', 'productName', 'protocol'] as const;
 const VIDEO_PROTOCOL_VALUES = new Set(VIDEO_MODE_OPTIONS.map((item) => item.value));
 const EMPTY_VIDEO_FILTERS: VideoListFilters = { keyword: '' };
-const ptzCmdMap: Record<number, string> = {
-  0: 'STOP',
-  1: 'UP',
-  2: 'DOWN',
-  3: 'LEFT',
-  4: 'RIGHT',
-  5: 'ZOOM_IN',
-  6: 'ZOOM_OUT',
-};
 
 const trimOptionalValue = (value?: string) => {
   if (value === undefined) {
@@ -573,7 +564,7 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
     try {
       const response = await videoControlApi.ptz(playerDevice.id, {
         channelId: playerChannel?.channelId,
-        command: ptzCmdMap[command] || 'STOP',
+        command: Number.isFinite(command) ? command : 0,
         speed,
       });
       unwrapBusinessResponse(response, 'PTZ 控制失败');

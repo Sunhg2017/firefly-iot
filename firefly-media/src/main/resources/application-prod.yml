@@ -43,6 +43,11 @@ zlmediakit:
   host: ${ZLMEDIAKIT_HOST:localhost}
   port: ${ZLMEDIAKIT_PORT:8080}
   secret: ${ZLMEDIAKIT_SECRET:035c73f7-bb6b-4889-a715-d9eb2d1925cc}
+  ssl-port: ${ZLMEDIAKIT_SSL_PORT:8443}
+  public-host: ${ZLMEDIAKIT_PUBLIC_HOST:}
+  public-port: ${ZLMEDIAKIT_PUBLIC_PORT:8080}
+  public-ssl-port: ${ZLMEDIAKIT_PUBLIC_SSL_PORT:8443}
+  public-scheme: ${ZLMEDIAKIT_PUBLIC_SCHEME:http}
 
 mybatis-plus:
   configuration:
