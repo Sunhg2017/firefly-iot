@@ -181,6 +181,11 @@ function buildCameraInputArgs(config: {
   cameraDevice?: string;
 }, options?: {
   useDarwinAutoMode?: boolean;
+  forceDarwinMode?: {
+    fps: number;
+    width: number;
+    height: number;
+  };
 }): string[] {
   const fps = Math.max(5, Math.min(30, Number(config.fps) || 15));
   const width = Math.max(320, Math.min(1920, Number(config.width) || 1280));
@@ -188,6 +193,19 @@ function buildCameraInputArgs(config: {
   const cameraDevice = (config.cameraDevice || '').trim();
   if (process.platform === 'darwin') {
     const avfoundationInput = `${cameraDevice || '0'}:none`;
+    const forcedMode = options?.forceDarwinMode;
+    if (forcedMode) {
+      return [
+        '-f',
+        'avfoundation',
+        '-framerate',
+        formatDarwinFps(forcedMode.fps),
+        '-video_size',
+        `${Math.max(320, Math.floor(forcedMode.width))}x${Math.max(240, Math.floor(forcedMode.height))}`,
+        '-i',
+        avfoundationInput,
+      ];
+    }
     if (options?.useDarwinAutoMode) {
       // 某些摄像头在显式指定 framerate/video_size 时会协商失败，
       // 回退到设备默认模式由驱动自行协商采集参数，提升兼容性。
@@ -201,6 +219,15 @@ function buildCameraInputArgs(config: {
   return ['-f', 'v4l2', '-framerate', String(fps), '-video_size', `${width}x${height}`, '-i', cameraDevice || '/dev/video0'];
 }
 
+function formatDarwinFps(value: number): string {
+  const normalized = Number(value) || 15;
+  const rounded = Math.round(normalized);
+  if (Math.abs(normalized - rounded) <= 0.01) {
+    return String(rounded);
+  }
+  return normalized.toFixed(3).replace(/\.?0+$/, '');
+}
+
 function shouldRetryWithDarwinAutoMode(stderrText: string): boolean {
   if (process.platform !== 'darwin') {
     return false;
@@ -209,6 +236,62 @@ function shouldRetryWithDarwinAutoMode(stderrText: string): boolean {
   return normalized.includes('selected framerate')
     || normalized.includes('selected video size')
     || normalized.includes('not supported by the device');
+}
+
+function parseDarwinSupportedModes(stderrText: string): Array<{ width: number; height: number; fps: number }> {
+  const candidates: Array<{ width: number; height: number; fps: number }> = [];
+  const uniqueKeys = new Set<string>();
+  const lines = (stderrText || '').split(/\r?\n/g);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    const match = line.match(/(\d+)x(\d+)@\[(.+?)\]fps/i);
+    if (!match) {
+      continue;
+    }
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+      continue;
+    }
+    const fpsTokens = match[3]
+      .split(/[\s,]+/g)
+      .map((token) => Number(token))
+      .filter((fps) => Number.isFinite(fps) && fps > 0);
+    for (const fps of fpsTokens) {
+      const roundedFps = Number(fps.toFixed(6));
+      const key = `${width}x${height}@${roundedFps}`;
+      if (uniqueKeys.has(key)) {
+        continue;
+      }
+      uniqueKeys.add(key);
+      candidates.push({ width, height, fps: roundedFps });
+    }
+  }
+  return candidates;
+}
+
+function selectDarwinCompatibleMode(
+  stderrText: string,
+  preferred: { fps: number; width: number; height: number },
+): { fps: number; width: number; height: number } | null {
+  const candidates = parseDarwinSupportedModes(stderrText);
+  if (candidates.length === 0) {
+    return null;
+  }
+  const sorted = [...candidates].sort((a, b) => {
+    const resolutionPenaltyA = (a.width === preferred.width && a.height === preferred.height) ? 0 : 100000;
+    const resolutionPenaltyB = (b.width === preferred.width && b.height === preferred.height) ? 0 : 100000;
+    const scoreA = resolutionPenaltyA
+      + Math.abs(a.width - preferred.width)
+      + Math.abs(a.height - preferred.height)
+      + Math.abs(a.fps - preferred.fps) * 1000;
+    const scoreB = resolutionPenaltyB
+      + Math.abs(b.width - preferred.width)
+      + Math.abs(b.height - preferred.height)
+      + Math.abs(b.fps - preferred.fps) * 1000;
+    return scoreA - scoreB;
+  });
+  return sorted[0] || null;
 }
 
 function extractLocalVideoStartFailure(stderrText: string, fallbackMessage: string): string {
@@ -375,13 +458,43 @@ async function startLocalVideoSession(
     throw new Error(extractLocalVideoStartFailure(primaryStderr, '本地码流启动失败'));
   }
 
+  const selectedDarwinMode = selectDarwinCompatibleMode(primaryStderr, { fps, width, height });
+  const canTrySupportedMode = Boolean(
+    selectedDarwinMode
+    && (
+      selectedDarwinMode.width !== width
+      || selectedDarwinMode.height !== height
+      || Math.abs(selectedDarwinMode.fps - fps) > 0.01
+    ),
+  );
+  if (canTrySupportedMode && selectedDarwinMode) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('sip:event', deviceId, {
+        type: 'local_media_retry',
+        message: `检测到摄像头参数不兼容，改用 ${selectedDarwinMode.width}x${selectedDarwinMode.height}@${formatDarwinFps(selectedDarwinMode.fps)} 重试`,
+      });
+    }
+    await stopLocalVideoSession(deviceId);
+    const compatible = spawnLocalProcess(buildCameraInputArgs(
+      { fps, width, height, cameraDevice },
+      { forceDarwinMode: selectedDarwinMode },
+    ));
+    const compatibleBootstrap = await waitLocalVideoBootstrap(compatible.child, bootstrapTimeoutMs);
+    if (compatibleBootstrap.stable) {
+      return;
+    }
+    const compatibleStderr = compatible.getStderrText();
+    if (!shouldRetryWithDarwinAutoMode(compatibleStderr)) {
+      throw new Error(extractLocalVideoStartFailure(compatibleStderr, '本地码流启动失败'));
+    }
+  }
+
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('sip:event', deviceId, {
       type: 'local_media_retry',
       message: '检测到摄像头参数不兼容，已切换设备默认采集模式重试',
     });
   }
-
   await stopLocalVideoSession(deviceId);
   const fallback = spawnLocalProcess(buildCameraInputArgs(
     { fps, width, height, cameraDevice },
