@@ -52,6 +52,7 @@ cd ../firefly-simulator && npm run build:vite
 3. `firefly-media -> firefly-device` 内部接口可用。
 4. Kafka 鉴权和 tracing 上下文透传已启用。
 5. 历史环境如残留旧 `video` 菜单、自定义菜单或重复视频设备，先清理旧数据后再联调。
+6. `firefly-media` 已正确配置 `spring.kafka.bootstrap-servers`；开发环境默认对齐 `192.168.123.102:9092`，生产环境通过 `SPRING_KAFKA_BOOTSTRAP_SERVERS` 注入。
 
 ## 5. 回归验证
 
