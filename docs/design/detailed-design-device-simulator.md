@@ -97,7 +97,17 @@
 2. `status`、`token`、`streamUrl`、`sipRegistered`、`sipKeepaliveEnabled` 等运行态字段不允许直接由表单覆盖。
 3. 若设备当前不是离线态，保存前先执行断开连接，保存完成后由用户按新配置重新连接。
 
-### 5.3 导入导出一致性
+### 5.3 详情参数编辑
+
+- `GB28181` 在线设备的 `SIP 参数` 弹窗补齐本地采集参数：
+  - `cameraDevice`
+  - `mediaWidth`
+  - `mediaHeight`
+  - `mediaFps`
+- `RTSP / RTMP` 使用本地摄像头时，流控制区补充 `采集参数` 入口。
+- Electron 主进程新增 `sip:updateMediaConfig`，保证详情页改动的采集参数能同步刷新到运行中的 SIP 本地媒体配置。
+
+### 5.4 导入导出一致性
 
 - Video 设备导入导出补齐以下本地采集字段：
   - `cameraDevice`

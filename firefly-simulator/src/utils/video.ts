@@ -9,6 +9,14 @@ export interface ParsedVideoSourceUrl {
   port: number;
 }
 
+export interface LocalVideoModeOption {
+  key: string;
+  label: string;
+  width: number;
+  height: number;
+  fps: number;
+}
+
 export function buildLocalCameraSourceUrl(
   gatewayBaseUrl: string,
   streamMode: string | null | undefined,
@@ -24,6 +32,86 @@ export function buildLocalCameraSourceUrl(
   return normalizedMode === 'RTMP'
     ? `rtmp://${host}:1935/live/${key}`
     : `rtsp://${host}:554/live/${key}`;
+}
+
+export function formatLocalVideoFps(value: number): string {
+  const normalized = Number(value) || 15;
+  const rounded = Math.round(normalized);
+  if (Math.abs(normalized - rounded) <= 0.01) {
+    return String(rounded);
+  }
+  return normalized.toFixed(3).replace(/\.?0+$/, '');
+}
+
+export function buildLocalVideoModeKey(width: unknown, height: unknown, fps: unknown): string {
+  const normalizedWidth = Number(width) || 1280;
+  const normalizedHeight = Number(height) || 720;
+  const normalizedFps = Number(fps) || 15;
+  return `${Math.floor(normalizedWidth)}x${Math.floor(normalizedHeight)}@${formatLocalVideoFps(normalizedFps)}`;
+}
+
+export function buildLocalVideoModeLabel(width: number, height: number, fps: number): string {
+  return `${Math.floor(width)} x ${Math.floor(height)} @ ${formatLocalVideoFps(fps)}fps`;
+}
+
+const LOCAL_VIDEO_MODE_PRESETS: Array<{ width: number; height: number; fps: number }> = [
+  { width: 640, height: 480, fps: 15 },
+  { width: 640, height: 480, fps: 30 },
+  { width: 1280, height: 720, fps: 15 },
+  { width: 1280, height: 720, fps: 30 },
+  { width: 1920, height: 1080, fps: 15 },
+  { width: 1920, height: 1080, fps: 30 },
+];
+
+export function buildFallbackLocalVideoModes(preferred?: {
+  width?: unknown;
+  height?: unknown;
+  fps?: unknown;
+}): LocalVideoModeOption[] {
+  const merged = [
+    {
+      width: Number(preferred?.width) || 1280,
+      height: Number(preferred?.height) || 720,
+      fps: Number(preferred?.fps) || 15,
+    },
+    ...LOCAL_VIDEO_MODE_PRESETS,
+  ];
+  const uniqueKeys = new Set<string>();
+  return merged
+    .filter((item) => Number.isFinite(item.width) && Number.isFinite(item.height) && Number.isFinite(item.fps))
+    .filter((item) => {
+      const key = buildLocalVideoModeKey(item.width, item.height, item.fps);
+      if (uniqueKeys.has(key)) {
+        return false;
+      }
+      uniqueKeys.add(key);
+      return true;
+    })
+    .map((item) => ({
+      key: buildLocalVideoModeKey(item.width, item.height, item.fps),
+      label: buildLocalVideoModeLabel(item.width, item.height, item.fps),
+      width: item.width,
+      height: item.height,
+      fps: item.fps,
+    }));
+}
+
+export function selectPreferredLocalVideoMode(
+  modes: LocalVideoModeOption[],
+  preferred: { width?: unknown; height?: unknown; fps?: unknown },
+): LocalVideoModeOption | null {
+  if (modes.length === 0) {
+    return null;
+  }
+  const width = Number(preferred.width) || 1280;
+  const height = Number(preferred.height) || 720;
+  const fps = Number(preferred.fps) || 15;
+  const sorted = [...modes].sort((a, b) => {
+    const scoreA = Math.abs(a.width - width) + Math.abs(a.height - height) + Math.abs(a.fps - fps) * 1000;
+    const scoreB = Math.abs(b.width - width) + Math.abs(b.height - height) + Math.abs(b.fps - fps) * 1000;
+    return scoreA - scoreB;
+  });
+  return sorted[0] || null;
 }
 
 function trimText(value?: string | null): string {

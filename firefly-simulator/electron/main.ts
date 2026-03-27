@@ -1606,6 +1606,32 @@ ipcMain.handle('sip:updateChannels', async (_e, id: string, channels: Gb28181Cha
   }
 });
 
+ipcMain.handle('sip:updateMediaConfig', async (_e, id: string, config: {
+  enableLocalMedia?: boolean;
+  mediaFps?: number;
+  mediaWidth?: number;
+  mediaHeight?: number;
+  cameraDevice?: string;
+}) => {
+  try {
+    const existing = sipLocalMediaConfigs.get(id);
+    sipLocalMediaConfigs.set(id, {
+      enableLocalMedia: typeof config.enableLocalMedia === 'boolean'
+        ? config.enableLocalMedia
+        : (existing?.enableLocalMedia ?? true),
+      fps: Number(config.mediaFps) || existing?.fps || 15,
+      width: Number(config.mediaWidth) || existing?.width || 1280,
+      height: Number(config.mediaHeight) || existing?.height || 720,
+      cameraDevice: typeof config.cameraDevice === 'string'
+        ? config.cameraDevice
+        : existing?.cameraDevice,
+    });
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, message: err.message || '更新本地采集参数失败' };
+  }
+});
+
 ipcMain.handle('sip:stop', async (_e, id: string) => {
   try {
     await stopLocalVideoSession(id);

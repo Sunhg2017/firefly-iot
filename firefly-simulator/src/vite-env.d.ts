@@ -110,6 +110,13 @@ interface ElectronAPI {
   sipStopKeepalive: (id: string) => Promise<any>;
   sipStop: (id: string) => Promise<any>;
   sipUpdateChannels: (id: string, channels: any[]) => Promise<any>;
+  sipUpdateMediaConfig: (id: string, config: {
+    enableLocalMedia?: boolean;
+    mediaFps?: number;
+    mediaWidth?: number;
+    mediaHeight?: number;
+    cameraDevice?: string;
+  }) => Promise<any>;
   onSipEvent: (callback: (id: string, event: any) => void) => () => void;
 
   snmpTest: (connectorUrl: string, target: any) => Promise<any>;

@@ -29,12 +29,16 @@ import {
   useSimWorkspaceStore,
 } from '../workspaceStore';
 import {
+  buildFallbackLocalVideoModes,
+  buildLocalVideoModeKey,
   getVideoSourceFieldLabel,
   isProxyVideoMode,
+  type LocalVideoModeOption,
   normalizeVideoStreamMode,
   parseVideoSourceUrl,
   resolveVideoDeviceName,
   resolveVideoProductProtocol,
+  selectPreferredLocalVideoMode,
 } from '../utils/video';
 import { disconnectSimDevice } from '../utils/runtime';
 
@@ -57,14 +61,6 @@ interface TenantProductRecord {
 interface LocalVideoSourceOption {
   value: string;
   label: string;
-}
-
-interface LocalVideoModeOption {
-  key: string;
-  label: string;
-  width: number;
-  height: number;
-  fps: number;
 }
 
 const STEP_TITLES = ['基本信息', '接入参数', '扩展配置'];
@@ -172,31 +168,6 @@ function buildAutoLocalSourcePreview(baseUrl: string, streamMode?: string, seedN
   } catch {
     return '';
   }
-}
-
-function buildLocalVideoModeKey(width: unknown, height: unknown, fps: unknown): string {
-  const normalizedWidth = Number(width) || 1280;
-  const normalizedHeight = Number(height) || 720;
-  const normalizedFps = Number(fps) || 15;
-  return `${Math.floor(normalizedWidth)}x${Math.floor(normalizedHeight)}@${Number(normalizedFps.toFixed(3))}`;
-}
-
-function selectPreferredLocalVideoMode(
-  modes: LocalVideoModeOption[],
-  preferred: { width?: unknown; height?: unknown; fps?: unknown },
-): LocalVideoModeOption | null {
-  if (modes.length === 0) {
-    return null;
-  }
-  const width = Number(preferred.width) || 1280;
-  const height = Number(preferred.height) || 720;
-  const fps = Number(preferred.fps) || 15;
-  const sorted = [...modes].sort((a, b) => {
-    const scoreA = Math.abs(a.width - width) + Math.abs(a.height - height) + Math.abs(a.fps - fps) * 1000;
-    const scoreB = Math.abs(b.width - width) + Math.abs(b.height - height) + Math.abs(b.fps - fps) * 1000;
-    return scoreA - scoreB;
-  });
-  return sorted[0] || null;
 }
 
 function buildInitialValues(
@@ -573,6 +544,16 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
     formSnapshot.mediaWidth,
     formSnapshot.mediaHeight,
     formSnapshot.mediaFps,
+  );
+  const availableLocalVideoModes = useMemo(
+    () => (localVideoModes.length > 0
+      ? localVideoModes
+      : buildFallbackLocalVideoModes({
+        width: formSnapshot.mediaWidth,
+        height: formSnapshot.mediaHeight,
+        fps: formSnapshot.mediaFps,
+      })),
+    [formSnapshot.mediaFps, formSnapshot.mediaHeight, formSnapshot.mediaWidth, localVideoModes],
   );
   const meta = useMemo(() => PROTOCOL_META[protocol], [protocol]);
   const sourcePreview = useMemo(() => {
@@ -1336,37 +1317,38 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
                         form.setFieldsValue({
                           mediaWidth: 1280,
                           mediaHeight: 720,
-                          mediaFps: 15,
+                          mediaFps: 30,
                         });
                       }}
                     />
                   </Form.Item>
                 </Col>
               </Row>
-              {localVideoModes.length > 0 ? (
-                <Form.Item label="采集模式">
-                  <Select
-                    value={selectedCameraModeKey}
-                    loading={localVideoModeLoading}
-                    options={localVideoModes.map((item) => ({
-                      value: item.key,
-                      label: item.label,
-                    }))}
-                    onChange={(value) => {
-                      const mode = localVideoModes.find((item) => item.key === value);
-                      if (!mode) {
-                        return;
-                      }
-                      form.setFieldsValue({
-                        mediaWidth: mode.width,
-                        mediaHeight: mode.height,
-                        mediaFps: mode.fps,
-                      });
-                      setFormSnapshot(form.getFieldsValue(true));
-                    }}
-                  />
-                </Form.Item>
-              ) : null}
+              <Form.Item
+                label="采集模式"
+                extra={localVideoModes.length > 0 ? undefined : '未读取到设备支持模式时，可先选择通用采集模式'}
+              >
+                <Select
+                  value={selectedCameraModeKey}
+                  loading={localVideoModeLoading}
+                  options={availableLocalVideoModes.map((item) => ({
+                    value: item.key,
+                    label: item.label,
+                  }))}
+                  onChange={(value) => {
+                    const mode = availableLocalVideoModes.find((item) => item.key === value);
+                    if (!mode) {
+                      return;
+                    }
+                    form.setFieldsValue({
+                      mediaWidth: mode.width,
+                      mediaHeight: mode.height,
+                      mediaFps: mode.fps,
+                    });
+                    setFormSnapshot(form.getFieldsValue(true));
+                  }}
+                />
+              </Form.Item>
             </Card>
           ) : null}
           {streamMode === 'GB28181' ? (

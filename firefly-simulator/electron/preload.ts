@@ -162,6 +162,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sipStopKeepalive: (id: string) => ipcRenderer.invoke('sip:stopKeepalive', id),
   sipStop: (id: string) => ipcRenderer.invoke('sip:stop', id),
   sipUpdateChannels: (id: string, channels: any[]) => ipcRenderer.invoke('sip:updateChannels', id, channels),
+  sipUpdateMediaConfig: (id: string, config: any) => ipcRenderer.invoke('sip:updateMediaConfig', id, config),
 
   onSipEvent: (callback: (id: string, event: any) => void) => {
     const handler = (_e: any, id: string, event: any) => callback(id, event);

@@ -1,7 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button, Space, Tag, Typography, Empty,
-  Modal, Form, Input, InputNumber, Radio, Row, Col, Statistic, message,
+  Modal, Form, Input, InputNumber, Radio, Row, Col, Select, Statistic, message,
 } from 'antd';
 import {
   PlusOutlined, WifiOutlined, EditOutlined,
@@ -9,6 +9,12 @@ import {
 } from '@ant-design/icons';
 import { useSimStore } from '../../store';
 import type { SimDevice } from '../../store';
+import {
+  buildFallbackLocalVideoModes,
+  buildLocalVideoModeKey,
+  type LocalVideoModeOption,
+  selectPreferredLocalVideoMode,
+} from '../../utils/video';
 
 const { Text } = Typography;
 
@@ -35,9 +41,116 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
   const [chImportText, setChImportText] = useState('');
   const [sipParamOpen, setSipParamOpen] = useState(false);
   const [sipParamForm] = Form.useForm();
+  const [localVideoSources, setLocalVideoSources] = useState<Array<{ value: string; label: string }>>([]);
+  const [localVideoSourceLoading, setLocalVideoSourceLoading] = useState(false);
+  const [localVideoModes, setLocalVideoModes] = useState<LocalVideoModeOption[]>([]);
+  const [localVideoModeLoading, setLocalVideoModeLoading] = useState(false);
   const sipLogRef = useRef<HTMLDivElement>(null);
+  const selectedCameraDevice = Form.useWatch('cameraDevice', sipParamForm);
+  const selectedMediaWidth = Form.useWatch('mediaWidth', sipParamForm);
+  const selectedMediaHeight = Form.useWatch('mediaHeight', sipParamForm);
+  const selectedMediaFps = Form.useWatch('mediaFps', sipParamForm);
+  const usesLocalCamera = device.videoSourceType === 'LOCAL_CAMERA';
+  const selectedCameraModeKey = buildLocalVideoModeKey(selectedMediaWidth, selectedMediaHeight, selectedMediaFps);
+  const availableLocalVideoModes = useMemo(
+    () => (localVideoModes.length > 0
+      ? localVideoModes
+      : buildFallbackLocalVideoModes({
+        width: selectedMediaWidth || device.mediaWidth,
+        height: selectedMediaHeight || device.mediaHeight,
+        fps: selectedMediaFps || device.mediaFps,
+      })),
+    [device.mediaFps, device.mediaHeight, device.mediaWidth, localVideoModes, selectedMediaFps, selectedMediaHeight, selectedMediaWidth],
+  );
 
   const isOnline = device.status === 'online';
+
+  useEffect(() => {
+    if (!sipParamOpen || !usesLocalCamera) {
+      setLocalVideoSources([]);
+      setLocalVideoModes([]);
+      setLocalVideoSourceLoading(false);
+      setLocalVideoModeLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const loadLocalVideoSources = async () => {
+      setLocalVideoSourceLoading(true);
+      const result = await window.electronAPI.localVideoListSources();
+      if (cancelled) {
+        return;
+      }
+      const records = result?.success && Array.isArray(result.data) ? result.data : [];
+      setLocalVideoSources(records);
+      setLocalVideoSourceLoading(false);
+      if (records.length === 0) {
+        return;
+      }
+      const currentCameraDevice = String(sipParamForm.getFieldValue('cameraDevice') || '').trim();
+      if (currentCameraDevice && records.some((item: { value: string }) => item.value === currentCameraDevice)) {
+        return;
+      }
+      sipParamForm.setFieldsValue({ cameraDevice: records[0].value });
+    };
+    void loadLocalVideoSources();
+    return () => {
+      cancelled = true;
+    };
+  }, [sipParamForm, sipParamOpen, usesLocalCamera]);
+
+  useEffect(() => {
+    if (!sipParamOpen || !usesLocalCamera) {
+      setLocalVideoModes([]);
+      setLocalVideoModeLoading(false);
+      return;
+    }
+    const probeCameraDevice = String(selectedCameraDevice || localVideoSources[0]?.value || '').trim();
+    if (!probeCameraDevice) {
+      setLocalVideoModes([]);
+      setLocalVideoModeLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const loadLocalVideoModes = async () => {
+      setLocalVideoModeLoading(true);
+      const result = await window.electronAPI.localVideoListModes(probeCameraDevice);
+      if (cancelled) {
+        return;
+      }
+      const records = result?.success && Array.isArray(result.data) ? result.data as LocalVideoModeOption[] : [];
+      setLocalVideoModes(records);
+      setLocalVideoModeLoading(false);
+      if (records.length === 0) {
+        return;
+      }
+      const currentModeKey = buildLocalVideoModeKey(
+        sipParamForm.getFieldValue('mediaWidth'),
+        sipParamForm.getFieldValue('mediaHeight'),
+        sipParamForm.getFieldValue('mediaFps'),
+      );
+      if (records.some((item) => item.key === currentModeKey)) {
+        return;
+      }
+      const preferredMode = selectPreferredLocalVideoMode(records, {
+        width: sipParamForm.getFieldValue('mediaWidth'),
+        height: sipParamForm.getFieldValue('mediaHeight'),
+        fps: sipParamForm.getFieldValue('mediaFps'),
+      });
+      if (!preferredMode) {
+        return;
+      }
+      sipParamForm.setFieldsValue({
+        mediaWidth: preferredMode.width,
+        mediaHeight: preferredMode.height,
+        mediaFps: preferredMode.fps,
+      });
+    };
+    void loadLocalVideoModes();
+    return () => {
+      cancelled = true;
+    };
+  }, [localVideoSources, selectedCameraDevice, sipParamForm, sipParamOpen, usesLocalCamera]);
+
   if (device.protocol !== 'Video' || device.streamMode !== 'GB28181' || !isOnline) return null;
 
   const chs = device.sipChannels.length > 0 ? device.sipChannels : [{
@@ -56,6 +169,10 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
               sipServerIp: device.sipServerIp, sipServerPort: device.sipServerPort, sipServerId: device.sipServerId,
               sipLocalPort: device.sipLocalPort, sipKeepaliveInterval: device.sipKeepaliveInterval,
               sipTransport: device.sipTransport, sipPassword: device.sipPassword,
+              cameraDevice: device.cameraDevice,
+              mediaFps: device.mediaFps,
+              mediaWidth: device.mediaWidth,
+              mediaHeight: device.mediaHeight,
             });
             setSipParamOpen(true);
           }}>参数</Button>
@@ -66,6 +183,9 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
               <Text type="secondary">SIP Server: {device.sipServerIp}:{device.sipServerPort} ({device.sipTransport})</Text>
               <Text type="secondary">Server ID: {device.sipServerId}</Text>
               <Text type="secondary">本地端口: {device.sipLocalPort} | 鉴权: {device.sipPassword ? '已配置' : '未配置'} | 通道: {device.sipChannels.length || 1}</Text>
+              {usesLocalCamera ? (
+                <Text type="secondary">采集: {device.cameraDevice || '系统默认'} | 模式: {device.mediaWidth} x {device.mediaHeight} @ {device.mediaFps}fps</Text>
+              ) : null}
               <Text type="secondary">状态: {device.sipRegistered ?
                 <Tag color="green" style={{ fontSize: 11 }}>已注册</Tag> :
                 <Tag color="default" style={{ fontSize: 11 }}>未注册</Tag>}
@@ -492,7 +612,7 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
         onCancel={() => setSipParamOpen(false)}
         onOk={async () => {
           const vals = await sipParamForm.validateFields();
-          updateDevice(device.id, {
+          const nextPatch = {
             sipServerIp: vals.sipServerIp,
             sipServerPort: vals.sipServerPort,
             sipServerId: vals.sipServerId,
@@ -500,10 +620,34 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
             sipKeepaliveInterval: vals.sipKeepaliveInterval,
             sipTransport: vals.sipTransport,
             sipPassword: vals.sipPassword,
-          });
+            ...(usesLocalCamera
+              ? {
+                cameraDevice: vals.cameraDevice || '',
+                mediaFps: Number(vals.mediaFps) || device.mediaFps,
+                mediaWidth: Number(vals.mediaWidth) || device.mediaWidth,
+                mediaHeight: Number(vals.mediaHeight) || device.mediaHeight,
+              }
+              : {}),
+          };
+          updateDevice(device.id, nextPatch);
+          if (usesLocalCamera) {
+            const updateMediaResult = await window.electronAPI.sipUpdateMediaConfig(device.id, {
+              enableLocalMedia: true,
+              cameraDevice: vals.cameraDevice || '',
+              mediaFps: Number(vals.mediaFps) || device.mediaFps,
+              mediaWidth: Number(vals.mediaWidth) || device.mediaWidth,
+              mediaHeight: Number(vals.mediaHeight) || device.mediaHeight,
+            });
+            if (!updateMediaResult?.success) {
+              message.error(updateMediaResult?.message || '本地采集参数同步失败');
+              return;
+            }
+          }
           addLog(device.id, device.name, 'info', 'SIP 参数已更新');
           if (device.sipRegistered) {
-            message.warning('参数已保存。需要重新注册才能生效 — 请先注销再重新注册。');
+            message.warning(usesLocalCamera
+              ? '参数已保存。SIP 参数需重新注册生效；采集参数会用于后续 INVITE 推流。'
+              : '参数已保存。需要重新注册才能生效，请先注销再重新注册。');
           } else {
             message.success('SIP 参数已保存');
           }
@@ -558,6 +702,55 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
               </Form.Item>
             </Col>
           </Row>
+          {usesLocalCamera ? (
+            <>
+              <Form.Item name="cameraDevice" label="摄像头设备" style={{ marginBottom: 8 }}>
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  loading={localVideoSourceLoading}
+                  options={localVideoSources.map((item) => ({
+                    value: item.value,
+                    label: item.label,
+                  }))}
+                  placeholder={localVideoSources.length > 0 ? '选择本机摄像头' : '未检测到本机摄像头时将使用系统默认设备'}
+                  onChange={() => {
+                    setLocalVideoModes([]);
+                    sipParamForm.setFieldsValue({
+                      mediaWidth: 1280,
+                      mediaHeight: 720,
+                      mediaFps: 30,
+                    });
+                  }}
+                />
+              </Form.Item>
+              <Form.Item
+                label="采集模式"
+                style={{ marginBottom: 0 }}
+                extra={localVideoModes.length > 0 ? undefined : '未读取到设备支持模式时，可先选择通用采集模式'}
+              >
+                <Select
+                  value={selectedCameraModeKey}
+                  loading={localVideoModeLoading}
+                  options={availableLocalVideoModes.map((item) => ({
+                    value: item.key,
+                    label: item.label,
+                  }))}
+                  onChange={(value) => {
+                    const mode = availableLocalVideoModes.find((item) => item.key === value);
+                    if (!mode) {
+                      return;
+                    }
+                    sipParamForm.setFieldsValue({
+                      mediaWidth: mode.width,
+                      mediaHeight: mode.height,
+                      mediaFps: mode.fps,
+                    });
+                  }}
+                />
+              </Form.Item>
+            </>
+          ) : null}
         </Form>
       </Modal>
     </>

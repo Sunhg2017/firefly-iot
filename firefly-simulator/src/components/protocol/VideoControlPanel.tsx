@@ -1,11 +1,18 @@
 import {
-  Button, Space, Typography, Divider,
+  Button, Form, Modal, Select, Space, Typography, Divider, message,
 } from 'antd';
-import { PlayCircleOutlined, PauseCircleOutlined, BugOutlined, DashboardOutlined } from '@ant-design/icons';
+import { PlayCircleOutlined, PauseCircleOutlined, BugOutlined, DashboardOutlined, EditOutlined } from '@ant-design/icons';
+import { useEffect, useMemo, useState } from 'react';
 import { useSimStore } from '../../store';
 import type { SimDevice } from '../../store';
 import { getActiveEnvironment, useSimWorkspaceStore } from '../../workspaceStore';
-import { buildLocalCameraSourceUrl } from '../../utils/video';
+import {
+  buildFallbackLocalVideoModes,
+  buildLocalCameraSourceUrl,
+  buildLocalVideoModeKey,
+  type LocalVideoModeOption,
+  selectPreferredLocalVideoMode,
+} from '../../utils/video';
 
 const { Text } = Typography;
 
@@ -39,14 +46,149 @@ export default function VideoControlPanel({ device }: Props) {
   const localProxyTarget = isLocalProxySource
     ? buildLocalCameraSourceUrl(gatewayBaseUrl, device.streamMode, device.id)
     : '';
+  const [mediaParamOpen, setMediaParamOpen] = useState(false);
+  const [mediaParamForm] = Form.useForm();
+  const [localVideoSources, setLocalVideoSources] = useState<Array<{ value: string; label: string }>>([]);
+  const [localVideoSourceLoading, setLocalVideoSourceLoading] = useState(false);
+  const [localVideoModes, setLocalVideoModes] = useState<LocalVideoModeOption[]>([]);
+  const [localVideoModeLoading, setLocalVideoModeLoading] = useState(false);
+  const selectedCameraDevice = Form.useWatch('cameraDevice', mediaParamForm);
+  const selectedMediaWidth = Form.useWatch('mediaWidth', mediaParamForm);
+  const selectedMediaHeight = Form.useWatch('mediaHeight', mediaParamForm);
+  const selectedMediaFps = Form.useWatch('mediaFps', mediaParamForm);
+  const selectedCameraModeKey = buildLocalVideoModeKey(selectedMediaWidth, selectedMediaHeight, selectedMediaFps);
+  const availableLocalVideoModes = useMemo(
+    () => (localVideoModes.length > 0
+      ? localVideoModes
+      : buildFallbackLocalVideoModes({
+        width: selectedMediaWidth || device.mediaWidth,
+        height: selectedMediaHeight || device.mediaHeight,
+        fps: selectedMediaFps || device.mediaFps,
+      })),
+    [device.mediaFps, device.mediaHeight, device.mediaWidth, localVideoModes, selectedMediaFps, selectedMediaHeight, selectedMediaWidth],
+  );
+
+  useEffect(() => {
+    if (!mediaParamOpen || !isLocalProxySource) {
+      setLocalVideoSources([]);
+      setLocalVideoModes([]);
+      setLocalVideoSourceLoading(false);
+      setLocalVideoModeLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const loadLocalVideoSources = async () => {
+      setLocalVideoSourceLoading(true);
+      const result = await window.electronAPI.localVideoListSources();
+      if (cancelled) {
+        return;
+      }
+      const records = result?.success && Array.isArray(result.data) ? result.data : [];
+      setLocalVideoSources(records);
+      setLocalVideoSourceLoading(false);
+      if (records.length === 0) {
+        return;
+      }
+      const currentCameraDevice = String(mediaParamForm.getFieldValue('cameraDevice') || '').trim();
+      if (currentCameraDevice && records.some((item: { value: string }) => item.value === currentCameraDevice)) {
+        return;
+      }
+      mediaParamForm.setFieldsValue({ cameraDevice: records[0].value });
+    };
+    void loadLocalVideoSources();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLocalProxySource, mediaParamForm, mediaParamOpen]);
+
+  useEffect(() => {
+    if (!mediaParamOpen || !isLocalProxySource) {
+      setLocalVideoModes([]);
+      setLocalVideoModeLoading(false);
+      return;
+    }
+    const probeCameraDevice = String(selectedCameraDevice || localVideoSources[0]?.value || '').trim();
+    if (!probeCameraDevice) {
+      setLocalVideoModes([]);
+      setLocalVideoModeLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const loadLocalVideoModes = async () => {
+      setLocalVideoModeLoading(true);
+      const result = await window.electronAPI.localVideoListModes(probeCameraDevice);
+      if (cancelled) {
+        return;
+      }
+      const records = result?.success && Array.isArray(result.data) ? result.data as LocalVideoModeOption[] : [];
+      setLocalVideoModes(records);
+      setLocalVideoModeLoading(false);
+      if (records.length === 0) {
+        return;
+      }
+      const currentModeKey = buildLocalVideoModeKey(
+        mediaParamForm.getFieldValue('mediaWidth'),
+        mediaParamForm.getFieldValue('mediaHeight'),
+        mediaParamForm.getFieldValue('mediaFps'),
+      );
+      if (records.some((item) => item.key === currentModeKey)) {
+        return;
+      }
+      const preferredMode = selectPreferredLocalVideoMode(records, {
+        width: mediaParamForm.getFieldValue('mediaWidth'),
+        height: mediaParamForm.getFieldValue('mediaHeight'),
+        fps: mediaParamForm.getFieldValue('mediaFps'),
+      });
+      if (!preferredMode) {
+        return;
+      }
+      mediaParamForm.setFieldsValue({
+        mediaWidth: preferredMode.width,
+        mediaHeight: preferredMode.height,
+        mediaFps: preferredMode.fps,
+      });
+    };
+    void loadLocalVideoModes();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLocalProxySource, localVideoSources, mediaParamForm, mediaParamOpen, selectedCameraDevice]);
 
   if (device.protocol !== 'Video' || !isOnline || !device.platformDeviceId) return null;
 
   return (
     <>
       <div style={{ marginBottom: 16, padding: 12, background: 'rgba(255,255,255,0.02)', borderRadius: 8 }}>
-        <Space style={{ marginBottom: 8 }}><PlayCircleOutlined /><Text strong>流控制</Text></Space>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <Space><PlayCircleOutlined /><Text strong>流控制</Text></Space>
+          {isLocalProxySource ? (
+            <Button
+              type="link"
+              size="small"
+              icon={<EditOutlined />}
+              style={{ fontSize: 11, padding: 0 }}
+              onClick={() => {
+                mediaParamForm.setFieldsValue({
+                  cameraDevice: device.cameraDevice,
+                  mediaFps: device.mediaFps,
+                  mediaWidth: device.mediaWidth,
+                  mediaHeight: device.mediaHeight,
+                });
+                setMediaParamOpen(true);
+              }}
+            >
+              采集参数
+            </Button>
+          ) : null}
+        </div>
         <Space direction="vertical" style={{ width: '100%' }} size={12}>
+          {isLocalProxySource ? (
+            <div style={{ padding: 8, background: 'rgba(255,255,255,0.04)', borderRadius: 6 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                摄像头: {device.cameraDevice || '系统默认'} | 模式: {device.mediaWidth} x {device.mediaHeight} @ {device.mediaFps}fps
+              </Text>
+            </div>
+          ) : null}
           <Space wrap>
             <Button
               type="primary"
@@ -136,6 +278,75 @@ export default function VideoControlPanel({ device }: Props) {
           )}
         </Space>
       </div>
+
+      <Modal
+        title="编辑本地采集参数"
+        open={mediaParamOpen}
+        width={420}
+        destroyOnHidden
+        onCancel={() => setMediaParamOpen(false)}
+        onOk={async () => {
+          const vals = await mediaParamForm.validateFields();
+          updateDevice(device.id, {
+            cameraDevice: vals.cameraDevice || '',
+            mediaFps: Number(vals.mediaFps) || device.mediaFps,
+            mediaWidth: Number(vals.mediaWidth) || device.mediaWidth,
+            mediaHeight: Number(vals.mediaHeight) || device.mediaHeight,
+          });
+          message.success(device.streamUrl
+            ? '采集参数已保存，请停止后重新开始推流以应用新配置'
+            : '采集参数已保存');
+          setMediaParamOpen(false);
+        }}
+      >
+        <Form form={mediaParamForm} layout="vertical" size="small">
+          <Form.Item name="cameraDevice" label="摄像头设备" style={{ marginBottom: 8 }}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              loading={localVideoSourceLoading}
+              options={localVideoSources.map((item) => ({
+                value: item.value,
+                label: item.label,
+              }))}
+              placeholder={localVideoSources.length > 0 ? '选择本机摄像头' : '未检测到本机摄像头时将使用系统默认设备'}
+              onChange={() => {
+                setLocalVideoModes([]);
+                mediaParamForm.setFieldsValue({
+                  mediaWidth: 1280,
+                  mediaHeight: 720,
+                  mediaFps: 30,
+                });
+              }}
+            />
+          </Form.Item>
+          <Form.Item
+            label="采集模式"
+            style={{ marginBottom: 0 }}
+            extra={localVideoModes.length > 0 ? undefined : '未读取到设备支持模式时，可先选择通用采集模式'}
+          >
+            <Select
+              value={selectedCameraModeKey}
+              loading={localVideoModeLoading}
+              options={availableLocalVideoModes.map((item) => ({
+                value: item.key,
+                label: item.label,
+              }))}
+              onChange={(value) => {
+                const mode = availableLocalVideoModes.find((item) => item.key === value);
+                if (!mode) {
+                  return;
+                }
+                mediaParamForm.setFieldsValue({
+                  mediaWidth: mode.width,
+                  mediaHeight: mode.height,
+                  mediaFps: mode.fps,
+                });
+              }}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <div style={{ marginBottom: 16, padding: 12, background: 'rgba(255,255,255,0.02)', borderRadius: 8 }}>
         <Space style={{ marginBottom: 8 }}><DashboardOutlined /><Text strong>云台 PTZ / 录制</Text></Space>
