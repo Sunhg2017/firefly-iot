@@ -179,18 +179,70 @@ function buildCameraInputArgs(config: {
   width: number;
   height: number;
   cameraDevice?: string;
+}, options?: {
+  useDarwinAutoMode?: boolean;
 }): string[] {
   const fps = Math.max(5, Math.min(30, Number(config.fps) || 15));
   const width = Math.max(320, Math.min(1920, Number(config.width) || 1280));
   const height = Math.max(240, Math.min(1080, Number(config.height) || 720));
   const cameraDevice = (config.cameraDevice || '').trim();
   if (process.platform === 'darwin') {
+    const avfoundationInput = `${cameraDevice || '0'}:none`;
+    if (options?.useDarwinAutoMode) {
+      // 某些摄像头在显式指定 framerate/video_size 时会协商失败，
+      // 回退到设备默认模式由驱动自行协商采集参数，提升兼容性。
+      return ['-f', 'avfoundation', '-i', avfoundationInput];
+    }
     return ['-f', 'avfoundation', '-framerate', String(fps), '-video_size', `${width}x${height}`, '-i', `${cameraDevice || '0'}:none`];
   }
   if (process.platform === 'win32') {
     return ['-f', 'dshow', '-i', `video=${cameraDevice || 'default'}`];
   }
   return ['-f', 'v4l2', '-framerate', String(fps), '-video_size', `${width}x${height}`, '-i', cameraDevice || '/dev/video0'];
+}
+
+function shouldRetryWithDarwinAutoMode(stderrText: string): boolean {
+  if (process.platform !== 'darwin') {
+    return false;
+  }
+  const normalized = (stderrText || '').toLowerCase();
+  return normalized.includes('selected framerate')
+    || normalized.includes('selected video size')
+    || normalized.includes('not supported by the device');
+}
+
+function extractLocalVideoStartFailure(stderrText: string, fallbackMessage: string): string {
+  const lines = (stderrText || '')
+    .split(/\r?\n/g)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return fallbackMessage;
+  }
+  return lines[lines.length - 1];
+}
+
+function waitLocalVideoBootstrap(
+  child: ChildProcessWithoutNullStreams,
+  timeoutMs: number,
+): Promise<{ stable: boolean; code: number | null; signal: NodeJS.Signals | null }> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (value: { stable: boolean; code: number | null; signal: NodeJS.Signals | null }) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => {
+      done({ stable: true, code: null, signal: null });
+    }, timeoutMs);
+    child.once('exit', (code, signal) => {
+      done({ stable: false, code, signal });
+    });
+  });
 }
 
 function stopLocalVideoSession(deviceId: string): Promise<void> {
@@ -233,11 +285,7 @@ async function startLocalVideoSession(
   const cameraDevice = (config.cameraDevice || '').trim() || undefined;
   await stopLocalVideoSession(deviceId);
   const ffmpeg = getFfmpegBinaryPath();
-  const args = [
-    '-hide_banner',
-    '-loglevel',
-    'warning',
-    ...buildCameraInputArgs({ fps, width, height, cameraDevice }),
+  const fixedTranscodeArgs = [
     '-an',
     '-c:v',
     'libx264',
@@ -254,14 +302,15 @@ async function startLocalVideoSession(
   ];
 
   let target = '';
+  const outputArgs: string[] = [];
   if (mode === 'RTMP') {
     const targetUrl = trimRequired(config.targetUrl, 'RTMP 推流地址不能为空');
     target = targetUrl;
-    args.push('-f', 'flv', targetUrl);
+    outputArgs.push('-f', 'flv', targetUrl);
   } else if (mode === 'RTSP') {
     const targetUrl = trimRequired(config.targetUrl, 'RTSP 推流地址不能为空');
     target = targetUrl;
-    args.push('-rtsp_transport', 'tcp', '-f', 'rtsp', targetUrl);
+    outputArgs.push('-rtsp_transport', 'tcp', '-f', 'rtsp', targetUrl);
   } else {
     const targetIp = trimRequired(config.targetIp, 'RTP 目标地址不能为空');
     const targetPort = Number(config.targetPort || 0);
@@ -269,33 +318,81 @@ async function startLocalVideoSession(
       throw new Error('RTP 目标端口不正确');
     }
     target = `rtp://${targetIp}:${targetPort}`;
-    args.push('-f', 'rtp_mpegts', `${target}?pkt_size=1316`);
+    outputArgs.push('-f', 'rtp_mpegts', `${target}?pkt_size=1316`);
   }
 
-  const child = spawn(ffmpeg, args, {
-    windowsHide: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  localVideoSessions.set(deviceId, {
-    process: child,
-    mode,
-    startedAt: Date.now(),
-    target,
-  });
-  child.on('exit', () => {
-    const current = localVideoSessions.get(deviceId);
-    if (current?.process === child) {
-      localVideoSessions.delete(deviceId);
-    }
-  });
-  child.stderr.on('data', (chunk) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('sip:event', deviceId, {
-        type: 'error',
-        message: `本地码流告警: ${String(chunk).trim()}`,
-      });
-    }
-  });
+  const spawnLocalProcess = (inputArgs: string[]) => {
+    const args = [
+      '-hide_banner',
+      '-loglevel',
+      'warning',
+      ...inputArgs,
+      ...fixedTranscodeArgs,
+      ...outputArgs,
+    ];
+    const child = spawn(ffmpeg, args, {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    localVideoSessions.set(deviceId, {
+      process: child,
+      mode,
+      startedAt: Date.now(),
+      target,
+    });
+    child.on('exit', () => {
+      const current = localVideoSessions.get(deviceId);
+      if (current?.process === child) {
+        localVideoSessions.delete(deviceId);
+      }
+    });
+    let stderrText = '';
+    child.stderr.on('data', (chunk) => {
+      const message = String(chunk);
+      stderrText += message;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sip:event', deviceId, {
+          type: 'error',
+          message: `本地码流告警: ${message.trim()}`,
+        });
+      }
+    });
+    return {
+      child,
+      getStderrText: () => stderrText,
+    };
+  };
+
+  const bootstrapTimeoutMs = 1800;
+  const primary = spawnLocalProcess(buildCameraInputArgs({ fps, width, height, cameraDevice }));
+  const primaryBootstrap = await waitLocalVideoBootstrap(primary.child, bootstrapTimeoutMs);
+  if (primaryBootstrap.stable) {
+    return;
+  }
+
+  const primaryStderr = primary.getStderrText();
+  if (!shouldRetryWithDarwinAutoMode(primaryStderr)) {
+    throw new Error(extractLocalVideoStartFailure(primaryStderr, '本地码流启动失败'));
+  }
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('sip:event', deviceId, {
+      type: 'local_media_retry',
+      message: '检测到摄像头参数不兼容，已切换设备默认采集模式重试',
+    });
+  }
+
+  await stopLocalVideoSession(deviceId);
+  const fallback = spawnLocalProcess(buildCameraInputArgs(
+    { fps, width, height, cameraDevice },
+    { useDarwinAutoMode: true },
+  ));
+  const fallbackBootstrap = await waitLocalVideoBootstrap(fallback.child, bootstrapTimeoutMs);
+  if (fallbackBootstrap.stable) {
+    return;
+  }
+
+  throw new Error(extractLocalVideoStartFailure(fallback.getStderrText(), '本地码流启动失败'));
 }
 
 function createWindow() {
