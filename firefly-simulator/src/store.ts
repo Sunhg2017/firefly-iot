@@ -85,6 +85,10 @@ export interface SimDevice {
   sipKeepaliveInterval: number;
   sipPassword: string;
   sipTransport: 'UDP' | 'TCP';
+  cameraDevice: string;
+  mediaFps: number;
+  mediaWidth: number;
+  mediaHeight: number;
   sipChannels: SipChannel[];
   sipRegistered: boolean;
   sipKeepaliveEnabled: boolean;
@@ -219,6 +223,10 @@ function normalizePersistedDevice(device: SimDevice | (SimDevice & { mediaBaseUr
     videoSourceType: normalized.videoSourceType
       || (streamMode === 'GB28181' ? 'LOCAL_CAMERA' : 'REMOTE_SOURCE'),
     platformDeviceId: normalized.platformDeviceId ?? null,
+    cameraDevice: normalized.cameraDevice || '',
+    mediaFps: Number(normalized.mediaFps) || 15,
+    mediaWidth: Number(normalized.mediaWidth) || 1280,
+    mediaHeight: Number(normalized.mediaHeight) || 720,
     status: normalized.restoreOnLaunch ? 'connecting' as DeviceStatus : 'offline' as DeviceStatus,
     token: '',
     autoReport: false,
@@ -459,6 +467,10 @@ export const useSimStore = create<SimulatorState>()(
       sipKeepaliveInterval: draft.sipKeepaliveInterval || 60,
       sipPassword: draft.sipPassword || '',
       sipTransport: draft.sipTransport || 'UDP',
+      cameraDevice: draft.cameraDevice || '',
+      mediaFps: Number(draft.mediaFps) || 15,
+      mediaWidth: Number(draft.mediaWidth) || 1280,
+      mediaHeight: Number(draft.mediaHeight) || 720,
       sipChannels: draft.sipChannels || [],
       sipRegistered: false,
       sipKeepaliveEnabled: false,

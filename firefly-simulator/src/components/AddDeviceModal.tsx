@@ -52,6 +52,19 @@ interface TenantProductRecord {
   deviceAuthType: 'DEVICE_SECRET' | 'PRODUCT_SECRET';
 }
 
+interface LocalVideoSourceOption {
+  value: string;
+  label: string;
+}
+
+interface LocalVideoModeOption {
+  key: string;
+  label: string;
+  width: number;
+  height: number;
+  fps: number;
+}
+
 const STEP_TITLES = ['基本信息', '接入参数', '扩展配置'];
 
 const AUTH_MODE_LABELS: Record<'DEVICE_SECRET' | 'PRODUCT_SECRET', string> = {
@@ -159,6 +172,31 @@ function buildAutoLocalSourcePreview(baseUrl: string, streamMode?: string, seedN
   }
 }
 
+function buildLocalVideoModeKey(width: unknown, height: unknown, fps: unknown): string {
+  const normalizedWidth = Number(width) || 1280;
+  const normalizedHeight = Number(height) || 720;
+  const normalizedFps = Number(fps) || 15;
+  return `${Math.floor(normalizedWidth)}x${Math.floor(normalizedHeight)}@${Number(normalizedFps.toFixed(3))}`;
+}
+
+function selectPreferredLocalVideoMode(
+  modes: LocalVideoModeOption[],
+  preferred: { width?: unknown; height?: unknown; fps?: unknown },
+): LocalVideoModeOption | null {
+  if (modes.length === 0) {
+    return null;
+  }
+  const width = Number(preferred.width) || 1280;
+  const height = Number(preferred.height) || 720;
+  const fps = Number(preferred.fps) || 15;
+  const sorted = [...modes].sort((a, b) => {
+    const scoreA = Math.abs(a.width - width) + Math.abs(a.height - height) + Math.abs(a.fps - fps) * 1000;
+    const scoreB = Math.abs(b.width - width) + Math.abs(b.height - height) + Math.abs(b.fps - fps) * 1000;
+    return scoreA - scoreB;
+  });
+  return sorted[0] || null;
+}
+
 function buildInitialValues(
   environment: ReturnType<typeof getActiveEnvironment>,
 ): Record<string, unknown> {
@@ -182,6 +220,10 @@ function buildInitialValues(
     sipKeepaliveInterval: 60,
     sipTransport: 'UDP',
     sipPassword: '',
+    cameraDevice: '',
+    mediaFps: 15,
+    mediaWidth: 1280,
+    mediaHeight: 720,
     snmpPort: 161,
     snmpVersion: 2,
     snmpCommunity: 'public',
@@ -298,6 +340,10 @@ export default function AddDeviceModal({ open, onClose }: Props) {
   const [products, setProducts] = useState<TenantProductRecord[]>([]);
   const [productLoading, setProductLoading] = useState(false);
   const [productLoadError, setProductLoadError] = useState('');
+  const [localVideoSources, setLocalVideoSources] = useState<LocalVideoSourceOption[]>([]);
+  const [localVideoSourceLoading, setLocalVideoSourceLoading] = useState(false);
+  const [localVideoModes, setLocalVideoModes] = useState<LocalVideoModeOption[]>([]);
+  const [localVideoModeLoading, setLocalVideoModeLoading] = useState(false);
   const previousVideoStreamModeRef = useRef<string | undefined>(undefined);
 
   const protocol = ((formSnapshot.protocol as Protocol | undefined) || 'HTTP') as Protocol;
@@ -305,6 +351,13 @@ export default function AddDeviceModal({ open, onClose }: Props) {
   const mqttAuthMode = formSnapshot.mqttAuthMode as string | undefined;
   const streamMode = formSnapshot.streamMode as string | undefined;
   const videoSourceType = normalizeVideoSourceType(formSnapshot.videoSourceType);
+  const usesLocalCamera = protocol === 'Video' && (!isProxyVideoMode(streamMode) || videoSourceType === 'LOCAL_CAMERA');
+  const selectedCameraDevice = trimText(formSnapshot.cameraDevice as string | undefined);
+  const selectedCameraModeKey = buildLocalVideoModeKey(
+    formSnapshot.mediaWidth,
+    formSnapshot.mediaHeight,
+    formSnapshot.mediaFps,
+  );
   const meta = useMemo(() => PROTOCOL_META[protocol], [protocol]);
   const sourcePreview = useMemo(() => {
     if (protocol !== 'Video' || !isProxyVideoMode(streamMode) || videoSourceType !== 'REMOTE_SOURCE') {
@@ -334,6 +387,10 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     setProducts([]);
     setProductLoading(false);
     setProductLoadError('');
+    setLocalVideoSources([]);
+    setLocalVideoModes([]);
+    setLocalVideoSourceLoading(false);
+    setLocalVideoModeLoading(false);
     onClose();
   };
 
@@ -455,6 +512,99 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     protocol,
     streamMode,
   ]);
+
+  useEffect(() => {
+    if (!open || !usesLocalCamera) {
+      setLocalVideoSources([]);
+      setLocalVideoModes([]);
+      setLocalVideoSourceLoading(false);
+      setLocalVideoModeLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const loadLocalVideoSources = async () => {
+      setLocalVideoSourceLoading(true);
+      const result = await window.electronAPI.localVideoListSources();
+      if (cancelled) {
+        return;
+      }
+      const records = result?.success && Array.isArray(result.data) ? result.data as LocalVideoSourceOption[] : [];
+      setLocalVideoSources(records);
+      setLocalVideoSourceLoading(false);
+      if (records.length === 0) {
+        return;
+      }
+      const currentCameraDevice = trimText(form.getFieldValue('cameraDevice'));
+      if (currentCameraDevice && records.some((item) => item.value === currentCameraDevice)) {
+        return;
+      }
+      form.setFieldsValue({ cameraDevice: records[0].value });
+      setFormSnapshot(form.getFieldsValue(true));
+    };
+    void loadLocalVideoSources();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [form, open, usesLocalCamera]);
+
+  useEffect(() => {
+    if (!open || !usesLocalCamera) {
+      setLocalVideoModes([]);
+      setLocalVideoModeLoading(false);
+      return;
+    }
+
+    const probeCameraDevice = selectedCameraDevice || localVideoSources[0]?.value || '';
+    if (!probeCameraDevice) {
+      setLocalVideoModes([]);
+      setLocalVideoModeLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const loadLocalVideoModes = async () => {
+      setLocalVideoModeLoading(true);
+      const result = await window.electronAPI.localVideoListModes(probeCameraDevice);
+      if (cancelled) {
+        return;
+      }
+      const records = result?.success && Array.isArray(result.data) ? result.data as LocalVideoModeOption[] : [];
+      setLocalVideoModes(records);
+      setLocalVideoModeLoading(false);
+      if (records.length === 0) {
+        return;
+      }
+      const currentModeKey = buildLocalVideoModeKey(
+        form.getFieldValue('mediaWidth'),
+        form.getFieldValue('mediaHeight'),
+        form.getFieldValue('mediaFps'),
+      );
+      if (records.some((item) => item.key === currentModeKey)) {
+        return;
+      }
+      const preferredMode = selectPreferredLocalVideoMode(records, {
+        width: form.getFieldValue('mediaWidth'),
+        height: form.getFieldValue('mediaHeight'),
+        fps: form.getFieldValue('mediaFps'),
+      });
+      if (!preferredMode) {
+        return;
+      }
+      form.setFieldsValue({
+        mediaWidth: preferredMode.width,
+        mediaHeight: preferredMode.height,
+        mediaFps: preferredMode.fps,
+      });
+      setFormSnapshot(form.getFieldsValue(true));
+    };
+    void loadLocalVideoModes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [form, localVideoSources, open, selectedCameraDevice, usesLocalCamera]);
 
   const nextStep = async () => {
     const fields = getStepFields(protocol, currentStep, mqttAuthMode, streamMode, httpAuthMode, videoSourceType);
@@ -930,6 +1080,58 @@ export default function AddDeviceModal({ open, onClose }: Props) {
             </Row>
             <Form.Item name="firmware" label="固件版本"><Input placeholder="如：1.0.0" /></Form.Item>
           </Card>
+          {usesLocalCamera ? (
+            <Card size="small" title="本地采集" style={drawerSectionCardStyle}>
+              <Row gutter={12}>
+                <Col span={24}>
+                  <Form.Item name="cameraDevice" label="摄像头设备">
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      loading={localVideoSourceLoading}
+                      options={localVideoSources.map((item) => ({
+                        value: item.value,
+                        label: item.label,
+                      }))}
+                      placeholder={localVideoSources.length > 0 ? '选择本机摄像头' : '未检测到本机摄像头时将使用系统默认设备'}
+                      onChange={() => {
+                        setLocalVideoModes([]);
+                        form.setFieldsValue({
+                          mediaWidth: 1280,
+                          mediaHeight: 720,
+                          mediaFps: 15,
+                        });
+                      }}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+              {localVideoModes.length > 0 ? (
+                <Form.Item label="采集模式">
+                  <Select
+                    value={selectedCameraModeKey}
+                    loading={localVideoModeLoading}
+                    options={localVideoModes.map((item) => ({
+                      value: item.key,
+                      label: item.label,
+                    }))}
+                    onChange={(value) => {
+                      const mode = localVideoModes.find((item) => item.key === value);
+                      if (!mode) {
+                        return;
+                      }
+                      form.setFieldsValue({
+                        mediaWidth: mode.width,
+                        mediaHeight: mode.height,
+                        mediaFps: mode.fps,
+                      });
+                      setFormSnapshot(form.getFieldsValue(true));
+                    }}
+                  />
+                </Form.Item>
+              ) : null}
+            </Card>
+          ) : null}
           {streamMode === 'GB28181' ? (
             <>
           <Card size="small" title="SIP 配置" style={drawerSectionCardStyle}>

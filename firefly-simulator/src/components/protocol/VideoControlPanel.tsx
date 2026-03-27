@@ -61,9 +61,10 @@ export default function VideoControlPanel({ device }: Props) {
                   const localStart = await window.electronAPI.localVideoStart(device.id, {
                     mode: device.streamMode === 'RTMP' ? 'RTMP' : 'RTSP',
                     targetUrl: localProxyTarget,
-                    fps: 15,
-                    width: 1280,
-                    height: 720,
+                    fps: device.mediaFps,
+                    width: device.mediaWidth,
+                    height: device.mediaHeight,
+                    cameraDevice: device.cameraDevice,
                   });
                   if (!localStart.success) {
                     addLog(device.id, device.name, 'error', `本地摄像头推流启动失败: ${localStart.message || '未知错误'}`);

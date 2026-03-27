@@ -109,6 +109,7 @@ npm run electron:build
 - RTSP / RTMP 模式支持两种媒体源：
   - `本地摄像头`：自动生成 `sourceUrl` 并回填平台资产
   - `外部源地址`：使用手工填写的 `sourceUrl`
+- 使用 `本地摄像头` 时，可在高级配置里选择具体摄像头设备；macOS 下还会同步列出可选采集模式
 - 再次连接同一台视频设备时，模拟器会优先复用已关联的 `platformDeviceId`
 - Video 设备现在也支持先绑定平台产品，再按 `ProductKey` 同步当前产品物模型
 

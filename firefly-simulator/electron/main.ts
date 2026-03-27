@@ -37,6 +37,19 @@ const localVideoSessions = new Map<string, {
 // duplicate launches from stale scripts or manual `electron .` commands.
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
+interface LocalVideoSourceOption {
+  value: string;
+  label: string;
+}
+
+interface LocalVideoModeOption {
+  key: string;
+  label: string;
+  width: number;
+  height: number;
+  fps: number;
+}
+
 function isMostlyText(buffer: Buffer) {
   if (buffer.length === 0) {
     return true;
@@ -228,6 +241,48 @@ function formatDarwinFps(value: number): string {
   return normalized.toFixed(3).replace(/\.?0+$/, '');
 }
 
+function buildVideoModeKey(width: number, height: number, fps: number): string {
+  return `${Math.floor(width)}x${Math.floor(height)}@${formatDarwinFps(fps)}`;
+}
+
+function buildVideoModeLabel(width: number, height: number, fps: number): string {
+  return `${Math.floor(width)} x ${Math.floor(height)} @ ${formatDarwinFps(fps)}fps`;
+}
+
+async function runFfmpegProbe(args: string[], timeoutMs = 3000): Promise<string> {
+  const ffmpeg = getFfmpegBinaryPath();
+  return new Promise((resolve) => {
+    const child = spawn(ffmpeg, args, {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let output = '';
+    let settled = false;
+    const complete = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      resolve(output);
+    };
+    const timer = setTimeout(() => {
+      if (!child.killed) {
+        child.kill('SIGKILL');
+      }
+      complete();
+    }, timeoutMs);
+    child.stdout.on('data', (chunk) => {
+      output += String(chunk);
+    });
+    child.stderr.on('data', (chunk) => {
+      output += String(chunk);
+    });
+    child.on('error', complete);
+    child.on('exit', complete);
+  });
+}
+
 function shouldRetryWithDarwinAutoMode(stderrText: string): boolean {
   if (process.platform !== 'darwin') {
     return false;
@@ -268,6 +323,137 @@ function parseDarwinSupportedModes(stderrText: string): Array<{ width: number; h
     }
   }
   return candidates;
+}
+
+function parseDarwinVideoSources(output: string): LocalVideoSourceOption[] {
+  const sources: LocalVideoSourceOption[] = [];
+  let inVideoSection = false;
+  for (const rawLine of output.split(/\r?\n/g)) {
+    const line = rawLine.trim();
+    if (line.includes('AVFoundation video devices')) {
+      inVideoSection = true;
+      continue;
+    }
+    if (!inVideoSection) {
+      continue;
+    }
+    if (line.includes('AVFoundation audio devices')) {
+      break;
+    }
+    const match = line.match(/\[(\d+)\]\s+(.+)$/);
+    if (!match) {
+      continue;
+    }
+    sources.push({
+      value: match[1],
+      label: match[2],
+    });
+  }
+  return sources;
+}
+
+function parseDshowVideoSources(output: string): LocalVideoSourceOption[] {
+  const sources: LocalVideoSourceOption[] = [];
+  let inVideoSection = false;
+  for (const rawLine of output.split(/\r?\n/g)) {
+    const line = rawLine.trim();
+    if (line.includes('DirectShow video devices')) {
+      inVideoSection = true;
+      continue;
+    }
+    if (!inVideoSection) {
+      continue;
+    }
+    if (line.includes('DirectShow audio devices')) {
+      break;
+    }
+    const match = line.match(/"(.+)"$/);
+    if (!match) {
+      continue;
+    }
+    sources.push({
+      value: match[1],
+      label: match[1],
+    });
+  }
+  return sources;
+}
+
+function listLinuxVideoSources(): LocalVideoSourceOption[] {
+  const deviceDir = '/dev';
+  if (!fs.existsSync(deviceDir)) {
+    return [];
+  }
+  return fs.readdirSync(deviceDir)
+    .filter((name) => /^video\d+$/.test(name))
+    .sort((a, b) => a.localeCompare(b, 'en'))
+    .map((name) => {
+      const devicePath = path.join(deviceDir, name);
+      const labelPath = path.join('/sys/class/video4linux', name, 'name');
+      let label = name;
+      if (fs.existsSync(labelPath)) {
+        const detected = fs.readFileSync(labelPath, 'utf-8').trim();
+        if (detected) {
+          label = detected;
+        }
+      }
+      return {
+        value: devicePath,
+        label: `${label} (${name})`,
+      };
+    });
+}
+
+async function listLocalVideoSources(): Promise<LocalVideoSourceOption[]> {
+  if (process.platform === 'darwin') {
+    const output = await runFfmpegProbe([
+      '-hide_banner',
+      '-f',
+      'avfoundation',
+      '-list_devices',
+      'true',
+      '-i',
+      '',
+    ]);
+    return parseDarwinVideoSources(output);
+  }
+  if (process.platform === 'win32') {
+    const output = await runFfmpegProbe([
+      '-hide_banner',
+      '-f',
+      'dshow',
+      '-list_devices',
+      'true',
+      '-i',
+      'dummy',
+    ]);
+    return parseDshowVideoSources(output);
+  }
+  return listLinuxVideoSources();
+}
+
+async function listLocalVideoModes(cameraDevice?: string): Promise<LocalVideoModeOption[]> {
+  if (process.platform !== 'darwin') {
+    return [];
+  }
+  const selector = (cameraDevice || '').trim() || '0';
+  const output = await runFfmpegProbe([
+    '-hide_banner',
+    '-f',
+    'avfoundation',
+    '-list_options',
+    'true',
+    '-i',
+    `${selector}:none`,
+  ]);
+  const parsed = parseDarwinSupportedModes(output);
+  return parsed.map((item) => ({
+    key: buildVideoModeKey(item.width, item.height, item.fps),
+    label: buildVideoModeLabel(item.width, item.height, item.fps),
+    width: item.width,
+    height: item.height,
+    fps: item.fps,
+  }));
 }
 
 function parseDarwinRejectedSelection(stderrText: string): {
@@ -1224,6 +1410,34 @@ ipcMain.handle('videoControl:startRecording', async (_e, baseUrl: string, device
 
 ipcMain.handle('videoControl:stopRecording', async (_e, baseUrl: string, deviceId: number, token?: string) => {
   return gatewayServiceJsonRequest(baseUrl, 'MEDIA', `/api/v1/video/devices/${deviceId}/record/stop`, 'POST', token, {});
+});
+
+ipcMain.handle('localVideo:listSources', async () => {
+  try {
+    return {
+      success: true,
+      data: await listLocalVideoSources(),
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err?.message || '读取本机摄像头列表失败',
+    };
+  }
+});
+
+ipcMain.handle('localVideo:listModes', async (_e, cameraDevice?: string) => {
+  try {
+    return {
+      success: true,
+      data: await listLocalVideoModes(cameraDevice),
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err?.message || '读取摄像头采集模式失败',
+    };
+  }
 });
 
 ipcMain.handle('localVideo:start', async (_e, id: string, config: {

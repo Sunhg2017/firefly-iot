@@ -135,6 +135,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('videoControl:startRecording', baseUrl, deviceId, token),
   videoControlStopRecording: (baseUrl: string, deviceId: number, token?: string) =>
     ipcRenderer.invoke('videoControl:stopRecording', baseUrl, deviceId, token),
+  localVideoListSources: () => ipcRenderer.invoke('localVideo:listSources'),
+  localVideoListModes: (cameraDevice?: string) => ipcRenderer.invoke('localVideo:listModes', cameraDevice),
   localVideoStart: (
     id: string,
     config: {

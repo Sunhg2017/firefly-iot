@@ -84,6 +84,8 @@ interface ElectronAPI {
   videoControlDeviceInfo: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
   videoControlStartRecording: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
   videoControlStopRecording: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
+  localVideoListSources: () => Promise<any>;
+  localVideoListModes: (cameraDevice?: string) => Promise<any>;
   localVideoStart: (
     id: string,
     config: {

@@ -232,6 +232,12 @@ export function getDeviceAccessOverviewItems(device: SimDevice): AccessOverviewI
               }
             })(),
         },
+        ...(device.videoSourceType === 'LOCAL_CAMERA'
+          ? [
+            { label: '摄像头设备', value: trim(device.cameraDevice) || '系统默认' },
+            { label: '采集模式', value: `${device.mediaWidth || 1280} x ${device.mediaHeight || 720} @ ${device.mediaFps || 15}fps` },
+          ]
+          : []),
         {
           label: '平台设备资产',
           value: trim(String(device.platformDeviceId ?? '')) || '未设置',
