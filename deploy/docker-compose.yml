@@ -133,6 +133,8 @@ services:
     image: zlmediakit/zlmediakit:master
     container_name: firefly-zlmediakit
     restart: unless-stopped
+    volumes:
+      - ./runtime/zlmediakit/config.ini:/opt/media/conf/config.ini
     ports:
       - "${ZLM_PORT:-18080}:80"
       - "${ZLM_SSL_PORT:-18443}:443"

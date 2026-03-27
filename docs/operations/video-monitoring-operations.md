@@ -60,9 +60,10 @@ cd ../firefly-simulator && npm run build:vite
 11. 如 ZLM 与 `firefly-media` 分机部署，必须额外配置 `ZLMEDIAKIT_HOOK_URL` 指向媒体服务的真实可达地址，禁止保留 `localhost`。
 12. `firefly-media` 使用的 `zlmediakit.secret` 必须与 ZLM 服务端鉴权配置一致；若 ZLM API 返回 `code=-100, msg=Please login first`，说明当前 secret 或登录策略未对齐，需先在运维侧修正后再联调。
 13. `deploy/deploy.sh` 现会主动加载 `deploy/.env`，因此若自定义了 `ZLM_SECRET`，脚本内的 ZLM 就绪探测也会使用同一份 secret；修改 `.env` 后需重新执行脚本。
-14. `firefly-media` 的 `zlmediakit.public-host/public-port/public-scheme` 已配置为浏览器可访问地址，禁止保留 `localhost` 对外下发给前端。
-15. `GB28181` 联调时，`firefly-media` 必须能调用 ZLM `openRtpServer/closeRtpServer`，并允许设备向分配的 RTP 端口发流；compose 默认固定暴露 `ZLM_RTP_PORT`。
-16. `deploy/docker-compose.yml` 与 `deploy/docker-compose.prod.yml` 中的长期驻留容器默认已配置 `restart: unless-stopped`；如历史容器创建于旧版本，需重新执行 `docker compose up -d` 使自启动策略生效。
+14. `deploy/deploy.sh` 会在 `deploy/runtime/zlmediakit/config.ini` 生成 ZLM 配置，并把 `api.secret` 改写成 `.env` 里的 `ZLM_SECRET`；若修改了 `ZLM_SECRET`，需重新执行 `bash deploy.sh infra` 或 `bash deploy.sh up` 让配置重新挂载。
+15. `firefly-media` 的 `zlmediakit.public-host/public-port/public-scheme` 已配置为浏览器可访问地址，禁止保留 `localhost` 对外下发给前端。
+16. `GB28181` 联调时，`firefly-media` 必须能调用 ZLM `openRtpServer/closeRtpServer`，并允许设备向分配的 RTP 端口发流；compose 默认固定暴露 `ZLM_RTP_PORT`。
+17. `deploy/docker-compose.yml` 与 `deploy/docker-compose.prod.yml` 中的长期驻留容器默认已配置 `restart: unless-stopped`；如历史容器创建于旧版本，需重新执行 `docker compose up -d` 使自启动策略生效。
 
 ## 5. 回归验证
 

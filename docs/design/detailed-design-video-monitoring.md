@@ -173,6 +173,7 @@
 - 对前端下发播放地址时，固定使用 `zlmediakit.public-host/public-port/public-scheme` 作为基准地址。
 - 若未配置 `public-host`，默认回落到 `host`，仅适用于本机联调。
 - 当 ZLM 与 `firefly-media` 分机部署时，`zlmediakit.hook-url` 不能继续写死 `localhost`，必须通过 `ZLMEDIAKIT_HOOK_URL` 覆盖为 ZLM 可回调的媒体服务地址。
+- 部署脚本会在 `deploy/runtime/zlmediakit/config.ini` 生成并维护 ZLM 配置，再通过 compose 挂载到容器内，保证 `api.secret` 与 `ZLM_SECRET` 保持一致，而不是依赖镜像随机生成值。
 - `compose` 部署默认内置 `zlmediakit` 基础设施，HTTP API 暴露为宿主机 `18080`，RTSP 暴露为宿主机 `18554`。
 - `RTSP / RTMP` 代理流继续使用 `live/{streamId}` 作为 ZLM 应用名和播放地址。
 - `GB28181` 开流前必须先调用 ZLM `openRtpServer` 打开 RTP 收流端口，并显式绑定自定义 `streamId`。

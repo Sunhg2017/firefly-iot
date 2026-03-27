@@ -50,6 +50,33 @@ load_env() {
     set +a
 }
 
+prepare_zlm_config() {
+    local runtime_dir="$SCRIPT_DIR/runtime/zlmediakit"
+    local config_file="$runtime_dir/config.ini"
+
+    mkdir -p "$runtime_dir"
+
+    if [ ! -f "$config_file" ]; then
+        log_step "Generating ZLMediaKit config template..."
+        docker image inspect zlmediakit/zlmediakit:master >/dev/null 2>&1 || docker pull zlmediakit/zlmediakit:master >/dev/null
+        docker run --rm zlmediakit/zlmediakit:master cat /opt/media/conf/config.ini > "$config_file"
+    fi
+
+    python3 - "$config_file" "${ZLM_SECRET:-035c73f7-bb6b-4889-a715-d9eb2d1925cc}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+config_path = Path(sys.argv[1])
+secret = sys.argv[2]
+content = config_path.read_text()
+updated, count = re.subn(r"(?m)^secret=.*$", f"secret={secret}", content, count=1)
+if count != 1:
+    raise SystemExit("Failed to locate api.secret in ZLMediaKit config.ini")
+config_path.write_text(updated)
+PY
+}
+
 find_mvn() {
     if [ -x "$PROJECT_ROOT/mvnw" ]; then
         echo "$PROJECT_ROOT/mvnw"
@@ -85,6 +112,7 @@ dc() {
 
 cmd_infra() {
     load_env
+    prepare_zlm_config
     log_step "Starting infrastructure services..."
     dc up -d postgres redis kafka nacos minio sentinel zlmediakit
     log_info "Waiting for PostgreSQL to become ready..."
@@ -104,6 +132,7 @@ cmd_build() {
 
 cmd_up() {
     load_env
+    prepare_zlm_config
     log_step "=== Firefly IoT full deployment ==="
 
     log_step "[1/4] Building backend..."
