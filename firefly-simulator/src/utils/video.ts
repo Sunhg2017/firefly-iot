@@ -9,6 +9,23 @@ export interface ParsedVideoSourceUrl {
   port: number;
 }
 
+export function buildLocalCameraSourceUrl(
+  gatewayBaseUrl: string,
+  streamMode: string | null | undefined,
+  simulatorDeviceId: string,
+): string {
+  const normalizedMode = normalizeVideoStreamMode(streamMode);
+  if (!isProxyVideoMode(normalizedMode)) {
+    return '';
+  }
+  const parsed = new URL(gatewayBaseUrl);
+  const host = trimText(parsed.hostname) || '127.0.0.1';
+  const key = `simcam-${simulatorDeviceId.replace(/[^a-zA-Z0-9]/g, '').slice(-16) || 'default'}`.toLowerCase();
+  return normalizedMode === 'RTMP'
+    ? `rtmp://${host}:1935/live/${key}`
+    : `rtsp://${host}:554/live/${key}`;
+}
+
 function trimText(value?: string | null): string {
   return (value ?? '').trim();
 }
@@ -104,7 +121,12 @@ function normalizeOptionalPort(value?: number | null): number | undefined {
   return Number(value);
 }
 
-export function buildVideoCreatePayload(device: SimDevice): Record<string, unknown> {
+export function buildVideoCreatePayload(
+  device: SimDevice,
+  options?: {
+    sourceUrlOverride?: string | null;
+  },
+): Record<string, unknown> {
   const streamMode = normalizeVideoStreamMode(device.streamMode);
   const payload: Record<string, unknown> = {
     productKey: normalizeOptionalText(device.productKey),
@@ -126,15 +148,20 @@ export function buildVideoCreatePayload(device: SimDevice): Record<string, unkno
     return payload;
   }
 
-  const parsedSource = parseVideoSourceUrl(streamMode, device.sourceUrl);
+  const parsedSource = parseVideoSourceUrl(streamMode, options?.sourceUrlOverride ?? device.sourceUrl);
   payload.ip = parsedSource?.host;
   payload.port = parsedSource?.port;
   payload.sourceUrl = parsedSource?.normalizedUrl;
   return payload;
 }
 
-export function buildVideoUpdatePayload(device: SimDevice): Record<string, unknown> {
-  const { productKey: _productKey, ...payload } = buildVideoCreatePayload(device);
+export function buildVideoUpdatePayload(
+  device: SimDevice,
+  options?: {
+    sourceUrlOverride?: string | null;
+  },
+): Record<string, unknown> {
+  const { productKey: _productKey, ...payload } = buildVideoCreatePayload(device, options);
   return payload;
 }
 

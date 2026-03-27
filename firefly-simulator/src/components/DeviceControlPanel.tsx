@@ -643,7 +643,7 @@ export default function DeviceControlPanel() {
           store.addLog(id, current.name, 'success', '已响应设备信息查询');
           break;
         case 'invite_accepted':
-          store.addLog(id, current.name, 'success', `已接受 INVITE（${event.channelId}）`);
+          store.addLog(id, current.name, 'success', `已接受 INVITE（${event.channelId} -> ${event.rtpIp}:${event.rtpPort}）`);
           break;
         case 'bye_accepted':
           store.addLog(id, current.name, 'info', '已接受 BYE');

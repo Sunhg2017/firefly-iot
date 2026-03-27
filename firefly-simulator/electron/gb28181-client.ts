@@ -64,7 +64,7 @@ export type SipClientEvent =
   | { type: 'keepalive_sent'; sn: string }
   | { type: 'catalog_response_sent'; channelCount: number }
   | { type: 'device_info_response_sent' }
-  | { type: 'invite_accepted'; channelId: string; ssrc: string }
+  | { type: 'invite_accepted'; channelId: string; ssrc: string; rtpIp: string; rtpPort: number }
   | { type: 'bye_accepted' }
   | { type: 'ptz_received'; command: string }
   | { type: 'error'; message: string }
@@ -498,6 +498,22 @@ export class Gb28181Client extends EventEmitter {
     const requestLine = data.split('\r\n')[0];
     const uriMatch = requestLine.match(/sip:(\d+)@/);
     const channelId = uriMatch ? uriMatch[1] : this.config.deviceId;
+    let rtpIp = fromIp;
+    let rtpPort = 0;
+    if (sdpStart >= 0) {
+      const sdp = data.substring(sdpStart);
+      const cMatch = sdp.match(/c=IN IP4 ([^\r\n]+)/i);
+      if (cMatch && cMatch[1]) {
+        rtpIp = cMatch[1].trim();
+      }
+      const mMatch = sdp.match(/m=video (\d+)/i);
+      if (mMatch && mMatch[1]) {
+        rtpPort = Number(mMatch[1]);
+      }
+    }
+    if (!Number.isInteger(rtpPort) || rtpPort <= 0 || rtpPort > 65535) {
+      rtpPort = fromPort;
+    }
 
     const { localIp, deviceId } = this.config;
     const deviceRtpPort = 20000 + Math.floor(Math.random() * 10000);
@@ -516,7 +532,7 @@ export class Gb28181Client extends EventEmitter {
     const contact = `Contact: <sip:${deviceId}@${localIp}:${this.config.localPort}>`;
     const response = this.buildSipResponse(data, 200, 'OK', [contact], responseSdp, 'application/sdp');
     this.sendRaw(response, fromIp, fromPort);
-    this.emitEvent({ type: 'invite_accepted', channelId, ssrc });
+    this.emitEvent({ type: 'invite_accepted', channelId, ssrc, rtpIp, rtpPort });
   }
 
   private handleByeRequest(data: string, fromIp: string, fromPort: number): void {

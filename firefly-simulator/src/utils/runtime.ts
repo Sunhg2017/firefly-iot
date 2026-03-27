@@ -12,6 +12,7 @@ import { getDeviceAccessValidationError } from './deviceAccess';
 import { buildLifecycleEventPayload, invokeHttpLifecycle } from './httpLifecycle';
 import { buildTransportBindingPayload, buildWebSocketConnectParams } from './transportBinding';
 import {
+  buildLocalCameraSourceUrl,
   buildVideoCreatePayload,
   buildVideoUpdatePayload,
   getActiveVideoApiContext,
@@ -69,8 +70,24 @@ function isVideoBizSuccess(result: any) {
   return Boolean(result?.success) && Number(result?.data?.code ?? 0) === 0;
 }
 
-async function findExistingVideoDevice(device: SimDevice) {
-  const videoApiContext = getActiveVideoApiContext();
+function resolveVideoDeviceForSync(device: SimDevice, gatewayBaseUrl: string): SimDevice {
+  if (device.protocol !== 'Video' || device.videoSourceType !== 'LOCAL_CAMERA') {
+    return device;
+  }
+  if (device.streamMode !== 'RTSP' && device.streamMode !== 'RTMP') {
+    return device;
+  }
+  const localSourceUrl = buildLocalCameraSourceUrl(gatewayBaseUrl, device.streamMode, device.id);
+  if (!localSourceUrl) {
+    return device;
+  }
+  return {
+    ...device,
+    sourceUrl: localSourceUrl,
+  };
+}
+
+async function findExistingVideoDevice(device: SimDevice, videoApiContext: NonNullable<ReturnType<typeof getActiveVideoApiContext>>) {
   if (!videoApiContext) {
     throw new Error('请先登录当前环境后再连接视频设备');
   }
@@ -99,31 +116,36 @@ async function findExistingVideoDevice(device: SimDevice) {
 }
 
 async function syncVideoDevice(device: SimDevice) {
+  const store = useSimStore.getState();
   const videoApiContext = getActiveVideoApiContext();
   if (!videoApiContext) {
     throw new Error('请先登录当前环境后再连接视频设备');
   }
+  const targetDevice = resolveVideoDeviceForSync(device, videoApiContext.baseUrl);
+  if (targetDevice.sourceUrl && targetDevice.sourceUrl !== device.sourceUrl) {
+    store.updateDevice(device.id, { sourceUrl: targetDevice.sourceUrl });
+  }
 
-  const createPayload = buildVideoCreatePayload(device);
-  const updatePayload = buildVideoUpdatePayload(device);
+  const createPayload = buildVideoCreatePayload(targetDevice);
+  const updatePayload = buildVideoUpdatePayload(targetDevice);
 
-  if (device.platformDeviceId) {
+  if (targetDevice.platformDeviceId) {
     const detail = await window.electronAPI.deviceVideoGet(
       videoApiContext.baseUrl,
-      device.platformDeviceId,
+      targetDevice.platformDeviceId,
       videoApiContext.accessToken,
     );
     if (isVideoBizSuccess(detail)) {
       const updateResult = await window.electronAPI.deviceVideoUpdate(
         videoApiContext.baseUrl,
-        device.platformDeviceId,
+        targetDevice.platformDeviceId,
         updatePayload,
         videoApiContext.accessToken,
       );
       if (!isVideoBizSuccess(updateResult)) {
         throw new Error(extractVideoResultMessage(updateResult, '更新平台设备资产失败'));
       }
-      return { id: device.platformDeviceId, reused: true };
+      return { id: targetDevice.platformDeviceId, reused: true };
     }
   }
 
@@ -141,7 +163,7 @@ async function syncVideoDevice(device: SimDevice) {
     throw new Error(createMessage);
   }
 
-  const existing = await findExistingVideoDevice(device);
+  const existing = await findExistingVideoDevice(targetDevice, videoApiContext);
   if (!existing?.id) {
     throw new Error(createMessage);
   }
@@ -523,6 +545,9 @@ export async function disconnectSimDevice(deviceId: string, options?: { silent?:
         );
       }
     }
+    if (device.protocol === 'Video') {
+      await window.electronAPI.localVideoStop(device.id);
+    }
     if (device.protocol === 'Video' && device.streamMode === 'GB28181') {
       await window.electronAPI.sipStop(device.id);
     }
@@ -543,6 +568,9 @@ export async function disconnectSimDevice(deviceId: string, options?: { silent?:
     return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown error';
+    if (device.protocol === 'Video') {
+      await window.electronAPI.localVideoStop(device.id);
+    }
     store.updateDevice(device.id, {
       status: 'offline',
       sipKeepaliveEnabled: false,

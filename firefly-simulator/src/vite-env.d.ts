@@ -84,6 +84,22 @@ interface ElectronAPI {
   videoControlDeviceInfo: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
   videoControlStartRecording: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
   videoControlStopRecording: (baseUrl: string, deviceId: number, token?: string) => Promise<any>;
+  localVideoStart: (
+    id: string,
+    config: {
+      mode: 'GB28181_RTP' | 'RTSP' | 'RTMP';
+      targetUrl?: string;
+      targetIp?: string;
+      targetPort?: number;
+      ssrc?: string;
+      fps?: number;
+      width?: number;
+      height?: number;
+      cameraDevice?: string;
+    },
+  ) => Promise<any>;
+  localVideoStop: (id: string) => Promise<any>;
+  localVideoStatus: (id: string) => Promise<any>;
 
   sipStart: (id: string, config: any) => Promise<any>;
   sipRegister: (id: string) => Promise<any>;

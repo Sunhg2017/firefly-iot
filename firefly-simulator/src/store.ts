@@ -13,6 +13,7 @@ import { simulatorStateStorage } from './storage';
 export type Protocol = 'HTTP' | 'MQTT' | 'CoAP' | 'Video' | 'SNMP' | 'Modbus' | 'WebSocket' | 'TCP' | 'UDP' | 'LoRaWAN';
 export type HttpAuthMode = 'DEVICE_SECRET' | 'PRODUCT_SECRET';
 export type MqttAuthMode = 'DEVICE_SECRET' | 'PRODUCT_SECRET';
+export type VideoSourceType = 'LOCAL_CAMERA' | 'REMOTE_SOURCE';
 
 export interface SimDeviceLocator {
   locatorType: string;
@@ -66,6 +67,7 @@ export interface SimDevice {
   coapBaseUrl: string;
   // Video config
   streamMode: SimulatorVideoStreamMode;
+  videoSourceType: VideoSourceType;
   gbDeviceId: string;
   gbDomain: string;
   sourceUrl: string;
@@ -210,8 +212,12 @@ function resolveStoredDeviceName(partial: SimDeviceDraft): string {
 
 function normalizePersistedDevice(device: SimDevice | (SimDevice & { mediaBaseUrl?: string })) {
   const { mediaBaseUrl: _mediaBaseUrl, ...normalized } = device as SimDevice & { mediaBaseUrl?: string };
+  const streamMode = normalizeVideoStreamMode(normalized.streamMode);
   return {
     ...normalized,
+    streamMode,
+    videoSourceType: normalized.videoSourceType
+      || (streamMode === 'GB28181' ? 'LOCAL_CAMERA' : 'REMOTE_SOURCE'),
     platformDeviceId: normalized.platformDeviceId ?? null,
     status: normalized.restoreOnLaunch ? 'connecting' as DeviceStatus : 'offline' as DeviceStatus,
     token: '',
@@ -404,6 +410,8 @@ export const useSimStore = create<SimulatorState>()(
   addDevice: (partial) => {
     const draft = partial as SimDeviceDraft;
     const id = uuidv4();
+    const normalizedVideoMode = normalizeVideoStreamMode(draft.streamMode);
+    const defaultVideoSourceType: VideoSourceType = normalizedVideoMode === 'GB28181' ? 'LOCAL_CAMERA' : 'REMOTE_SOURCE';
     const device: SimDevice = {
       id,
       nickname: draft.nickname || draft.name || `device-${get().devices.length + 1}`,
@@ -433,7 +441,8 @@ export const useSimStore = create<SimulatorState>()(
       mqttWillQos: draft.mqttWillQos ?? 1,
       mqttWillRetain: draft.mqttWillRetain ?? false,
       coapBaseUrl: draft.coapBaseUrl || 'http://localhost:9070',
-      streamMode: normalizeVideoStreamMode(draft.streamMode),
+      streamMode: normalizedVideoMode,
+      videoSourceType: draft.videoSourceType || defaultVideoSourceType,
       gbDeviceId: draft.gbDeviceId || '',
       gbDomain: draft.gbDomain || '3402000000',
       sourceUrl: draft.sourceUrl || draft.rtspUrl || '',

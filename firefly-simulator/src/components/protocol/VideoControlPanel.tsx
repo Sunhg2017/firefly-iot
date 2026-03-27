@@ -5,6 +5,7 @@ import { PlayCircleOutlined, PauseCircleOutlined, BugOutlined, DashboardOutlined
 import { useSimStore } from '../../store';
 import type { SimDevice } from '../../store';
 import { getActiveEnvironment, useSimWorkspaceStore } from '../../workspaceStore';
+import { buildLocalCameraSourceUrl } from '../../utils/video';
 
 const { Text } = Typography;
 
@@ -34,6 +35,10 @@ export default function VideoControlPanel({ device }: Props) {
   const gatewayBaseUrl = activeEnvironment.gatewayBaseUrl;
   const token = activeSession?.accessToken;
   const isGb28181 = device.streamMode === 'GB28181';
+  const isLocalProxySource = device.videoSourceType === 'LOCAL_CAMERA' && (device.streamMode === 'RTSP' || device.streamMode === 'RTMP');
+  const localProxyTarget = isLocalProxySource
+    ? buildLocalCameraSourceUrl(gatewayBaseUrl, device.streamMode, device.id)
+    : '';
 
   if (device.protocol !== 'Video' || !isOnline || !device.platformDeviceId) return null;
 
@@ -52,6 +57,20 @@ export default function VideoControlPanel({ device }: Props) {
                   addLog(device.id, device.name, 'error', '未登录当前环境，无法调用视频接口');
                   return;
                 }
+                if (isLocalProxySource) {
+                  const localStart = await window.electronAPI.localVideoStart(device.id, {
+                    mode: device.streamMode === 'RTMP' ? 'RTMP' : 'RTSP',
+                    targetUrl: localProxyTarget,
+                    fps: 15,
+                    width: 1280,
+                    height: 720,
+                  });
+                  if (!localStart.success) {
+                    addLog(device.id, device.name, 'error', `本地摄像头推流启动失败: ${localStart.message || '未知错误'}`);
+                    return;
+                  }
+                  addLog(device.id, device.name, 'success', `本地摄像头推流已启动: ${localProxyTarget}`);
+                }
                 const res = await window.electronAPI.videoControlStartStream(gatewayBaseUrl, device.platformDeviceId!, {}, token);
                 if (isVideoBizSuccess(res) && res.data?.data) {
                   const session = res.data.data;
@@ -59,6 +78,9 @@ export default function VideoControlPanel({ device }: Props) {
                   updateDevice(device.id, { streamUrl: url });
                   addLog(device.id, device.name, 'success', `推流已开始: ${url || JSON.stringify(session).slice(0, 150)}`);
                 } else {
+                  if (isLocalProxySource) {
+                    await window.electronAPI.localVideoStop(device.id);
+                  }
                   addLog(device.id, device.name, 'error', `推流失败: ${extractVideoResultMessage(res, '开始推流失败')}`);
                 }
               }}
@@ -76,6 +98,7 @@ export default function VideoControlPanel({ device }: Props) {
                 }
                 const res = await window.electronAPI.videoControlStopStream(gatewayBaseUrl, device.platformDeviceId!, token);
                 if (isVideoBizSuccess(res)) {
+                  await window.electronAPI.localVideoStop(device.id);
                   updateDevice(device.id, { streamUrl: '' });
                   addLog(device.id, device.name, 'success', '推流已停止');
                 } else {

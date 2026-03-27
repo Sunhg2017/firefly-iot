@@ -271,6 +271,7 @@ export default function DeviceListPanel() {
       ...(device.protocol === 'Video'
         ? {
             streamMode: device.streamMode,
+            videoSourceType: device.videoSourceType,
             gbDeviceId: device.gbDeviceId,
             gbDomain: device.gbDomain,
             sourceUrl: device.sourceUrl,
@@ -382,6 +383,11 @@ export default function DeviceListPanel() {
           mqttPassword: row.mqttPassword || row.password || '',
           coapBaseUrl: row.coapBaseUrl || row.baseUrl || String(environmentDefaults.coapBaseUrl),
           streamMode: normalizeVideoStreamMode(row.streamMode),
+          videoSourceType: row.videoSourceType === 'REMOTE_SOURCE'
+            ? 'REMOTE_SOURCE'
+            : (row.videoSourceType === 'LOCAL_CAMERA'
+              ? 'LOCAL_CAMERA'
+              : ((row.sourceUrl || row.rtspUrl) ? 'REMOTE_SOURCE' : 'LOCAL_CAMERA')),
           gbDeviceId: row.gbDeviceId || '',
           gbDomain: row.gbDomain || '3402000000',
           sourceUrl: row.sourceUrl || row.rtspUrl || '',

@@ -58,12 +58,21 @@
 - `RTSP / RTMP` 设备状态卡显示 `平台同步`、`连接状态`。
 - 不再复用通用设备的 `认证状态`、`自动上报` 口径展示 Video 状态。
 
+### 2.6 本地摄像头与码流发送
+
+- 新增 `videoSourceType`：
+  - `LOCAL_CAMERA`
+  - `REMOTE_SOURCE`
+- `GB28181` 默认 `LOCAL_CAMERA`，收到 INVITE 后自动按 SDP 目标地址发送本地 RTP 码流。
+- `RTSP / RTMP` 选择 `LOCAL_CAMERA` 时，模拟器自动生成 `sourceUrl`，并在开始推流前先启动本地摄像头推流进程。
+- Electron 主进程负责拉起并托管本地推流子进程，断开、停流、注销时统一回收。
+
 ## 3. GB28181 SIP 模拟
 
 - 保留本地 SIP 客户端能力
 - REGISTER 使用设备级 SIP 密码参与 Digest 认证（强制，禁止无密码注册）
 - Keepalive、Catalog、DeviceInfo、INVITE、BYE、PTZ 响应逻辑保持不变
-- 当前范围不包含本地摄像头采集、编码与 RTP 码流发送；GB28181 模拟仅覆盖信令联调链路
+- INVITE 时会从 SDP 解析目标 `ip/port/ssrc`，并驱动本地摄像头 RTP 发送
 
 ## 4. 设计取舍
 

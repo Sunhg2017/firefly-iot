@@ -98,6 +98,10 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
                   manufacturer: 'Firefly-Simulator',
                   model: 'Virtual-Camera',
                   firmware: '1.0.0',
+                  enableLocalMedia: device.videoSourceType === 'LOCAL_CAMERA',
+                  mediaFps: 15,
+                  mediaWidth: 1280,
+                  mediaHeight: 720,
                   channels: device.sipChannels.length > 0 ? device.sipChannels : [{
                     channelId: device.gbDeviceId.slice(0, 14) + '131' + device.gbDeviceId.slice(17),
                     name: `模拟通道-${device.name}`,

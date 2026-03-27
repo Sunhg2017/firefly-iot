@@ -1,12 +1,14 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { MqttClient, connect as mqttConnect } from 'mqtt';
 import http from 'http';
 import https from 'https';
 import WebSocket from 'ws';
 import net from 'net';
 import dgram from 'dgram';
+import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import { Gb28181Client, Gb28181Config, Gb28181Channel, SipClientEvent } from './gb28181-client';
 
 // ============================================================
@@ -16,9 +18,22 @@ import { Gb28181Client, Gb28181Config, Gb28181Channel, SipClientEvent } from './
 let mainWindow: BrowserWindow | null = null;
 const mqttClients = new Map<string, MqttClient>();
 const sipClients = new Map<string, Gb28181Client>();
+const sipLocalMediaConfigs = new Map<string, {
+  enableLocalMedia: boolean;
+  fps: number;
+  width: number;
+  height: number;
+  cameraDevice?: string;
+}>();
 const wsClients = new Map<string, WebSocket>();
 const tcpClients = new Map<string, net.Socket>();
 const udpClients = new Map<string, dgram.Socket>();
+const localVideoSessions = new Map<string, {
+  process: ChildProcessWithoutNullStreams;
+  mode: 'GB28181_RTP' | 'RTSP' | 'RTMP';
+  startedAt: number;
+  target: string;
+}>();
 // Dev mode is bootstrapped by vite-plugin-electron, so we guard against accidental
 // duplicate launches from stale scripts or manual `electron .` commands.
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -111,6 +126,141 @@ function trimRequired(value: string | null | undefined, message: string): string
   return normalized;
 }
 
+function getFfmpegBinaryPath(): string {
+  const envPath = (process.env.FFMPEG_PATH || '').trim();
+  if (envPath) {
+    return envPath;
+  }
+  if (ffmpegInstaller?.path) {
+    return ffmpegInstaller.path;
+  }
+  throw new Error('未找到 ffmpeg 运行时，请检查 @ffmpeg-installer/ffmpeg 安装或设置 FFMPEG_PATH');
+}
+
+function buildCameraInputArgs(config: {
+  fps: number;
+  width: number;
+  height: number;
+  cameraDevice?: string;
+}): string[] {
+  const fps = Math.max(5, Math.min(30, Number(config.fps) || 15));
+  const width = Math.max(320, Math.min(1920, Number(config.width) || 1280));
+  const height = Math.max(240, Math.min(1080, Number(config.height) || 720));
+  const cameraDevice = (config.cameraDevice || '').trim();
+  if (process.platform === 'darwin') {
+    return ['-f', 'avfoundation', '-framerate', String(fps), '-video_size', `${width}x${height}`, '-i', `${cameraDevice || '0'}:none`];
+  }
+  if (process.platform === 'win32') {
+    return ['-f', 'dshow', '-i', `video=${cameraDevice || 'default'}`];
+  }
+  return ['-f', 'v4l2', '-framerate', String(fps), '-video_size', `${width}x${height}`, '-i', cameraDevice || '/dev/video0'];
+}
+
+function stopLocalVideoSession(deviceId: string): Promise<void> {
+  return new Promise((resolve) => {
+    const existing = localVideoSessions.get(deviceId);
+    if (!existing) {
+      resolve();
+      return;
+    }
+    localVideoSessions.delete(deviceId);
+    existing.process.once('exit', () => resolve());
+    existing.process.kill('SIGTERM');
+    setTimeout(() => {
+      if (!existing.process.killed) {
+        existing.process.kill('SIGKILL');
+      }
+      resolve();
+    }, 1500);
+  });
+}
+
+async function startLocalVideoSession(
+  deviceId: string,
+  config: {
+    mode: 'GB28181_RTP' | 'RTSP' | 'RTMP';
+    targetUrl?: string;
+    targetIp?: string;
+    targetPort?: number;
+    ssrc?: string;
+    fps?: number;
+    width?: number;
+    height?: number;
+    cameraDevice?: string;
+  },
+) {
+  const mode = config.mode;
+  const fps = Math.max(5, Math.min(30, Number(config.fps) || 15));
+  const width = Math.max(320, Math.min(1920, Number(config.width) || 1280));
+  const height = Math.max(240, Math.min(1080, Number(config.height) || 720));
+  const cameraDevice = (config.cameraDevice || '').trim() || undefined;
+  await stopLocalVideoSession(deviceId);
+  const ffmpeg = getFfmpegBinaryPath();
+  const args = [
+    '-hide_banner',
+    '-loglevel',
+    'warning',
+    ...buildCameraInputArgs({ fps, width, height, cameraDevice }),
+    '-an',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-tune',
+    'zerolatency',
+    '-pix_fmt',
+    'yuv420p',
+    '-g',
+    String(Math.max(10, fps * 2)),
+    '-r',
+    String(fps),
+  ];
+
+  let target = '';
+  if (mode === 'RTMP') {
+    const targetUrl = trimRequired(config.targetUrl, 'RTMP 推流地址不能为空');
+    target = targetUrl;
+    args.push('-f', 'flv', targetUrl);
+  } else if (mode === 'RTSP') {
+    const targetUrl = trimRequired(config.targetUrl, 'RTSP 推流地址不能为空');
+    target = targetUrl;
+    args.push('-rtsp_transport', 'tcp', '-f', 'rtsp', targetUrl);
+  } else {
+    const targetIp = trimRequired(config.targetIp, 'RTP 目标地址不能为空');
+    const targetPort = Number(config.targetPort || 0);
+    if (!Number.isInteger(targetPort) || targetPort <= 0 || targetPort > 65535) {
+      throw new Error('RTP 目标端口不正确');
+    }
+    target = `rtp://${targetIp}:${targetPort}`;
+    args.push('-f', 'rtp_mpegts', `${target}?pkt_size=1316`);
+  }
+
+  const child = spawn(ffmpeg, args, {
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  localVideoSessions.set(deviceId, {
+    process: child,
+    mode,
+    startedAt: Date.now(),
+    target,
+  });
+  child.on('exit', () => {
+    const current = localVideoSessions.get(deviceId);
+    if (current?.process === child) {
+      localVideoSessions.delete(deviceId);
+    }
+  });
+  child.stderr.on('data', (chunk) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('sip:event', deviceId, {
+        type: 'error',
+        message: `本地码流告警: ${String(chunk).trim()}`,
+      });
+    }
+  });
+}
+
 function createWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) {
@@ -173,6 +323,9 @@ if (!hasSingleInstanceLock) {
 app.on('window-all-closed', () => {
   mqttClients.forEach((client) => client.end(true));
   mqttClients.clear();
+  localVideoSessions.forEach((session) => session.process.kill('SIGTERM'));
+  localVideoSessions.clear();
+  sipLocalMediaConfigs.clear();
   wsClients.forEach((ws) => ws.close());
   wsClients.clear();
   tcpClients.forEach((sock) => sock.destroy());
@@ -789,6 +942,49 @@ ipcMain.handle('videoControl:stopRecording', async (_e, baseUrl: string, deviceI
   return gatewayServiceJsonRequest(baseUrl, 'MEDIA', `/api/v1/video/devices/${deviceId}/record/stop`, 'POST', token, {});
 });
 
+ipcMain.handle('localVideo:start', async (_e, id: string, config: {
+  mode: 'GB28181_RTP' | 'RTSP' | 'RTMP';
+  targetUrl?: string;
+  targetIp?: string;
+  targetPort?: number;
+  ssrc?: string;
+  fps?: number;
+  width?: number;
+  height?: number;
+  cameraDevice?: string;
+}) => {
+  try {
+    await startLocalVideoSession(id, config);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, message: err.message || '本地码流启动失败' };
+  }
+});
+
+ipcMain.handle('localVideo:stop', async (_e, id: string) => {
+  try {
+    await stopLocalVideoSession(id);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, message: err.message || '本地码流停止失败' };
+  }
+});
+
+ipcMain.handle('localVideo:status', async (_e, id: string) => {
+  const session = localVideoSessions.get(id);
+  return {
+    success: true,
+    data: session
+      ? {
+        active: true,
+        mode: session.mode,
+        startedAt: session.startedAt,
+        target: session.target,
+      }
+      : { active: false },
+  };
+});
+
 // ============================================================
 // GB28181 SIP Simulation IPC Handlers
 // ============================================================
@@ -801,11 +997,46 @@ ipcMain.handle('sip:start', async (_e, id: string, config: Gb28181Config) => {
       await existing.stop();
       sipClients.delete(id);
     }
+    await stopLocalVideoSession(id);
+    sipLocalMediaConfigs.set(id, {
+      enableLocalMedia: Boolean((config as any).enableLocalMedia),
+      fps: Number((config as any).mediaFps) || 15,
+      width: Number((config as any).mediaWidth) || 1280,
+      height: Number((config as any).mediaHeight) || 720,
+      cameraDevice: (config as any).cameraDevice,
+    });
 
     const client = new Gb28181Client(config);
 
     // Forward SIP events to renderer
-    client.on('event', (evt: SipClientEvent) => {
+    client.on('event', async (evt: SipClientEvent) => {
+      if (evt.type === 'invite_accepted') {
+        const mediaConfig = sipLocalMediaConfigs.get(id);
+        if (mediaConfig?.enableLocalMedia) {
+          try {
+            await startLocalVideoSession(id, {
+              mode: 'GB28181_RTP',
+              targetIp: evt.rtpIp,
+              targetPort: evt.rtpPort,
+              ssrc: evt.ssrc,
+              fps: mediaConfig.fps,
+              width: mediaConfig.width,
+              height: mediaConfig.height,
+              cameraDevice: mediaConfig.cameraDevice,
+            });
+          } catch (error: any) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('sip:event', id, {
+                type: 'error',
+                message: `本地码流启动失败: ${error?.message || '未知错误'}`,
+              });
+            }
+          }
+        }
+      }
+      if (evt.type === 'bye_accepted' || evt.type === 'unregistered') {
+        await stopLocalVideoSession(id);
+      }
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('sip:event', id, evt);
       }
@@ -815,6 +1046,8 @@ ipcMain.handle('sip:start', async (_e, id: string, config: Gb28181Config) => {
     sipClients.set(id, client);
     return { success: true };
   } catch (err: any) {
+    sipLocalMediaConfigs.delete(id);
+    await stopLocalVideoSession(id);
     return { success: false, message: err.message };
   }
 });
@@ -835,6 +1068,7 @@ ipcMain.handle('sip:unregister', async (_e, id: string) => {
     const client = sipClients.get(id);
     if (!client) return { success: false, message: 'SIP client not started' };
     await client.unregister();
+    await stopLocalVideoSession(id);
     return { success: true };
   } catch (err: any) {
     return { success: false, message: err.message };
@@ -876,6 +1110,8 @@ ipcMain.handle('sip:updateChannels', async (_e, id: string, channels: Gb28181Cha
 
 ipcMain.handle('sip:stop', async (_e, id: string) => {
   try {
+    await stopLocalVideoSession(id);
+    sipLocalMediaConfigs.delete(id);
     const client = sipClients.get(id);
     if (client) {
       await client.stop();

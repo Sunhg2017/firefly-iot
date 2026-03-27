@@ -134,6 +134,31 @@ function resolveProductProtocolQuery(protocol: Protocol, streamMode?: string): s
   }
 }
 
+function normalizeVideoSourceType(value: unknown): 'LOCAL_CAMERA' | 'REMOTE_SOURCE' {
+  return value === 'REMOTE_SOURCE' ? 'REMOTE_SOURCE' : 'LOCAL_CAMERA';
+}
+
+function buildAutoLocalSourcePreview(baseUrl: string, streamMode?: string, seedName?: string): string {
+  const normalizedMode = normalizeVideoStreamMode(streamMode);
+  if (!isProxyVideoMode(normalizedMode)) {
+    return '';
+  }
+  try {
+    const parsed = new URL(baseUrl);
+    const host = parsed.hostname || '127.0.0.1';
+    const sanitizedSeed = (seedName || 'simulator-camera')
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      || 'simulator-camera';
+    return normalizedMode === 'RTMP'
+      ? `rtmp://${host}:1935/live/${sanitizedSeed}`
+      : `rtsp://${host}:554/live/${sanitizedSeed}`;
+  } catch {
+    return '';
+  }
+}
+
 function buildInitialValues(
   environment: ReturnType<typeof getActiveEnvironment>,
 ): Record<string, unknown> {
@@ -147,6 +172,7 @@ function buildInitialValues(
     mqttWillQos: 1,
     mqttWillRetain: false,
     streamMode: 'GB28181',
+    videoSourceType: 'LOCAL_CAMERA',
     gbDomain: '3402000000',
     ip: '127.0.0.1',
     sipServerIp: '127.0.0.1',
@@ -171,7 +197,14 @@ function buildInitialValues(
   };
 }
 
-function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, streamMode?: string, httpAuthMode?: string): string[] {
+function getStepFields(
+  protocol: Protocol,
+  step: number,
+  mqttAuthMode?: string,
+  streamMode?: string,
+  httpAuthMode?: string,
+  videoSourceType?: string,
+): string[] {
   if (step === 0) return ['name', 'protocol'];
   if (step === 1) {
     switch (protocol) {
@@ -180,7 +213,15 @@ function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, 
       case 'MQTT':
         return ['productKey', 'deviceName', 'mqttBrokerUrl', ...(mqttAuthMode === 'PRODUCT_SECRET' ? ['mqttRegisterBaseUrl', 'productSecret'] : ['deviceSecret'])];
       case 'Video':
-        return ['productKey', 'streamMode', ...(isProxyVideoMode(streamMode) ? ['sourceUrl'] : ['gbDeviceId', 'gbDomain'])];
+        return [
+          'productKey',
+          'streamMode',
+          'videoSourceType',
+          ...(isProxyVideoMode(streamMode) && normalizeVideoSourceType(videoSourceType) === 'REMOTE_SOURCE'
+            ? ['sourceUrl']
+            : []),
+          ...(!isProxyVideoMode(streamMode) ? ['gbDeviceId', 'gbDomain'] : []),
+        ];
       case 'CoAP':
         return ['coapBaseUrl', 'productKey', 'deviceName', 'deviceSecret'];
       case 'SNMP':
@@ -205,12 +246,20 @@ function getStepFields(protocol: Protocol, step: number, mqttAuthMode?: string, 
   return [];
 }
 
-function buildSummary(values: Record<string, unknown>, products: TenantProductRecord[]) {
+function buildSummary(values: Record<string, unknown>, products: TenantProductRecord[], gatewayBaseUrl: string) {
   const protocol = (values.protocol || 'HTTP') as string;
   const selectedProduct = products.find((item) => item.productKey === values.productKey);
   const streamMode = normalizeVideoStreamMode(typeof values.streamMode === 'string' ? values.streamMode : undefined);
+  const videoSourceType = normalizeVideoSourceType(values.videoSourceType);
+  const localPreview = buildAutoLocalSourcePreview(
+    gatewayBaseUrl,
+    streamMode,
+    trimText(values.name as string | undefined),
+  );
   const videoEndpoint = isProxyVideoMode(streamMode)
-    ? trimText(values.sourceUrl)
+    ? (videoSourceType === 'LOCAL_CAMERA'
+      ? localPreview
+      : trimText(values.sourceUrl))
     : [trimText(values.ip as string | undefined) || '127.0.0.1', values.sipLocalPort || 5080].join(':');
   const items = [
     { key: 'name', label: '设备名称', value: values.name || '-' },
@@ -255,9 +304,10 @@ export default function AddDeviceModal({ open, onClose }: Props) {
   const httpAuthMode = formSnapshot.httpAuthMode as string | undefined;
   const mqttAuthMode = formSnapshot.mqttAuthMode as string | undefined;
   const streamMode = formSnapshot.streamMode as string | undefined;
+  const videoSourceType = normalizeVideoSourceType(formSnapshot.videoSourceType);
   const meta = useMemo(() => PROTOCOL_META[protocol], [protocol]);
   const sourcePreview = useMemo(() => {
-    if (protocol !== 'Video' || !isProxyVideoMode(streamMode)) {
+    if (protocol !== 'Video' || !isProxyVideoMode(streamMode) || videoSourceType !== 'REMOTE_SOURCE') {
       return null;
     }
     try {
@@ -265,7 +315,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
     } catch {
       return null;
     }
-  }, [formSnapshot.sourceUrl, protocol, streamMode]);
+  }, [formSnapshot.sourceUrl, protocol, streamMode, videoSourceType]);
   const canSelectTenantProduct = supportsTenantProductSelection(protocol)
     && Boolean(activeSession?.accessToken)
     && !productLoadError
@@ -314,6 +364,9 @@ export default function AddDeviceModal({ open, onClose }: Props) {
 
     // Video 的产品协议由当前视频模式决定，模式切换后不能继续复用旧 ProductKey。
     form.setFieldValue('productKey', undefined);
+    if (!isProxyVideoMode(streamMode)) {
+      form.setFieldValue('videoSourceType', 'LOCAL_CAMERA');
+    }
     setFormSnapshot(form.getFieldsValue(true));
     message.info('视频模式已切换，请重新选择匹配当前模式的产品');
   }, [form, open, protocol, streamMode]);
@@ -404,7 +457,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
   ]);
 
   const nextStep = async () => {
-    const fields = getStepFields(protocol, currentStep, mqttAuthMode, streamMode, httpAuthMode);
+    const fields = getStepFields(protocol, currentStep, mqttAuthMode, streamMode, httpAuthMode, videoSourceType);
     if (fields.length > 0) {
       await form.validateFields(fields);
     }
@@ -414,8 +467,8 @@ export default function AddDeviceModal({ open, onClose }: Props) {
   const handleCreateDevice = async () => {
     const submitFields = Array.from(new Set([
       ...getStepFields(protocol, 0, mqttAuthMode, streamMode, httpAuthMode),
-      ...getStepFields(protocol, 1, mqttAuthMode, streamMode, httpAuthMode),
-      ...getStepFields(protocol, 2, mqttAuthMode, streamMode, httpAuthMode),
+      ...getStepFields(protocol, 1, mqttAuthMode, streamMode, httpAuthMode, videoSourceType),
+      ...getStepFields(protocol, 2, mqttAuthMode, streamMode, httpAuthMode, videoSourceType),
     ]));
     if (submitFields.length > 0) {
       await form.validateFields(submitFields);
@@ -423,9 +476,21 @@ export default function AddDeviceModal({ open, onClose }: Props) {
 
     const values = form.getFieldsValue(true);
     const effectiveDeviceName = resolveEffectiveDeviceName(values);
+    const normalizedVideoStreamMode = protocol === 'Video'
+      ? normalizeVideoStreamMode(typeof values.streamMode === 'string' ? values.streamMode : undefined)
+      : undefined;
+    const normalizedVideoSourceType = protocol === 'Video'
+      ? normalizeVideoSourceType(values.videoSourceType)
+      : undefined;
     const normalizedValues = {
       ...values,
-      streamMode: protocol === 'Video' ? normalizeVideoStreamMode(typeof values.streamMode === 'string' ? values.streamMode : undefined) : values.streamMode,
+      streamMode: protocol === 'Video' ? normalizedVideoStreamMode : values.streamMode,
+      videoSourceType: protocol === 'Video' ? normalizedVideoSourceType : values.videoSourceType,
+      sourceUrl: protocol === 'Video'
+        && isProxyVideoMode(normalizedVideoStreamMode)
+        && normalizedVideoSourceType === 'LOCAL_CAMERA'
+        ? ''
+        : values.sourceUrl,
       // Video 设备不再保留空的 DeviceName，而是统一映射到当前可识别的业务标识。
       deviceName: effectiveDeviceName,
       // 模拟设备名称就是平台侧昵称口径，避免再维护一个重复输入框。
@@ -714,29 +779,43 @@ export default function AddDeviceModal({ open, onClose }: Props) {
               </Radio.Group>
             </Form.Item>
             {isProxyVideoMode(streamMode) ? (
+              <Form.Item name="videoSourceType" label="媒体源">
+                <Radio.Group>
+                  <Radio.Button value="LOCAL_CAMERA">本地摄像头</Radio.Button>
+                  <Radio.Button value="REMOTE_SOURCE">外部源地址</Radio.Button>
+                </Radio.Group>
+              </Form.Item>
+            ) : null}
+            {isProxyVideoMode(streamMode) ? (
               <>
-                <Form.Item
-                  name="sourceUrl"
-                  label={getVideoSourceFieldLabel(streamMode)}
-                  rules={[
-                    { required: true, message: `请输入${getVideoSourceFieldLabel(streamMode)}` },
-                    {
-                      validator: async (_, value) => {
-                        if (!trimText(value)) {
-                          return;
-                        }
-                        parseVideoSourceUrl(streamMode, value);
+                {videoSourceType === 'REMOTE_SOURCE' ? (
+                  <Form.Item
+                    name="sourceUrl"
+                    label={getVideoSourceFieldLabel(streamMode)}
+                    rules={[
+                      { required: true, message: `请输入${getVideoSourceFieldLabel(streamMode)}` },
+                      {
+                        validator: async (_, value) => {
+                          if (!trimText(value)) {
+                            return;
+                          }
+                          parseVideoSourceUrl(streamMode, value);
+                        },
                       },
-                    },
-                  ]}
-                >
-                  <Input placeholder={streamMode === 'RTMP' ? 'rtmp://127.0.0.1/live/camera-001' : 'rtsp://127.0.0.1:554/live/camera-001'} />
-                </Form.Item>
+                    ]}
+                  >
+                    <Input placeholder={streamMode === 'RTMP' ? 'rtmp://127.0.0.1/live/camera-001' : 'rtsp://127.0.0.1:554/live/camera-001'} />
+                  </Form.Item>
+                ) : null}
                 <Form.Item label="平台接入地址">
                   <Input
                     readOnly
-                    value={sourcePreview ? `${sourcePreview.host}:${sourcePreview.port}` : ''}
-                    placeholder="根据源地址自动解析 IP 和端口"
+                    value={videoSourceType === 'LOCAL_CAMERA'
+                      ? buildAutoLocalSourcePreview(activeEnvironment.gatewayBaseUrl, streamMode, trimText(formSnapshot.name))
+                      : (sourcePreview ? `${sourcePreview.host}:${sourcePreview.port}` : '')}
+                    placeholder={videoSourceType === 'LOCAL_CAMERA'
+                      ? '根据当前环境自动生成本地推流地址'
+                      : '根据源地址自动解析 IP 和端口'}
                   />
                 </Form.Item>
               </>
@@ -916,7 +995,9 @@ export default function AddDeviceModal({ open, onClose }: Props) {
                   {
                     key: 'sourceUrl',
                     label: getVideoSourceFieldLabel(streamMode),
-                    children: <Text>{trimText(formSnapshot.sourceUrl) || '-'}</Text>,
+                    children: <Text>{videoSourceType === 'LOCAL_CAMERA'
+                      ? buildAutoLocalSourcePreview(activeEnvironment.gatewayBaseUrl, streamMode, trimText(formSnapshot.name))
+                      : (trimText(formSnapshot.sourceUrl) || '-')}</Text>,
                   },
                   {
                     key: 'endpoint',
@@ -944,7 +1025,7 @@ export default function AddDeviceModal({ open, onClose }: Props) {
         <Descriptions
           size="small"
           column={1}
-          items={buildSummary(formSnapshot, products).map((item) => ({
+          items={buildSummary(formSnapshot, products, activeEnvironment.gatewayBaseUrl).map((item) => ({
             key: item.key,
             label: item.label,
             children: <Text>{String(item.value)}</Text>,

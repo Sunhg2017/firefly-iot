@@ -106,7 +106,9 @@ npm run electron:build
 - Video 设备连接和控制前，必须先登录当前环境
 - GB28181 模式会自动使用 `国标设备 ID` 作为本地 `DeviceName`
 - RTSP / RTMP 模式会自动使用“模拟设备名称”作为本地 `DeviceName`
-- RTSP / RTMP 模式使用完整 `sourceUrl` 同步平台设备资产，同时自动解析并回填平台侧 `IP / 端口`
+- RTSP / RTMP 模式支持两种媒体源：
+  - `本地摄像头`：自动生成 `sourceUrl` 并回填平台资产
+  - `外部源地址`：使用手工填写的 `sourceUrl`
 - 再次连接同一台视频设备时，模拟器会优先复用已关联的 `platformDeviceId`
 - Video 设备现在也支持先绑定平台产品，再按 `ProductKey` 同步当前产品物模型
 
@@ -134,9 +136,10 @@ npm run electron:build
 | Keepalive | SIP MESSAGE → 平台 | 定时心跳（XML CmdType=Keepalive） |
 | Catalog 响应 | SIP MESSAGE → 平台 | 自动回复平台的目录查询，返回模拟通道列表 |
 | DeviceInfo 响应 | SIP MESSAGE → 平台 | 自动回复设备信息查询（厂商/型号/固件） |
-| INVITE 应答 | 100 Trying + 200 OK + SDP ← 平台 | 自动接受平台点播请求，返回 SDP（sendonly） |
+| INVITE 应答 | 100 Trying + 200 OK + SDP ← 平台 | 自动接受平台点播请求，返回 SDP（sendonly）并解析 RTP 目标地址 |
 | BYE 应答 | 200 OK ← 平台 | 自动接受流停止请求 |
 | PTZ 接收 | MESSAGE ← 平台 | 接收并记录平台下发的云台控制指令 |
+| 本地码流发送 | 本地摄像头 → RTP/RTSP/RTMP | 由 Electron 主进程托管本地推流进程，支持随停流/断开自动回收 |
 
 **高级特性:**
 - **SIP Digest 认证** — 自动处理 401/407 挑战，MD5 摘要计算（RFC 2617）
@@ -150,7 +153,8 @@ npm run electron:build
 3. 连接设备（在平台注册或同步视频设备）
 4. 点击「SIP 注册」→ 发送 REGISTER 到平台 SIP 服务器（如需认证会自动完成）
 5. 点击「开启心跳」→ 定时发送 Keepalive
-6. 平台发送 Catalog/DeviceInfo/INVITE/BYE/PTZ 等指令时，模拟器自动响应
+6. 点击「开始推流」后，平台发送 INVITE 时会自动触发本地码流发送
+7. 平台发送 Catalog/DeviceInfo/INVITE/BYE/PTZ 等指令时，模拟器自动响应
 
 ### SNMP Mode
 

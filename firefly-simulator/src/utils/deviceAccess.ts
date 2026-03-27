@@ -103,7 +103,7 @@ export function getDeviceAccessMissingFields(device: SimDevice): string[] {
         if (!trim(device.gbDeviceId)) missing.push('国标设备 ID');
         if (!trim(device.gbDomain)) missing.push('国标域');
         if (!trim(device.sipPassword)) missing.push('SIP 密码');
-      } else if (!trim(device.sourceUrl)) {
+      } else if (device.videoSourceType === 'REMOTE_SOURCE' && !trim(device.sourceUrl)) {
         missing.push(getVideoSourceFieldLabel(device.streamMode));
       }
       return missing;
@@ -122,7 +122,12 @@ export function getDeviceAccessValidationError(device: SimDevice): string | null
     return null;
   }
 
-  if (device.protocol === 'Video' && isProxyVideoMode(device.streamMode) && trim(device.sourceUrl)) {
+  if (
+    device.protocol === 'Video'
+    && isProxyVideoMode(device.streamMode)
+    && device.videoSourceType === 'REMOTE_SOURCE'
+    && trim(device.sourceUrl)
+  ) {
     try {
       parseVideoSourceUrl(device.streamMode, device.sourceUrl);
     } catch (error) {
@@ -207,9 +212,12 @@ export function getDeviceAccessOverviewItems(device: SimDevice): AccessOverviewI
         { label: 'ProductKey', value: trim(device.productKey) || '未配置' },
         { label: 'DeviceName', value: trim(device.deviceName) || '未配置' },
         { label: '模式', value: normalizeVideoStreamMode(device.streamMode), highlight: true },
+        { label: '媒体源', value: device.videoSourceType === 'REMOTE_SOURCE' ? '外部源地址' : '本地摄像头' },
         {
           label: normalizeVideoStreamMode(device.streamMode) === 'GB28181' ? '国标设备 ID' : getVideoSourceFieldLabel(device.streamMode),
-          value: trim(normalizeVideoStreamMode(device.streamMode) === 'GB28181' ? device.gbDeviceId : device.sourceUrl) || '未配置',
+          value: trim(normalizeVideoStreamMode(device.streamMode) === 'GB28181'
+            ? device.gbDeviceId
+            : (device.videoSourceType === 'LOCAL_CAMERA' ? '自动生成' : device.sourceUrl)) || '未配置',
         },
         {
           label: normalizeVideoStreamMode(device.streamMode) === 'GB28181' ? '国标域' : '平台接入地址',

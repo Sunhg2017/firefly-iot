@@ -135,6 +135,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('videoControl:startRecording', baseUrl, deviceId, token),
   videoControlStopRecording: (baseUrl: string, deviceId: number, token?: string) =>
     ipcRenderer.invoke('videoControl:stopRecording', baseUrl, deviceId, token),
+  localVideoStart: (
+    id: string,
+    config: {
+      mode: 'GB28181_RTP' | 'RTSP' | 'RTMP';
+      targetUrl?: string;
+      targetIp?: string;
+      targetPort?: number;
+      ssrc?: string;
+      fps?: number;
+      width?: number;
+      height?: number;
+      cameraDevice?: string;
+    },
+  ) => ipcRenderer.invoke('localVideo:start', id, config),
+  localVideoStop: (id: string) => ipcRenderer.invoke('localVideo:stop', id),
+  localVideoStatus: (id: string) => ipcRenderer.invoke('localVideo:status', id),
 
   // GB28181 SIP Simulation
   sipStart: (id: string, config: any) => ipcRenderer.invoke('sip:start', id, config),
