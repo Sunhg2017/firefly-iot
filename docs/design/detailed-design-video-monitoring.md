@@ -177,6 +177,7 @@
 - 部署脚本会从仓库内的 `deploy/zlmediakit/config.template.ini` 生成并维护 `deploy/runtime/zlmediakit/config.ini`，再通过 compose 挂载到容器内，保证 `api.secret` 与 `ZLM_SECRET` 保持一致，而不是依赖镜像随机生成值；`ZLM_SECRET` 必须使用纯字母数字格式，禁止继续使用带连字符的 UUID。
 - `compose` 部署默认内置 `zlmediakit` 基础设施，HTTP API 暴露为宿主机 `18080`，RTSP 暴露为宿主机 `18554`。
 - `RTSP / RTMP` 代理流继续使用 `live/{streamId}` 作为 ZLM 应用名和播放地址。
+- 若设备由模拟器的 `RTSP / RTMP + 本地摄像头` 模式自动创建，平台资产 `ip` 字段展示模拟器主机地址，`sourceUrl` 继续保存 ZLM 推流地址；设备列表的 IP 列不得再误显示成基础设施 ZLM 节点。
 - `RTSP / RTMP` 重复点击播放时，`startStream` 也必须优先检查 `stream_sessions` 与 ZLM `live/{streamId}` 实时流状态；若代理流仍存在则直接复用当前会话，避免再次调用 `addStreamProxy` 触发 `This stream already exists`。
 - 若 `RTSP / RTMP` 的代理流仍在 ZLM 中，但数据库会话已丢失，平台会按当前 `streamId` 补建 `ACTIVE` 会话并直接返回播放地址，避免 orphan runtime 卡死后仍无法重播。
 - `GB28181` 开流前必须先调用 ZLM `openRtpServer` 打开 RTP 收流端口，并显式绑定自定义 `streamId`。

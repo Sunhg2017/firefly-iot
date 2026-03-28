@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   simulatorStoreGetItem: (name: string) => ipcRenderer.invoke('simulator-store:get', name),
   simulatorStoreSetItem: (name: string, value: string) => ipcRenderer.invoke('simulator-store:set', name, value),
   simulatorStoreRemoveItem: (name: string) => ipcRenderer.invoke('simulator-store:remove', name),
+  simulatorListLocalIps: () => ipcRenderer.invoke('simulator:listLocalIps'),
 
   simulatorAuthLogin: (
     baseUrl: string,

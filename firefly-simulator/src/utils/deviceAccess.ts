@@ -208,20 +208,21 @@ export function getDeviceAccessOverviewItems(device: SimDevice): AccessOverviewI
         { label: 'fPort', value: String(device.loraFPort || 1) },
       ];
     case 'Video':
+      const streamMode = normalizeVideoStreamMode(device.streamMode);
       return [
         { label: 'ProductKey', value: trim(device.productKey) || '未配置' },
         { label: 'DeviceName', value: trim(device.deviceName) || '未配置' },
-        { label: '模式', value: normalizeVideoStreamMode(device.streamMode), highlight: true },
+        { label: '模式', value: streamMode, highlight: true },
         { label: '媒体源', value: device.videoSourceType === 'REMOTE_SOURCE' ? '外部源地址' : '本地摄像头' },
         {
-          label: normalizeVideoStreamMode(device.streamMode) === 'GB28181' ? '国标设备 ID' : getVideoSourceFieldLabel(device.streamMode),
-          value: trim(normalizeVideoStreamMode(device.streamMode) === 'GB28181'
+          label: streamMode === 'GB28181' ? '国标设备 ID' : getVideoSourceFieldLabel(device.streamMode),
+          value: trim(streamMode === 'GB28181'
             ? device.gbDeviceId
             : (device.videoSourceType === 'LOCAL_CAMERA' ? '自动生成' : device.sourceUrl)) || '未配置',
         },
         {
-          label: normalizeVideoStreamMode(device.streamMode) === 'GB28181' ? '国标域' : '平台接入地址',
-          value: normalizeVideoStreamMode(device.streamMode) === 'GB28181'
+          label: streamMode === 'GB28181' ? '国标域' : '平台接入地址',
+          value: streamMode === 'GB28181'
             ? trim(device.gbDomain) || '未配置'
             : (() => {
               try {
@@ -232,6 +233,9 @@ export function getDeviceAccessOverviewItems(device: SimDevice): AccessOverviewI
               }
             })(),
         },
+        ...(streamMode !== 'GB28181'
+          ? [{ label: '设备 IP', value: trim(device.ip) || '未设置' }]
+          : []),
         ...(device.videoSourceType === 'LOCAL_CAMERA'
           ? [
             { label: '摄像头设备', value: trim(device.cameraDevice) || '系统默认' },
@@ -242,7 +246,7 @@ export function getDeviceAccessOverviewItems(device: SimDevice): AccessOverviewI
           label: '平台设备资产',
           value: trim(String(device.platformDeviceId ?? '')) || '未设置',
         },
-        ...(normalizeVideoStreamMode(device.streamMode) === 'GB28181'
+        ...(streamMode === 'GB28181'
           ? [{ label: 'SIP 密码', value: maskSecret(device.sipPassword) }]
           : []),
       ];

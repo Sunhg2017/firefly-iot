@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { MqttClient, connect as mqttConnect } from 'mqtt';
 import http from 'http';
@@ -49,6 +50,11 @@ interface LocalVideoModeOption {
   width: number;
   height: number;
   fps: number;
+}
+
+interface LocalIpv4Option {
+  value: string;
+  label: string;
 }
 
 function isMostlyText(buffer: Buffer) {
@@ -110,6 +116,31 @@ function writeSimulatorStore(nextStore: Record<string, string>) {
   const filePath = getSimulatorStoreFilePath();
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(nextStore, null, 2), 'utf-8');
+}
+
+function listLocalIpv4Options(): LocalIpv4Option[] {
+  const interfaces = os.networkInterfaces();
+  const options: LocalIpv4Option[] = [];
+  const seen = new Set<string>();
+
+  Object.entries(interfaces).forEach(([interfaceName, addresses]) => {
+    addresses?.forEach((address, index) => {
+      if (!address || address.internal || address.family !== 'IPv4') {
+        return;
+      }
+      const ip = address.address?.trim();
+      if (!ip || seen.has(ip)) {
+        return;
+      }
+      seen.add(ip);
+      options.push({
+        value: ip,
+        label: `${ip} (${interfaceName}${addresses.length > 1 ? ` #${index + 1}` : ''})`,
+      });
+    });
+  });
+
+  return options;
 }
 
 interface SimulatorAuthLoginPayload {
@@ -1063,6 +1094,11 @@ ipcMain.handle('simulator-store:remove', async (_e, name: string) => {
   delete store[name];
   writeSimulatorStore(store);
 });
+
+ipcMain.handle('simulator:listLocalIps', async () => ({
+  success: true,
+  data: listLocalIpv4Options(),
+}));
 
 // ============================================================
 // HTTP Protocol IPC Handlers

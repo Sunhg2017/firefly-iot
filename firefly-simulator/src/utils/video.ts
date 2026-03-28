@@ -303,7 +303,7 @@ export function buildVideoCreatePayload(
   }
 
   const parsedSource = parseVideoSourceUrl(streamMode, options?.sourceUrlOverride ?? device.sourceUrl);
-  payload.ip = parsedSource?.host;
+  payload.ip = normalizeOptionalText(device.ip) || parsedSource?.host;
   payload.port = parsedSource?.port;
   payload.sourceUrl = parsedSource?.normalizedUrl;
   return payload;

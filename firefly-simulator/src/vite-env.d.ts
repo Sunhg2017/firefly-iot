@@ -4,6 +4,13 @@ interface ElectronAPI {
   simulatorStoreGetItem: (name: string) => Promise<string | null>;
   simulatorStoreSetItem: (name: string, value: string) => Promise<void>;
   simulatorStoreRemoveItem: (name: string) => Promise<void>;
+  simulatorListLocalIps: () => Promise<{
+    success: boolean;
+    data?: Array<{
+      value: string;
+      label: string;
+    }>;
+  }>;
   simulatorAuthLogin: (
     baseUrl: string,
     payload: {

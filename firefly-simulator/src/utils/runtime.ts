@@ -18,6 +18,7 @@ import {
   buildVideoUpdatePayload,
   getActiveVideoApiContext,
   getVideoIdentityKeyword,
+  isProxyVideoMode,
   matchesVideoIdentity,
 } from './video';
 import { buildSimulatorSipStartConfig } from './sip';
@@ -43,6 +44,10 @@ export function isRestorableProtocol(protocol: Protocol) {
 
 function getDevice(deviceId: string) {
   return useSimStore.getState().devices.find((item) => item.id === deviceId);
+}
+
+function trimText(value?: string | null) {
+  return (value ?? '').trim();
 }
 
 function clearDeviceAutoTimer(device: SimDevice) {
@@ -77,7 +82,35 @@ function getActiveSimulatorEnvironment() {
   return getActiveEnvironment(workspaceState.environments, workspaceState.activeEnvironmentId);
 }
 
-function resolveVideoDeviceForSync(device: SimDevice): SimDevice {
+function shouldRefreshLocalProxyVideoIp(device: SimDevice) {
+  if (
+    device.protocol !== 'Video'
+    || device.videoSourceType !== 'LOCAL_CAMERA'
+    || !isProxyVideoMode(device.streamMode)
+  ) {
+    return false;
+  }
+  // RTSP/RTMP 本地摄像头场景下，平台资产 IP 应展示模拟器所在主机，而不是 ZLM 接入地址。
+  const currentIp = trimText(device.ip);
+  if (!currentIp || currentIp === '127.0.0.1') {
+    return true;
+  }
+  return currentIp === trimText(getActiveSimulatorEnvironment().mediaHost);
+}
+
+async function resolveLocalProxyVideoIp(device: SimDevice) {
+  if (!shouldRefreshLocalProxyVideoIp(device)) {
+    return trimText(device.ip);
+  }
+  const result = await window.electronAPI.simulatorListLocalIps();
+  const records = result?.success && Array.isArray(result.data) ? result.data : [];
+  const candidate = records
+    .map((item) => trimText(item?.value))
+    .find(Boolean);
+  return candidate || trimText(device.ip) || '127.0.0.1';
+}
+
+async function resolveVideoDeviceForSync(device: SimDevice): Promise<SimDevice> {
   if (device.protocol !== 'Video' || device.videoSourceType !== 'LOCAL_CAMERA') {
     return device;
   }
@@ -85,12 +118,11 @@ function resolveVideoDeviceForSync(device: SimDevice): SimDevice {
     return device;
   }
   const localSourceUrl = buildLocalCameraSourceUrl(getActiveSimulatorEnvironment(), device.streamMode, device.id);
-  if (!localSourceUrl) {
-    return device;
-  }
+  const resolvedIp = await resolveLocalProxyVideoIp(device);
   return {
     ...device,
-    sourceUrl: localSourceUrl,
+    sourceUrl: localSourceUrl || device.sourceUrl,
+    ip: resolvedIp || device.ip,
   };
 }
 
@@ -128,9 +160,16 @@ async function syncVideoDevice(device: SimDevice) {
   if (!videoApiContext) {
     throw new Error('请先登录当前环境后再连接视频设备');
   }
-  const targetDevice = resolveVideoDeviceForSync(device);
+  const targetDevice = await resolveVideoDeviceForSync(device);
+  const syncPatch: Partial<SimDevice> = {};
   if (targetDevice.sourceUrl && targetDevice.sourceUrl !== device.sourceUrl) {
-    store.updateDevice(device.id, { sourceUrl: targetDevice.sourceUrl });
+    syncPatch.sourceUrl = targetDevice.sourceUrl;
+  }
+  if (targetDevice.ip && targetDevice.ip !== device.ip) {
+    syncPatch.ip = targetDevice.ip;
+  }
+  if (Object.keys(syncPatch).length > 0) {
+    store.updateDevice(device.id, syncPatch);
   }
 
   const createPayload = buildVideoCreatePayload(targetDevice);

@@ -67,7 +67,9 @@
   - `REMOTE_SOURCE`
 - `GB28181` 默认 `LOCAL_CAMERA`，收到 INVITE 后自动按 SDP 目标地址发送本地 RTP 码流。
 - `RTSP / RTMP` 选择 `LOCAL_CAMERA` 时，模拟器自动按当前环境的 `mediaHost/mediaRtspPort/mediaRtmpPort` 生成 `sourceUrl`，并在开始推流前先启动本地摄像头推流进程。
+- 同一场景下，平台资产里的 `ip` 不再写成 ZLM 接入地址，而是写成模拟器当前主机的本机 IPv4；`sourceUrl` 继续保留 ZLM 推流地址，避免设备列表里的 IP 列误显示成基础设施节点。
 - 新建设备时可直接选择本机摄像头设备；macOS 下会同步枚举当前摄像头可用采集模式并保存到设备配置。
+- `RTSP / RTMP` 本地摄像头表单会自动枚举本机 IPv4 地址，默认优先纠正旧配置里残留的 ZLM 基础设施 IP，并允许用户显式选择正确的模拟器地址。
 - Electron 主进程负责拉起并托管本地推流子进程，断开、停流、注销时统一回收。
 - macOS 摄像头采集默认先使用显式 `framerate + video_size`；若 `avfoundation` 返回参数不支持，会先根据本次失败日志里的实际被拒绝模式，从 `Supported modes` 中顺序尝试兼容分辨率与帧率。
 - 若失败日志同时给出 `Supported pixel formats`，会继续按兼容像素格式重试输入侧 `pixel_format`，避免 `avfoundation` 默认 `yuv420p` 与摄像头驱动能力不匹配。

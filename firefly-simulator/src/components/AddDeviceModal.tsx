@@ -64,6 +64,11 @@ interface LocalVideoSourceOption {
   label: string;
 }
 
+interface LocalIpv4Option {
+  value: string;
+  label: string;
+}
+
 const STEP_TITLES = ['基本信息', '接入参数', '扩展配置'];
 
 const AUTH_MODE_LABELS: Record<'DEVICE_SECRET' | 'PRODUCT_SECRET', string> = {
@@ -511,6 +516,8 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
   const [localVideoSourceLoading, setLocalVideoSourceLoading] = useState(false);
   const [localVideoModes, setLocalVideoModes] = useState<LocalVideoModeOption[]>([]);
   const [localVideoModeLoading, setLocalVideoModeLoading] = useState(false);
+  const [localIpOptions, setLocalIpOptions] = useState<LocalIpv4Option[]>([]);
+  const [localIpLoading, setLocalIpLoading] = useState(false);
   const previousVideoStreamModeRef = useRef<string | undefined>(undefined);
 
   const protocol = ((formSnapshot.protocol as Protocol | undefined) || 'HTTP') as Protocol;
@@ -536,6 +543,17 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
     [formSnapshot.mediaFps, formSnapshot.mediaHeight, formSnapshot.mediaWidth, localVideoModes],
   );
   const meta = useMemo(() => PROTOCOL_META[protocol], [protocol]);
+  const proxyLocalCameraIpOptions = useMemo(() => {
+    const currentIp = trimText(formSnapshot.ip as string | undefined);
+    const options = [...localIpOptions];
+    if (currentIp && !options.some((item) => item.value === currentIp)) {
+      options.unshift({ value: currentIp, label: `${currentIp} (当前配置)` });
+    }
+    if (options.length === 0) {
+      options.push({ value: currentIp || '127.0.0.1', label: currentIp || '127.0.0.1' });
+    }
+    return options;
+  }, [formSnapshot.ip, localIpOptions]);
   const sourcePreview = useMemo(() => {
     if (protocol !== 'Video' || !isProxyVideoMode(streamMode) || videoSourceType !== 'REMOTE_SOURCE') {
       return null;
@@ -573,6 +591,8 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
     setLocalVideoModes([]);
     setLocalVideoSourceLoading(false);
     setLocalVideoModeLoading(false);
+    setLocalIpOptions([]);
+    setLocalIpLoading(false);
     onClose();
   };
 
@@ -730,6 +750,47 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
       cancelled = true;
     };
   }, [form, open, usesLocalCamera]);
+
+  useEffect(() => {
+    if (!open || protocol !== 'Video' || !isProxyVideoMode(streamMode) || videoSourceType !== 'LOCAL_CAMERA') {
+      setLocalIpOptions([]);
+      setLocalIpLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const loadLocalIps = async () => {
+      setLocalIpLoading(true);
+      const result = await window.electronAPI.simulatorListLocalIps();
+      if (cancelled) {
+        return;
+      }
+      const records = result?.success && Array.isArray(result.data) ? result.data as LocalIpv4Option[] : [];
+      setLocalIpOptions(records);
+      setLocalIpLoading(false);
+      if (records.length === 0) {
+        return;
+      }
+      // 旧配置里这里可能残留 ZLM 基础设施 IP，打开表单时优先回正为本机可达 IPv4。
+      const currentIp = trimText(form.getFieldValue('ip'));
+      const shouldAutoApply = !currentIp || currentIp === '127.0.0.1' || currentIp === trimText(activeEnvironment.mediaHost);
+      if (!shouldAutoApply) {
+        return;
+      }
+      const nextIp = trimText(records[0]?.value);
+      if (!nextIp || nextIp === currentIp) {
+        return;
+      }
+      form.setFieldsValue({ ip: nextIp });
+      setFormSnapshot(form.getFieldsValue(true));
+    };
+
+    void loadLocalIps();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeEnvironment.mediaHost, form, open, protocol, streamMode, videoSourceType]);
 
   useEffect(() => {
     if (!open || !usesLocalCamera) {
@@ -1166,6 +1227,21 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
                       : '根据源地址自动解析 IP 和端口'}
                   />
                 </Form.Item>
+                {videoSourceType === 'LOCAL_CAMERA' ? (
+                  <Form.Item
+                    name="ip"
+                    label="设备 IP"
+                    extra="平台资产中的 IP 字段会写入这里，播放仍使用上面的平台接入地址。"
+                  >
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      loading={localIpLoading}
+                      options={proxyLocalCameraIpOptions}
+                      placeholder="自动选择本机可达 IPv4"
+                    />
+                  </Form.Item>
+                ) : null}
               </>
             ) : (
               <>
