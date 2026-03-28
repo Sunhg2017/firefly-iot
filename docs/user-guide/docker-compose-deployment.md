@@ -11,10 +11,16 @@
 3. 按宿主机实际地址修改 `.env`，重点检查：
    - `POSTGRES_PASSWORD`
    - `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`
+   - `KAFKA_ADVERTISED_HOST`
    - `ZLM_HOST` / `ZLM_PUBLIC_HOST`
    - `ZLM_SECRET`
 4. 启动基础设施：`bash deploy.sh infra`
 5. 启动全量服务：`bash deploy.sh up`
+
+`KAFKA_ADVERTISED_HOST` 的选择规则：
+
+- 全量 Compose 部署：保持默认值 `kafka`
+- 局域网共享基础设施：改成宿主机 IP 或 DNS，例如 `192.168.123.102`
 
 ## 3. 常用命令
 

@@ -17,6 +17,7 @@
 - 让持久化卷名称不再依赖 Compose 工程目录，避免历史目录名变化再次产生新卷。
 - 在启动前明确识别“同名但不属于当前 Compose 工程”的旧容器，避免误把旧容器当成当前发布的一部分。
 - 明确旧版独立 EMQX 已退出当前默认部署，MQTT 1883 由 `firefly-connector` 内置 Broker 负责。
+- 让 Kafka 广播地址能同时适配“全量 Compose”与“局域网共享基础设施”两种部署口径，避免客户端拿到 `localhost:9092` 后回连失败。
 
 ## 3. 非目标
 
@@ -61,6 +62,15 @@
 - 旧版独立 `firefly-emqx` 不再属于当前默认基础设施
 
 因此历史宿主机在迁移到当前 Compose 时，必须退役独立 EMQX，避免端口 `1883` 冲突和双 Broker 并存。
+
+### 4.4 Kafka 广播地址收口
+
+`deploy/docker-compose.prod.yml` 中 Kafka Broker 的 `KAFKA_ADVERTISED_LISTENERS` 改为通过 `.env` 注入 `KAFKA_ADVERTISED_HOST`：
+
+- 默认值使用 `kafka`，保证全量 Compose 部署里的容器间访问稳定
+- 当宿主机只提供共享基础设施、客户端运行在宿主机外部时，运维可把 `KAFKA_ADVERTISED_HOST` 显式改成宿主机局域网 IP 或 DNS
+
+这样可以避免 Kafka 把 `localhost:9092` 返回给客户端，导致开发机或其他节点错误回连到自身回环地址。
 
 ## 5. 风险与约束
 

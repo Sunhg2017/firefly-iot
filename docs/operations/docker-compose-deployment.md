@@ -18,6 +18,12 @@
 4. 启动全量服务：`bash deploy.sh up`
 5. 查看状态：`bash deploy.sh status`
 
+Kafka 额外要求：
+
+- `.env` 中的 `KAFKA_ADVERTISED_HOST` 必须与客户端实际访问 Kafka 元数据时看到的地址一致。
+- 如果 Kafka 与所有 Java 服务一起跑在同一套 Compose 网络里，可保持默认值 `kafka`。
+- 如果当前宿主机只承担共享基础设施，业务服务跑在宿主机外的开发机上，必须改成宿主机局域网 IP 或 DNS，例如 `192.168.123.102`。
+
 ## 4. 旧 Compose 收口步骤
 
 当宿主机上已经存在其他目录启动的旧版 `firefly-*` 容器时，必须先完成收口，再执行当前脚本。
@@ -80,6 +86,23 @@
 ### 5.3 `1883` 端口被占用
 
 优先检查是否还有旧版 `firefly-emqx`。当前仓库不再把 EMQX 作为默认基础设施。
+
+### 5.4 Kafka 客户端日志出现 `localhost:9092`
+
+如果 `firefly-device`、`firefly-media` 或其他客户端日志里出现：
+
+- `Connection to node 0 (localhost/127.0.0.1:9092) could not be established`
+
+优先检查以下两项：
+
+- 当前宿主机是否误用了 `deploy/docker-compose.prod.yml` 的默认 Kafka 广播地址
+- `.env` 里的 `KAFKA_ADVERTISED_HOST` 是否仍是默认值，而当前客户端其实跑在 Compose 网络之外
+
+处理方式：
+
+1. 按客户端实际访问路径，把 `KAFKA_ADVERTISED_HOST` 改成 `kafka` 或宿主机真实 IP/DNS
+2. 重新执行 `bash deploy.sh infra` 或手工重建 `kafka`
+3. 确认客户端重新获取元数据后不再尝试连接 `localhost:9092`
 
 ## 6. 回滚说明
 
