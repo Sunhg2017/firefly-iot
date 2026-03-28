@@ -114,6 +114,7 @@ npm run electron:build
 - 使用 `本地摄像头` 时，可在高级配置里选择具体摄像头设备；macOS 下还会同步列出可选采集模式
 - macOS 本地摄像头起流时，若 `avfoundation` 拒绝默认输入 `pixel_format`，模拟器会按 `Supported pixel formats` 自动重试兼容像素格式
 - 再次连接同一台视频设备时，模拟器会优先复用已关联的 `platformDeviceId`
+- 同一台 `RTSP / RTMP` 设备再次点击播放时，平台会优先复用现有 `live/{streamId}` 会话，不再重复创建代理流
 - Video 设备现在也支持先绑定平台产品，再按 `ProductKey` 同步当前产品物模型
 - 左侧设备卡片支持直接编辑已有设备；如果设备当前已连接，保存时会先断开旧连接，保存后再按新配置重连
 - Video 设备编辑后若修改了身份键（如 `gbDeviceId`、视频模式、媒体源类型、外部源地址），模拟器会清空旧 `platformDeviceId`，下一次连接重新绑定平台资产
@@ -153,6 +154,7 @@ npm run electron:build
 - **UDP + TCP 传输** — 可选 UDP（默认）或 TCP 传输
 - **UDP 重传** — RFC 3261 Timer A/B，指数退避重传（500ms → 4s），32s 事务超时
 - **自动续注册** — 在 Expires 到期前 80% 时自动刷新注册
+- **静默注销** — 手动断开或关闭客户端时按 best-effort 发送 `REGISTER(Expires=0)`，不再在本地已离线后补打一条 32 秒事务超时噪声
 
 **操作流程:**
 1. 切换到目标环境，并先完成当前环境登录

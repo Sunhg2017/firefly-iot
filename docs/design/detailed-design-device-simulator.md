@@ -86,6 +86,7 @@
 - 保留本地 SIP 客户端能力
 - REGISTER 使用设备级 SIP 密码参与 Digest 认证（强制，禁止无密码注册）
 - 点击 `连接` 后自动启动 SIP、发送 REGISTER，并在注册成功后自动开始 Keepalive
+- 手动注销或断开连接时，SIP 客户端走 best-effort `REGISTER(Expires=0)`，不再在本地已离线后继续保留 32 秒事务超时报错
 - Keepalive、Catalog、DeviceInfo、INVITE、BYE、PTZ 响应逻辑保持不变
 - INVITE 时会从 SDP 解析目标 `ip/port/ssrc`，并驱动本地摄像头 RTP 发送
 

@@ -194,7 +194,10 @@ export class Gb28181Client extends EventEmitter {
   async unregister(): Promise<void> {
     this.pendingExpires = 0;
     const request = this.buildRegisterRequest(0, this.authRealm, this.authNonce);
-    await this.sendSipWithRetransmit(request, 'REGISTER(unregister)');
+    // Unregister is best-effort during shutdown/manual stop. Tracking a full UDP
+    // transaction here only creates delayed timeout noise after the client has
+    // already been marked offline locally.
+    await this.sendSip(request, 'REGISTER(unregister)');
     this.registered = false;
     this.clearReRegisterTimer();
     this.emitEvent({ type: 'unregistered' });

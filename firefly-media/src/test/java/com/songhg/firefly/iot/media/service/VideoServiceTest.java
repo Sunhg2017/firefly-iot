@@ -134,6 +134,82 @@ class VideoServiceTest {
         assertThat(createdSession.getFlvUrl()).isEqualTo("http://192.168.123.102:18080/rtp/2_12_0.live.flv");
     }
 
+    @Test
+    void startStreamReusesExistingRtspSessionWhenMediaIsStillReady() {
+        Long deviceId = 12L;
+        InternalVideoDeviceVO device = buildProxyDevice(deviceId, 2L, StreamMode.RTSP, "rtsp://192.168.123.102:18554/live/simcam-video02");
+        StreamSession existingSession = buildProxySession(deviceId, 2L, "2_12_0");
+
+        when(videoDeviceFacade.requireVideoDevice(deviceId)).thenReturn(device);
+        when(videoDeviceFacade.isOnline(device)).thenReturn(true);
+        when(videoDeviceFacade.requireStreamMode(device)).thenReturn(StreamMode.RTSP);
+        when(streamSessionMapper.selectList(any())).thenReturn(List.of(existingSession));
+        when(zlmApiClient.getMediaList("live", "2_12_0", null)).thenReturn(successMediaList(List.of(new ZlmStreamInfo())));
+
+        StreamSessionVO result = videoService.startStream(deviceId, new StreamStartDTO());
+
+        assertThat(result.getStreamId()).isEqualTo("2_12_0");
+        assertThat(result.getFlvUrl()).isEqualTo(existingSession.getFlvUrl());
+        verify(zlmApiClient, never()).addStreamProxy(anyString(), anyString(), anyString());
+        verify(streamSessionMapper, never()).insert(any(StreamSession.class));
+    }
+
+    @Test
+    void startStreamRecoversRtspSessionWhenRuntimeStreamAlreadyExists() {
+        Long deviceId = 12L;
+        InternalVideoDeviceVO device = buildProxyDevice(deviceId, 2L, StreamMode.RTSP, "rtsp://192.168.123.102:18554/live/simcam-video02");
+
+        when(videoDeviceFacade.requireVideoDevice(deviceId)).thenReturn(device);
+        when(videoDeviceFacade.isOnline(device)).thenReturn(true);
+        when(videoDeviceFacade.requireStreamMode(device)).thenReturn(StreamMode.RTSP);
+        when(streamSessionMapper.selectList(any())).thenReturn(Collections.emptyList());
+        when(zlmApiClient.getMediaList("live", "2_12_0", null)).thenReturn(successMediaList(List.of(new ZlmStreamInfo())));
+        when(zlmApiClient.buildFlvUrl("live", "2_12_0")).thenReturn("http://192.168.123.102:18080/live/2_12_0.live.flv");
+        when(zlmApiClient.buildHlsUrl("live", "2_12_0")).thenReturn("http://192.168.123.102:18080/live/2_12_0/hls.m3u8");
+        when(zlmApiClient.buildWebrtcUrl("live", "2_12_0")).thenReturn("webrtc://192.168.123.102/live/2_12_0");
+
+        StreamSessionVO result = videoService.startStream(deviceId, new StreamStartDTO());
+
+        assertThat(result.getStreamId()).isEqualTo("2_12_0");
+        assertThat(result.getFlvUrl()).isEqualTo("http://192.168.123.102:18080/live/2_12_0.live.flv");
+        verify(zlmApiClient, never()).addStreamProxy(anyString(), anyString(), anyString());
+
+        ArgumentCaptor<StreamSession> createdSessionCaptor = ArgumentCaptor.forClass(StreamSession.class);
+        verify(streamSessionMapper).insert(createdSessionCaptor.capture());
+        StreamSession createdSession = createdSessionCaptor.getValue();
+        assertThat(createdSession.getStreamId()).isEqualTo("2_12_0");
+        assertThat(createdSession.getStatus()).isEqualTo(StreamStatus.ACTIVE);
+        assertThat(createdSession.getFlvUrl()).isEqualTo("http://192.168.123.102:18080/live/2_12_0.live.flv");
+    }
+
+    @Test
+    void startStreamRecoversRtspSessionAfterProxyConflict() {
+        Long deviceId = 12L;
+        InternalVideoDeviceVO device = buildProxyDevice(deviceId, 2L, StreamMode.RTSP, "rtsp://192.168.123.102:18554/live/simcam-video02");
+
+        when(videoDeviceFacade.requireVideoDevice(deviceId)).thenReturn(device);
+        when(videoDeviceFacade.isOnline(device)).thenReturn(true);
+        when(videoDeviceFacade.requireStreamMode(device)).thenReturn(StreamMode.RTSP);
+        when(streamSessionMapper.selectList(any())).thenReturn(Collections.emptyList(), Collections.emptyList());
+        when(zlmApiClient.getMediaList("live", "2_12_0", null)).thenReturn(
+                successMediaList(Collections.emptyList()),
+                successMediaList(List.of(new ZlmStreamInfo())),
+                successMediaList(List.of(new ZlmStreamInfo()))
+        );
+        when(zlmApiClient.addStreamProxy("live", "2_12_0", "rtsp://192.168.123.102:18554/live/simcam-video02"))
+                .thenReturn(failedMapResponse("This stream already exists"));
+        when(zlmApiClient.buildFlvUrl("live", "2_12_0")).thenReturn("http://192.168.123.102:18080/live/2_12_0.live.flv");
+        when(zlmApiClient.buildHlsUrl("live", "2_12_0")).thenReturn("http://192.168.123.102:18080/live/2_12_0/hls.m3u8");
+        when(zlmApiClient.buildWebrtcUrl("live", "2_12_0")).thenReturn("webrtc://192.168.123.102/live/2_12_0");
+
+        StreamSessionVO result = videoService.startStream(deviceId, new StreamStartDTO());
+
+        assertThat(result.getStreamId()).isEqualTo("2_12_0");
+        assertThat(result.getFlvUrl()).isEqualTo("http://192.168.123.102:18080/live/2_12_0.live.flv");
+        verify(zlmApiClient).addStreamProxy("live", "2_12_0", "rtsp://192.168.123.102:18554/live/simcam-video02");
+        verify(streamSessionMapper).insert(any(StreamSession.class));
+    }
+
     private InternalVideoDeviceVO buildGbDevice(Long deviceId, Long tenantId) {
         InternalVideoDeviceVO device = new InternalVideoDeviceVO();
         device.setDeviceId(deviceId);
@@ -142,6 +218,16 @@ class VideoServiceTest {
         device.setStatus("ONLINE");
         device.setTransport("UDP");
         device.setGbDeviceId("34020000001");
+        return device;
+    }
+
+    private InternalVideoDeviceVO buildProxyDevice(Long deviceId, Long tenantId, StreamMode streamMode, String sourceUrl) {
+        InternalVideoDeviceVO device = new InternalVideoDeviceVO();
+        device.setDeviceId(deviceId);
+        device.setTenantId(tenantId);
+        device.setStreamMode(streamMode.getValue());
+        device.setStatus("ONLINE");
+        device.setSourceUrl(sourceUrl);
         return device;
     }
 
@@ -160,6 +246,20 @@ class VideoServiceTest {
         return session;
     }
 
+    private StreamSession buildProxySession(Long deviceId, Long tenantId, String streamId) {
+        StreamSession session = new StreamSession();
+        session.setId(2L);
+        session.setTenantId(tenantId);
+        session.setDeviceId(deviceId);
+        session.setStreamId(streamId);
+        session.setStatus(StreamStatus.ACTIVE);
+        session.setFlvUrl("http://192.168.123.102:18080/live/2_12_0.live.flv");
+        session.setHlsUrl("http://192.168.123.102:18080/live/2_12_0/hls.m3u8");
+        session.setWebrtcUrl("webrtc://192.168.123.102/live/2_12_0");
+        session.setStartedAt(LocalDateTime.now().minusMinutes(2));
+        return session;
+    }
+
     private ZlmResponse<List<ZlmStreamInfo>> successMediaList(List<ZlmStreamInfo> streams) {
         ZlmResponse<List<ZlmStreamInfo>> response = new ZlmResponse<>();
         response.setCode(0);
@@ -171,6 +271,13 @@ class VideoServiceTest {
         ZlmResponse<Map<String, Object>> response = new ZlmResponse<>();
         response.setCode(0);
         response.setData(Map.of());
+        return response;
+    }
+
+    private ZlmResponse<Map<String, Object>> failedMapResponse(String message) {
+        ZlmResponse<Map<String, Object>> response = new ZlmResponse<>();
+        response.setCode(-300);
+        response.setMsg(message);
         return response;
     }
 

@@ -37,6 +37,7 @@ npm run build:vite
 6. 目录查询、设备信息查询能收到响应。
 7. 错误密码时能看到明确认证失败原因。
 8. 编辑 `国标设备 ID` 后，下一次连接会按新身份重新绑定平台视频资产。
+9. 手动断开或注销后，不应再在 32 秒后追加 `REGISTER(unregister) transaction timeout` 噪声日志。
 
 ### 3.2 RTSP / RTMP
 
@@ -46,6 +47,7 @@ npm run build:vite
 4. 首次连接创建平台设备资产。
 5. 再次连接优先复用同一 `platformDeviceId`。
 6. 若编辑后切换了视频模式、媒体源类型或外部源地址，旧 `platformDeviceId` 会被清空，重新连接时按新身份重新查重。
+7. 同一台 `RTSP / RTMP` 设备重复点击开始推流时，平台会优先复用现有 `live/{streamId}` 会话，不应再直接报 `This stream already exists`。
 
 ## 4. 常见问题
 
@@ -91,7 +93,14 @@ npm run build:vite
 4. 若日志出现 `Selected pixel format ... is not supported`，优先观察后续是否已有 `改用 ... 重试` 或 `已切换设备默认采集模式重试` 提示
 5. 检查媒体服务是否可达自动生成地址中的主机和端口
 
-### 4.6 模拟器启动时报 ffmpeg 运行时缺失
+### 4.6 GB28181 断开后 32 秒又提示 REGISTER(unregister) transaction timeout
+
+排查：
+
+1. 当前版本的模拟器在断开/注销时已改成 best-effort 注销，不应再补打一条延迟 32 秒的超时日志。
+2. 若仍能看到该日志，说明本机运行的还是旧模拟器包，需要重新构建或替换安装包。
+
+### 4.7 模拟器启动时报 ffmpeg 运行时缺失
 
 排查：
 
@@ -99,7 +108,7 @@ npm run build:vite
 2. 执行 `npm run build:vite`，确认 Electron 主进程打包成功。
 3. 如仍报错，设置环境变量 `FFMPEG_PATH` 指向本机可执行 ffmpeg 文件后再启动模拟器。
 
-### 4.7 编辑后为什么要重新连接
+### 4.8 编辑后为什么要重新连接
 
 排查：
 
@@ -107,7 +116,7 @@ npm run build:vite
 2. 编辑保存只更新持久化配置，不会对现有连接做“热切换”。
 3. 当前实现会在保存已连接设备前先执行断开，保存完成后需手工重新连接，确保新配置和运行态一致。
 
-### 4.8 详情页为什么还看到 15fps
+### 4.9 详情页为什么还看到 15fps
 
 排查：
 

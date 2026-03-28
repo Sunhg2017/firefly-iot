@@ -77,7 +77,8 @@ cd ../firefly-simulator && npm run build:vite
 6. 错误密码能看到明确认证失败原因。
 7. `GB28181` 点击播放后，`firefly-media` 日志中应先打开 RTP 收流口，再发送 INVITE，并能在 ZLM 中看到 `rtp/{streamId}` 流注册。
 8. 同一台 `GB28181` 设备在已有活跃流时再次点击播放，接口应直接复用已有会话并返回播放地址，不应再出现 `openRtpServer -> code=-300 -> This stream already exists`。
-9. 视频上线/离线、目录、设备信息事件能正常回写到 `firefly-device`。
+9. 同一台 `RTSP / RTMP` 设备在已有活跃代理流时再次点击播放，接口也应直接复用现有 `live/{streamId}` 会话，不应再出现 `addStreamProxy -> This stream already exists`。
+10. 视频上线/离线、目录、设备信息事件能正常回写到 `firefly-device`。
 
 ## 6. 常见问题
 
@@ -139,6 +140,14 @@ cd ../firefly-simulator && npm run build:vite
 1. 检查 `firefly-media` 日志是否出现 `Reuse existing GB28181 stream session`；若出现，说明平台已直接复用现有 `rtp/{streamId}`。
 2. 若日志出现 `Close stale GB28181 stream sessions before restart`，说明数据库残留了 `ACTIVE` 会话但 ZLM 已无对应流；确认随后是否重新打印了 RTP 收流口和 INVITE 日志。
 3. 若仍出现 `openRtpServer -> code=-300 -> This stream already exists`，说明当前运行中的 `firefly-media` 还不是包含会话复用修复的版本，需要重新发布。
+
+### 6.7 RTSP / RTMP 点击播放后提示 This stream already exists
+
+排查：
+
+1. 检查 `firefly-media` 日志是否出现 `Reuse existing video stream session` 或 `Recover active video stream session from live runtime`。
+2. 若出现上述日志，说明平台已直接复用或补建 `live/{streamId}` 会话，本次播放不应再失败。
+3. 若仍直接报 `视频流启动失败: This stream already exists`，说明当前运行中的 `firefly-media` 还不是包含 RTSP / RTMP 会话复用修复的版本，需要重新发布。
 4. 同时检查 `stream_sessions` 中同一 `stream_id` 是否只保留最新一条 `ACTIVE` 记录，历史残留记录应已被自动改成 `CLOSED`。
 
 ### 6.7 视频状态没有回写到设备资产

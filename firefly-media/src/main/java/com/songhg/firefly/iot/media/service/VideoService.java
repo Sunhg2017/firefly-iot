@@ -64,11 +64,9 @@ public class VideoService {
         Long tenantId = resolveTenantId(device);
         String streamId = buildStreamId(tenantId, deviceId, channelId);
         String streamApp = resolveStreamApp(streamMode);
-        if (streamMode == StreamMode.GB28181) {
-            StreamSession reusableSession = reuseActiveGb28181Session(device, deviceId, channelId, streamId, streamApp);
-            if (reusableSession != null) {
-                return toSessionVO(reusableSession);
-            }
+        StreamSession reusableSession = reuseOrRecoverActiveSession(device, streamMode, deviceId, channelId, streamId, streamApp);
+        if (reusableSession != null) {
+            return toSessionVO(reusableSession);
         }
         boolean gb28181RtpServerOpened = false;
 
@@ -77,6 +75,14 @@ public class VideoService {
                 String sourceUrl = resolvePullSourceUrl(device, streamMode);
                 ZlmResponse<Map<String, Object>> response = zlmApiClient.addStreamProxy(streamApp, streamId, sourceUrl);
                 if (!response.isSuccess()) {
+                    if (isStreamAlreadyExists(response)) {
+                        waitUntilStreamReady(streamApp, streamId, streamMode);
+                        StreamSession recoveredSession = reuseOrRecoverActiveSession(
+                                device, streamMode, deviceId, channelId, streamId, streamApp);
+                        if (recoveredSession != null) {
+                            return toSessionVO(recoveredSession);
+                        }
+                    }
                     throw new BizException(ResultCode.STREAM_START_FAILED, "视频流启动失败: " + response.getMsg());
                 }
             } else if (streamMode == StreamMode.GB28181) {
@@ -103,17 +109,7 @@ public class VideoService {
             throw new BizException(ResultCode.STREAM_START_FAILED, "视频流启动失败");
         }
 
-        StreamSession session = new StreamSession();
-        session.setTenantId(tenantId);
-        session.setDeviceId(deviceId);
-        session.setChannelId(channelId);
-        session.setStreamId(streamId);
-        session.setStatus(StreamStatus.ACTIVE);
-        session.setFlvUrl(zlmApiClient.buildFlvUrl(streamApp, streamId));
-        session.setHlsUrl(zlmApiClient.buildHlsUrl(streamApp, streamId));
-        session.setWebrtcUrl(zlmApiClient.buildWebrtcUrl(streamApp, streamId));
-        session.setStartedAt(LocalDateTime.now());
-        streamSessionMapper.insert(session);
+        StreamSession session = persistActiveSession(tenantId, deviceId, channelId, streamId, streamApp);
 
         log.info("Stream started: deviceId={}, channelId={}, streamId={}, app={}, mode={}",
                 deviceId, channelId, streamId, streamApp, streamMode);
@@ -232,28 +228,53 @@ public class VideoService {
     }
 
     /**
-     * GB28181 stream stays alive after the browser disconnects, so replay requests should reuse the
-     * existing RTP stream instead of reopening the same ZLM RTP server.
+     * ZLM stream IDs are deterministic per device/channel, so repeated play requests should reuse the
+     * existing runtime stream instead of reopening a proxy/RTP server and hitting "This stream already exists".
      */
-    private StreamSession reuseActiveGb28181Session(
+    private StreamSession reuseOrRecoverActiveSession(
             InternalVideoDeviceVO device,
+            StreamMode streamMode,
             Long deviceId,
             String channelId,
             String streamId,
             String streamApp) {
         List<StreamSession> activeSessions = listActiveSessions(deviceId, streamId);
-        if (activeSessions.isEmpty()) {
-            return null;
-        }
         if (isStreamReady(streamApp, streamId)) {
-            log.info("Reuse existing GB28181 stream session: deviceId={}, channelId={}, streamId={}, app={}",
-                    deviceId, channelId, streamId, streamApp);
-            return activeSessions.getFirst();
+            if (!activeSessions.isEmpty()) {
+                log.info("Reuse existing video stream session: deviceId={}, channelId={}, streamId={}, app={}, mode={}",
+                        deviceId, channelId, streamId, streamApp, streamMode);
+                return activeSessions.getFirst();
+            }
+            log.warn("Recover active video stream session from live runtime: deviceId={}, channelId={}, streamId={}, app={}, mode={}",
+                    deviceId, channelId, streamId, streamApp, streamMode);
+            return persistActiveSession(resolveTenantId(device), deviceId, channelId, streamId, streamApp);
         }
-        log.warn("Close stale GB28181 stream sessions before restart: deviceId={}, channelId={}, streamId={}, count={}",
-                deviceId, channelId, streamId, activeSessions.size());
-        closeSessions(device, StreamMode.GB28181, streamApp, activeSessions, "stale-restart");
+        if (!activeSessions.isEmpty()) {
+            log.warn("Close stale video stream sessions before restart: deviceId={}, channelId={}, streamId={}, count={}, mode={}",
+                    deviceId, channelId, streamId, activeSessions.size(), streamMode);
+            closeSessions(device, streamMode, streamApp, activeSessions, "stale-restart");
+        }
         return null;
+    }
+
+    private StreamSession persistActiveSession(
+            Long tenantId,
+            Long deviceId,
+            String channelId,
+            String streamId,
+            String streamApp) {
+        StreamSession session = new StreamSession();
+        session.setTenantId(tenantId);
+        session.setDeviceId(deviceId);
+        session.setChannelId(channelId);
+        session.setStreamId(streamId);
+        session.setStatus(StreamStatus.ACTIVE);
+        session.setFlvUrl(zlmApiClient.buildFlvUrl(streamApp, streamId));
+        session.setHlsUrl(zlmApiClient.buildHlsUrl(streamApp, streamId));
+        session.setWebrtcUrl(zlmApiClient.buildWebrtcUrl(streamApp, streamId));
+        session.setStartedAt(LocalDateTime.now());
+        streamSessionMapper.insert(session);
+        return session;
     }
 
     private StreamSessionVO toSessionVO(StreamSession session) {
@@ -300,6 +321,11 @@ public class VideoService {
                 : (streamMode == StreamMode.RTMP ? 1935 : 554);
         String protocol = streamMode == StreamMode.RTMP ? "rtmp" : "rtsp";
         return protocol + "://" + host + ":" + port + "/";
+    }
+
+    private boolean isStreamAlreadyExists(ZlmResponse<?> response) {
+        String message = trimToNull(response == null ? null : response.getMsg());
+        return message != null && message.toLowerCase().contains("stream already exists");
     }
 
     private String buildStreamId(Long tenantId, Long deviceId, String channelId) {
