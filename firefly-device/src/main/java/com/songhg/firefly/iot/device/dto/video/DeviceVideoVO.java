@@ -38,8 +38,11 @@ public class DeviceVideoVO {
     @Schema(description = "传输方式")
     private String transport;
 
-    @Schema(description = "是否启用 SIP 密码认证")
-    private Boolean sipAuthEnabled;
+    @Schema(description = "是否启用认证")
+    private Boolean authEnabled;
+
+    @Schema(description = "认证用户名")
+    private String authUsername;
 
     @Schema(description = "视频接入方式")
     private StreamMode streamMode;

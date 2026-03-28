@@ -25,6 +25,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -333,18 +337,32 @@ public class VideoService {
 
     private String resolvePullSourceUrl(InternalVideoDeviceVO device, StreamMode streamMode) {
         String sourceUrl = trimToNull(device.getSourceUrl());
-        if (sourceUrl != null) {
-            return sourceUrl;
+        if (sourceUrl == null) {
+            String host = trimToNull(device.getIp());
+            if (host == null) {
+                throw new BizException(ResultCode.PARAM_ERROR, "视频源地址不能为空");
+            }
+            int port = device.getPort() != null
+                    ? device.getPort()
+                    : (streamMode == StreamMode.RTMP ? 1935 : 554);
+            String protocol = streamMode == StreamMode.RTMP ? "rtmp" : "rtsp";
+            sourceUrl = protocol + "://" + host + ":" + port + "/";
         }
-        String host = trimToNull(device.getIp());
-        if (host == null) {
-            throw new BizException(ResultCode.PARAM_ERROR, "视频源地址不能为空");
+        String validatedSourceUrl = validateProxySourceUrl(sourceUrl, streamMode);
+        if (isManagedLocalProxySource(validatedSourceUrl)) {
+            if (!Boolean.TRUE.equals(device.getAuthEnabled())) {
+                throw new BizException(ResultCode.PARAM_ERROR, "本地摄像头推流必须启用认证");
+            }
+            return appendQueryAuth(validatedSourceUrl,
+                    requireAuthUsername(device, "本地摄像头推流缺少认证用户名"),
+                    requireAuthPassword(device, "本地摄像头推流缺少认证密码"));
         }
-        int port = device.getPort() != null
-                ? device.getPort()
-                : (streamMode == StreamMode.RTMP ? 1935 : 554);
-        String protocol = streamMode == StreamMode.RTMP ? "rtmp" : "rtsp";
-        return protocol + "://" + host + ":" + port + "/";
+        if (Boolean.TRUE.equals(device.getAuthEnabled())) {
+            return appendUserInfoAuth(validatedSourceUrl,
+                    requireAuthUsername(device, "已启用认证时必须填写认证用户名"),
+                    requireAuthPassword(device, "已启用认证时必须填写认证密码"));
+        }
+        return validatedSourceUrl;
     }
 
     /**
@@ -365,7 +383,7 @@ public class VideoService {
             String staleProxyKey = findStreamProxyKey(streamApp, streamId);
             if (staleProxyKey != null) {
                 log.warn("Delete stale ZLM proxy before retry: app={}, streamId={}, proxyKey={}, sourceUrl={}",
-                        streamApp, streamId, staleProxyKey, sourceUrl);
+                        streamApp, streamId, staleProxyKey, sanitizeSourceUrl(sourceUrl));
                 deleteStreamProxy(staleProxyKey, streamApp, streamId, "proxy-conflict-retry");
                 ZlmResponse<Map<String, Object>> retryResponse = zlmApiClient.addStreamProxy(streamApp, streamId, sourceUrl);
                 if (retryResponse.isSuccess()) {
@@ -379,7 +397,7 @@ public class VideoService {
                 throw new BizException(ResultCode.STREAM_START_FAILED, "视频流启动失败: " + retryResponse.getMsg());
             }
             log.warn("ZLM reported an existing proxy stream but listStreamProxy returned nothing: app={}, streamId={}, sourceUrl={}",
-                    streamApp, streamId, sourceUrl);
+                    streamApp, streamId, sanitizeSourceUrl(sourceUrl));
         }
         throw new BizException(ResultCode.STREAM_START_FAILED, "视频流启动失败: " + response.getMsg());
     }
@@ -616,6 +634,103 @@ public class VideoService {
         session.setStatus(StreamStatus.CLOSED);
         session.setStoppedAt(LocalDateTime.now());
         streamSessionMapper.updateById(session);
+    }
+
+    private String validateProxySourceUrl(String sourceUrl, StreamMode streamMode) {
+        String normalizedSourceUrl = trimToNull(sourceUrl);
+        if (normalizedSourceUrl == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "视频源地址不能为空");
+        }
+        String expectedScheme = streamMode == StreamMode.RTMP ? "rtmp" : "rtsp";
+        try {
+            URI parsed = new URI(normalizedSourceUrl);
+            String scheme = trimToNull(parsed.getScheme());
+            if (scheme == null || !expectedScheme.equalsIgnoreCase(scheme)) {
+                throw new BizException(ResultCode.PARAM_ERROR, "视频源地址必须使用 " + expectedScheme + "://");
+            }
+            if (trimToNull(parsed.getUserInfo()) != null) {
+                throw new BizException(ResultCode.PARAM_ERROR, "视频源地址不能内嵌用户名密码，请改填独立认证字段");
+            }
+            if (trimToNull(parsed.getHost()) == null) {
+                throw new BizException(ResultCode.PARAM_ERROR, "视频源地址缺少主机地址");
+            }
+            int resolvedPort = parsed.getPort() == -1
+                    ? (streamMode == StreamMode.RTMP ? 1935 : 554)
+                    : parsed.getPort();
+            if (resolvedPort <= 0 || resolvedPort > 65535) {
+                throw new BizException(ResultCode.PARAM_ERROR, "视频源地址端口不正确");
+            }
+            return normalizedSourceUrl;
+        } catch (URISyntaxException ex) {
+            throw new BizException(ResultCode.PARAM_ERROR, "视频源地址格式不正确");
+        }
+    }
+
+    private boolean isManagedLocalProxySource(String sourceUrl) {
+        String normalizedSourceUrl = trimToNull(sourceUrl);
+        if (normalizedSourceUrl == null) {
+            return false;
+        }
+        try {
+            URI parsed = new URI(normalizedSourceUrl);
+            String path = trimToNull(parsed.getPath());
+            return path != null && path.startsWith("/live/simcam-");
+        } catch (URISyntaxException ex) {
+            return false;
+        }
+    }
+
+    private String appendUserInfoAuth(String sourceUrl, String username, String password) {
+        try {
+            URI parsed = new URI(sourceUrl);
+            int resolvedPort = parsed.getPort();
+            return new URI(parsed.getScheme(), username + ":" + password, parsed.getHost(), resolvedPort,
+                    parsed.getPath(), parsed.getQuery(), parsed.getFragment()).toString();
+        } catch (URISyntaxException ex) {
+            throw new BizException(ResultCode.PARAM_ERROR, "视频源地址格式不正确");
+        }
+    }
+
+    private String appendQueryAuth(String sourceUrl, String username, String password) {
+        try {
+            URI parsed = new URI(sourceUrl);
+            String encodedUser = URLEncoder.encode(username, StandardCharsets.UTF_8);
+            String encodedPassword = URLEncoder.encode(password, StandardCharsets.UTF_8);
+            String rawQuery = trimToNull(parsed.getRawQuery());
+            String authQuery = "authUser=" + encodedUser + "&authPass=" + encodedPassword;
+            String nextQuery = rawQuery == null ? authQuery : rawQuery + "&" + authQuery;
+            return new URI(parsed.getScheme(), parsed.getRawAuthority(), parsed.getRawPath(), nextQuery, parsed.getRawFragment())
+                    .toString();
+        } catch (URISyntaxException ex) {
+            throw new BizException(ResultCode.PARAM_ERROR, "视频源地址格式不正确");
+        }
+    }
+
+    private String requireAuthUsername(InternalVideoDeviceVO device, String message) {
+        String authUsername = trimToNull(device.getAuthUsername());
+        if (authUsername == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, message);
+        }
+        return authUsername;
+    }
+
+    private String requireAuthPassword(InternalVideoDeviceVO device, String message) {
+        String authPassword = trimToNull(device.getAuthPassword());
+        if (authPassword == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, message);
+        }
+        return authPassword;
+    }
+
+    private String sanitizeSourceUrl(String sourceUrl) {
+        String normalizedSourceUrl = trimToNull(sourceUrl);
+        if (normalizedSourceUrl == null) {
+            return null;
+        }
+        return normalizedSourceUrl
+                .replaceAll("(?i)(://)([^/@]+)@", "$1***@")
+                .replaceAll("(?i)(authUser=)[^&]+", "$1***")
+                .replaceAll("(?i)(authPass=)[^&]+", "$1***");
     }
 
     private void waitUntilStreamReady(String app, String streamId, StreamMode streamMode) {

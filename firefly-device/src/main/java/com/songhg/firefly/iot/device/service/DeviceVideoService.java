@@ -38,6 +38,8 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -209,6 +211,28 @@ public class DeviceVideoService {
         return toInternalVideoVO(profile, device, product);
     }
 
+    public InternalVideoDeviceVO getInternalVideoDeviceByProxyStream(StreamMode streamMode, String app, String stream) {
+        if (streamMode != StreamMode.RTSP && streamMode != StreamMode.RTMP) {
+            return null;
+        }
+        String normalizedApp = trimToNull(app);
+        String normalizedStream = trimToNull(stream);
+        if (normalizedApp == null || normalizedStream == null) {
+            return null;
+        }
+        String sourcePathSuffix = "/" + normalizedApp + "/" + normalizedStream;
+        DeviceVideoProfile profile = deviceVideoProfileMapper.selectByProxyStreamIgnoreTenant(streamMode, sourcePathSuffix);
+        if (profile == null) {
+            return null;
+        }
+        Device device = getDeviceOrThrow(profile.getDeviceId(), true);
+        if (device == null || !tenantVisible(profile.getTenantId())) {
+            return null;
+        }
+        Product product = productMapper.selectByIdIgnoreTenant(device.getProductId());
+        return toInternalVideoVO(profile, device, product);
+    }
+
     public List<InternalVideoChannelVO> listInternalChannels(Long deviceId) {
         InternalVideoDeviceVO videoDevice = getInternalVideoDevice(deviceId);
         if (videoDevice == null) {
@@ -324,7 +348,9 @@ public class DeviceVideoService {
         profile.setGbDeviceId(trimToNull(dto.getGbDeviceId()));
         profile.setGbDomain(trimToNull(dto.getGbDomain()));
         profile.setTransport(trimToNull(dto.getTransport()));
-        profile.setSipPassword(trimToNull(dto.getSipPassword()));
+        profile.setAuthEnabled(dto.getAuthEnabled());
+        profile.setAuthUsername(trimToNull(dto.getAuthUsername()));
+        profile.setAuthPassword(trimToNull(dto.getAuthPassword()));
         profile.setIp(trimToNull(dto.getIp()));
         profile.setPort(dto.getPort());
         profile.setSourceUrl(trimToNull(dto.getSourceUrl()));
@@ -346,8 +372,14 @@ public class DeviceVideoService {
         if (dto.getTransport() != null) {
             profile.setTransport(trimToNull(dto.getTransport()));
         }
-        if (dto.getSipPassword() != null) {
-            profile.setSipPassword(trimToNull(dto.getSipPassword()));
+        if (dto.getAuthEnabled() != null) {
+            profile.setAuthEnabled(dto.getAuthEnabled());
+        }
+        if (dto.getAuthUsername() != null) {
+            profile.setAuthUsername(trimToNull(dto.getAuthUsername()));
+        }
+        if (dto.getAuthPassword() != null) {
+            profile.setAuthPassword(trimToNull(dto.getAuthPassword()));
         }
         if (dto.getIp() != null) {
             profile.setIp(trimToNull(dto.getIp()));
@@ -373,6 +405,8 @@ public class DeviceVideoService {
         if (profile.getStreamMode() == null) {
             throw new BizException(ResultCode.PARAM_ERROR, "接入方式不能为空");
         }
+        String authUsername = trimToNull(profile.getAuthUsername());
+        String authPassword = trimToNull(profile.getAuthPassword());
         if (profile.getStreamMode() == StreamMode.GB28181) {
             if (trimToNull(profile.getGbDeviceId()) == null) {
                 throw new BizException(ResultCode.PARAM_ERROR, "GB 设备编号不能为空");
@@ -380,24 +414,57 @@ public class DeviceVideoService {
             if (trimToNull(profile.getTransport()) == null) {
                 profile.setTransport("UDP");
             }
-            String sipPassword = trimToNull(profile.getSipPassword());
-            if (sipPassword == null) {
-                throw new BizException(ResultCode.PARAM_ERROR, "GB28181 设备必须填写设备级 SIP 密码");
+            boolean authEnabled = profile.getAuthEnabled() == null || Boolean.TRUE.equals(profile.getAuthEnabled());
+            profile.setAuthEnabled(authEnabled);
+            if (authEnabled) {
+                if (authUsername == null) {
+                    authUsername = trimToNull(profile.getGbDeviceId());
+                }
+                if (authUsername == null) {
+                    throw new BizException(ResultCode.PARAM_ERROR, "GB28181 设备必须填写认证用户名");
+                }
+                if (authPassword == null) {
+                    throw new BizException(ResultCode.PARAM_ERROR, "GB28181 设备必须填写认证密码");
+                }
+            } else {
+                authUsername = null;
+                authPassword = null;
             }
-            profile.setSipPassword(sipPassword);
+            profile.setAuthUsername(authUsername);
+            profile.setAuthPassword(authPassword);
             return;
         }
 
         profile.setGbDeviceId(null);
         profile.setGbDomain(null);
         profile.setTransport(null);
-        profile.setSipPassword(null);
         if (trimToNull(profile.getSourceUrl()) == null) {
             profile.setSourceUrl(buildProxySourceUrl(profile.getStreamMode(), profile.getIp(), profile.getPort()));
         }
         if (trimToNull(profile.getSourceUrl()) == null) {
             throw new BizException(ResultCode.PARAM_ERROR, "视频源地址不能为空");
         }
+        String normalizedSourceUrl = validateProxySourceUrl(profile.getSourceUrl(), profile.getStreamMode());
+        boolean managedLocalProxy = isManagedLocalProxySource(normalizedSourceUrl);
+        boolean authEnabled = Boolean.TRUE.equals(profile.getAuthEnabled());
+        if (managedLocalProxy && !authEnabled) {
+            throw new BizException(ResultCode.PARAM_ERROR, "本地摄像头推流必须启用认证");
+        }
+        if (authEnabled) {
+            if (authUsername == null) {
+                throw new BizException(ResultCode.PARAM_ERROR, "已启用认证时必须填写认证用户名");
+            }
+            if (authPassword == null) {
+                throw new BizException(ResultCode.PARAM_ERROR, "已启用认证时必须填写认证密码");
+            }
+        } else {
+            authUsername = null;
+            authPassword = null;
+        }
+        profile.setAuthEnabled(authEnabled);
+        profile.setAuthUsername(authUsername);
+        profile.setAuthPassword(authPassword);
+        profile.setSourceUrl(normalizedSourceUrl);
     }
 
     private void alignManagedStatus(DeviceVideoProfile profile) {
@@ -591,7 +658,8 @@ public class DeviceVideoService {
         vo.setGbDeviceId(profile.getGbDeviceId());
         vo.setGbDomain(profile.getGbDomain());
         vo.setTransport(profile.getTransport());
-        vo.setSipAuthEnabled(trimToNull(profile.getSipPassword()) != null);
+        vo.setAuthEnabled(Boolean.TRUE.equals(profile.getAuthEnabled()));
+        vo.setAuthUsername(profile.getAuthUsername());
         vo.setStreamMode(profile.getStreamMode());
         vo.setIp(profile.getIp());
         vo.setPort(profile.getPort());
@@ -615,7 +683,9 @@ public class DeviceVideoService {
         vo.setGbDeviceId(profile.getGbDeviceId());
         vo.setGbDomain(profile.getGbDomain());
         vo.setTransport(profile.getTransport());
-        vo.setSipPassword(profile.getSipPassword());
+        vo.setAuthEnabled(Boolean.TRUE.equals(profile.getAuthEnabled()));
+        vo.setAuthUsername(profile.getAuthUsername());
+        vo.setAuthPassword(profile.getAuthPassword());
         vo.setStreamMode(profile.getStreamMode() == null ? null : profile.getStreamMode().name());
         vo.setIp(profile.getIp());
         vo.setPort(profile.getPort());
@@ -737,6 +807,50 @@ public class DeviceVideoService {
         int resolvedPort = port != null && port > 0 ? port : (streamMode == StreamMode.RTMP ? 1935 : 554);
         String protocol = streamMode == StreamMode.RTMP ? "rtmp" : "rtsp";
         return protocol + "://" + host + ":" + resolvedPort + "/";
+    }
+
+    private String validateProxySourceUrl(String sourceUrl, StreamMode streamMode) {
+        String normalizedSourceUrl = trimToNull(sourceUrl);
+        if (normalizedSourceUrl == null) {
+            return null;
+        }
+        String expectedScheme = streamMode == StreamMode.RTMP ? "rtmp" : "rtsp";
+        try {
+            URI parsed = new URI(normalizedSourceUrl);
+            String scheme = trimToNull(parsed.getScheme());
+            if (scheme == null || !expectedScheme.equalsIgnoreCase(scheme)) {
+                throw new BizException(ResultCode.PARAM_ERROR, "视频源地址必须使用 " + expectedScheme + "://");
+            }
+            if (trimToNull(parsed.getUserInfo()) != null) {
+                throw new BizException(ResultCode.PARAM_ERROR, "视频源地址不能内嵌用户名密码，请改填独立认证字段");
+            }
+            if (trimToNull(parsed.getHost()) == null) {
+                throw new BizException(ResultCode.PARAM_ERROR, "视频源地址缺少主机地址");
+            }
+            int resolvedPort = parsed.getPort() == -1
+                    ? (streamMode == StreamMode.RTMP ? 1935 : 554)
+                    : parsed.getPort();
+            if (resolvedPort <= 0 || resolvedPort > 65535) {
+                throw new BizException(ResultCode.PARAM_ERROR, "视频源地址端口不正确");
+            }
+            return normalizedSourceUrl;
+        } catch (URISyntaxException ex) {
+            throw new BizException(ResultCode.PARAM_ERROR, "视频源地址格式不正确");
+        }
+    }
+
+    private boolean isManagedLocalProxySource(String sourceUrl) {
+        String normalizedSourceUrl = trimToNull(sourceUrl);
+        if (normalizedSourceUrl == null) {
+            return false;
+        }
+        try {
+            URI parsed = new URI(normalizedSourceUrl);
+            String path = trimToNull(parsed.getPath());
+            return path != null && path.startsWith("/live/simcam-");
+        } catch (URISyntaxException ex) {
+            return false;
+        }
     }
 
     private String generateDeviceSecret() {

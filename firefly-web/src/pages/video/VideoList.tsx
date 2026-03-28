@@ -12,6 +12,7 @@ import {
   Row,
   Select,
   Space,
+  Switch,
   Table,
   Tabs,
   Tag,
@@ -51,7 +52,8 @@ interface VideoDeviceRecord {
   gbDomain?: string;
   transport?: string;
   streamMode: string;
-  sipAuthEnabled?: boolean;
+  authEnabled?: boolean;
+  authUsername?: string;
   ip?: string;
   port?: number;
   sourceUrl?: string;
@@ -106,7 +108,9 @@ interface VideoEditorFormValues {
   gbDeviceId?: string;
   gbDomain?: string;
   transport?: string;
-  sipPassword?: string;
+  authEnabled?: boolean;
+  authUsername?: string;
+  authPassword?: string;
   ip?: string;
   port?: number | string;
   sourceUrl?: string;
@@ -147,6 +151,50 @@ const normalizeOptionalPort = (value?: number | string) => {
   }
   const normalized = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(normalized) ? normalized : undefined;
+};
+
+const validateVideoSourceUrl = (streamMode: string | undefined, sourceUrl?: string) => {
+  const trimmed = trimOptionalValue(sourceUrl);
+  if (!trimmed) {
+    return;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    const expectedProtocol = (streamMode || 'RTSP') === 'RTMP' ? 'rtmp:' : 'rtsp:';
+    if (parsed.protocol !== expectedProtocol) {
+      throw new Error(`视频源地址必须使用 ${expectedProtocol.replace(':', '')}://`);
+    }
+    if ((parsed.username || '').trim() || (parsed.password || '').trim()) {
+      throw new Error('视频源地址不能内嵌用户名密码，请改填独立认证字段');
+    }
+    if (!trimOptionalValue(parsed.hostname)) {
+      throw new Error('视频源地址缺少主机地址');
+    }
+    const port = parsed.port
+      ? Number(parsed.port)
+      : (expectedProtocol === 'rtmp:' ? 1935 : 554);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      throw new Error('视频源地址端口不正确');
+    }
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('视频源地址格式不正确');
+  }
+};
+
+const isManagedLocalSourceUrl = (streamMode: string | undefined, sourceUrl?: string) => {
+  const trimmed = trimOptionalValue(sourceUrl);
+  if (!trimmed || streamMode === 'GB28181') {
+    return false;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return (parsed.pathname || '').startsWith('/live/simcam-');
+  } catch {
+    return false;
+  }
 };
 
 const getErrorMessage = (error: unknown, fallback: string) => {
@@ -201,7 +249,9 @@ const buildEditorInitialValues = (
       gbDeviceId: device.gbDeviceId,
       gbDomain: device.gbDomain,
       transport: device.streamMode === 'GB28181' ? device.transport || 'UDP' : undefined,
-      sipPassword: undefined,
+      authEnabled: device.authEnabled ?? (device.streamMode === 'GB28181'),
+      authUsername: device.authUsername,
+      authPassword: undefined,
       ip: device.ip,
       port: device.port,
       sourceUrl: device.sourceUrl,
@@ -216,11 +266,13 @@ const buildEditorInitialValues = (
     productKey: productContext?.productKey,
     streamMode,
     transport: streamMode === 'GB28181' ? 'UDP' : undefined,
+    authEnabled: streamMode === 'GB28181',
   };
 };
 
 const buildEditorPayload = (values: VideoEditorFormValues) => {
   const streamMode = values.streamMode || 'GB28181';
+  const authEnabled = values.authEnabled ?? (streamMode === 'GB28181');
   return {
     productKey: trimOptionalValue(values.productKey),
     name: values.name?.trim(),
@@ -228,7 +280,9 @@ const buildEditorPayload = (values: VideoEditorFormValues) => {
     gbDeviceId: trimOptionalValue(values.gbDeviceId),
     gbDomain: trimOptionalValue(values.gbDomain),
     transport: streamMode === 'GB28181' ? trimOptionalValue(values.transport) || 'UDP' : undefined,
-    sipPassword: streamMode === 'GB28181' ? trimOptionalValue(values.sipPassword) : undefined,
+    authEnabled,
+    authUsername: authEnabled ? trimOptionalValue(values.authUsername) : undefined,
+    authPassword: authEnabled ? trimOptionalValue(values.authPassword) : undefined,
     ip: trimOptionalValue(values.ip),
     port: normalizeOptionalPort(values.port),
     sourceUrl: trimOptionalValue(values.sourceUrl),
@@ -254,6 +308,10 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
   const [productOptions, setProductOptions] = useState<VideoProductOption[]>([]);
   const currentEditorProductKey = Form.useWatch('productKey', editorForm);
   const currentEditorStreamMode = Form.useWatch('streamMode', editorForm) || productContext?.protocol || 'GB28181';
+  const currentEditorGbDeviceId = Form.useWatch('gbDeviceId', editorForm);
+  const currentEditorAuthEnabled = Form.useWatch('authEnabled', editorForm);
+  const currentEditorAuthUsername = Form.useWatch('authUsername', editorForm);
+  const currentEditorSourceUrl = Form.useWatch('sourceUrl', editorForm);
   const [draftFilters, setDraftFilters] = useState<VideoListFilters>(EMPTY_VIDEO_FILTERS);
   const [filters, setFilters] = useState<VideoListFilters>(EMPTY_VIDEO_FILTERS);
 
@@ -352,10 +410,19 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
     if (currentEditorStreamMode === 'GB28181' && !editorForm.getFieldValue('transport')) {
       editorForm.setFieldValue('transport', 'UDP');
     }
-    if (currentEditorStreamMode !== 'GB28181') {
-      editorForm.setFieldValue('sipPassword', undefined);
+    if (editorForm.getFieldValue('authEnabled') === undefined) {
+      editorForm.setFieldValue('authEnabled', currentEditorStreamMode === 'GB28181');
     }
   }, [currentEditorStreamMode, editorForm]);
+
+  useEffect(() => {
+    if (currentEditorStreamMode !== 'GB28181' || !trimOptionalValue(currentEditorGbDeviceId)) {
+      return;
+    }
+    if (!trimOptionalValue(currentEditorAuthUsername) || currentEditorAuthUsername === editingDevice?.gbDeviceId) {
+      editorForm.setFieldValue('authUsername', trimOptionalValue(currentEditorGbDeviceId));
+    }
+  }, [currentEditorAuthUsername, currentEditorGbDeviceId, currentEditorStreamMode, editingDevice?.gbDeviceId, editorForm]);
 
   const stats = useMemo(
     () => ({
@@ -943,31 +1010,70 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
                   <Col xs={24} md={12} />
                 </Row>
 
+              </>
+            ) : null}
+
+            <Row gutter={16}>
+              <Col xs={24} md={8}>
+                <Form.Item name="authEnabled" label="启用认证" valuePropName="checked">
+                  <Switch />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={16}>
                 <Form.Item
-                  name="sipPassword"
-                  label="SIP 密码"
+                  name="authUsername"
+                  label="认证用户名"
                   rules={[
                     {
                       validator: async (_, value) => {
-                        const trimmed = typeof value === 'string' ? value.trim() : '';
-                        if (trimmed) {
+                        if (!currentEditorAuthEnabled) {
                           return;
                         }
-                        if (editorMode === 'edit' && editingDevice?.sipAuthEnabled) {
+                        if (trimOptionalValue(value)) {
                           return;
                         }
-                        throw new Error('请输入SIP密码');
+                        throw new Error('请输入认证用户名');
                       },
                     },
                   ]}
                 >
-                  <Input.Password
-                    placeholder={editorMode === 'edit' && editingDevice?.sipAuthEnabled ? '留空则保持原密码' : '请输入SIP密码'}
+                  <Input
+                    disabled={!currentEditorAuthEnabled}
+                    placeholder={currentEditorStreamMode === 'GB28181' ? '默认使用 GB 设备编号' : '请输入认证用户名'}
                     maxLength={128}
                   />
                 </Form.Item>
-              </>
-            ) : null}
+              </Col>
+            </Row>
+
+            <Form.Item
+              name="authPassword"
+              label="认证密码"
+              rules={[
+                {
+                  validator: async (_, value) => {
+                    const managedLocalSource = isManagedLocalSourceUrl(currentEditorStreamMode, currentEditorSourceUrl);
+                    if (!currentEditorAuthEnabled && !managedLocalSource) {
+                      return;
+                    }
+                    const trimmed = typeof value === 'string' ? value.trim() : '';
+                    if (trimmed) {
+                      return;
+                    }
+                    if (editorMode === 'edit' && editingDevice?.authEnabled) {
+                      return;
+                    }
+                    throw new Error('请输入认证密码');
+                  },
+                },
+              ]}
+            >
+              <Input.Password
+                disabled={!currentEditorAuthEnabled}
+                placeholder={editorMode === 'edit' && editingDevice?.authEnabled ? '留空则保持原密码' : '请输入认证密码'}
+                maxLength={128}
+              />
+            </Form.Item>
 
             <Row gutter={16}>
               <Col xs={24} md={12}>
@@ -983,7 +1089,23 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
             </Row>
 
             {currentEditorStreamMode !== 'GB28181' ? (
-              <Form.Item name="sourceUrl" label="视频源地址">
+              <Form.Item
+                name="sourceUrl"
+                label="视频源地址"
+                rules={[
+                  {
+                    validator: async (_, value) => {
+                      if (!trimOptionalValue(value)) {
+                        return;
+                      }
+                      validateVideoSourceUrl(currentEditorStreamMode, value);
+                      if (isManagedLocalSourceUrl(currentEditorStreamMode, value) && !currentEditorAuthEnabled) {
+                        throw new Error('本地摄像头推流地址必须启用认证');
+                      }
+                    },
+                  },
+                ]}
+              >
                 <Input placeholder="如：rtsp://host:554/live" maxLength={1024} />
               </Form.Item>
             ) : null}

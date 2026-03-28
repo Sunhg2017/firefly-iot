@@ -248,8 +248,13 @@ async function startGb28181SipSession(
   options?: { silent?: boolean },
 ) {
   const store = useSimStore.getState();
-  if (!device.sipPassword?.trim()) {
-    throw new Error('GB28181 连接失败：缺少设备级 SIP 密码');
+  if (device.authEnabled) {
+    if (!device.authUsername?.trim()) {
+      throw new Error('GB28181 连接失败：缺少认证用户名');
+    }
+    if (!device.authPassword?.trim()) {
+      throw new Error('GB28181 连接失败：缺少认证密码');
+    }
   }
 
   const sipConfig = buildSimulatorSipStartConfig(device);

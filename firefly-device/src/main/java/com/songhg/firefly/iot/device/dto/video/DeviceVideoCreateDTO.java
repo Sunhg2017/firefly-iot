@@ -32,12 +32,16 @@ public class DeviceVideoCreateDTO {
     @Schema(description = "传输方式")
     private String transport;
 
-    @Schema(description = "是否启用 SIP 密码认证")
-    private Boolean sipAuthEnabled;
+    @Schema(description = "是否启用认证")
+    private Boolean authEnabled;
 
-    @Schema(description = "设备级 SIP 密码")
+    @Schema(description = "认证用户名")
     @Size(max = 128)
-    private String sipPassword;
+    private String authUsername;
+
+    @Schema(description = "认证密码")
+    @Size(max = 128)
+    private String authPassword;
 
     @Schema(description = "接入 IP")
     private String ip;

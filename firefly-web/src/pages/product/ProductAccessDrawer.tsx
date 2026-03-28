@@ -233,8 +233,8 @@ const buildProtocolGuideSections = (
             rows: [
               { label: '推荐页面', value: '/device', copyable: true },
               { label: '接入方式', value: 'GB/T 28181', copyable: true },
-              { label: '认证方式', value: '设备级 SIP 密码' },
-              { label: '必填参数', value: '设备名称、GB 设备编号、GB 域、传输协议、IP、端口' },
+              { label: '认证方式', value: '统一认证字段（默认用户名=GB 设备编号）' },
+              { label: '必填参数', value: '设备名称、GB 设备编号、GB 域、传输协议、IP、端口、认证信息' },
             ],
           },
         ];
@@ -246,8 +246,8 @@ const buildProtocolGuideSections = (
             rows: [
               { label: '推荐页面', value: '/device', copyable: true },
               { label: '接入方式', value: 'RTSP', copyable: true },
-              { label: '认证方式', value: '按设备参数新增' },
-              { label: '必填参数', value: '设备名称、视频源地址或 IP/端口' },
+              { label: '认证方式', value: '统一认证字段（按需启用）' },
+              { label: '必填参数', value: '设备名称、视频源地址或 IP/端口；本地摄像头流需补齐认证信息' },
             ],
           },
         ];
@@ -259,8 +259,8 @@ const buildProtocolGuideSections = (
             rows: [
               { label: '推荐页面', value: '/device', copyable: true },
               { label: '接入方式', value: 'RTMP', copyable: true },
-              { label: '认证方式', value: '按设备参数新增' },
-              { label: '必填参数', value: '设备名称、视频源地址或 IP/端口' },
+              { label: '认证方式', value: '统一认证字段（按需启用）' },
+              { label: '必填参数', value: '设备名称、视频源地址或 IP/端口；本地摄像头流需补齐认证信息' },
             ],
           },
         ];

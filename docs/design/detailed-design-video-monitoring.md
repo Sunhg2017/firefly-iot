@@ -1,7 +1,7 @@
 # Firefly-IoT 视频设备并入 Device 详细设计
 
-> 版本: v2.0.0
-> 日期: 2026-03-27
+> 版本: v2.1.0
+> 日期: 2026-03-28
 > 状态: Done
 
 ## 1. 背景
@@ -72,11 +72,13 @@
 - `stream_mode`
 - `gb_device_id`
 - `gb_domain`
-- `sip_password`
+- `auth_enabled`
+- `auth_username`
+- `auth_password`
 - `transport`
 - `ip`
 - `port`
-- `source_url`
+- `source_url`（只保存无凭据地址）
 - `manufacturer`
 - `model`
 - `firmware`
@@ -111,7 +113,8 @@
 
 - 按 `deviceId` 查询视频档案
 - 按 `deviceId` 查询视频通道
-- 按 `gbDeviceId + gbDomain` 查询视频档案和设备级 SIP 密码
+- 按 `gbDeviceId + gbDomain` 查询视频档案和统一认证字段
+- 按 `streamMode + app + stream` 回查 `live/simcam-*` 对应的视频设备，用于 ZLM hook 鉴权
 
 ### 5.3 媒体控制接口
 
@@ -139,13 +142,14 @@
 5. 平台创建 `device_video_profiles` 记录。
 6. 返回统一的 `deviceId` 作为视频设备平台标识。
 
-### 6.2 GB28181 注册认证
+### 6.2 统一认证与 GB28181 注册认证
 
-1. 设备向 `firefly-media` 发起 REGISTER。
-2. `SipRegisterAuthService` 通过内部接口按 `gbDeviceId + gbDomain` 查询视频档案。
-3. 平台读取设备级 `sip_password` 校验 Digest；GB28181 设备不再允许无密码注册。
-4. 成功后只更新运行态并发 MQ 事件。
-5. `firefly-device` 消费事件并更新 `device_video_profiles.status` 与 `devices.online_status`。
+1. 平台统一把视频设备认证收口为设备级 `authEnabled/authUsername/authPassword`。
+2. `GB28181` 注册仍以 `gbDeviceId + gbDomain` 定位设备，但 Digest 用户名改为 `authUsername`；创建页默认用 `gbDeviceId` 初始化，用户改动后不再自动覆盖。
+3. `SipRegisterAuthService` 通过内部接口按 `gbDeviceId + gbDomain` 查询视频档案和统一认证字段。
+4. 当 `authEnabled=true` 时，平台使用 `authUsername/authPassword` 校验 Digest；当 `authEnabled=false` 时允许免鉴权 REGISTER。
+5. 成功后只更新运行态并发 MQ 事件。
+6. `firefly-device` 消费事件并更新 `device_video_profiles.status` 与 `devices.online_status`。
 
 认证失败原因必须原样返回，不允许吞异常。
 
@@ -177,12 +181,15 @@
 - 部署脚本会从仓库内的 `deploy/zlmediakit/config.template.ini` 生成并维护 `deploy/runtime/zlmediakit/config.ini`，再通过 compose 挂载到容器内，保证 `api.secret` 与 `ZLM_SECRET` 保持一致，而不是依赖镜像随机生成值；`ZLM_SECRET` 必须使用纯字母数字格式，禁止继续使用带连字符的 UUID。
 - `compose` 部署默认内置 `zlmediakit` 基础设施，HTTP API 暴露为宿主机 `18080`，RTSP 暴露为宿主机 `18554`。
 - `RTSP / RTMP` 代理流继续使用 `live/{streamId}` 作为 ZLM 应用名和播放地址。
-- 若设备由模拟器的 `RTSP / RTMP + 本地摄像头` 模式自动创建，平台资产 `ip` 字段展示模拟器主机地址，`sourceUrl` 继续保存 ZLM 推流地址；设备列表的 IP 列不得再误显示成基础设施 ZLM 节点。
+- 视频设备统一使用 `auth_enabled/auth_username/auth_password`；`source_url` 永远只保存无凭据地址，禁止再落库 `rtsp://user:pass@...` 或 `rtmp://user:pass@...`。
+- `RTSP / RTMP` 外部源拉流时，`firefly-media` 仅在运行态把 `authUsername/authPassword` 拼成上游 URL userinfo；日志、异常、监控字段统一输出脱敏后的地址。
+- 若设备由模拟器的 `RTSP / RTMP + 本地摄像头` 模式自动创建，平台资产 `ip` 字段展示模拟器主机地址，`sourceUrl` 继续保存不带凭据的 ZLM 推流地址；真正给 FFmpeg 和平台回拉使用的运行时地址会在此基础上追加 `authUser/authPass` 查询参数。
 - `RTSP / RTMP` 重复点击播放时，`startStream` 也必须优先检查 `stream_sessions` 与 ZLM `live/{streamId}` 实时流状态；若代理流仍存在则直接复用当前会话，避免再次调用 `addStreamProxy` 触发 `This stream already exists`。
 - 若 `RTSP / RTMP` 的代理流仍在 ZLM 中，但数据库会话已丢失，平台会按当前 `streamId` 补建 `ACTIVE` 会话并直接返回播放地址，避免 orphan runtime 卡死后仍无法重播。
 - `stream_sessions` 新增内部字段 `proxy_key`，用于保存 `addStreamProxy` 返回的 PlayerProxy 标识；该字段只参与清理链路，不对前端接口暴露。
 - 若 `addStreamProxy` 返回 `This stream already exists` 且 `getMediaList(live/{streamId})` 为空，平台必须进一步检查 `listStreamProxy`；只要仍能查到同一 `live/{streamId}` 的代理任务，就按陈旧代理处理，先 `delStreamProxy` 再重建，禁止继续只靠轮询等待。
 - `RTSP / RTMP` 在手动停止、陈旧会话重启前清理、开流超时回滚以及 `on_stream_none_reader` 无人观看回收时，都必须走同一套“删除 PlayerProxy + 关闭 runtime stream + 关闭会话”的回收链路，避免 ZLM 内残留孤儿代理持续重试旧源地址。
+- `ZlmHookController` 的 `on_publish` 与 `on_play` 只对 Firefly 管理的 `live/simcam-*` 生效：媒体服务按 `streamMode + app + stream` 回查平台视频设备，并校验运行时 `authUser/authPass` 是否与设备统一认证字段一致；校验失败直接拒绝推流或回拉。
 - `GB28181` 开流前必须先调用 ZLM `openRtpServer` 打开 RTP 收流端口，并显式绑定自定义 `streamId`。
 - `compose` 示例为保证宿主机端口可达，默认使用固定 `zlmediakit.rtp-port` 打开 RTP 收流口，并要求宿主机同步暴露该端口。
 - 由于 Firefly 采用 `openRtpServer` 按需占用固定 RTP 口，ZLM 配置里的 `rtp_proxy.port` 必须保持为 `0`，禁止再预占同一个 `10000` 端口，否则 `openRtpServer` 会直接返回 `address already in use`。
@@ -213,7 +220,7 @@
   2. 查重后创建或更新设备资产
   3. 缓存 `platformDeviceId`
   4. 再通过 `MEDIA` 路由按 `platformDeviceId` 执行播放、PTZ、截图、录制、目录和设备信息查询
-- GB28181 本地 SIP 模拟仍使用设备级 SIP 密码参与 Digest 认证。
+- GB28181、本地摄像头推流、RTSP/RTMP 外部源拉流全部复用同一套设备级认证字段；模拟器展示的是无凭据 `sourceUrl`，真正的运行态地址由主进程和媒体服务分别按协议补齐认证参数。
 
 ## 9. 风险与约束
 

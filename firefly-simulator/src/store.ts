@@ -83,7 +83,9 @@ export interface SimDevice {
   sipServerId: string;
   sipLocalPort: number;
   sipKeepaliveInterval: number;
-  sipPassword: string;
+  authEnabled: boolean;
+  authUsername: string;
+  authPassword: string;
   sipTransport: 'UDP' | 'TCP';
   cameraDevice: string;
   mediaFps: number;
@@ -223,6 +225,9 @@ function normalizePersistedDevice(device: SimDevice | (SimDevice & { mediaBaseUr
     videoSourceType: normalized.videoSourceType
       || (streamMode === 'GB28181' ? 'LOCAL_CAMERA' : 'REMOTE_SOURCE'),
     platformDeviceId: normalized.platformDeviceId ?? null,
+    authEnabled: Boolean(normalized.authEnabled),
+    authUsername: normalized.authUsername || '',
+    authPassword: normalized.authPassword || '',
     cameraDevice: normalized.cameraDevice || '',
     mediaFps: Number(normalized.mediaFps) || 15,
     mediaWidth: Number(normalized.mediaWidth) || 1280,
@@ -465,7 +470,9 @@ export const useSimStore = create<SimulatorState>()(
       sipServerId: draft.sipServerId || '34020000002000000001',
       sipLocalPort: draft.sipLocalPort || 5080,
       sipKeepaliveInterval: draft.sipKeepaliveInterval || 60,
-      sipPassword: draft.sipPassword || '',
+      authEnabled: draft.authEnabled ?? (normalizedVideoMode === 'GB28181'),
+      authUsername: draft.authUsername || '',
+      authPassword: draft.authPassword || '',
       sipTransport: draft.sipTransport || 'UDP',
       cameraDevice: draft.cameraDevice || '',
       mediaFps: Number(draft.mediaFps) || 15,

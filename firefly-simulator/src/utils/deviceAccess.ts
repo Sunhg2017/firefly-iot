@@ -97,14 +97,20 @@ export function getDeviceAccessMissingFields(device: SimDevice): string[] {
     }
     case 'Video': {
       const missing: string[] = [];
+      const streamMode = normalizeVideoStreamMode(device.streamMode);
       if (!trim(device.productKey)) missing.push('ProductKey');
       if (!trim(device.deviceName)) missing.push('DeviceName');
-      if (normalizeVideoStreamMode(device.streamMode) === 'GB28181') {
+      if (streamMode === 'GB28181') {
         if (!trim(device.gbDeviceId)) missing.push('国标设备 ID');
         if (!trim(device.gbDomain)) missing.push('国标域');
-        if (!trim(device.sipPassword)) missing.push('SIP 密码');
       } else if (device.videoSourceType === 'REMOTE_SOURCE' && !trim(device.sourceUrl)) {
         missing.push(getVideoSourceFieldLabel(device.streamMode));
+      }
+      if (device.authEnabled) {
+        if (!trim(device.authUsername)) missing.push('认证用户名');
+        if (!trim(device.authPassword)) missing.push('认证密码');
+      } else if (streamMode !== 'GB28181' && device.videoSourceType === 'LOCAL_CAMERA') {
+        missing.push('认证开关');
       }
       return missing;
     }
@@ -246,8 +252,12 @@ export function getDeviceAccessOverviewItems(device: SimDevice): AccessOverviewI
           label: '平台设备资产',
           value: trim(String(device.platformDeviceId ?? '')) || '未设置',
         },
-        ...(streamMode === 'GB28181'
-          ? [{ label: 'SIP 密码', value: maskSecret(device.sipPassword) }]
+        { label: '认证开关', value: device.authEnabled ? '已启用' : '未启用' },
+        ...(device.authEnabled
+          ? [
+            { label: '认证用户名', value: trim(device.authUsername) || '未配置' },
+            { label: '认证密码', value: maskSecret(device.authPassword) },
+          ]
           : []),
       ];
     default:

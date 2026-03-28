@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button, Space, Tag, Typography, Empty,
-  Modal, Form, Input, InputNumber, Radio, Row, Col, Select, Statistic, message,
+  Modal, Form, Input, InputNumber, Radio, Row, Col, Select, Statistic, Switch, message,
 } from 'antd';
 import {
   PlusOutlined, WifiOutlined, EditOutlined,
@@ -51,6 +51,7 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
   const selectedMediaWidth = Form.useWatch('mediaWidth', sipParamForm);
   const selectedMediaHeight = Form.useWatch('mediaHeight', sipParamForm);
   const selectedMediaFps = Form.useWatch('mediaFps', sipParamForm);
+  const authEnabled = Form.useWatch('authEnabled', sipParamForm);
   const usesLocalCamera = device.videoSourceType === 'LOCAL_CAMERA';
   const selectedCameraModeKey = buildLocalVideoModeKey(selectedMediaWidth, selectedMediaHeight, selectedMediaFps);
   const availableLocalVideoModes = useMemo(
@@ -165,7 +166,10 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
             sipParamForm.setFieldsValue({
               sipServerIp: device.sipServerIp, sipServerPort: device.sipServerPort, sipServerId: device.sipServerId,
               sipLocalPort: device.sipLocalPort, sipKeepaliveInterval: device.sipKeepaliveInterval,
-              sipTransport: device.sipTransport, sipPassword: device.sipPassword,
+              sipTransport: device.sipTransport,
+              authEnabled: device.authEnabled,
+              authUsername: device.authUsername,
+              authPassword: device.authPassword,
               cameraDevice: device.cameraDevice,
               mediaFps: device.mediaFps,
               mediaWidth: device.mediaWidth,
@@ -179,7 +183,10 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
             <Space direction="vertical" size={2}>
               <Text type="secondary">SIP Server: {device.sipServerIp}:{device.sipServerPort} ({device.sipTransport})</Text>
               <Text type="secondary">Server ID: {device.sipServerId}</Text>
-              <Text type="secondary">本地端口: {device.sipLocalPort} | 鉴权: {device.sipPassword ? '已配置' : '未配置'} | 通道: {device.sipChannels.length || 1}</Text>
+              <Text type="secondary">本地端口: {device.sipLocalPort} | 鉴权: {device.authEnabled ? '已启用' : '未启用'} | 通道: {device.sipChannels.length || 1}</Text>
+              {device.authEnabled ? (
+                <Text type="secondary">认证用户: {device.authUsername || '未配置'} | 认证密码: {device.authPassword ? '已配置' : '未配置'}</Text>
+              ) : null}
               {usesLocalCamera ? (
                 <Text type="secondary">采集: {device.cameraDevice || '系统默认'} | 模式: {device.mediaWidth} x {device.mediaHeight} @ {device.mediaFps}fps</Text>
               ) : null}
@@ -195,8 +202,12 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
               type="primary"
               disabled={device.sipRegistered}
               onClick={async () => {
-                if (!device.sipPassword?.trim()) {
-                  addLog(device.id, device.name, 'error', 'SIP 注册失败：缺少设备级 SIP 密码');
+                if (device.authEnabled && !device.authUsername?.trim()) {
+                  addLog(device.id, device.name, 'error', 'SIP 注册失败：缺少认证用户名');
+                  return;
+                }
+                if (device.authEnabled && !device.authPassword?.trim()) {
+                  addLog(device.id, device.name, 'error', 'SIP 注册失败：缺少认证密码');
                   return;
                 }
                 addLog(device.id, device.name, 'info', '启动 SIP 客户端...');
@@ -586,7 +597,9 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
             sipLocalPort: vals.sipLocalPort,
             sipKeepaliveInterval: vals.sipKeepaliveInterval,
             sipTransport: vals.sipTransport,
-            sipPassword: vals.sipPassword,
+            authEnabled: Boolean(vals.authEnabled),
+            authUsername: vals.authEnabled ? (vals.authUsername || device.gbDeviceId || '') : '',
+            authPassword: vals.authEnabled ? vals.authPassword || '' : '',
             ...(usesLocalCamera
               ? {
                 cameraDevice: vals.cameraDevice || '',
@@ -660,12 +673,58 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
             </Col>
             <Col span={12}>
               <Form.Item
-                name="sipPassword"
-                label="认证密码"
-                rules={[{ required: true, message: '请输入 SIP 认证密码' }]}
+                name="authEnabled"
+                label="启用认证"
+                valuePropName="checked"
                 style={{ marginBottom: 0 }}
               >
-                <Input.Password placeholder="请输入 SIP 认证密码" />
+                <Switch />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={8}>
+            <Col span={12}>
+              <Form.Item
+                name="authUsername"
+                label="认证用户名"
+                rules={[
+                  {
+                    validator: async (_, value) => {
+                      if (!sipParamForm.getFieldValue('authEnabled')) {
+                        return;
+                      }
+                      if (String(value || '').trim()) {
+                        return;
+                      }
+                      throw new Error('请输入认证用户名');
+                    },
+                  },
+                ]}
+                style={{ marginBottom: 8 }}
+              >
+                <Input placeholder="留空默认使用国标设备 ID" disabled={!authEnabled} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="authPassword"
+                label="认证密码"
+                rules={[
+                  {
+                    validator: async (_, value) => {
+                      if (!sipParamForm.getFieldValue('authEnabled')) {
+                        return;
+                      }
+                      if (String(value || '').trim()) {
+                        return;
+                      }
+                      throw new Error('请输入认证密码');
+                    },
+                  },
+                ]}
+                style={{ marginBottom: 8 }}
+              >
+                <Input.Password placeholder="请输入认证密码" disabled={!authEnabled} />
               </Form.Item>
             </Col>
           </Row>

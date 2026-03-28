@@ -2,6 +2,7 @@ package com.songhg.firefly.iot.device.controller;
 
 import com.songhg.firefly.iot.api.dto.InternalVideoChannelVO;
 import com.songhg.firefly.iot.api.dto.InternalVideoDeviceVO;
+import com.songhg.firefly.iot.common.enums.StreamMode;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.device.service.DeviceVideoService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -40,5 +41,13 @@ public class InternalDeviceVideoController {
     public R<InternalVideoDeviceVO> getByGbIdentity(@RequestParam("gbDeviceId") String gbDeviceId,
                                                     @RequestParam(value = "gbDomain", required = false) String gbDomain) {
         return R.ok(deviceVideoService.getInternalVideoDeviceByGbIdentity(gbDeviceId, gbDomain));
+    }
+
+    @GetMapping("/proxy-stream")
+    @Operation(summary = "按代理源流路径读取视频设备")
+    public R<InternalVideoDeviceVO> getByProxyStream(@RequestParam("streamMode") StreamMode streamMode,
+                                                     @RequestParam("app") String app,
+                                                     @RequestParam("stream") String stream) {
+        return R.ok(deviceVideoService.getInternalVideoDeviceByProxyStream(streamMode, app, stream));
     }
 }

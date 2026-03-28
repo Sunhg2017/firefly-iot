@@ -19,7 +19,9 @@ public class DeviceVideoProfile {
     private String gbDeviceId;
     private String gbDomain;
     private String transport;
-    private String sipPassword;
+    private Boolean authEnabled;
+    private String authUsername;
+    private String authPassword;
     private String ip;
     private Integer port;
     private String sourceUrl;

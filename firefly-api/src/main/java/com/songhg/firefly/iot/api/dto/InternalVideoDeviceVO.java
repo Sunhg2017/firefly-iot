@@ -23,7 +23,9 @@ public class InternalVideoDeviceVO implements Serializable {
     private String gbDeviceId;
     private String gbDomain;
     private String transport;
-    private String sipPassword;
+    private Boolean authEnabled;
+    private String authUsername;
+    private String authPassword;
     private String streamMode;
     private String ip;
     private Integer port;

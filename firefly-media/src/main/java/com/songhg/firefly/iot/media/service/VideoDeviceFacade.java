@@ -34,6 +34,10 @@ public class VideoDeviceFacade {
         return unwrapNullable(deviceVideoClient.getByGbIdentity(gbDeviceId, gbDomain), "按 GB 身份查询视频设备失败");
     }
 
+    public InternalVideoDeviceVO getByProxyStream(StreamMode streamMode, String app, String stream) {
+        return unwrapNullable(deviceVideoClient.getByProxyStream(streamMode, app, stream), "按代理源流读取视频设备失败");
+    }
+
     public StreamMode requireStreamMode(InternalVideoDeviceVO device) {
         StreamMode streamMode = resolveStreamMode(device);
         if (streamMode == null) {

@@ -2,6 +2,7 @@ package com.songhg.firefly.iot.api.client;
 
 import com.songhg.firefly.iot.api.dto.InternalVideoChannelVO;
 import com.songhg.firefly.iot.api.dto.InternalVideoDeviceVO;
+import com.songhg.firefly.iot.common.enums.StreamMode;
 import com.songhg.firefly.iot.common.result.R;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,4 +26,9 @@ public interface DeviceVideoClient {
     @GetMapping("/gb-identity")
     R<InternalVideoDeviceVO> getByGbIdentity(@RequestParam("gbDeviceId") String gbDeviceId,
                                              @RequestParam(value = "gbDomain", required = false) String gbDomain);
+
+    @GetMapping("/proxy-stream")
+    R<InternalVideoDeviceVO> getByProxyStream(@RequestParam("streamMode") StreamMode streamMode,
+                                              @RequestParam("app") String app,
+                                              @RequestParam("stream") String stream);
 }

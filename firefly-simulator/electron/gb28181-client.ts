@@ -16,6 +16,10 @@ import { EventEmitter } from 'events';
 export interface Gb28181Config {
   /** 国标设备编号 (20 位) */
   deviceId: string;
+  /** 是否启用 Digest 认证 */
+  authEnabled?: boolean;
+  /** Digest 用户名，留空时回退到设备编号 */
+  authUsername?: string;
   /** 国标域 (10 位) */
   domain: string;
   /** 设备本地 IP */
@@ -221,15 +225,19 @@ export class Gb28181Client extends EventEmitter {
 
   // ==================== SIP Digest Authentication (RFC 2617) ====================
 
+  private get authUsername(): string {
+    return (this.config.authUsername || '').trim() || this.config.deviceId;
+  }
+
   private computeDigestResponse(method: string, uri: string, realm: string, nonce: string, password: string): string {
-    const username = this.config.deviceId;
+    const username = this.authUsername;
     const ha1 = crypto.createHash('md5').update(`${username}:${realm}:${password}`).digest('hex');
     const ha2 = crypto.createHash('md5').update(`${method}:${uri}`).digest('hex');
     return crypto.createHash('md5').update(`${ha1}:${nonce}:${ha2}`).digest('hex');
   }
 
   private buildAuthorizationHeader(method: string, uri: string, realm: string, nonce: string): string {
-    const username = this.config.deviceId;
+    const username = this.authUsername;
     const response = this.computeDigestResponse(method, uri, realm, nonce, this.config.password);
     return `Digest username="${username}", realm="${realm}", nonce="${nonce}", uri="${uri}", response="${response}", algorithm=MD5`;
   }
@@ -265,7 +273,7 @@ export class Gb28181Client extends EventEmitter {
       `User-Agent: Firefly-Simulator/1.0`,
       `Expires: ${expires}`,
     ];
-    if (realm && nonce && this.config.password) {
+    if (realm && nonce && this.config.authEnabled && this.config.password) {
       lines.push(`Authorization: ${this.buildAuthorizationHeader('REGISTER', uri, realm, nonce)}`);
     }
     lines.push(`Content-Length: 0`, ``, ``);
@@ -410,7 +418,7 @@ export class Gb28181Client extends EventEmitter {
       if (statusCode === 401 || statusCode === 407) {
         // Digest auth challenge
         const wwwAuth = this.extractHeader(data, statusCode === 401 ? 'WWW-Authenticate' : 'Proxy-Authenticate');
-        if (wwwAuth && this.config.password) {
+        if (wwwAuth && this.config.authEnabled && this.config.password) {
           const { realm, nonce } = this.parseWwwAuthenticate(wwwAuth);
           this.authRealm = realm;
           this.authNonce = nonce;

@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * GB28181 REGISTER Digest 鉴权服务。
  * <p>
- * 当前用户名固定使用视频设备的 GB 设备编号，GB28181 设备统一强制 Digest 鉴权。
+ * GB28181 REGISTER 使用统一的视频设备认证字段；启用认证时走 Digest，关闭认证时允许免鉴权注册。
  */
 @Slf4j
 @Component
@@ -49,12 +49,16 @@ public class SipRegisterAuthService {
             return RegisterAuthorization.challenge(identity.deviceId(), realm, issueNonce(identity.deviceId()), "未找到对应的视频设备");
         }
 
-        String sipPassword = trimToNull(device.getSipPassword());
-        if (sipPassword == null) {
-            log.warn("Reject REGISTER without SIP password: gbDeviceId={}, gbDomain={}",
+        if (!Boolean.TRUE.equals(device.getAuthEnabled())) {
+            return RegisterAuthorization.allow(identity.deviceId());
+        }
+
+        String authPassword = trimToNull(device.getAuthPassword());
+        if (authPassword == null) {
+            log.warn("Reject REGISTER without auth password: gbDeviceId={}, gbDomain={}",
                     identity.deviceId(), identity.gbDomain());
             return RegisterAuthorization.challenge(identity.deviceId(), realm, issueNonce(identity.deviceId()),
-                    "设备未配置 SIP 密码，禁止无鉴权注册");
+                    "设备未配置认证密码");
         }
 
         AuthorizationHeader authorizationHeader =
@@ -81,9 +85,13 @@ public class SipRegisterAuthService {
         if (username == null || nonce == null || response == null) {
             return "SIP 认证参数不完整";
         }
-        if (!device.getGbDeviceId().equals(username)) {
+        String expectedUsername = trimToNull(device.getAuthUsername());
+        if (expectedUsername == null) {
+            expectedUsername = trimToNull(device.getGbDeviceId());
+        }
+        if (expectedUsername == null || !expectedUsername.equals(username)) {
             log.warn("GB28181 REGISTER auth username mismatch: expected={}, actual={}",
-                    device.getGbDeviceId(), username);
+                    expectedUsername, username);
             return "SIP 用户名不匹配";
         }
         if (!realm.equals(trimToNull(authorizationHeader.getRealm()))) {
@@ -99,10 +107,10 @@ public class SipRegisterAuthService {
             return "SIP 认证已过期，请重新注册";
         }
 
-        String ha1 = md5Hex(username + ":" + realm + ":" + device.getSipPassword());
+        String ha1 = md5Hex(username + ":" + realm + ":" + device.getAuthPassword());
         String ha2 = md5Hex(request.getMethod() + ":" + request.getRequestURI());
         String expectedResponse = md5Hex(ha1 + ":" + nonce + ":" + ha2);
-        return expectedResponse.equalsIgnoreCase(response) ? null : "SIP 密码错误";
+        return expectedResponse.equalsIgnoreCase(response) ? null : "认证密码错误";
     }
 
     private String issueNonce(String deviceId) {

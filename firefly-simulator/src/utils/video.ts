@@ -10,6 +10,12 @@ export interface ParsedVideoSourceUrl {
   port: number;
 }
 
+export interface SimulatorVideoAuthConfig {
+  authEnabled?: boolean | null;
+  authUsername?: string | null;
+  authPassword?: string | null;
+}
+
 export interface LocalVideoModeOption {
   key: string;
   label: string;
@@ -76,6 +82,16 @@ export function buildLocalCameraSourceUrl(
   return normalizedMode === 'RTMP'
     ? `rtmp://${host}:${port}/live/${key}`
     : `rtsp://${host}:${port}/live/${key}`;
+}
+
+export function buildLocalCameraPublishTargetUrl(
+  environmentOrConfig: SimulatorEnvironment | SimulatorMediaPublishConfig | null | undefined,
+  streamMode: string | null | undefined,
+  simulatorDeviceId: string,
+  auth?: SimulatorVideoAuthConfig | null,
+): string {
+  const sourceUrl = buildLocalCameraSourceUrl(environmentOrConfig, streamMode, simulatorDeviceId);
+  return appendVideoAuthQuery(sourceUrl, auth);
 }
 
 export function buildLocalCameraSourcePreview(
@@ -240,6 +256,9 @@ export function parseVideoSourceUrl(
   if (parsed.protocol !== protocol) {
     throw new Error(`${getVideoSourceFieldLabel(normalizedMode)}必须使用 ${protocol.replace(':', '')}://`);
   }
+  if (trimText(parsed.username) || trimText(parsed.password)) {
+    throw new Error(`${getVideoSourceFieldLabel(normalizedMode)}不能内嵌用户名密码，请改填独立认证字段`);
+  }
 
   const host = trimText(parsed.hostname);
   if (!host) {
@@ -275,6 +294,49 @@ function normalizeOptionalPort(value?: number | null): number | undefined {
   return Number(value);
 }
 
+function normalizeVideoAuth(device: Pick<SimDevice, 'authEnabled' | 'authUsername' | 'authPassword'>) {
+  const authEnabled = Boolean(device.authEnabled);
+  return {
+    authEnabled,
+    authUsername: authEnabled ? normalizeOptionalText(device.authUsername) : undefined,
+    authPassword: authEnabled ? normalizeOptionalText(device.authPassword) : undefined,
+  };
+}
+
+export function appendVideoAuthQuery(
+  sourceUrl: string | null | undefined,
+  auth?: SimulatorVideoAuthConfig | null,
+): string {
+  const trimmedSourceUrl = trimText(sourceUrl);
+  if (!trimmedSourceUrl || !auth?.authEnabled) {
+    return trimmedSourceUrl;
+  }
+  const authUsername = trimText(auth.authUsername);
+  const authPassword = trimText(auth.authPassword);
+  if (!authUsername || !authPassword) {
+    return trimmedSourceUrl;
+  }
+  const parsed = new URL(trimmedSourceUrl);
+  parsed.searchParams.set('authUser', authUsername);
+  parsed.searchParams.set('authPass', authPassword);
+  return parsed.toString();
+}
+
+export function isManagedLocalCameraSourceUrl(
+  streamMode: string | null | undefined,
+  sourceUrl: string | null | undefined,
+): boolean {
+  const parsed = parseVideoSourceUrl(streamMode, sourceUrl);
+  if (!parsed) {
+    return false;
+  }
+  try {
+    return new URL(parsed.normalizedUrl).pathname.startsWith('/live/simcam-');
+  } catch {
+    return false;
+  }
+}
+
 export function buildVideoCreatePayload(
   device: SimDevice,
   options?: {
@@ -292,17 +354,23 @@ export function buildVideoCreatePayload(
   };
 
   if (streamMode === 'GB28181') {
-    const sipPassword = normalizeOptionalText(device.sipPassword);
+    const auth = normalizeVideoAuth(device);
     payload.gbDeviceId = normalizeOptionalText(device.gbDeviceId);
     payload.gbDomain = normalizeOptionalText(device.gbDomain);
     payload.transport = normalizeOptionalText(device.sipTransport) || 'UDP';
-    payload.sipPassword = sipPassword;
+    payload.authEnabled = auth.authEnabled;
+    payload.authUsername = auth.authUsername;
+    payload.authPassword = auth.authPassword;
     payload.ip = normalizeOptionalText(device.ip) || '127.0.0.1';
     payload.port = normalizeOptionalPort(device.sipLocalPort) || 5060;
     return payload;
   }
 
   const parsedSource = parseVideoSourceUrl(streamMode, options?.sourceUrlOverride ?? device.sourceUrl);
+  const auth = normalizeVideoAuth(device);
+  payload.authEnabled = auth.authEnabled;
+  payload.authUsername = auth.authUsername;
+  payload.authPassword = auth.authPassword;
   payload.ip = normalizeOptionalText(device.ip) || parsedSource?.host;
   payload.port = parsedSource?.port;
   payload.sourceUrl = parsedSource?.normalizedUrl;

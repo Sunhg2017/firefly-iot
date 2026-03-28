@@ -1,6 +1,6 @@
 # Firefly-IoT 设备模拟器详细设计
 
-> 版本: v2.0.0
+> 版本: v2.1.0
 > 日期: 2026-03-28
 > 状态: Done
 
@@ -30,7 +30,7 @@
 ### 2.3 唯一标识
 
 - `GB28181`: `gbDeviceId`
-- `RTSP / RTMP`: 完整 `sourceUrl`
+- `RTSP / RTMP`: 完整 `sourceUrl`（仅允许无凭据地址）
 
 ### 2.4 IPC 拆分
 
@@ -65,9 +65,12 @@
 - 新增 `videoSourceType`：
   - `LOCAL_CAMERA`
   - `REMOTE_SOURCE`
+- Video 设备统一使用 `authEnabled/authUsername/authPassword`；GB28181、RTSP、RTMP 共享同一套认证字段，不再区分 `sipPassword`。
 - `GB28181` 默认 `LOCAL_CAMERA`，收到 INVITE 后自动按 SDP 目标地址发送本地 RTP 码流。
-- `RTSP / RTMP` 选择 `LOCAL_CAMERA` 时，模拟器自动按当前环境的 `mediaHost/mediaRtspPort/mediaRtmpPort` 生成 `sourceUrl`，并在开始推流前先启动本地摄像头推流进程。
-- 同一场景下，平台资产里的 `ip` 不再写成 ZLM 接入地址，而是写成模拟器当前主机的本机 IPv4；`sourceUrl` 继续保留 ZLM 推流地址，避免设备列表里的 IP 列误显示成基础设施节点。
+- `RTSP / RTMP` 选择 `LOCAL_CAMERA` 时，模拟器自动按当前环境的 `mediaHost/mediaRtspPort/mediaRtmpPort` 生成并持久化无凭据 `sourceUrl`。
+- Electron 主进程会额外生成运行时推流地址，在无凭据 `sourceUrl` 基础上附加 `authUser/authPass` 查询参数；界面日志仍只展示无凭据地址。
+- `RTSP / RTMP` 选择 `REMOTE_SOURCE` 时，`sourceUrl` 也必须保持无凭据；若用户填写 `rtsp://user:pass@...` 或 `rtmp://user:pass@...`，模拟器会在同步前直接拒绝。
+- 同一场景下，平台资产里的 `ip` 不再写成 ZLM 接入地址，而是写成模拟器当前主机的本机 IPv4；`sourceUrl` 继续保留无凭据 ZLM 推流地址，避免设备列表里的 IP 列误显示成基础设施节点。
 - 新建设备时可直接选择本机摄像头设备；macOS 下会同步枚举当前摄像头可用采集模式并保存到设备配置。
 - `RTSP / RTMP` 本地摄像头表单会自动枚举本机 IPv4 地址，默认优先纠正旧配置里残留的 ZLM 基础设施 IP，并允许用户显式选择正确的模拟器地址。
 - Electron 主进程负责拉起并托管本地推流子进程，断开、停流、注销时统一回收。
@@ -86,12 +89,12 @@
 
 ## 3. GB28181 SIP 模拟
 
-- 保留本地 SIP 客户端能力
-- REGISTER 使用设备级 SIP 密码参与 Digest 认证（强制，禁止无密码注册）
-- 点击 `连接` 后自动启动 SIP、发送 REGISTER，并在注册成功后自动开始 Keepalive
-- 手动注销或断开连接时，SIP 客户端走 best-effort `REGISTER(Expires=0)`，不再在本地已离线后继续保留 32 秒事务超时报错
-- Keepalive、Catalog、DeviceInfo、INVITE、BYE、PTZ 响应逻辑保持不变
-- INVITE 时会从 SDP 解析目标 `ip/port/ssrc`，并驱动本地摄像头 RTP 发送
+- 保留本地 SIP 客户端能力。
+- REGISTER 统一复用 `authEnabled/authUsername/authPassword`；当 `authEnabled=true` 时按显式 `authUsername` 参与 Digest，留空时默认回退到 `gbDeviceId`。
+- 点击 `连接` 后自动启动 SIP、发送 REGISTER，并在注册成功后自动开始 Keepalive。
+- 手动注销或断开连接时，SIP 客户端走 best-effort `REGISTER(Expires=0)`，不再在本地已离线后继续保留 32 秒事务超时报错。
+- Keepalive、Catalog、DeviceInfo、INVITE、BYE、PTZ 响应逻辑保持不变。
+- INVITE 时会从 SDP 解析目标 `ip/port/ssrc`，并驱动本地摄像头 RTP 发送。
 
 ## 4. 设计取舍
 
@@ -125,8 +128,13 @@
 
 ### 5.4 导入导出一致性
 
-- Video 设备导入导出补齐以下本地采集字段：
+- Video 设备导入导出补齐统一认证字段：
+  - `authEnabled`
+  - `authUsername`
+  - `authPassword`
+- Video 设备导入导出继续补齐以下本地采集字段：
   - `cameraDevice`
   - `mediaFps`
   - `mediaWidth`
   - `mediaHeight`
+- 旧 `sipPassword` 字段不再导入导出；历史配置需人工改录到统一认证字段。

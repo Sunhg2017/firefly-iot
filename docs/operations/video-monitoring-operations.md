@@ -26,6 +26,8 @@
 
 - `firefly-device`
   - 已执行 `V24__init_device_video_assets.sql`
+  - 已执行 `V25__unify_video_device_auth.sql`
+  - 已确认 `device_video_profiles` 已新增 `auth_enabled/auth_username/auth_password`，并已删除旧 `sip_password` 列
 - `firefly-media`
   - 已执行 `V6__refactor_video_runtime_schema.sql`
 - `firefly-system`
@@ -52,21 +54,23 @@ cd ../firefly-simulator && npm run build:vite
 3. `firefly-media -> firefly-device` 内部接口可用。
 4. Kafka 鉴权和 tracing 上下文透传已启用。
 5. 历史环境如残留旧 `video` 菜单、自定义菜单或重复视频设备，先清理旧数据后再联调。
-6. `firefly-media` 已正确配置 `spring.kafka.bootstrap-servers`；开发环境默认对齐 `192.168.123.102:9092`，生产环境通过 `SPRING_KAFKA_BOOTSTRAP_SERVERS` 注入。
-7. 如果 Kafka 运行在共享基础设施宿主机上，必须确认 Broker 广播地址不是 `localhost:9092`；应通过 `KAFKA_ADVERTISED_HOST` 配置为客户端真实可达的宿主机 IP 或 DNS。
-8. `deploy/docker-compose.yml` 与 `deploy/docker-compose.prod.yml` 已内置 `zlmediakit`；若未通过脚本启动基础设施，必须手工补齐同等 ZLM 服务。
-9. `firefly-media` 的 `zlmediakit.api-host/api-port` 必须直连 ZLM REST；容器化部署可写成 `zlmediakit:80`，禁止继续误指向网关 `8080`。
-10. 当前开发环境的共享 ZLM 节点部署在 `192.168.123.102`，本地启动 `firefly-media` 时默认使用 `192.168.123.102:18080/18554/10000`；若切换到其他节点，必须同步覆盖 `ZLMEDIAKIT_HOST`、`ZLMEDIAKIT_API_HOST`、`ZLMEDIAKIT_PUBLIC_HOST`。
-11. `firefly-media` 的 `zlmediakit.host/port`、`zlmediakit.rtsp-port` 必须是摄像头和平台都可访问的媒体地址；默认 compose 对宿主机暴露 `18080/18554`。
-12. 若视频设备由模拟器的 `RTSP / RTMP + 本地摄像头` 自动创建，设备列表里的 IP 列应显示模拟器主机地址；ZLM 地址只应出现在 `sourceUrl`，不能再混写到 `ip`。
-13. 如 ZLM 与 `firefly-media` 分机部署，必须额外配置 `ZLMEDIAKIT_HOOK_URL` 指向媒体服务的真实可达地址，禁止保留 `localhost`。
-14. `firefly-media` 使用的 `zlmediakit.secret` 必须与 ZLM 服务端鉴权配置一致，且 `ZLM_SECRET` 需保持纯字母数字格式；带连字符的 UUID 可能被旧的 `master` 镜像启动时自动改写。
-15. `deploy/deploy.sh` 现会按 Docker Compose 的 `KEY=VALUE` 方式主动加载 `deploy/.env`，包括 `JAVA_OPTS=-Xms256m -Xmx512m` 这类带空格值；因此若自定义了 `ZLM_SECRET`，脚本内的 ZLM 就绪探测也会使用同一份 secret；修改 `.env` 后需重新执行脚本。
-16. `deploy/docker-compose*.yml` 中的 `zlmediakit` 已切到仓库内构建的稳定版镜像 `firefly-zlmediakit:8.0-588d9de`，源码固定为官方稳定线 `8.0@588d9de2b212ce6630718430ceecd8d05794625c`，不再继续跟随 Docker Hub `master`；构建直接使用仓库内置的上游源码压缩包，避免宿主机在构建阶段再去 GitHub 动态拉源码。
-17. `deploy/deploy.sh` 会从 `deploy/zlmediakit/config.template.ini` 生成 `deploy/runtime/zlmediakit/config.ini`，并把 `api.secret` 改写成 `.env` 里的 `ZLM_SECRET`；同时会强制把 `rtp_proxy.port` 收口到 `0`，避免 ZLM 启动时抢占 Firefly 计划通过 `openRtpServer` 动态申请的固定 RTP 口；若修改了 `.env` 或 ZLM 配置，需重新执行脚本让配置重新挂载。
-18. `firefly-media` 的 `zlmediakit.public-host/public-port/public-scheme` 已配置为浏览器可访问地址，禁止保留 `localhost` 对外下发给前端。
-19. `GB28181` 联调时，`firefly-media` 必须能调用 ZLM `openRtpServer/closeRtpServer`，并允许设备向分配的 RTP 端口发流；compose 默认固定暴露 `ZLM_RTP_PORT`。
-20. `deploy/docker-compose.yml` 与 `deploy/docker-compose.prod.yml` 中的长期驻留容器默认已配置 `restart: unless-stopped`；如历史容器创建于旧版本，需重新执行 `docker compose up -d` 使自启动策略生效。
+6. 升级到统一认证版本后，历史 RTSP / RTMP 若仍把用户名密码内嵌在 `sourceUrl`，必须人工拆出并重录到 `auth_username/auth_password`，平台不会自动兼容解析。
+7. `firefly-media` 已正确配置 `spring.kafka.bootstrap-servers`；开发环境默认对齐 `192.168.123.102:9092`，生产环境通过 `SPRING_KAFKA_BOOTSTRAP_SERVERS` 注入。
+8. 如果 Kafka 运行在共享基础设施宿主机上，必须确认 Broker 广播地址不是 `localhost:9092`；应通过 `KAFKA_ADVERTISED_HOST` 配置为客户端真实可达的宿主机 IP 或 DNS。
+9. `deploy/docker-compose.yml` 与 `deploy/docker-compose.prod.yml` 已内置 `zlmediakit`；若未通过脚本启动基础设施，必须手工补齐同等 ZLM 服务。
+10. `firefly-media` 的 `zlmediakit.api-host/api-port` 必须直连 ZLM REST；容器化部署可写成 `zlmediakit:80`，禁止继续误指向网关 `8080`。
+11. 当前开发环境的共享 ZLM 节点部署在 `192.168.123.102`，本地启动 `firefly-media` 时默认使用 `192.168.123.102:18080/18554/10000`；若切换到其他节点，必须同步覆盖 `ZLMEDIAKIT_HOST`、`ZLMEDIAKIT_API_HOST`、`ZLMEDIAKIT_PUBLIC_HOST`。
+12. `firefly-media` 的 `zlmediakit.host/port`、`zlmediakit.rtsp-port` 必须是摄像头和平台都可访问的媒体地址；默认 compose 对宿主机暴露 `18080/18554`。
+13. 若视频设备由模拟器的 `RTSP / RTMP + 本地摄像头` 自动创建，设备列表里的 IP 列应显示模拟器主机地址；ZLM 地址只应出现在 `sourceUrl`，不能再混写到 `ip`。
+14. 如 ZLM 与 `firefly-media` 分机部署，必须额外配置 `ZLMEDIAKIT_HOOK_URL` 指向媒体服务的真实可达地址，禁止保留 `localhost`。
+15. `firefly-media` 使用的 `zlmediakit.secret` 必须与 ZLM 服务端鉴权配置一致，且 `ZLM_SECRET` 需保持纯字母数字格式；带连字符的 UUID 可能被旧的 `master` 镜像启动时自动改写。
+16. `deploy/deploy.sh` 现会按 Docker Compose 的 `KEY=VALUE` 方式主动加载 `deploy/.env`，包括 `JAVA_OPTS=-Xms256m -Xmx512m` 这类带空格值；因此若自定义了 `ZLM_SECRET`，脚本内的 ZLM 就绪探测也会使用同一份 secret；修改 `.env` 后需重新执行脚本。
+17. `deploy/docker-compose*.yml` 中的 `zlmediakit` 已切到仓库内构建的稳定版镜像 `firefly-zlmediakit:8.0-588d9de`，源码固定为官方稳定线 `8.0@588d9de2b212ce6630718430ceecd8d05794625c`，不再继续跟随 Docker Hub `master`；构建直接使用仓库内置的上游源码压缩包，避免宿主机在构建阶段再去 GitHub 动态拉源码。
+18. `deploy/deploy.sh` 会从 `deploy/zlmediakit/config.template.ini` 生成 `deploy/runtime/zlmediakit/config.ini`，并把 `api.secret` 改写成 `.env` 里的 `ZLM_SECRET`；同时会强制把 `rtp_proxy.port` 收口到 `0`，避免 ZLM 启动时抢占 Firefly 计划通过 `openRtpServer` 动态申请的固定 RTP 口；若修改了 `.env` 或 ZLM 配置，需重新执行脚本让配置重新挂载。
+19. `firefly-media` 的 `zlmediakit.public-host/public-port/public-scheme` 已配置为浏览器可访问地址，禁止保留 `localhost` 对外下发给前端。
+20. `GB28181` 联调时，`firefly-media` 必须能调用 ZLM `openRtpServer/closeRtpServer`，并允许设备向分配的 RTP 端口发流；compose 默认固定暴露 `ZLM_RTP_PORT`。
+21. `deploy/docker-compose.yml` 与 `deploy/docker-compose.prod.yml` 中的长期驻留容器默认已配置 `restart: unless-stopped`；如历史容器创建于旧版本，需重新执行 `docker compose up -d` 使自启动策略生效。
+22. `live/simcam-*` 本地摄像头流要求设备级认证开启；若平台资产中 `auth_enabled=false` 或缺少用户名/密码，ZLM `on_publish/on_play` 会直接拒绝。
 
 ## 5. 回归验证
 
@@ -74,13 +78,15 @@ cd ../firefly-simulator && npm run build:vite
 2. 新建 `GB28181`、`RTSP`、`RTMP` 视频设备，确认设备资产列表稳定可见。
 3. 同一租户下重复创建同一 `gbDeviceId` 或 `sourceUrl`，接口必须直接失败。
 4. 模拟器连接同一台视频设备时优先复用 `platformDeviceId`。
-5. `GB28181` 正确密码能完成 REGISTER、Keepalive、Catalog、DeviceInfo。
-6. 错误密码能看到明确认证失败原因。
-7. `GB28181` 点击播放后，`firefly-media` 日志中应先打开 RTP 收流口，再发送 INVITE，并能在 ZLM 中看到 `rtp/{streamId}` 流注册。
-8. 同一台 `GB28181` 设备在已有活跃流时再次点击播放，接口应直接复用已有会话并返回播放地址，不应再出现 `openRtpServer -> code=-300 -> This stream already exists`。
-9. 同一台 `RTSP / RTMP` 设备在已有活跃代理流时再次点击播放，接口也应直接复用现有 `live/{streamId}` 会话，不应再出现 `addStreamProxy -> This stream already exists`。
-10. 通过模拟器创建 `RTSP / RTMP + 本地摄像头` 设备后，列表 IP 列显示模拟器主机地址，`sourceUrl` 仍指向 ZLM 推流地址。
-11. 视频上线/离线、目录、设备信息事件能正常回写到 `firefly-device`。
+5. `GB28181` 开启认证后，正确的 `authUsername/authPassword` 能完成 REGISTER、Keepalive、Catalog、DeviceInfo；关闭认证时应允许免鉴权注册。
+6. 错误用户名或密码能看到明确认证失败原因。
+7. `RTSP / RTMP` 外部源创建、更新、导入和同步时，都应拒绝 `rtsp://user:pass@...`、`rtmp://user:pass@...` 这类内嵌凭据地址。
+8. `GB28181` 点击播放后，`firefly-media` 日志中应先打开 RTP 收流口，再发送 INVITE，并能在 ZLM 中看到 `rtp/{streamId}` 流注册。
+9. 同一台 `GB28181` 设备在已有活跃流时再次点击播放，接口应直接复用已有会话并返回播放地址，不应再出现 `openRtpServer -> code=-300 -> This stream already exists`。
+10. 同一台 `RTSP / RTMP` 设备在已有活跃代理流时再次点击播放，接口也应直接复用现有 `live/{streamId}` 会话，不应再出现 `addStreamProxy -> This stream already exists`。
+11. 通过模拟器创建 `RTSP / RTMP + 本地摄像头` 设备后，列表 IP 列显示模拟器主机地址，`sourceUrl` 仍指向不带凭据的 ZLM 推流地址。
+12. `live/simcam-*` 在 ZLM `on_publish/on_play` 中必须携带正确的 `authUser/authPass`；错误或缺失时应看到明确拒绝日志。
+13. 视频上线/离线、目录、设备信息事件能正常回写到 `firefly-device`。
 
 ## 6. 常见问题
 
@@ -105,8 +111,8 @@ cd ../firefly-simulator && npm run build:vite
 
 排查：
 
-1. 检查设备资产里是否已保存设备级 `sip_password`（GB28181 现为强制项）。
-2. 检查设备端是否使用 `gbDeviceId` 作为 SIP 用户名。
+1. 检查设备资产里是否已保存 `auth_enabled/auth_username/auth_password`；若已关闭认证，确认设备端没有继续强制带旧 Digest 参数。
+2. 检查设备端是否使用 `authUsername` 参与 Digest；若页面未手改用户名，默认应与 `gbDeviceId` 一致。
 3. 检查 `gbDomain`、传输方式、平台 SIP 监听地址是否一致。
 4. 检查 `SipServer` 返回的失败原因是否已透传。
 
@@ -154,7 +160,7 @@ cd ../firefly-simulator && npm run build:vite
 5. 若仍直接报 `视频流启动失败: This stream already exists`，说明当前运行中的 `firefly-media` 还不是包含陈旧代理清理修复的版本，需要重新发布。
 6. 同时检查 `stream_sessions` 中同一 `stream_id` 是否只保留最新一条 `ACTIVE` 记录，历史残留记录应已被自动改成 `CLOSED`；新建会话的 `proxy_key` 应已落库，用于后续停流和无人观看回收。
 
-### 6.7 视频状态没有回写到设备资产
+### 6.8 视频状态没有回写到设备资产
 
 排查：
 
@@ -162,7 +168,7 @@ cd ../firefly-simulator && npm run build:vite
 2. 检查消息头是否带租户、用户、权限上下文。
 3. 检查 `DeviceVideoRuntimeConsumer` 是否消费成功。
 
-### 6.8 网页播放提示网络错误
+### 6.9 网页播放提示网络错误
 
 排查：
 
@@ -170,8 +176,9 @@ cd ../firefly-simulator && npm run build:vite
 2. 如果仍是 `localhost`，浏览器会访问客户端本机导致播放失败。
 3. 检查 `firefly-media` 返回的 `flvUrl/hlsUrl/webrtcUrl` 是否已使用对外地址。
 4. 检查开流后是否已出现对应 `streamId` 的媒体流。
+5. 若故障只出现在 `live/simcam-*` 本地摄像头流，优先检查 `on_publish/on_play` 是否出现认证失败日志；当前日志会自动脱敏 URL，不再直接打印明文用户名密码。
 
-### 6.9 云台控制返回服务内部错误
+### 6.10 云台控制返回服务内部错误
 
 排查：
 

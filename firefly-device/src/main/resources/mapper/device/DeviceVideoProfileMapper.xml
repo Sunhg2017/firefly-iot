@@ -20,4 +20,13 @@
         LIMIT 1
     </select>
 
+    <select id="selectByProxyStreamIgnoreTenant" resultType="com.songhg.firefly.iot.device.entity.DeviceVideoProfile">
+        SELECT *
+        FROM device_video_profiles
+        WHERE stream_mode = #{streamMode}
+          AND source_url LIKE '%' || #{sourcePathSuffix}
+        ORDER BY device_id
+        LIMIT 1
+    </select>
+
 </mapper>

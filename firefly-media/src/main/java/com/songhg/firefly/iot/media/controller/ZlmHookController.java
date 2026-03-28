@@ -2,6 +2,7 @@ package com.songhg.firefly.iot.media.controller;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.songhg.firefly.iot.api.dto.InternalVideoDeviceVO;
+import com.songhg.firefly.iot.common.enums.StreamMode;
 import com.songhg.firefly.iot.common.enums.StreamStatus;
 import com.songhg.firefly.iot.common.event.EventPublisher;
 import com.songhg.firefly.iot.common.event.EventTopics;
@@ -19,8 +20,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * ZLMediaKit Hook 回调控制器
@@ -136,8 +141,7 @@ public class ZlmHookController {
 
         log.info("ZLM hook on_publish: app={}, stream={}, ip={}", app, stream, ip);
 
-        // 基础鉴权: 允许所有推流（生产环境应校验 token/设备合法性）
-        return Map.of("code", 0, "msg", "success", "enable_hls", true, "enable_mp4", false);
+        return authenticateManagedLocalProxy(params, true);
     }
 
     /**
@@ -152,8 +156,7 @@ public class ZlmHookController {
 
         log.info("ZLM hook on_play: app={}, stream={}, ip={}", app, stream, ip);
 
-        // 基础鉴权: 允许所有播放（生产环境应校验 token/租户权限）
-        return Map.of("code", 0, "msg", "success");
+        return authenticateManagedLocalProxy(params, false);
     }
 
     /**
@@ -187,5 +190,105 @@ public class ZlmHookController {
         }
 
         return Map.of("code", 0, "msg", "success");
+    }
+
+    private Map<String, Object> authenticateManagedLocalProxy(Map<String, Object> params, boolean publishHook) {
+        String app = trimToNull((String) params.get("app"));
+        String stream = trimToNull((String) params.get("stream"));
+        if (!isManagedLocalProxyStream(app, stream)) {
+            return publishHook
+                    ? Map.of("code", 0, "msg", "success", "enable_hls", true, "enable_mp4", false)
+                    : Map.of("code", 0, "msg", "success");
+        }
+
+        StreamMode streamMode = resolveProxyStreamMode(trimToNull((String) params.get("schema")));
+        if (streamMode == null) {
+            return rejectHook(publishHook, "不支持的本地摄像头流协议");
+        }
+
+        InternalVideoDeviceVO device = videoDeviceFacade.getByProxyStream(streamMode, app, stream);
+        if (device == null) {
+            log.warn("Reject managed local proxy hook because device is missing: hook={}, mode={}, app={}, stream={}",
+                    publishHook ? "on_publish" : "on_play", streamMode, app, stream);
+            return rejectHook(publishHook, "未找到对应的视频设备");
+        }
+        if (!Boolean.TRUE.equals(device.getAuthEnabled())) {
+            log.warn("Reject managed local proxy hook because auth is disabled: hook={}, deviceId={}, mode={}, app={}, stream={}",
+                    publishHook ? "on_publish" : "on_play", device.getDeviceId(), streamMode, app, stream);
+            return rejectHook(publishHook, "本地摄像头流未启用认证");
+        }
+
+        Map<String, String> queryParams = resolveHookQueryParams(params.get("params"));
+        String actualUsername = trimToNull(queryParams.get("authUser"));
+        String actualPassword = trimToNull(queryParams.get("authPass"));
+        String expectedUsername = trimToNull(device.getAuthUsername());
+        String expectedPassword = trimToNull(device.getAuthPassword());
+        if (expectedUsername == null || expectedPassword == null) {
+            log.warn("Reject managed local proxy hook because auth fields are incomplete: hook={}, deviceId={}, mode={}, app={}, stream={}",
+                    publishHook ? "on_publish" : "on_play", device.getDeviceId(), streamMode, app, stream);
+            return rejectHook(publishHook, "视频设备未配置完整的认证信息");
+        }
+        if (!Objects.equals(expectedUsername, actualUsername) || !Objects.equals(expectedPassword, actualPassword)) {
+            log.warn("Reject managed local proxy hook because credentials mismatch: hook={}, deviceId={}, mode={}, app={}, stream={}, authUser={}",
+                    publishHook ? "on_publish" : "on_play", device.getDeviceId(), streamMode, app, stream, actualUsername);
+            return rejectHook(publishHook, "用户名或密码不正确");
+        }
+
+        return publishHook
+                ? Map.of("code", 0, "msg", "success", "enable_hls", true, "enable_mp4", false)
+                : Map.of("code", 0, "msg", "success");
+    }
+
+    private boolean isManagedLocalProxyStream(String app, String stream) {
+        return "live".equals(app) && stream != null && stream.startsWith("simcam-");
+    }
+
+    private StreamMode resolveProxyStreamMode(String schema) {
+        if ("rtsp".equalsIgnoreCase(schema)) {
+            return StreamMode.RTSP;
+        }
+        if ("rtmp".equalsIgnoreCase(schema)) {
+            return StreamMode.RTMP;
+        }
+        return null;
+    }
+
+    private Map<String, Object> rejectHook(boolean publishHook, String message) {
+        if (publishHook) {
+            return Map.of("code", -1, "msg", message, "enable_hls", false, "enable_mp4", false);
+        }
+        return Map.of("code", -1, "msg", message);
+    }
+
+    private Map<String, String> resolveHookQueryParams(Object rawParams) {
+        if (rawParams instanceof Map<?, ?> rawMap) {
+            Map<String, String> queryParams = new LinkedHashMap<>();
+            rawMap.forEach((key, value) -> queryParams.put(String.valueOf(key), value == null ? null : String.valueOf(value)));
+            return queryParams;
+        }
+        String text = trimToNull(rawParams == null ? null : String.valueOf(rawParams));
+        if (text == null) {
+            return Map.of();
+        }
+        Map<String, String> queryParams = new LinkedHashMap<>();
+        for (String pair : text.split("&")) {
+            if (pair.isBlank()) {
+                continue;
+            }
+            int separatorIndex = pair.indexOf('=');
+            String key = separatorIndex >= 0 ? pair.substring(0, separatorIndex) : pair;
+            String value = separatorIndex >= 0 ? pair.substring(separatorIndex + 1) : "";
+            queryParams.put(URLDecoder.decode(key, StandardCharsets.UTF_8),
+                    URLDecoder.decode(value, StandardCharsets.UTF_8));
+        }
+        return queryParams;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

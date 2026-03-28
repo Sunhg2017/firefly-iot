@@ -22,6 +22,8 @@ export function resolveSimulatorSipChannels(
 export function buildSimulatorSipStartConfig(device: SimDevice) {
   return {
     deviceId: device.gbDeviceId,
+    authEnabled: device.authEnabled,
+    authUsername: device.authUsername,
     domain: device.gbDomain,
     localIp: '127.0.0.1',
     localPort: device.sipLocalPort,
@@ -31,7 +33,7 @@ export function buildSimulatorSipStartConfig(device: SimDevice) {
     expires: 3600,
     keepaliveInterval: device.sipKeepaliveInterval,
     transport: device.sipTransport,
-    password: device.sipPassword,
+    password: device.authPassword,
     manufacturer: 'Firefly-Simulator',
     model: 'Virtual-Camera',
     firmware: '1.0.0',

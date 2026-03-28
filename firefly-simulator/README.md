@@ -107,10 +107,12 @@ npm run electron:build
 - Video 设备连接和控制前，必须先登录当前环境
 - GB28181 模式会自动使用 `国标设备 ID` 作为本地 `DeviceName`
 - RTSP / RTMP 模式会自动使用“模拟设备名称”作为本地 `DeviceName`
+- Video 设备统一使用 `authEnabled/authUsername/authPassword`；GB28181、RTSP、RTMP 共用一套认证字段
 - RTSP / RTMP 模式支持两种媒体源：
-  - `本地摄像头`：自动生成 `sourceUrl` 并回填平台资产
-  - `外部源地址`：使用手工填写的 `sourceUrl`
+  - `本地摄像头`：自动生成无凭据 `sourceUrl` 并回填平台资产
+  - `外部源地址`：使用手工填写的无凭据 `sourceUrl`
 - `RTSP / RTMP` 的本地摄像头推流地址不再复用平台网关主机，统一按当前环境的 `ZLM 推流主机 / RTSP 端口 / RTMP 端口` 生成
+- `RTSP / RTMP` 使用 `本地摄像头` 时，真正的运行时推流地址会在无凭据 `sourceUrl` 基础上自动追加 `authUser/authPass`，界面日志仍只展示无凭据地址
 - `RTSP / RTMP` 使用 `本地摄像头` 时，平台资产里的 `ip` 会自动写入模拟器本机 IPv4，设备列表 IP 列不再显示成 ZLM 基础设施地址
 - `RTSP / RTMP` 点击开始推流时，模拟器会先等待 ffmpeg 输出实际推流进度，再调用平台开流，避免源地址尚未就绪就触发播放超时
 - 使用 `本地摄像头` 时，可在高级配置里选择具体摄像头设备；macOS 下还会同步列出可选采集模式
@@ -160,7 +162,7 @@ npm run electron:build
 
 **操作流程:**
 1. 切换到目标环境，并先完成当前环境登录
-2. 添加 Video 设备 → 选择 GB28181 → 配置 SIP 服务器地址/端口/ID/传输/密码
+2. 添加 Video 设备 → 选择 GB28181 → 配置 SIP 服务器地址/端口/ID/传输，并填写统一认证用户名/密码
 3. 点击「连接」→ 先同步平台视频设备，再自动启动 SIP、发送 REGISTER，并在注册成功后自动开始心跳
 4. 如需手动重试注册、暂停心跳或抓报文，可继续使用详情页里的 SIP 按钮
 5. 点击「开始推流」后，平台发送 INVITE 时会自动触发本地码流发送
@@ -269,7 +271,7 @@ name,protocol,productKey,deviceName,deviceSecret,httpBaseUrl
 温湿度传感器-01,HTTP,pk_001,dev_01,secret_01,http://localhost:9070
 ```
 
-支持的字段: `name`, `protocol` (HTTP/MQTT/CoAP/Video/SNMP/Modbus/WebSocket/TCP/UDP/LoRaWAN), `productKey`, `deviceName`, `deviceSecret`, `httpBaseUrl`, `coapBaseUrl`, `mqttBrokerUrl`, `mqttClientId`, `mqttUsername`, `mqttPassword`, `streamMode`, `videoSourceType`, `gbDeviceId`, `gbDomain`, `sourceUrl`, `ip`, `sipServerIp`, `sipServerPort`, `sipServerId`, `sipLocalPort`, `sipKeepaliveInterval`, `sipPassword`, `sipTransport`, `cameraDevice`, `mediaFps`, `mediaWidth`, `mediaHeight`, `tcpHost`, `tcpPort`, `udpHost`, `udpPort`, `loraWebhookUrl`, `loraDevEui`, `loraAppId`, `loraFPort`
+支持的字段: `name`, `protocol` (HTTP/MQTT/CoAP/Video/SNMP/Modbus/WebSocket/TCP/UDP/LoRaWAN), `productKey`, `deviceName`, `deviceSecret`, `httpBaseUrl`, `coapBaseUrl`, `mqttBrokerUrl`, `mqttClientId`, `mqttUsername`, `mqttPassword`, `streamMode`, `videoSourceType`, `gbDeviceId`, `gbDomain`, `sourceUrl`, `ip`, `sipServerIp`, `sipServerPort`, `sipServerId`, `sipLocalPort`, `sipKeepaliveInterval`, `authEnabled`, `authUsername`, `authPassword`, `sipTransport`, `cameraDevice`, `mediaFps`, `mediaWidth`, `mediaHeight`, `tcpHost`, `tcpPort`, `udpHost`, `udpPort`, `loraWebhookUrl`, `loraDevEui`, `loraAppId`, `loraFPort`
 
 示例文件: `samples/devices.json`, `samples/devices.csv`
 

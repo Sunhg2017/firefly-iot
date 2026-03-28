@@ -173,7 +173,7 @@ class VideoServiceTest {
                 "__defaultVhost__/live/2_12_0",
                 "live",
                 "2_12_0",
-                "rtsp://192.168.123.102:18554/live/simcam-video02"
+                "rtsp://192.168.123.102:18554/live/camera-02"
         ));
         when(zlmApiClient.buildFlvUrl("live", "2_12_0")).thenReturn("http://192.168.123.102:18080/live/2_12_0.live.flv");
         when(zlmApiClient.buildHlsUrl("live", "2_12_0")).thenReturn("http://192.168.123.102:18080/live/2_12_0/hls.m3u8");
@@ -197,7 +197,7 @@ class VideoServiceTest {
     @Test
     void startStreamReusesRtspRuntimeAfterProxyConflictWithoutDeletingProxy() {
         Long deviceId = 12L;
-        InternalVideoDeviceVO device = buildProxyDevice(deviceId, 2L, StreamMode.RTSP, "rtsp://192.168.123.102:18554/live/simcam-video02");
+        InternalVideoDeviceVO device = buildProxyDevice(deviceId, 2L, StreamMode.RTSP, "rtsp://192.168.123.102:18554/live/camera-02");
 
         when(videoDeviceFacade.requireVideoDevice(deviceId)).thenReturn(device);
         when(videoDeviceFacade.isOnline(device)).thenReturn(true);
@@ -208,13 +208,13 @@ class VideoServiceTest {
                 successMediaList(List.of(new ZlmStreamInfo())),
                 successMediaList(List.of(new ZlmStreamInfo()))
         );
-        when(zlmApiClient.addStreamProxy("live", "2_12_0", "rtsp://192.168.123.102:18554/live/simcam-video02"))
+        when(zlmApiClient.addStreamProxy("live", "2_12_0", "rtsp://192.168.123.102:18554/live/camera-02"))
                 .thenReturn(failedMapResponse("This stream already exists"));
         when(zlmApiClient.listStreamProxy()).thenReturn(successListStreamProxyResponse(
                 "__defaultVhost__/live/2_12_0",
                 "live",
                 "2_12_0",
-                "rtsp://192.168.123.102:18554/live/simcam-video02"
+                "rtsp://192.168.123.102:18554/live/camera-02"
         ));
         when(zlmApiClient.buildFlvUrl("live", "2_12_0")).thenReturn("http://192.168.123.102:18080/live/2_12_0.live.flv");
         when(zlmApiClient.buildHlsUrl("live", "2_12_0")).thenReturn("http://192.168.123.102:18080/live/2_12_0/hls.m3u8");
@@ -233,7 +233,7 @@ class VideoServiceTest {
     @Test
     void startStreamDeletesStaleProxyBeforeRetryingRtspSession() {
         Long deviceId = 12L;
-        InternalVideoDeviceVO device = buildProxyDevice(deviceId, 2L, StreamMode.RTSP, "rtsp://192.168.123.102:18554/live/simcam-video02");
+        InternalVideoDeviceVO device = buildProxyDevice(deviceId, 2L, StreamMode.RTSP, "rtsp://192.168.123.102:18554/live/camera-02");
 
         when(videoDeviceFacade.requireVideoDevice(deviceId)).thenReturn(device);
         when(videoDeviceFacade.isOnline(device)).thenReturn(true);
@@ -244,14 +244,14 @@ class VideoServiceTest {
                 successMediaList(Collections.emptyList()),
                 successMediaList(List.of(new ZlmStreamInfo()))
         );
-        when(zlmApiClient.addStreamProxy("live", "2_12_0", "rtsp://192.168.123.102:18554/live/simcam-video02"))
+        when(zlmApiClient.addStreamProxy("live", "2_12_0", "rtsp://192.168.123.102:18554/live/camera-02"))
                 .thenReturn(failedMapResponse("This stream already exists"))
                 .thenReturn(successAddStreamProxyResponse("__defaultVhost__/live/2_12_0"));
         when(zlmApiClient.listStreamProxy()).thenReturn(successListStreamProxyResponse(
                 "__defaultVhost__/live/2_12_0",
                 "live",
                 "2_12_0",
-                "rtsp://192.168.123.102:18554/live/simcam-video02"
+                "rtsp://192.168.123.102:18554/live/camera-02"
         ));
         when(zlmApiClient.delStreamProxy("__defaultVhost__/live/2_12_0")).thenReturn(successFlagResponse(true));
         when(zlmApiClient.buildFlvUrl("live", "2_12_0")).thenReturn("http://192.168.123.102:18080/live/2_12_0.live.flv");
@@ -262,7 +262,7 @@ class VideoServiceTest {
 
         assertThat(result.getStreamId()).isEqualTo("2_12_0");
         verify(zlmApiClient).delStreamProxy("__defaultVhost__/live/2_12_0");
-        verify(zlmApiClient, times(2)).addStreamProxy("live", "2_12_0", "rtsp://192.168.123.102:18554/live/simcam-video02");
+        verify(zlmApiClient, times(2)).addStreamProxy("live", "2_12_0", "rtsp://192.168.123.102:18554/live/camera-02");
 
         ArgumentCaptor<StreamSession> createdSessionCaptor = ArgumentCaptor.forClass(StreamSession.class);
         verify(streamSessionMapper).insert(createdSessionCaptor.capture());
@@ -272,14 +272,14 @@ class VideoServiceTest {
     @Test
     void startStreamDeletesNewProxyWhenRtspNeverBecomesReady() {
         Long deviceId = 12L;
-        InternalVideoDeviceVO device = buildProxyDevice(deviceId, 2L, StreamMode.RTSP, "rtsp://192.168.123.102:18554/live/simcam-video02");
+        InternalVideoDeviceVO device = buildProxyDevice(deviceId, 2L, StreamMode.RTSP, "rtsp://192.168.123.102:18554/live/camera-02");
 
         when(videoDeviceFacade.requireVideoDevice(deviceId)).thenReturn(device);
         when(videoDeviceFacade.isOnline(device)).thenReturn(true);
         when(videoDeviceFacade.requireStreamMode(device)).thenReturn(StreamMode.RTSP);
         when(streamSessionMapper.selectList(any())).thenReturn(Collections.emptyList());
         when(zlmApiClient.getMediaList("live", "2_12_0", null)).thenReturn(successMediaList(Collections.emptyList()));
-        when(zlmApiClient.addStreamProxy("live", "2_12_0", "rtsp://192.168.123.102:18554/live/simcam-video02"))
+        when(zlmApiClient.addStreamProxy("live", "2_12_0", "rtsp://192.168.123.102:18554/live/camera-02"))
                 .thenReturn(successAddStreamProxyResponse("__defaultVhost__/live/2_12_0"));
         when(zlmApiClient.delStreamProxy("__defaultVhost__/live/2_12_0")).thenReturn(successFlagResponse(true));
         when(zlmApiClient.closeStream("live", "2_12_0", null)).thenReturn(successMapResponse());
@@ -294,9 +294,84 @@ class VideoServiceTest {
     }
 
     @Test
-    void stopStreamRemovesProxyTaskBeforeClosingRtspSession() {
+    void startStreamAppendsRuntimeCredentialsForProtectedRtspSource() {
+        Long deviceId = 12L;
+        InternalVideoDeviceVO device = buildProxyDevice(deviceId, 2L, StreamMode.RTSP, "rtsp://192.168.123.102:18554/live/camera-01");
+        device.setAuthEnabled(true);
+        device.setAuthUsername("stream-user");
+        device.setAuthPassword("stream-pass");
+
+        when(videoDeviceFacade.requireVideoDevice(deviceId)).thenReturn(device);
+        when(videoDeviceFacade.isOnline(device)).thenReturn(true);
+        when(videoDeviceFacade.requireStreamMode(device)).thenReturn(StreamMode.RTSP);
+        when(streamSessionMapper.selectList(any())).thenReturn(Collections.emptyList());
+        when(zlmApiClient.getMediaList("live", "2_12_0", null)).thenReturn(
+                successMediaList(Collections.emptyList()),
+                successMediaList(List.of(new ZlmStreamInfo()))
+        );
+        when(zlmApiClient.addStreamProxy("live", "2_12_0", "rtsp://stream-user:stream-pass@192.168.123.102:18554/live/camera-01"))
+                .thenReturn(successAddStreamProxyResponse("__defaultVhost__/live/2_12_0"));
+        when(zlmApiClient.buildFlvUrl("live", "2_12_0")).thenReturn("http://192.168.123.102:18080/live/2_12_0.live.flv");
+        when(zlmApiClient.buildHlsUrl("live", "2_12_0")).thenReturn("http://192.168.123.102:18080/live/2_12_0/hls.m3u8");
+        when(zlmApiClient.buildWebrtcUrl("live", "2_12_0")).thenReturn("webrtc://192.168.123.102/live/2_12_0");
+
+        StreamSessionVO result = videoService.startStream(deviceId, new StreamStartDTO());
+
+        assertThat(result.getStreamId()).isEqualTo("2_12_0");
+        verify(zlmApiClient).addStreamProxy("live", "2_12_0", "rtsp://stream-user:stream-pass@192.168.123.102:18554/live/camera-01");
+    }
+
+    @Test
+    void startStreamAppendsHookCredentialsForManagedLocalRtspSource() {
         Long deviceId = 12L;
         InternalVideoDeviceVO device = buildProxyDevice(deviceId, 2L, StreamMode.RTSP, "rtsp://192.168.123.102:18554/live/simcam-video02");
+        device.setAuthEnabled(true);
+        device.setAuthUsername("sim-user");
+        device.setAuthPassword("sim-pass");
+
+        when(videoDeviceFacade.requireVideoDevice(deviceId)).thenReturn(device);
+        when(videoDeviceFacade.isOnline(device)).thenReturn(true);
+        when(videoDeviceFacade.requireStreamMode(device)).thenReturn(StreamMode.RTSP);
+        when(streamSessionMapper.selectList(any())).thenReturn(Collections.emptyList());
+        when(zlmApiClient.getMediaList("live", "2_12_0", null)).thenReturn(
+                successMediaList(Collections.emptyList()),
+                successMediaList(List.of(new ZlmStreamInfo()))
+        );
+        when(zlmApiClient.addStreamProxy("live", "2_12_0",
+                "rtsp://192.168.123.102:18554/live/simcam-video02?authUser=sim-user&authPass=sim-pass"))
+                .thenReturn(successAddStreamProxyResponse("__defaultVhost__/live/2_12_0"));
+        when(zlmApiClient.buildFlvUrl("live", "2_12_0")).thenReturn("http://192.168.123.102:18080/live/2_12_0.live.flv");
+        when(zlmApiClient.buildHlsUrl("live", "2_12_0")).thenReturn("http://192.168.123.102:18080/live/2_12_0/hls.m3u8");
+        when(zlmApiClient.buildWebrtcUrl("live", "2_12_0")).thenReturn("webrtc://192.168.123.102/live/2_12_0");
+
+        StreamSessionVO result = videoService.startStream(deviceId, new StreamStartDTO());
+
+        assertThat(result.getStreamId()).isEqualTo("2_12_0");
+        verify(zlmApiClient).addStreamProxy("live", "2_12_0",
+                "rtsp://192.168.123.102:18554/live/simcam-video02?authUser=sim-user&authPass=sim-pass");
+    }
+
+    @Test
+    void startStreamRejectsInlineCredentialsInStoredSourceUrl() {
+        Long deviceId = 12L;
+        InternalVideoDeviceVO device = buildProxyDevice(deviceId, 2L, StreamMode.RTSP, "rtsp://legacy:secret@192.168.123.102:18554/live/camera-01");
+
+        when(videoDeviceFacade.requireVideoDevice(deviceId)).thenReturn(device);
+        when(videoDeviceFacade.isOnline(device)).thenReturn(true);
+        when(videoDeviceFacade.requireStreamMode(device)).thenReturn(StreamMode.RTSP);
+        when(streamSessionMapper.selectList(any())).thenReturn(Collections.emptyList());
+
+        assertThatThrownBy(() -> videoService.startStream(deviceId, new StreamStartDTO()))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("不能内嵌用户名密码");
+
+        verify(zlmApiClient, never()).addStreamProxy(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void stopStreamRemovesProxyTaskBeforeClosingRtspSession() {
+        Long deviceId = 12L;
+        InternalVideoDeviceVO device = buildProxyDevice(deviceId, 2L, StreamMode.RTSP, "rtsp://192.168.123.102:18554/live/camera-02");
         StreamSession existingSession = buildProxySession(deviceId, 2L, "2_12_0");
 
         when(videoDeviceFacade.requireVideoDevice(deviceId)).thenReturn(device);
@@ -331,6 +406,7 @@ class VideoServiceTest {
         device.setTenantId(tenantId);
         device.setStreamMode(streamMode.getValue());
         device.setStatus("ONLINE");
+        device.setAuthEnabled(false);
         device.setSourceUrl(sourceUrl);
         return device;
     }

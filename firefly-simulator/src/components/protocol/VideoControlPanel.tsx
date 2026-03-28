@@ -7,6 +7,7 @@ import { useSimStore } from '../../store';
 import type { SimDevice } from '../../store';
 import { getActiveEnvironment, useSimWorkspaceStore } from '../../workspaceStore';
 import {
+  buildLocalCameraPublishTargetUrl,
   buildFallbackLocalVideoModes,
   buildLocalCameraSourceUrl,
   buildLocalVideoModeKey,
@@ -43,8 +44,11 @@ export default function VideoControlPanel({ device }: Props) {
   const token = activeSession?.accessToken;
   const isGb28181 = device.streamMode === 'GB28181';
   const isLocalProxySource = device.videoSourceType === 'LOCAL_CAMERA' && (device.streamMode === 'RTSP' || device.streamMode === 'RTMP');
-  const localProxyTarget = isLocalProxySource
+  const localProxyDisplayUrl = isLocalProxySource
     ? buildLocalCameraSourceUrl(activeEnvironment, device.streamMode, device.id)
+    : '';
+  const localProxyTarget = isLocalProxySource
+    ? buildLocalCameraPublishTargetUrl(activeEnvironment, device.streamMode, device.id, device)
     : '';
   const [mediaParamOpen, setMediaParamOpen] = useState(false);
   const [mediaParamForm] = Form.useForm();
@@ -200,6 +204,10 @@ export default function VideoControlPanel({ device }: Props) {
                   return;
                 }
                 if (isLocalProxySource) {
+                  if (!device.authEnabled || !device.authUsername?.trim() || !device.authPassword?.trim()) {
+                    addLog(device.id, device.name, 'error', '本地摄像头推流失败：请先补齐认证开关、用户名和密码');
+                    return;
+                  }
                   const localStart = await window.electronAPI.localVideoStart(device.id, {
                     mode: device.streamMode === 'RTMP' ? 'RTMP' : 'RTSP',
                     targetUrl: localProxyTarget,
@@ -212,7 +220,7 @@ export default function VideoControlPanel({ device }: Props) {
                     addLog(device.id, device.name, 'error', `本地摄像头推流启动失败: ${localStart.message || '未知错误'}`);
                     return;
                   }
-                  addLog(device.id, device.name, 'success', `本地摄像头推流已启动: ${localProxyTarget}`);
+                  addLog(device.id, device.name, 'success', `本地摄像头推流已启动: ${localProxyDisplayUrl}`);
                 }
                 const res = await window.electronAPI.videoControlStartStream(gatewayBaseUrl, device.platformDeviceId!, {}, token);
                 if (isVideoBizSuccess(res) && res.data?.data) {

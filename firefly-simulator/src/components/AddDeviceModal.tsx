@@ -155,6 +155,17 @@ function normalizeVideoSourceType(value: unknown): 'LOCAL_CAMERA' | 'REMOTE_SOUR
   return value === 'REMOTE_SOURCE' ? 'REMOTE_SOURCE' : 'LOCAL_CAMERA';
 }
 
+function resolveVideoAuthEnabled(
+  value: unknown,
+  streamMode: string | undefined,
+  videoSourceType: 'LOCAL_CAMERA' | 'REMOTE_SOURCE',
+): boolean {
+  if (typeof value === 'boolean') {
+    return value || (isProxyVideoMode(streamMode) && videoSourceType === 'LOCAL_CAMERA');
+  }
+  return !isProxyVideoMode(streamMode) || videoSourceType === 'LOCAL_CAMERA';
+}
+
 function buildInitialValues(
   environment: ReturnType<typeof getActiveEnvironment>,
 ): Record<string, unknown> {
@@ -177,7 +188,9 @@ function buildInitialValues(
     sipLocalPort: 5080,
     sipKeepaliveInterval: 60,
     sipTransport: 'UDP',
-    sipPassword: '',
+    authEnabled: true,
+    authUsername: '',
+    authPassword: '',
     cameraDevice: '',
     mediaFps: 15,
     mediaWidth: 1280,
@@ -276,7 +289,9 @@ function buildEditableDeviceValues(
     sipServerId: device.sipServerId,
     sipLocalPort: device.sipLocalPort,
     sipKeepaliveInterval: device.sipKeepaliveInterval,
-    sipPassword: device.sipPassword,
+    authEnabled: device.authEnabled,
+    authUsername: device.authUsername,
+    authPassword: device.authPassword,
     sipTransport: device.sipTransport,
     cameraDevice: device.cameraDevice,
     mediaFps: device.mediaFps,
@@ -313,6 +328,9 @@ function buildNormalizedDeviceDraft(values: Record<string, unknown>): Partial<Si
   const protocol = (values.protocol || 'HTTP') as Protocol;
   const normalizedStreamMode = normalizeVideoStreamMode(typeof values.streamMode === 'string' ? values.streamMode : undefined);
   const normalizedVideoSourceType = normalizeVideoSourceType(values.videoSourceType);
+  const authEnabled = protocol === 'Video'
+    ? resolveVideoAuthEnabled(values.authEnabled, normalizedStreamMode, normalizedVideoSourceType)
+    : false;
   const effectiveDeviceName = resolveEffectiveDeviceName(values);
 
   return {
@@ -358,7 +376,9 @@ function buildNormalizedDeviceDraft(values: Record<string, unknown>): Partial<Si
     sipServerId: trimText(values.sipServerId as string | undefined),
     sipLocalPort: resolveNumberValue(values.sipLocalPort, 5080),
     sipKeepaliveInterval: resolveNumberValue(values.sipKeepaliveInterval, 60),
-    sipPassword: trimText(values.sipPassword as string | undefined),
+    authEnabled,
+    authUsername: authEnabled ? trimText(values.authUsername as string | undefined) : '',
+    authPassword: authEnabled ? trimText(values.authPassword as string | undefined) : '',
     sipTransport: values.sipTransport === 'TCP' ? 'TCP' : 'UDP',
     cameraDevice: trimText(values.cameraDevice as string | undefined),
     mediaFps: resolveNumberValue(values.mediaFps, 15),
@@ -417,6 +437,7 @@ function getStepFields(
   streamMode?: string,
   httpAuthMode?: string,
   videoSourceType?: string,
+  authEnabled?: boolean,
 ): string[] {
   if (step === 0) return ['name', 'protocol'];
   if (step === 1) {
@@ -430,6 +451,10 @@ function getStepFields(
           'productKey',
           'streamMode',
           'videoSourceType',
+          'authEnabled',
+          ...(resolveVideoAuthEnabled(authEnabled, streamMode, normalizeVideoSourceType(videoSourceType))
+            ? ['authUsername', 'authPassword']
+            : []),
           ...(isProxyVideoMode(streamMode) && normalizeVideoSourceType(videoSourceType) === 'REMOTE_SOURCE'
             ? ['sourceUrl']
             : []),
@@ -454,7 +479,7 @@ function getStepFields(
     }
   }
   if (step === 2 && protocol === 'Video' && streamMode === 'GB28181') {
-    return ['sipServerIp', 'sipServerPort', 'sipServerId', 'sipLocalPort', 'sipPassword'];
+    return ['sipServerIp', 'sipServerPort', 'sipServerId', 'sipLocalPort'];
   }
   return [];
 }
@@ -525,6 +550,7 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
   const mqttAuthMode = formSnapshot.mqttAuthMode as string | undefined;
   const streamMode = formSnapshot.streamMode as string | undefined;
   const videoSourceType = normalizeVideoSourceType(formSnapshot.videoSourceType);
+  const videoAuthEnabled = resolveVideoAuthEnabled(formSnapshot.authEnabled, streamMode, videoSourceType);
   const usesLocalCamera = protocol === 'Video' && (!isProxyVideoMode(streamMode) || videoSourceType === 'LOCAL_CAMERA');
   const selectedCameraDevice = trimText(formSnapshot.cameraDevice as string | undefined);
   const selectedCameraModeKey = buildLocalVideoModeKey(
@@ -629,6 +655,29 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
     setFormSnapshot(form.getFieldsValue(true));
     message.info('视频模式已切换，请重新选择匹配当前模式的产品');
   }, [form, open, protocol, streamMode]);
+
+  useEffect(() => {
+    if (!open || protocol !== 'Video') {
+      return;
+    }
+    const shouldEnableAuth = !isProxyVideoMode(streamMode) || videoSourceType === 'LOCAL_CAMERA';
+    if (shouldEnableAuth && form.getFieldValue('authEnabled') !== true) {
+      form.setFieldValue('authEnabled', true);
+      setFormSnapshot(form.getFieldsValue(true));
+    }
+  }, [form, open, protocol, streamMode, videoSourceType]);
+
+  useEffect(() => {
+    if (!open || protocol !== 'Video' || streamMode !== 'GB28181') {
+      return;
+    }
+    const gbDeviceId = trimText(form.getFieldValue('gbDeviceId'));
+    const authUsername = trimText(form.getFieldValue('authUsername'));
+    if (gbDeviceId && !authUsername) {
+      form.setFieldValue('authUsername', gbDeviceId);
+      setFormSnapshot(form.getFieldsValue(true));
+    }
+  }, [form, formSnapshot.gbDeviceId, open, protocol, streamMode]);
 
   useEffect(() => {
     if (!open) {
@@ -850,7 +899,7 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
   }, [form, localVideoSources, open, selectedCameraDevice, usesLocalCamera]);
 
   const nextStep = async () => {
-    const fields = getStepFields(protocol, currentStep, mqttAuthMode, streamMode, httpAuthMode, videoSourceType);
+    const fields = getStepFields(protocol, currentStep, mqttAuthMode, streamMode, httpAuthMode, videoSourceType, videoAuthEnabled);
     if (fields.length > 0) {
       await form.validateFields(fields);
     }
@@ -859,9 +908,9 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
 
   const handleSubmitDevice = async () => {
     const submitFields = Array.from(new Set([
-      ...getStepFields(protocol, 0, mqttAuthMode, streamMode, httpAuthMode),
-      ...getStepFields(protocol, 1, mqttAuthMode, streamMode, httpAuthMode, videoSourceType),
-      ...getStepFields(protocol, 2, mqttAuthMode, streamMode, httpAuthMode, videoSourceType),
+      ...getStepFields(protocol, 0, mqttAuthMode, streamMode, httpAuthMode, videoSourceType, videoAuthEnabled),
+      ...getStepFields(protocol, 1, mqttAuthMode, streamMode, httpAuthMode, videoSourceType, videoAuthEnabled),
+      ...getStepFields(protocol, 2, mqttAuthMode, streamMode, httpAuthMode, videoSourceType, videoAuthEnabled),
     ]));
     if (submitFields.length > 0) {
       await form.validateFields(submitFields);
@@ -1250,6 +1299,64 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
                 <Form.Item name="ip" label="设备 IP"><Input placeholder="默认 127.0.0.1" /></Form.Item>
               </>
             )}
+            <Card size="small" title="统一认证" style={drawerSectionCardStyle}>
+              <Row gutter={12}>
+                <Col span={8}>
+                  <Form.Item
+                    name="authEnabled"
+                    label="启用认证"
+                    valuePropName="checked"
+                    extra={isProxyVideoMode(streamMode) && videoSourceType === 'LOCAL_CAMERA' ? '本地摄像头推流固定启用认证。' : undefined}
+                  >
+                    <Switch disabled={isProxyVideoMode(streamMode) && videoSourceType === 'LOCAL_CAMERA'} />
+                  </Form.Item>
+                </Col>
+                <Col span={16}>
+                  <Form.Item
+                    name="authUsername"
+                    label="认证用户名"
+                    rules={[
+                      {
+                        validator: async (_, value) => {
+                          if (!videoAuthEnabled) {
+                            return;
+                          }
+                          if (trimText(value)) {
+                            return;
+                          }
+                          throw new Error('请输入认证用户名');
+                        },
+                      },
+                    ]}
+                  >
+                    <Input
+                      disabled={!videoAuthEnabled}
+                      placeholder={streamMode === 'GB28181' ? '默认使用国标设备 ID' : '请输入认证用户名'}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Form.Item
+                name="authPassword"
+                label="认证密码"
+                rules={[
+                  {
+                    validator: async (_, value) => {
+                      if (!videoAuthEnabled) {
+                        return;
+                      }
+                      if (trimText(value)) {
+                        return;
+                      }
+                      throw new Error('请输入认证密码');
+                    },
+                  },
+                ]}
+                style={{ marginBottom: 0 }}
+              >
+                <Input.Password disabled={!videoAuthEnabled} placeholder="请输入认证密码" />
+              </Form.Item>
+            </Card>
             <Form.Item
               label="DeviceName"
               extra={isProxyVideoMode(streamMode) ? 'RTSP / RTMP 默认复用模拟设备名称作为 DeviceName。' : 'GB28181 默认复用国标设备 ID 作为 DeviceName。'}
@@ -1422,13 +1529,6 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
               <Col span={12}><Form.Item name="sipKeepaliveInterval" label="心跳间隔（秒）"><InputNumber min={10} max={300} style={{ width: '100%' }} /></Form.Item></Col>
               <Col span={12}><Form.Item name="sipTransport" label="传输协议"><Radio.Group><Radio.Button value="UDP">UDP</Radio.Button><Radio.Button value="TCP">TCP</Radio.Button></Radio.Group></Form.Item></Col>
             </Row>
-            <Form.Item
-              name="sipPassword"
-              label="SIP 密码"
-              rules={[{ required: true, message: '请输入 SIP 密码' }]}
-            >
-              <Input.Password placeholder="请输入设备级 SIP 密码" />
-            </Form.Item>
           </Card>
           <Card size="small" title="通道配置" style={drawerSectionCardStyle}>
             <Form.List name="sipChannels">
