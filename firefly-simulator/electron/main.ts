@@ -843,6 +843,53 @@ function waitLocalVideoBootstrap(
   });
 }
 
+function isLocalVideoProgressReadyValue(key: string, value: string): boolean {
+  const normalizedKey = key.trim().toLowerCase();
+  const normalizedValue = value.trim();
+  if (!normalizedValue) {
+    return false;
+  }
+  if (normalizedKey === 'frame' || normalizedKey === 'fps' || normalizedKey === 'total_size') {
+    return Number(normalizedValue) > 0;
+  }
+  if (normalizedKey === 'out_time_us' || normalizedKey === 'out_time_ms') {
+    return Number(normalizedValue) > 0;
+  }
+  return false;
+}
+
+function waitForLocalVideoReadySignal(options: {
+  child: ChildProcessWithoutNullStreams;
+  isReady: () => boolean;
+  timeoutMs: number;
+}): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (options.isReady()) {
+      resolve(true);
+      return;
+    }
+    let settled = false;
+    const complete = (value: boolean) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      clearInterval(pollTimer);
+      options.child.removeListener('exit', onExit);
+      resolve(value);
+    };
+    const onExit = () => complete(options.isReady());
+    const timer = setTimeout(() => complete(options.isReady()), options.timeoutMs);
+    const pollTimer = setInterval(() => {
+      if (options.isReady()) {
+        complete(true);
+      }
+    }, 100);
+    options.child.once('exit', onExit);
+  });
+}
+
 function stopLocalVideoSession(deviceId: string): Promise<void> {
   return new Promise((resolve) => {
     const existing = localVideoSessions.get(deviceId);
@@ -925,6 +972,10 @@ async function startLocalVideoSession(
       '-hide_banner',
       '-loglevel',
       'warning',
+      // 仅凭进程存活无法判断 ZLM 已经能拉到这路本地推流，因此这里额外读取 ffmpeg progress。
+      '-nostats',
+      '-progress',
+      'pipe:1',
       ...inputArgs,
       ...fixedTranscodeArgs,
       ...outputArgs,
@@ -946,6 +997,8 @@ async function startLocalVideoSession(
       }
     });
     let stderrText = '';
+    let stdoutBuffer = '';
+    let ready = false;
     child.stderr.on('data', (chunk) => {
       const message = String(chunk);
       stderrText += message;
@@ -956,9 +1009,26 @@ async function startLocalVideoSession(
         });
       }
     });
+    child.stdout.on('data', (chunk) => {
+      stdoutBuffer += String(chunk);
+      const lines = stdoutBuffer.split(/\r?\n/g);
+      stdoutBuffer = lines.pop() || '';
+      for (const line of lines) {
+        const separatorIndex = line.indexOf('=');
+        if (separatorIndex <= 0) {
+          continue;
+        }
+        const key = line.slice(0, separatorIndex);
+        const value = line.slice(separatorIndex + 1);
+        if (isLocalVideoProgressReadyValue(key, value)) {
+          ready = true;
+        }
+      }
+    });
     return {
       child,
       getStderrText: () => stderrText,
+      isReady: () => ready,
     };
   };
 
@@ -966,6 +1036,16 @@ async function startLocalVideoSession(
   const primary = spawnLocalProcess(buildCameraInputArgs({ fps, width, height, cameraDevice }));
   const primaryBootstrap = await waitLocalVideoBootstrap(primary.child, bootstrapTimeoutMs);
   if (primaryBootstrap.stable) {
+    if (mode === 'RTSP' || mode === 'RTMP') {
+      const ready = await waitForLocalVideoReadySignal({
+        child: primary.child,
+        isReady: primary.isReady,
+        timeoutMs: 6000,
+      });
+      if (!ready) {
+        throw new Error('本地码流已启动但推流地址尚未就绪，请确认 ZLM 地址可达后重试');
+      }
+    }
     return;
   }
 
@@ -990,6 +1070,16 @@ async function startLocalVideoSession(
     ));
     const compatibleBootstrap = await waitLocalVideoBootstrap(compatible.child, bootstrapTimeoutMs);
     if (compatibleBootstrap.stable) {
+      if (mode === 'RTSP' || mode === 'RTMP') {
+        const ready = await waitForLocalVideoReadySignal({
+          child: compatible.child,
+          isReady: compatible.isReady,
+          timeoutMs: 6000,
+        });
+        if (!ready) {
+          throw new Error('本地码流已启动但推流地址尚未就绪，请确认 ZLM 地址可达后重试');
+        }
+      }
       return;
     }
     lastRetryStderr = compatible.getStderrText();

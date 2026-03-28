@@ -112,6 +112,7 @@ npm run electron:build
   - `外部源地址`：使用手工填写的 `sourceUrl`
 - `RTSP / RTMP` 的本地摄像头推流地址不再复用平台网关主机，统一按当前环境的 `ZLM 推流主机 / RTSP 端口 / RTMP 端口` 生成
 - `RTSP / RTMP` 使用 `本地摄像头` 时，平台资产里的 `ip` 会自动写入模拟器本机 IPv4，设备列表 IP 列不再显示成 ZLM 基础设施地址
+- `RTSP / RTMP` 点击开始推流时，模拟器会先等待 ffmpeg 输出实际推流进度，再调用平台开流，避免源地址尚未就绪就触发播放超时
 - 使用 `本地摄像头` 时，可在高级配置里选择具体摄像头设备；macOS 下还会同步列出可选采集模式
 - macOS 本地摄像头起流时，若 `avfoundation` 拒绝默认输入 `pixel_format`，模拟器会按 `Supported pixel formats` 自动重试兼容像素格式
 - 再次连接同一台视频设备时，模拟器会优先复用已关联的 `platformDeviceId`
