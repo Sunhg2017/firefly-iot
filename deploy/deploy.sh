@@ -60,6 +60,27 @@ load_env() {
             export "$key=$value"
         fi
     done < "$ENV_FILE"
+
+    normalize_deploy_env
+}
+
+normalize_deploy_env() {
+    DEPLOY_ENV="${DEPLOY_ENV:-dev}"
+
+    case "$DEPLOY_ENV" in
+        dev|prod) ;;
+        *)
+            log_error "DEPLOY_ENV must be 'dev' or 'prod', got '${DEPLOY_ENV}'"
+            exit 1
+            ;;
+    esac
+
+    export DEPLOY_ENV
+
+    if [ -z "${NACOS_NAMESPACE:-}" ]; then
+        NACOS_NAMESPACE="firefly-${DEPLOY_ENV}"
+        export NACOS_NAMESPACE
+    fi
 }
 
 compose_project_name() {
@@ -222,6 +243,7 @@ dc() {
 
 cmd_infra() {
     load_env
+    log_info "Using deploy environment '${DEPLOY_ENV}' with Nacos namespace '${NACOS_NAMESPACE}'"
     ensure_named_volumes
     prepare_zlm_config
     check_container_conflicts postgres redis kafka nacos minio sentinel zlmediakit
@@ -244,6 +266,7 @@ cmd_build() {
 
 cmd_up() {
     load_env
+    log_info "Using deploy environment '${DEPLOY_ENV}' with Nacos namespace '${NACOS_NAMESPACE}'"
     ensure_named_volumes
     prepare_zlm_config
     check_container_conflicts postgres redis kafka nacos minio sentinel zlmediakit gateway system device rule media data support connector web

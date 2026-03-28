@@ -1,8 +1,10 @@
 # ============================================================
-# Firefly IoT production deployment
+# Firefly IoT single-host deployment
 # Usage:
 #   cp .env.example .env
 #   docker compose -f docker-compose.prod.yml --env-file .env up -d
+# Current defaults target the shared development environment.
+# Switch DEPLOY_ENV / NACOS_NAMESPACE explicitly before formal production deployment.
 # ============================================================
 version: '3.8'
 
@@ -12,7 +14,7 @@ x-java-service: &java-service
     dockerfile: deploy/Dockerfile
   restart: unless-stopped
   environment: &java-env
-    SPRING_PROFILES_ACTIVE: prod
+    SPRING_PROFILES_ACTIVE: ${DEPLOY_ENV:-dev}
     SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-firefly_iot}
     SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-firefly}
     SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-firefly123}
@@ -27,9 +29,9 @@ x-java-service: &java-service
     SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_SERVERS:-kafka:9092}
     SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: ${NACOS_ADDR:-nacos:8848}
-    SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: ${NACOS_NAMESPACE:-firefly-prod}
+    SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: ${NACOS_NAMESPACE:-firefly-dev}
     SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: ${NACOS_ADDR:-nacos:8848}
-    SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: ${NACOS_NAMESPACE:-firefly-prod}
+    SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: ${NACOS_NAMESPACE:-firefly-dev}
     JAVA_OPTS: ${JAVA_OPTS:--Xms256m -Xmx512m}
   networks:
     - firefly-net

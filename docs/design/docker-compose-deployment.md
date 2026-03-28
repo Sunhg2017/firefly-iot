@@ -18,6 +18,7 @@
 - 在启动前明确识别“同名但不属于当前 Compose 工程”的旧容器，避免误把旧容器当成当前发布的一部分。
 - 明确旧版独立 EMQX 已退出当前默认部署，MQTT 1883 由 `firefly-connector` 内置 Broker 负责。
 - 让 Kafka 广播地址能同时适配“全量 Compose”与“局域网共享基础设施”两种部署口径，避免客户端拿到 `localhost:9092` 后回连失败。
+- 让当前仍处于开发阶段的共享宿主机默认落到 `dev` Profile 和 `firefly-dev` 命名空间，禁止再以 `prod` 作为隐式默认值。
 
 ## 3. 非目标
 
@@ -72,8 +73,31 @@
 
 这样可以避免 Kafka 把 `localhost:9092` 返回给客户端，导致开发机或其他节点错误回连到自身回环地址。
 
+### 4.5 开发阶段默认环境收口
+
+当前共享宿主机仍属于开发阶段，但原部署模板把以下默认值写成了生产口径：
+
+- `.env.example` 默认 `DEPLOY_ENV=prod`
+- `.env.example` 默认 `NACOS_NAMESPACE=firefly-prod`
+- `deploy/docker-compose.prod.yml` 把 `SPRING_PROFILES_ACTIVE` 写死为 `prod`
+
+这会带来两个问题：
+
+- 运维在没有显式检查 `.env` 时，很容易误把共享开发宿主机当成生产配置维护
+- 后续如果有人直接在该宿主机上执行 `bash deploy.sh up`，业务容器会落到 `prod` Profile，和当前本地联调使用的 `firefly-dev` 命名空间脱节
+
+本次收口方案：
+
+- `.env.example` 默认值改为 `DEPLOY_ENV=dev`、`NACOS_NAMESPACE=firefly-dev`
+- `deploy.sh` 在读取 `.env` 后校验 `DEPLOY_ENV` 只能是 `dev` 或 `prod`
+- 如果 `.env` 未显式填写 `NACOS_NAMESPACE`，`deploy.sh` 自动按 `firefly-${DEPLOY_ENV}` 推导
+- `deploy/docker-compose.prod.yml` 中业务容器的 `SPRING_PROFILES_ACTIVE` 改为引用 `${DEPLOY_ENV}`
+
+这样当前阶段的默认行为就是明确的开发环境；只有在运维显式改成 `DEPLOY_ENV=prod` 后，才会进入生产口径。
+
 ## 5. 风险与约束
 
 - 历史数据卷迁移前，不能直接删除旧容器和旧卷，否则会造成数据丢失。
 - PostgreSQL、Kafka、MinIO 卷迁移需要在旧容器停止后进行，避免复制过程拿到不一致数据。
 - `deploy.sh` 只做冲突检测，不自动强拆未知来源容器；实际退役动作由运维按宿主机现状执行。
+- 当前仍保留 `deploy/docker-compose.yml` 作为本机临时联调入口，但共享宿主机和标准部署必须统一走 `deploy.sh`，避免再次出现环境口径分叉。

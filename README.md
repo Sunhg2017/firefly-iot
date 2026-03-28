@@ -41,13 +41,21 @@ firefly-iot/
 ### 1. 启动基础设施
 
 ```bash
-docker compose -f deploy/docker-compose.yml up -d
+cp deploy/.env.example deploy/.env
+cd deploy
+bash deploy.sh infra
 ```
 
-这会启动 PostgreSQL、Redis、Kafka、Nacos、MinIO、Sentinel。
-如果需要本地验证视频监控链路，当前 `deploy/docker-compose.yml` 也会一并启动 `zlmediakit`。
+默认模板已经收口到开发阶段配置：
 
-如果本地也想用容器跑 `firefly-connector` 并直接暴露 MQTT 1883，可以额外执行：
+- `DEPLOY_ENV=dev`
+- `NACOS_NAMESPACE=firefly-dev`
+
+只有在正式生产部署时，才把它们显式改成 `prod` / `firefly-prod`。
+
+这会启动 PostgreSQL、Redis、Kafka、Nacos、MinIO、Sentinel、ZLMediaKit。
+
+如果本地只想额外起一个容器化 `firefly-connector` 来暴露 MQTT 1883，可继续使用仅限本机联调的 `deploy/docker-compose.yml` 辅助入口：
 
 ```bash
 mvn -pl firefly-connector -am -DskipTests package

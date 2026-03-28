@@ -2,7 +2,7 @@
 
 ## 1. 适用范围
 
-适用于通过仓库内 `deploy/deploy.sh`、`deploy/docker-compose.prod.yml` 在单机宿主机部署 Firefly IoT 的场景。
+适用于通过仓库内 `deploy/deploy.sh`、`deploy/docker-compose.prod.yml` 在单机宿主机部署 Firefly IoT 的场景。当前共享宿主机默认按开发阶段配置运行。
 
 ## 2. 依赖服务
 
@@ -14,9 +14,21 @@
 
 1. 进入仓库 `deploy/` 目录。
 2. 复制并调整环境变量：`cp .env.example .env`
-3. 启动基础设施：`bash deploy.sh infra`
-4. 启动全量服务：`bash deploy.sh up`
-5. 查看状态：`bash deploy.sh status`
+3. 当前开发阶段必须确认：
+   - `DEPLOY_ENV=dev`
+   - `NACOS_NAMESPACE=firefly-dev`
+4. 只有在正式生产部署时，才显式改成：
+   - `DEPLOY_ENV=prod`
+   - `NACOS_NAMESPACE=firefly-prod`
+5. 启动基础设施：`bash deploy.sh infra`
+6. 启动全量服务：`bash deploy.sh up`
+7. 查看状态：`bash deploy.sh status`
+
+脚本行为补充：
+
+- `deploy.sh` 会校验 `DEPLOY_ENV` 只能是 `dev` 或 `prod`
+- 如果 `.env` 没写 `NACOS_NAMESPACE`，脚本会自动推导为 `firefly-${DEPLOY_ENV}`
+- `bash deploy.sh infra` / `bash deploy.sh up` 日志会打印当前环境和命名空间，便于值班时快速识别
 
 Kafka 额外要求：
 
@@ -103,6 +115,20 @@ Kafka 额外要求：
 1. 按客户端实际访问路径，把 `KAFKA_ADVERTISED_HOST` 改成 `kafka` 或宿主机真实 IP/DNS
 2. 重新执行 `bash deploy.sh infra` 或手工重建 `kafka`
 3. 确认客户端重新获取元数据后不再尝试连接 `localhost:9092`
+
+### 5.5 共享开发宿主机误配成 `prod`
+
+如果发现宿主机 `.env` 中出现以下组合：
+
+- `DEPLOY_ENV=prod`
+- `NACOS_NAMESPACE=firefly-prod`
+
+但当前环境实际上仍处于开发联调阶段，按下面步骤收口：
+
+1. 把 `.env` 改回 `DEPLOY_ENV=dev`
+2. 把 `.env` 改回 `NACOS_NAMESPACE=firefly-dev`
+3. 确认共享基础设施宿主机只保留开发命名空间服务：`curl 'http://127.0.0.1:8848/nacos/v1/ns/catalog/services?namespaceId=firefly-dev&pageNo=1&pageSize=50'`
+4. 如该宿主机未来需要起业务容器，再执行 `bash deploy.sh up`，避免继续以 `prod` Profile 启动
 
 ## 6. 回滚说明
 

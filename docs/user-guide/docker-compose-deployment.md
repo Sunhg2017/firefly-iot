@@ -9,18 +9,32 @@
 1. 进入 `deploy/`
 2. 执行 `cp .env.example .env`
 3. 按宿主机实际地址修改 `.env`，重点检查：
+   - `DEPLOY_ENV`
+   - `NACOS_NAMESPACE`
    - `POSTGRES_PASSWORD`
    - `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`
    - `KAFKA_ADVERTISED_HOST`
    - `ZLM_HOST` / `ZLM_PUBLIC_HOST`
    - `ZLM_SECRET`
-4. 启动基础设施：`bash deploy.sh infra`
-5. 启动全量服务：`bash deploy.sh up`
+4. 当前还在开发阶段时，保持：
+   - `DEPLOY_ENV=dev`
+   - `NACOS_NAMESPACE=firefly-dev`
+5. 只有正式生产部署时，才切换为：
+   - `DEPLOY_ENV=prod`
+   - `NACOS_NAMESPACE=firefly-prod`
+6. 启动基础设施：`bash deploy.sh infra`
+7. 启动全量服务：`bash deploy.sh up`
 
 `KAFKA_ADVERTISED_HOST` 的选择规则：
 
 - 全量 Compose 部署：保持默认值 `kafka`
 - 局域网共享基础设施：改成宿主机 IP 或 DNS，例如 `192.168.123.102`
+
+`DEPLOY_ENV` / `NACOS_NAMESPACE` 的使用规则：
+
+- 开发联调宿主机：保持 `dev` / `firefly-dev`
+- 正式生产宿主机：显式改成 `prod` / `firefly-prod`
+- 如果 `.env` 留空 `NACOS_NAMESPACE`，`deploy.sh` 会自动按 `firefly-${DEPLOY_ENV}` 推导
 
 ## 3. 常用命令
 

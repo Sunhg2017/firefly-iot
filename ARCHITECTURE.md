@@ -193,13 +193,16 @@ deploy/
 
 ### 8.2 `docker-compose.yml`
 
-- 用途：本地开发基础设施。
+- 用途：本机临时联调用的基础设施 Compose。
 - 默认启动：PostgreSQL、Redis、Kafka、Nacos、MinIO、Sentinel。
-- 可选 `connector` Profile：在本地需要容器化 MQTT 入口时再启用。
+- 默认按开发口径运行，本机可通过 `KAFKA_ADVERTISED_HOST`、`NACOS_NAMESPACE` 覆盖。
+- 可选 `connector` Profile：仅在本地需要容器化 MQTT 入口时再启用。
 
 ### 8.3 `docker-compose.prod.yml`
 
-- 用途：单机生产部署示例。
+- 用途：`deploy/deploy.sh` 使用的单机部署 Compose。
+- 当前默认值已收口到开发阶段：`DEPLOY_ENV=dev`、`NACOS_NAMESPACE=firefly-dev`。
+- 正式生产部署时，必须在 `.env` 中显式切换到 `DEPLOY_ENV=prod`、`NACOS_NAMESPACE=firefly-prod`。
 - 暴露端口：
   - Web: `80`
   - Gateway: `8080`
@@ -215,6 +218,8 @@ deploy/
 | `FIREFLY_MQTT_ENABLED` | `true` | 启用内置 MQTT Broker |
 | `FIREFLY_MQTT_HOST` | `0.0.0.0` | MQTT 监听地址 |
 | `FIREFLY_MQTT_PORT` | `1883` | MQTT 监听端口 |
+| `DEPLOY_ENV` | `dev` | `deploy/deploy.sh` 默认启动环境；开发阶段保持 `dev`，生产时显式改成 `prod` |
+| `NACOS_NAMESPACE` | `firefly-dev` | 当前默认 Nacos 命名空间；生产切换为 `firefly-prod` |
 | `FIREFLY_MQTT_ALLOW_ANONYMOUS` | `false` | 是否允许匿名连接 |
 | `FIREFLY_MQTT_PERSISTENCE_ENABLED` | `false` | 是否启用持久化 |
 | `FIREFLY_MQTT_DATA_PATH` | `data/mqtt` | Broker 数据目录 |
