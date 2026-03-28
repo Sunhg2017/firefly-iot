@@ -17,6 +17,7 @@ import { Gb28181Client, Gb28181Config, Gb28181Channel, SipClientEvent } from './
 let mainWindow: BrowserWindow | null = null;
 const mqttClients = new Map<string, MqttClient>();
 const sipClients = new Map<string, Gb28181Client>();
+const sipPendingKeepalive = new Set<string>();
 const sipLocalMediaConfigs = new Map<string, {
   enableLocalMedia: boolean;
   fps: number;
@@ -367,22 +368,22 @@ function splitDarwinCompatibilityLines(stderrText: string): {
   };
 }
 
-function classifyLocalVideoStderrMessage(stderrText: string): 'warn' | 'error' {
+function classifyLocalVideoStderrMessage(stderrText: string): 'local_media_warn' | 'local_media_error' {
   const lines = (stderrText || '')
     .split(/\r?\n/g)
     .map((line) => line.trim())
     .filter(Boolean);
   if (lines.length === 0) {
-    return 'warn';
+    return 'local_media_warn';
   }
   if (process.platform === 'darwin') {
     const { compatibilityLines, nonCompatibilityLines } = splitDarwinCompatibilityLines(stderrText);
     if (nonCompatibilityLines.length > 0) {
-      return 'error';
+      return 'local_media_error';
     }
-    return compatibilityLines.length > 0 ? 'warn' : 'error';
+    return compatibilityLines.length > 0 ? 'local_media_warn' : 'local_media_error';
   }
-  return 'error';
+  return 'local_media_error';
 }
 
 function parseDarwinSupportedModes(stderrText: string): Array<{ width: number; height: number; fps: number }> {
@@ -920,7 +921,7 @@ async function startLocalVideoSession(
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('sip:event', deviceId, {
           type: classifyLocalVideoStderrMessage(message),
-          message: `本地码流告警: ${message.trim()}`,
+          message: message.trim(),
         });
       }
     });
@@ -1732,6 +1733,7 @@ ipcMain.handle('sip:start', async (_e, id: string, config: Gb28181Config) => {
       await existing.stop();
       sipClients.delete(id);
     }
+    sipPendingKeepalive.delete(id);
     await stopLocalVideoSession(id);
     sipLocalMediaConfigs.set(id, {
       enableLocalMedia: Boolean((config as any).enableLocalMedia),
@@ -1745,6 +1747,12 @@ ipcMain.handle('sip:start', async (_e, id: string, config: Gb28181Config) => {
 
     // Forward SIP events to renderer
     client.on('event', async (evt: SipClientEvent) => {
+      if (evt.type === 'registered' && sipPendingKeepalive.has(id)) {
+        // Keepalive may be requested before REGISTER completes, so defer the
+        // first heartbeat until the 200 OK actually arrives.
+        sipPendingKeepalive.delete(id);
+        client.startKeepalive();
+      }
       if (evt.type === 'invite_accepted') {
         const mediaConfig = sipLocalMediaConfigs.get(id);
         if (mediaConfig?.enableLocalMedia) {
@@ -1762,7 +1770,7 @@ ipcMain.handle('sip:start', async (_e, id: string, config: Gb28181Config) => {
           } catch (error: any) {
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.webContents.send('sip:event', id, {
-                type: 'error',
+                type: 'local_media_error',
                 message: `本地码流启动失败: ${error?.message || '未知错误'}`,
               });
             }
@@ -1770,6 +1778,7 @@ ipcMain.handle('sip:start', async (_e, id: string, config: Gb28181Config) => {
         }
       }
       if (evt.type === 'bye_accepted' || evt.type === 'unregistered') {
+        sipPendingKeepalive.delete(id);
         await stopLocalVideoSession(id);
       }
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1781,6 +1790,7 @@ ipcMain.handle('sip:start', async (_e, id: string, config: Gb28181Config) => {
     sipClients.set(id, client);
     return { success: true };
   } catch (err: any) {
+    sipPendingKeepalive.delete(id);
     sipLocalMediaConfigs.delete(id);
     await stopLocalVideoSession(id);
     return { success: false, message: err.message };
@@ -1802,6 +1812,7 @@ ipcMain.handle('sip:unregister', async (_e, id: string) => {
   try {
     const client = sipClients.get(id);
     if (!client) return { success: false, message: 'SIP client not started' };
+    sipPendingKeepalive.delete(id);
     await client.unregister();
     await stopLocalVideoSession(id);
     return { success: true };
@@ -1814,7 +1825,11 @@ ipcMain.handle('sip:startKeepalive', async (_e, id: string) => {
   try {
     const client = sipClients.get(id);
     if (!client) return { success: false, message: 'SIP client not started' };
-    client.startKeepalive();
+    if (client.isRegistered()) {
+      client.startKeepalive();
+    } else {
+      sipPendingKeepalive.add(id);
+    }
     return { success: true };
   } catch (err: any) {
     return { success: false, message: err.message };
@@ -1825,6 +1840,7 @@ ipcMain.handle('sip:stopKeepalive', async (_e, id: string) => {
   try {
     const client = sipClients.get(id);
     if (!client) return { success: false, message: 'SIP client not started' };
+    sipPendingKeepalive.delete(id);
     client.stopKeepalive();
     return { success: true };
   } catch (err: any) {
@@ -1872,6 +1888,7 @@ ipcMain.handle('sip:updateMediaConfig', async (_e, id: string, config: {
 ipcMain.handle('sip:stop', async (_e, id: string) => {
   try {
     await stopLocalVideoSession(id);
+    sipPendingKeepalive.delete(id);
     sipLocalMediaConfigs.delete(id);
     const client = sipClients.get(id);
     if (client) {

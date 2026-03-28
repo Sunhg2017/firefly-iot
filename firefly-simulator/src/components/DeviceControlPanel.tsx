@@ -657,11 +657,17 @@ export default function DeviceControlPanel() {
         case 'error':
           store.addLog(id, current.name, 'error', `SIP 异常：${event.message}`);
           break;
+        case 'local_media_error':
+          store.addLog(id, current.name, 'error', `本地码流异常：${event.message}`);
+          break;
         case 'warn':
           store.addLog(id, current.name, 'warn', `SIP 提示：${event.message}`);
           break;
+        case 'local_media_warn':
+          store.addLog(id, current.name, 'warn', `本地码流提示：${event.message}`);
+          break;
         case 'local_media_retry':
-          store.addLog(id, current.name, 'warn', `SIP 提示：${event.message}`);
+          store.addLog(id, current.name, 'warn', `本地码流提示：${event.message}`);
           break;
         case 'sip_rx':
           setSipMessages((prev) => [...prev.slice(-99), { dir: 'rx', method: event.method, raw: event.raw, ts: Date.now() }]);

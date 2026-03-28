@@ -1,4 +1,5 @@
 import type { SimDevice } from '../store';
+import type { SimulatorEnvironment } from '../workspaceStore';
 import { getActiveEnvironment, useSimWorkspaceStore } from '../workspaceStore';
 
 export type SimulatorVideoStreamMode = 'GB28181' | 'RTSP' | 'RTMP';
@@ -17,8 +18,50 @@ export interface LocalVideoModeOption {
   fps: number;
 }
 
+export interface SimulatorMediaPublishConfig {
+  gatewayBaseUrl?: string | null;
+  mediaHost?: string | null;
+  mediaRtspPort?: number | null;
+  mediaRtmpPort?: number | null;
+}
+
+function resolveMediaPublishConfig(
+  environmentOrConfig?: SimulatorEnvironment | SimulatorMediaPublishConfig | null,
+): SimulatorMediaPublishConfig {
+  if (!environmentOrConfig) {
+    return {};
+  }
+  return {
+    gatewayBaseUrl: environmentOrConfig.gatewayBaseUrl,
+    mediaHost: environmentOrConfig.mediaHost,
+    mediaRtspPort: environmentOrConfig.mediaRtspPort,
+    mediaRtmpPort: environmentOrConfig.mediaRtmpPort,
+  };
+}
+
+function resolveMediaPublishHost(config: SimulatorMediaPublishConfig): string {
+  const explicitHost = trimText(config.mediaHost);
+  if (explicitHost) {
+    return explicitHost;
+  }
+  try {
+    const parsed = new URL(trimText(config.gatewayBaseUrl));
+    return trimText(parsed.hostname) || '127.0.0.1';
+  } catch {
+    return '127.0.0.1';
+  }
+}
+
+function resolveMediaPublishPort(config: SimulatorMediaPublishConfig, mode: SimulatorVideoStreamMode): number {
+  const configuredPort = Number(mode === 'RTMP' ? config.mediaRtmpPort : config.mediaRtspPort);
+  if (Number.isInteger(configuredPort) && configuredPort > 0 && configuredPort <= 65535) {
+    return configuredPort;
+  }
+  return mode === 'RTMP' ? 1935 : 554;
+}
+
 export function buildLocalCameraSourceUrl(
-  gatewayBaseUrl: string,
+  environmentOrConfig: SimulatorEnvironment | SimulatorMediaPublishConfig | null | undefined,
   streamMode: string | null | undefined,
   simulatorDeviceId: string,
 ): string {
@@ -26,12 +69,35 @@ export function buildLocalCameraSourceUrl(
   if (!isProxyVideoMode(normalizedMode)) {
     return '';
   }
-  const parsed = new URL(gatewayBaseUrl);
-  const host = trimText(parsed.hostname) || '127.0.0.1';
+  const config = resolveMediaPublishConfig(environmentOrConfig);
+  const host = resolveMediaPublishHost(config);
+  const port = resolveMediaPublishPort(config, normalizedMode);
   const key = `simcam-${simulatorDeviceId.replace(/[^a-zA-Z0-9]/g, '').slice(-16) || 'default'}`.toLowerCase();
   return normalizedMode === 'RTMP'
-    ? `rtmp://${host}:1935/live/${key}`
-    : `rtsp://${host}:554/live/${key}`;
+    ? `rtmp://${host}:${port}/live/${key}`
+    : `rtsp://${host}:${port}/live/${key}`;
+}
+
+export function buildLocalCameraSourcePreview(
+  environmentOrConfig: SimulatorEnvironment | SimulatorMediaPublishConfig | null | undefined,
+  streamMode: string | null | undefined,
+  seedName?: string | null,
+): string {
+  const normalizedMode = normalizeVideoStreamMode(streamMode);
+  if (!isProxyVideoMode(normalizedMode)) {
+    return '';
+  }
+  const config = resolveMediaPublishConfig(environmentOrConfig);
+  const host = resolveMediaPublishHost(config);
+  const port = resolveMediaPublishPort(config, normalizedMode);
+  const sanitizedSeed = trimText(seedName)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    || 'simulator-camera';
+  return normalizedMode === 'RTMP'
+    ? `rtmp://${host}:${port}/live/${sanitizedSeed}`
+    : `rtsp://${host}:${port}/live/${sanitizedSeed}`;
 }
 
 export function formatLocalVideoFps(value: number): string {

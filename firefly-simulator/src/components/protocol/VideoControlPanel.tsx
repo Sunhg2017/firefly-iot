@@ -44,7 +44,7 @@ export default function VideoControlPanel({ device }: Props) {
   const isGb28181 = device.streamMode === 'GB28181';
   const isLocalProxySource = device.videoSourceType === 'LOCAL_CAMERA' && (device.streamMode === 'RTSP' || device.streamMode === 'RTMP');
   const localProxyTarget = isLocalProxySource
-    ? buildLocalCameraSourceUrl(gatewayBaseUrl, device.streamMode, device.id)
+    ? buildLocalCameraSourceUrl(activeEnvironment, device.streamMode, device.id)
     : '';
   const [mediaParamOpen, setMediaParamOpen] = useState(false);
   const [mediaParamForm] = Form.useForm();

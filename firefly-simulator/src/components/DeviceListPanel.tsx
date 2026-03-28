@@ -8,6 +8,7 @@ import {
   Empty,
   Form,
   Input,
+  InputNumber,
   List,
   Popconfirm,
   Select,
@@ -569,6 +570,9 @@ export default function DeviceListPanel() {
       gatewayBaseUrl: activeEnvironment.gatewayBaseUrl,
       protocolBaseUrl: activeEnvironment.protocolBaseUrl,
       mqttBrokerUrl: activeEnvironment.mqttBrokerUrl,
+      mediaHost: activeEnvironment.mediaHost,
+      mediaRtspPort: activeEnvironment.mediaRtspPort,
+      mediaRtmpPort: activeEnvironment.mediaRtmpPort,
     });
     setWorkspaceDrawerOpen(true);
   };
@@ -584,6 +588,9 @@ export default function DeviceListPanel() {
       gatewayBaseUrl: target.gatewayBaseUrl,
       protocolBaseUrl: target.protocolBaseUrl,
       mqttBrokerUrl: target.mqttBrokerUrl,
+      mediaHost: target.mediaHost,
+      mediaRtspPort: target.mediaRtspPort,
+      mediaRtmpPort: target.mediaRtmpPort,
     });
     setWorkspaceDrawerOpen(true);
   };
@@ -1066,6 +1073,15 @@ export default function DeviceListPanel() {
               <Form.Item name="mqttBrokerUrl" label="MQTT Broker 地址" rules={[{ required: true, message: '请输入 MQTT Broker 地址' }]}>
                 <Input placeholder="mqtt://localhost:1883" />
               </Form.Item>
+              <Form.Item name="mediaHost" label="ZLM 推流主机" rules={[{ required: true, message: '请输入 ZLM 推流主机' }]}>
+                <Input placeholder="192.168.123.102" />
+              </Form.Item>
+              <Form.Item name="mediaRtspPort" label="ZLM RTSP 端口" rules={[{ required: true, message: '请输入 ZLM RTSP 端口' }]}>
+                <InputNumber min={1} max={65535} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item name="mediaRtmpPort" label="ZLM RTMP 端口" rules={[{ required: true, message: '请输入 ZLM RTMP 端口' }]}>
+                <InputNumber min={1} max={65535} style={{ width: '100%' }} />
+              </Form.Item>
               <Space>
                 <Button type="primary" onClick={() => void handleSaveEnvironment()}>
                   保存环境
@@ -1105,6 +1121,7 @@ export default function DeviceListPanel() {
                     <Text type="secondary" style={{ fontSize: 12 }}>网关 {environment.gatewayBaseUrl}</Text>
                     <Text type="secondary" style={{ fontSize: 12 }}>协议 {environment.protocolBaseUrl}</Text>
                     <Text type="secondary" style={{ fontSize: 12 }}>Broker {environment.mqttBrokerUrl}</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>ZLM {environment.mediaHost} / RTSP {environment.mediaRtspPort} / RTMP {environment.mediaRtmpPort}</Text>
                   </Space>
                   <Space size={8} wrap>
                     {environment.id !== activeEnvironmentId ? (

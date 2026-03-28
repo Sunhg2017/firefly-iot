@@ -110,6 +110,7 @@ npm run electron:build
 - RTSP / RTMP 模式支持两种媒体源：
   - `本地摄像头`：自动生成 `sourceUrl` 并回填平台资产
   - `外部源地址`：使用手工填写的 `sourceUrl`
+- `RTSP / RTMP` 的本地摄像头推流地址不再复用平台网关主机，统一按当前环境的 `ZLM 推流主机 / RTSP 端口 / RTMP 端口` 生成
 - 使用 `本地摄像头` 时，可在高级配置里选择具体摄像头设备；macOS 下还会同步列出可选采集模式
 - macOS 本地摄像头起流时，若 `avfoundation` 拒绝默认输入 `pixel_format`，模拟器会按 `Supported pixel formats` 自动重试兼容像素格式
 - 再次连接同一台视频设备时，模拟器会优先复用已关联的 `platformDeviceId`
@@ -156,16 +157,15 @@ npm run electron:build
 **操作流程:**
 1. 切换到目标环境，并先完成当前环境登录
 2. 添加 Video 设备 → 选择 GB28181 → 配置 SIP 服务器地址/端口/ID/传输/密码
-3. 连接设备（在平台注册或同步视频设备）
-4. 点击「SIP 注册」→ 发送 REGISTER 到平台 SIP 服务器（如需认证会自动完成）
-5. 点击「开启心跳」→ 定时发送 Keepalive
-6. 点击「开始推流」后，平台发送 INVITE 时会自动触发本地码流发送
-7. 平台发送 Catalog/DeviceInfo/INVITE/BYE/PTZ 等指令时，模拟器自动响应
+3. 点击「连接」→ 先同步平台视频设备，再自动启动 SIP、发送 REGISTER，并在注册成功后自动开始心跳
+4. 如需手动重试注册、暂停心跳或抓报文，可继续使用详情页里的 SIP 按钮
+5. 点击「开始推流」后，平台发送 INVITE 时会自动触发本地码流发送
+6. 平台发送 Catalog/DeviceInfo/INVITE/BYE/PTZ 等指令时，模拟器自动响应
 
 本地摄像头兼容说明：
 
 - macOS 下如果 FFmpeg 输出 `Selected framerate`、`Selected video size` 或 `Selected pixel format` 不兼容，模拟器会先按支持模式/像素格式自动重试
-- 这类 `avfoundation` 兼容性输出会显示为告警；只有最终起流失败才会显示错误
+- 这类 `avfoundation` 兼容性输出会显示为“本地码流提示”；只有最终起流失败才会显示“本地码流异常”
 
 ### SNMP Mode
 

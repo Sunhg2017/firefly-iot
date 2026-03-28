@@ -24,7 +24,8 @@
 3. 若已存在，则更新设备资产。
 4. 若不存在，则创建设备资产。
 5. 缓存 `platformDeviceId`。
-6. 后续播放、截图、录像、目录、设备信息、PTZ 全部按 `platformDeviceId` 调 `MEDIA`。
+6. 若当前模式为 `GB28181`，连接阶段立即启动本地 SIP 客户端、发送 `REGISTER`，并把心跳请求挂起到注册成功后自动发送。
+7. 后续播放、截图、录像、目录、设备信息、PTZ 全部按 `platformDeviceId` 调 `MEDIA`。
 
 ### 2.3 唯一标识
 
@@ -65,7 +66,7 @@
   - `LOCAL_CAMERA`
   - `REMOTE_SOURCE`
 - `GB28181` 默认 `LOCAL_CAMERA`，收到 INVITE 后自动按 SDP 目标地址发送本地 RTP 码流。
-- `RTSP / RTMP` 选择 `LOCAL_CAMERA` 时，模拟器自动生成 `sourceUrl`，并在开始推流前先启动本地摄像头推流进程。
+- `RTSP / RTMP` 选择 `LOCAL_CAMERA` 时，模拟器自动按当前环境的 `mediaHost/mediaRtspPort/mediaRtmpPort` 生成 `sourceUrl`，并在开始推流前先启动本地摄像头推流进程。
 - 新建设备时可直接选择本机摄像头设备；macOS 下会同步枚举当前摄像头可用采集模式并保存到设备配置。
 - Electron 主进程负责拉起并托管本地推流子进程，断开、停流、注销时统一回收。
 - macOS 摄像头采集默认先使用显式 `framerate + video_size`；若 `avfoundation` 返回参数不支持，会先根据本次失败日志里的实际被拒绝模式，从 `Supported modes` 中顺序尝试兼容分辨率与帧率。
@@ -73,10 +74,18 @@
 - 已确认的 `avfoundation` 兼容性输出按告警展示；真正导致起流失败的 stderr 才按错误返回。
 - 最后仍失败时，才降级到设备默认采集模式，避免因机型差异导致启动失败。
 
+### 2.7 环境级媒体地址
+
+- 模拟器环境除 `gatewayBaseUrl/protocolBaseUrl/mqttBrokerUrl` 外，补充维护 `mediaHost`、`mediaRtspPort`、`mediaRtmpPort`。
+- `RTSP / RTMP` 本地摄像头模式不再从平台网关地址反推 `localhost:554/1935`，统一以环境里显式配置的 ZLM 可达地址生成推流目标。
+- 当前开发默认值对齐共享 ZLM：`192.168.123.102 / 18554 / 1935`。
+- 本地摄像头 stderr 统一按“本地码流提示/异常”展示，不再误标成 SIP 异常。
+
 ## 3. GB28181 SIP 模拟
 
 - 保留本地 SIP 客户端能力
 - REGISTER 使用设备级 SIP 密码参与 Digest 认证（强制，禁止无密码注册）
+- 点击 `连接` 后自动启动 SIP、发送 REGISTER，并在注册成功后自动开始 Keepalive
 - Keepalive、Catalog、DeviceInfo、INVITE、BYE、PTZ 响应逻辑保持不变
 - INVITE 时会从 SDP 解析目标 `ip/port/ssrc`，并驱动本地摄像头 RTP 发送
 

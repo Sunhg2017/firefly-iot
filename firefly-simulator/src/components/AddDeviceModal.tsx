@@ -30,6 +30,7 @@ import {
 } from '../workspaceStore';
 import {
   buildFallbackLocalVideoModes,
+  buildLocalCameraSourcePreview,
   buildLocalVideoModeKey,
   getVideoSourceFieldLabel,
   isProxyVideoMode,
@@ -147,27 +148,6 @@ function resolveProductProtocolQuery(protocol: Protocol, streamMode?: string): s
 
 function normalizeVideoSourceType(value: unknown): 'LOCAL_CAMERA' | 'REMOTE_SOURCE' {
   return value === 'REMOTE_SOURCE' ? 'REMOTE_SOURCE' : 'LOCAL_CAMERA';
-}
-
-function buildAutoLocalSourcePreview(baseUrl: string, streamMode?: string, seedName?: string): string {
-  const normalizedMode = normalizeVideoStreamMode(streamMode);
-  if (!isProxyVideoMode(normalizedMode)) {
-    return '';
-  }
-  try {
-    const parsed = new URL(baseUrl);
-    const host = parsed.hostname || '127.0.0.1';
-    const sanitizedSeed = (seedName || 'simulator-camera')
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      || 'simulator-camera';
-    return normalizedMode === 'RTMP'
-      ? `rtmp://${host}:1935/live/${sanitizedSeed}`
-      : `rtsp://${host}:554/live/${sanitizedSeed}`;
-  } catch {
-    return '';
-  }
 }
 
 function buildInitialValues(
@@ -474,16 +454,16 @@ function getStepFields(
   return [];
 }
 
-function buildSummary(values: Record<string, unknown>, products: TenantProductRecord[], gatewayBaseUrl: string) {
+function buildSummary(
+  values: Record<string, unknown>,
+  products: TenantProductRecord[],
+  environment: ReturnType<typeof getActiveEnvironment>,
+) {
   const protocol = (values.protocol || 'HTTP') as string;
   const selectedProduct = products.find((item) => item.productKey === values.productKey);
   const streamMode = normalizeVideoStreamMode(typeof values.streamMode === 'string' ? values.streamMode : undefined);
   const videoSourceType = normalizeVideoSourceType(values.videoSourceType);
-  const localPreview = buildAutoLocalSourcePreview(
-    gatewayBaseUrl,
-    streamMode,
-    trimText(values.name as string | undefined),
-  );
+  const localPreview = buildLocalCameraSourcePreview(environment, streamMode, trimText(values.name as string | undefined));
   const videoEndpoint = isProxyVideoMode(streamMode)
     ? (videoSourceType === 'LOCAL_CAMERA'
       ? localPreview
@@ -1179,7 +1159,7 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
                   <Input
                     readOnly
                     value={videoSourceType === 'LOCAL_CAMERA'
-                      ? buildAutoLocalSourcePreview(activeEnvironment.gatewayBaseUrl, streamMode, trimText(formSnapshot.name))
+                      ? buildLocalCameraSourcePreview(activeEnvironment, streamMode, trimText(formSnapshot.name))
                       : (sourcePreview ? `${sourcePreview.host}:${sourcePreview.port}` : '')}
                     placeholder={videoSourceType === 'LOCAL_CAMERA'
                       ? '根据当前环境自动生成本地推流地址'
@@ -1417,7 +1397,7 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
                     key: 'sourceUrl',
                     label: getVideoSourceFieldLabel(streamMode),
                     children: <Text>{videoSourceType === 'LOCAL_CAMERA'
-                      ? buildAutoLocalSourcePreview(activeEnvironment.gatewayBaseUrl, streamMode, trimText(formSnapshot.name))
+                      ? buildLocalCameraSourcePreview(activeEnvironment, streamMode, trimText(formSnapshot.name))
                       : (trimText(formSnapshot.sourceUrl) || '-')}</Text>,
                   },
                   {
@@ -1446,7 +1426,7 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
         <Descriptions
           size="small"
           column={1}
-          items={buildSummary(formSnapshot, products, activeEnvironment.gatewayBaseUrl).map((item) => ({
+          items={buildSummary(formSnapshot, products, activeEnvironment).map((item) => ({
             key: item.key,
             label: item.label,
             children: <Text>{String(item.value)}</Text>,

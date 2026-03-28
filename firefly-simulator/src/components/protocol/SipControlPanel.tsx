@@ -15,6 +15,7 @@ import {
   type LocalVideoModeOption,
   selectPreferredLocalVideoMode,
 } from '../../utils/video';
+import { buildSimulatorSipStartConfig, resolveSimulatorSipChannels } from '../../utils/sip';
 
 const { Text } = Typography;
 
@@ -153,11 +154,7 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
 
   if (device.protocol !== 'Video' || device.streamMode !== 'GB28181' || !isOnline) return null;
 
-  const chs = device.sipChannels.length > 0 ? device.sipChannels : [{
-    channelId: device.gbDeviceId.slice(0, 14) + '131' + device.gbDeviceId.slice(17),
-    name: `模拟通道-${device.name}`, manufacturer: 'Firefly-Simulator', model: 'VCam-1080P',
-    status: 'ON' as const, ptzType: 1, longitude: 116.397, latitude: 39.909,
-  }];
+  const chs = resolveSimulatorSipChannels(device);
 
   return (
     <>
@@ -203,37 +200,7 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
                   return;
                 }
                 addLog(device.id, device.name, 'info', '启动 SIP 客户端...');
-                const config = {
-                  deviceId: device.gbDeviceId,
-                  domain: device.gbDomain,
-                  localIp: '127.0.0.1',
-                  localPort: device.sipLocalPort,
-                  serverIp: device.sipServerIp,
-                  serverPort: device.sipServerPort,
-                  serverId: device.sipServerId,
-                  expires: 3600,
-                  keepaliveInterval: device.sipKeepaliveInterval,
-                  transport: device.sipTransport,
-                  password: device.sipPassword,
-                  manufacturer: 'Firefly-Simulator',
-                  model: 'Virtual-Camera',
-                  firmware: '1.0.0',
-                  enableLocalMedia: device.videoSourceType === 'LOCAL_CAMERA',
-                  mediaFps: device.mediaFps,
-                  mediaWidth: device.mediaWidth,
-                  mediaHeight: device.mediaHeight,
-                  cameraDevice: device.cameraDevice,
-                  channels: device.sipChannels.length > 0 ? device.sipChannels : [{
-                    channelId: device.gbDeviceId.slice(0, 14) + '131' + device.gbDeviceId.slice(17),
-                    name: `模拟通道-${device.name}`,
-                    manufacturer: 'Firefly-Simulator',
-                    model: 'VCam-1080P',
-                    status: 'ON' as const,
-                    ptzType: 1,
-                    longitude: 116.397428,
-                    latitude: 39.90923,
-                  }],
-                };
+                const config = buildSimulatorSipStartConfig(device);
                 const startRes = await window.electronAPI.sipStart(device.id, config);
                 if (!startRes.success) {
                   addLog(device.id, device.name, 'error', `SIP 启动失败: ${startRes.message}`);
@@ -311,7 +278,7 @@ export default function SipControlPanel({ device, sipMessages, setSipMessages }:
             </Button>
           </Space>
           <Text type="secondary" style={{ fontSize: 11 }}>
-            注册后平台可向此设备发送 Catalog 查询、INVITE 点播等 SIP 指令，模拟器会自动响应。
+            连接后会自动发起 SIP 注册和心跳，这里的按钮主要用于手动重试、注销和抓取报文。
           </Text>
           {/* SIP Statistics Dashboard */}
           {sipMessages.length > 0 && (() => {

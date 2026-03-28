@@ -9,6 +9,9 @@ export interface SimulatorEnvironment {
   gatewayBaseUrl: string;
   protocolBaseUrl: string;
   mqttBrokerUrl: string;
+  mediaHost: string;
+  mediaRtspPort: number;
+  mediaRtmpPort: number;
 }
 
 export interface SimulatorLoginUser {
@@ -53,6 +56,9 @@ const DEFAULT_ENVIRONMENT: SimulatorEnvironment = {
   gatewayBaseUrl: 'http://localhost:8080',
   protocolBaseUrl: 'http://localhost:9070',
   mqttBrokerUrl: 'mqtt://localhost:1883',
+  mediaHost: '192.168.123.102',
+  mediaRtspPort: 18554,
+  mediaRtmpPort: 1935,
 };
 
 function trimText(value?: string | null): string {
@@ -61,6 +67,14 @@ function trimText(value?: string | null): string {
 
 function trimHttpBaseUrl(value?: string | null): string {
   return trimText(value).replace(/\/+$/, '');
+}
+
+function normalizePort(value: unknown, fallback: number): number {
+  const numericValue = Number(value);
+  if (Number.isInteger(numericValue) && numericValue > 0 && numericValue <= 65535) {
+    return numericValue;
+  }
+  return fallback;
 }
 
 function normalizeEnvironmentPatch(
@@ -79,6 +93,15 @@ function normalizeEnvironmentPatch(
   if (patch.mqttBrokerUrl !== undefined) {
     nextPatch.mqttBrokerUrl = trimText(patch.mqttBrokerUrl);
   }
+  if (patch.mediaHost !== undefined) {
+    nextPatch.mediaHost = trimText(patch.mediaHost);
+  }
+  if (patch.mediaRtspPort !== undefined) {
+    nextPatch.mediaRtspPort = normalizePort(patch.mediaRtspPort, DEFAULT_ENVIRONMENT.mediaRtspPort);
+  }
+  if (patch.mediaRtmpPort !== undefined) {
+    nextPatch.mediaRtmpPort = normalizePort(patch.mediaRtmpPort, DEFAULT_ENVIRONMENT.mediaRtmpPort);
+  }
   return nextPatch;
 }
 
@@ -91,6 +114,9 @@ function buildDefaultSimulatorEnvironment(
     gatewayBaseUrl: normalized.gatewayBaseUrl || DEFAULT_ENVIRONMENT.gatewayBaseUrl,
     protocolBaseUrl: normalized.protocolBaseUrl || DEFAULT_ENVIRONMENT.protocolBaseUrl,
     mqttBrokerUrl: normalized.mqttBrokerUrl || DEFAULT_ENVIRONMENT.mqttBrokerUrl,
+    mediaHost: normalized.mediaHost || DEFAULT_ENVIRONMENT.mediaHost,
+    mediaRtspPort: normalizePort(normalized.mediaRtspPort, DEFAULT_ENVIRONMENT.mediaRtspPort),
+    mediaRtmpPort: normalizePort(normalized.mediaRtmpPort, DEFAULT_ENVIRONMENT.mediaRtmpPort),
   };
 }
 

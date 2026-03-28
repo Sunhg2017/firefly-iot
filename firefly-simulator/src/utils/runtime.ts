@@ -1,5 +1,6 @@
 import type { Protocol, SimDevice } from '../store';
 import { useSimStore } from '../store';
+import { getActiveEnvironment, useSimWorkspaceStore } from '../workspaceStore';
 import {
   buildDefaultMqttSubscriptions,
   dynamicRegisterDevice,
@@ -19,6 +20,7 @@ import {
   getVideoIdentityKeyword,
   matchesVideoIdentity,
 } from './video';
+import { buildSimulatorSipStartConfig } from './sip';
 
 const RESTORABLE_PROTOCOLS: Protocol[] = [
   'HTTP',
@@ -70,14 +72,19 @@ function isVideoBizSuccess(result: any) {
   return Boolean(result?.success) && Number(result?.data?.code ?? 0) === 0;
 }
 
-function resolveVideoDeviceForSync(device: SimDevice, gatewayBaseUrl: string): SimDevice {
+function getActiveSimulatorEnvironment() {
+  const workspaceState = useSimWorkspaceStore.getState();
+  return getActiveEnvironment(workspaceState.environments, workspaceState.activeEnvironmentId);
+}
+
+function resolveVideoDeviceForSync(device: SimDevice): SimDevice {
   if (device.protocol !== 'Video' || device.videoSourceType !== 'LOCAL_CAMERA') {
     return device;
   }
   if (device.streamMode !== 'RTSP' && device.streamMode !== 'RTMP') {
     return device;
   }
-  const localSourceUrl = buildLocalCameraSourceUrl(gatewayBaseUrl, device.streamMode, device.id);
+  const localSourceUrl = buildLocalCameraSourceUrl(getActiveSimulatorEnvironment(), device.streamMode, device.id);
   if (!localSourceUrl) {
     return device;
   }
@@ -121,7 +128,7 @@ async function syncVideoDevice(device: SimDevice) {
   if (!videoApiContext) {
     throw new Error('请先登录当前环境后再连接视频设备');
   }
-  const targetDevice = resolveVideoDeviceForSync(device, videoApiContext.baseUrl);
+  const targetDevice = resolveVideoDeviceForSync(device);
   if (targetDevice.sourceUrl && targetDevice.sourceUrl !== device.sourceUrl) {
     store.updateDevice(device.id, { sourceUrl: targetDevice.sourceUrl });
   }
@@ -195,6 +202,38 @@ async function refreshDynamicRegistrationSecret(device: SimDevice) {
   });
   store.addLog(device.id, device.name, 'info', 'Cached DeviceSecret was refreshed by dynamic registration');
   return refreshedDevice;
+}
+
+async function startGb28181SipSession(
+  device: SimDevice,
+  options?: { silent?: boolean },
+) {
+  const store = useSimStore.getState();
+  if (!device.sipPassword?.trim()) {
+    throw new Error('GB28181 连接失败：缺少设备级 SIP 密码');
+  }
+
+  const sipConfig = buildSimulatorSipStartConfig(device);
+  const startResult = await window.electronAPI.sipStart(device.id, sipConfig);
+  if (!startResult.success) {
+    throw new Error(startResult.message || 'SIP 客户端启动失败');
+  }
+
+  const registerResult = await window.electronAPI.sipRegister(device.id);
+  if (!registerResult.success) {
+    await window.electronAPI.sipStop(device.id);
+    throw new Error(registerResult.message || 'SIP REGISTER 发送失败');
+  }
+
+  const keepaliveResult = await window.electronAPI.sipStartKeepalive(device.id);
+  if (!keepaliveResult.success) {
+    await window.electronAPI.sipStop(device.id);
+    throw new Error(keepaliveResult.message || 'SIP 心跳启动失败');
+  }
+
+  if (!options?.silent) {
+    store.addLog(device.id, device.name, 'info', `SIP ${sipConfig.transport} 已启动，自动发起注册并等待心跳`);
+  }
 }
 
 export async function connectSimDevice(
@@ -393,11 +432,11 @@ export async function connectSimDevice(
 
     if (device.protocol === 'Video') {
       const synced = await syncVideoDevice(device);
-      store.updateDevice(device.id, {
-        status: 'online',
-        platformDeviceId: synced.id,
-        restoreOnLaunch: false,
-      });
+      store.updateDevice(device.id, { platformDeviceId: synced.id });
+      if (device.streamMode === 'GB28181') {
+        await startGb28181SipSession(device, options);
+      }
+      store.updateDevice(device.id, { status: 'online', restoreOnLaunch: false });
       if (!options?.silent) {
         store.addLog(
           device.id,
@@ -405,6 +444,9 @@ export async function connectSimDevice(
           'success',
           synced.reused ? `视频设备资产已同步: ${synced.id}` : `视频设备资产已创建: ${synced.id}`,
         );
+        if (device.streamMode === 'GB28181') {
+          store.addLog(device.id, device.name, 'success', '连接时已自动发起 SIP 注册和心跳');
+        }
       }
       return { success: true };
     }
