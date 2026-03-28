@@ -9,6 +9,7 @@ import com.songhg.firefly.iot.common.event.VideoDeviceStatusChangedEvent;
 import com.songhg.firefly.iot.media.entity.StreamSession;
 import com.songhg.firefly.iot.media.mapper.StreamSessionMapper;
 import com.songhg.firefly.iot.media.service.VideoDeviceFacade;
+import com.songhg.firefly.iot.media.service.VideoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +49,7 @@ public class ZlmHookController {
 
     private final StreamSessionMapper streamSessionMapper;
     private final VideoDeviceFacade videoDeviceFacade;
+    private final VideoService videoService;
     private final EventPublisher eventPublisher;
 
     /**
@@ -96,20 +98,19 @@ public class ZlmHookController {
 
         log.info("ZLM hook on_stream_none_reader: app={}, stream={}, schema={}", app, stream, schema);
 
-        // 对于 RTSP / RTMP 代理流，无人观看时自动关闭以节省资源
-        // 对于 GB28181 流，保持不关闭（设备持续推流）
-        boolean close = !"rtp".equals(app);
-
-        if (close) {
-            LambdaUpdateWrapper<StreamSession> wrapper = new LambdaUpdateWrapper<>();
-            wrapper.eq(StreamSession::getStreamId, stream)
-                    .eq(StreamSession::getStatus, StreamStatus.ACTIVE)
-                    .set(StreamSession::getStatus, StreamStatus.CLOSED)
-                    .set(StreamSession::getStoppedAt, LocalDateTime.now());
-            streamSessionMapper.update(null, wrapper);
+        // RTSP / RTMP 代理流需要主动删除 PlayerProxy，否则 ZLM 只关 runtime 仍会残留代理任务。
+        if ("live".equals(app)) {
+            try {
+                videoService.cleanupProxyStreamOnNoReader(app, stream);
+                return Map.of("code", 0, "close", false);
+            } catch (Exception ex) {
+                log.warn("Cleanup proxy stream on no reader failed, fallback to ZLM close: app={}, stream={}, error={}",
+                        app, stream, ex.getMessage());
+                return Map.of("code", 0, "close", true);
+            }
         }
 
-        return Map.of("code", 0, "close", close);
+        return Map.of("code", 0, "close", false);
     }
 
     /**

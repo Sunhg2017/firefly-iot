@@ -180,6 +180,9 @@
 - 若设备由模拟器的 `RTSP / RTMP + 本地摄像头` 模式自动创建，平台资产 `ip` 字段展示模拟器主机地址，`sourceUrl` 继续保存 ZLM 推流地址；设备列表的 IP 列不得再误显示成基础设施 ZLM 节点。
 - `RTSP / RTMP` 重复点击播放时，`startStream` 也必须优先检查 `stream_sessions` 与 ZLM `live/{streamId}` 实时流状态；若代理流仍存在则直接复用当前会话，避免再次调用 `addStreamProxy` 触发 `This stream already exists`。
 - 若 `RTSP / RTMP` 的代理流仍在 ZLM 中，但数据库会话已丢失，平台会按当前 `streamId` 补建 `ACTIVE` 会话并直接返回播放地址，避免 orphan runtime 卡死后仍无法重播。
+- `stream_sessions` 新增内部字段 `proxy_key`，用于保存 `addStreamProxy` 返回的 PlayerProxy 标识；该字段只参与清理链路，不对前端接口暴露。
+- 若 `addStreamProxy` 返回 `This stream already exists` 且 `getMediaList(live/{streamId})` 为空，平台必须进一步检查 `listStreamProxy`；只要仍能查到同一 `live/{streamId}` 的代理任务，就按陈旧代理处理，先 `delStreamProxy` 再重建，禁止继续只靠轮询等待。
+- `RTSP / RTMP` 在手动停止、陈旧会话重启前清理、开流超时回滚以及 `on_stream_none_reader` 无人观看回收时，都必须走同一套“删除 PlayerProxy + 关闭 runtime stream + 关闭会话”的回收链路，避免 ZLM 内残留孤儿代理持续重试旧源地址。
 - `GB28181` 开流前必须先调用 ZLM `openRtpServer` 打开 RTP 收流端口，并显式绑定自定义 `streamId`。
 - `compose` 示例为保证宿主机端口可达，默认使用固定 `zlmediakit.rtp-port` 打开 RTP 收流口，并要求宿主机同步暴露该端口。
 - 由于 Firefly 采用 `openRtpServer` 按需占用固定 RTP 口，ZLM 配置里的 `rtp_proxy.port` 必须保持为 `0`，禁止再预占同一个 `10000` 端口，否则 `openRtpServer` 会直接返回 `address already in use`。

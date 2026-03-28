@@ -161,6 +161,19 @@ public class ZlmApiClient {
     }
 
     /**
+     * 查询当前全部拉流代理任务。
+     * GET /index/api/listStreamProxy
+     */
+    public ZlmResponse<List<ZlmStreamProxyInfo>> listStreamProxy() {
+        String json = doGet("/index/api/listStreamProxy", null);
+        try {
+            return objectMapper.readValue(json, new TypeReference<>() {});
+        } catch (JsonProcessingException e) {
+            throw new BizException(ResultCode.INTERNAL_ERROR, "解析 ZLM listStreamProxy 响应失败");
+        }
+    }
+
+    /**
      * 关闭流代理
      * POST /index/api/delStreamProxy
      *

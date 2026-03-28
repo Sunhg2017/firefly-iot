@@ -19,6 +19,7 @@ import com.songhg.firefly.iot.media.zlm.ZlmApiClient;
 import com.songhg.firefly.iot.media.zlm.ZlmOpenRtpServerResponse;
 import com.songhg.firefly.iot.media.zlm.ZlmResponse;
 import com.songhg.firefly.iot.media.zlm.ZlmStreamInfo;
+import com.songhg.firefly.iot.media.zlm.ZlmStreamProxyInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -69,22 +70,12 @@ public class VideoService {
             return toSessionVO(reusableSession);
         }
         boolean gb28181RtpServerOpened = false;
+        ProxyBootstrapResult proxyBootstrapResult = null;
 
         try {
-            if (streamMode == StreamMode.RTSP || streamMode == StreamMode.RTMP) {
+            if (isProxyStreamMode(streamMode)) {
                 String sourceUrl = resolvePullSourceUrl(device, streamMode);
-                ZlmResponse<Map<String, Object>> response = zlmApiClient.addStreamProxy(streamApp, streamId, sourceUrl);
-                if (!response.isSuccess()) {
-                    if (isStreamAlreadyExists(response)) {
-                        waitUntilStreamReady(streamApp, streamId, streamMode);
-                        StreamSession recoveredSession = reuseOrRecoverActiveSession(
-                                device, streamMode, deviceId, channelId, streamId, streamApp);
-                        if (recoveredSession != null) {
-                            return toSessionVO(recoveredSession);
-                        }
-                    }
-                    throw new BizException(ResultCode.STREAM_START_FAILED, "视频流启动失败: " + response.getMsg());
-                }
+                proxyBootstrapResult = openProxyStream(streamApp, streamId, sourceUrl);
             } else if (streamMode == StreamMode.GB28181) {
                 int rtpPort = openGb28181RtpServer(device, streamId);
                 gb28181RtpServerOpened = true;
@@ -97,11 +88,17 @@ public class VideoService {
             }
             waitUntilStreamReady(streamApp, streamId, streamMode);
         } catch (BizException ex) {
+            if (proxyBootstrapResult != null && proxyBootstrapResult.isCleanupOnFailure()) {
+                safeCleanupProxyStreamResources(streamApp, streamId, proxyBootstrapResult.getProxyKey(), "start-failed");
+            }
             if (gb28181RtpServerOpened) {
                 releaseGb28181RtpServer(streamId);
             }
             throw ex;
         } catch (Exception ex) {
+            if (proxyBootstrapResult != null && proxyBootstrapResult.isCleanupOnFailure()) {
+                safeCleanupProxyStreamResources(streamApp, streamId, proxyBootstrapResult.getProxyKey(), "start-failed");
+            }
             if (gb28181RtpServerOpened) {
                 releaseGb28181RtpServer(streamId);
             }
@@ -109,7 +106,13 @@ public class VideoService {
             throw new BizException(ResultCode.STREAM_START_FAILED, "视频流启动失败");
         }
 
-        StreamSession session = persistActiveSession(tenantId, deviceId, channelId, streamId, streamApp);
+        StreamSession session = persistActiveSession(
+                tenantId,
+                deviceId,
+                channelId,
+                streamId,
+                streamApp,
+                proxyBootstrapResult == null ? null : proxyBootstrapResult.getProxyKey());
 
         log.info("Stream started: deviceId={}, channelId={}, streamId={}, app={}, mode={}",
                 deviceId, channelId, streamId, streamApp, streamMode);
@@ -122,6 +125,17 @@ public class VideoService {
         StreamMode streamMode = videoDeviceFacade.requireStreamMode(device);
         String streamApp = resolveStreamApp(streamMode);
         closeSessions(device, streamMode, streamApp, listActiveSessions(deviceId, null), "manual-stop");
+    }
+
+    @Transactional
+    public boolean cleanupProxyStreamOnNoReader(String app, String streamId) {
+        if (!LIVE_APP.equals(app)) {
+            return false;
+        }
+        List<StreamSession> activeSessions = listActiveSessionsByStreamId(streamId);
+        cleanupProxyStreamResources(app, streamId, firstProxyKey(activeSessions), "hook-none-reader");
+        markSessionsClosed(activeSessions);
+        return true;
     }
 
     public void ptzControl(Long deviceId, PtzControlDTO dto) {
@@ -241,13 +255,21 @@ public class VideoService {
         List<StreamSession> activeSessions = listActiveSessions(deviceId, streamId);
         if (isStreamReady(streamApp, streamId)) {
             if (!activeSessions.isEmpty()) {
+                StreamSession session = activeSessions.getFirst();
+                backfillProxyKeyIfMissing(session, streamMode, streamApp);
                 log.info("Reuse existing video stream session: deviceId={}, channelId={}, streamId={}, app={}, mode={}",
                         deviceId, channelId, streamId, streamApp, streamMode);
-                return activeSessions.getFirst();
+                return session;
             }
             log.warn("Recover active video stream session from live runtime: deviceId={}, channelId={}, streamId={}, app={}, mode={}",
                     deviceId, channelId, streamId, streamApp, streamMode);
-            return persistActiveSession(resolveTenantId(device), deviceId, channelId, streamId, streamApp);
+            return persistActiveSession(
+                    resolveTenantId(device),
+                    deviceId,
+                    channelId,
+                    streamId,
+                    streamApp,
+                    resolveStreamProxyKeySafely(streamMode, streamApp, streamId, "recover-runtime"));
         }
         if (!activeSessions.isEmpty()) {
             log.warn("Close stale video stream sessions before restart: deviceId={}, channelId={}, streamId={}, count={}, mode={}",
@@ -262,12 +284,14 @@ public class VideoService {
             Long deviceId,
             String channelId,
             String streamId,
-            String streamApp) {
+            String streamApp,
+            String proxyKey) {
         StreamSession session = new StreamSession();
         session.setTenantId(tenantId);
         session.setDeviceId(deviceId);
         session.setChannelId(channelId);
         session.setStreamId(streamId);
+        session.setProxyKey(proxyKey);
         session.setStatus(StreamStatus.ACTIVE);
         session.setFlvUrl(zlmApiClient.buildFlvUrl(streamApp, streamId));
         session.setHlsUrl(zlmApiClient.buildHlsUrl(streamApp, streamId));
@@ -323,6 +347,43 @@ public class VideoService {
         return protocol + "://" + host + ":" + port + "/";
     }
 
+    /**
+     * ZLM 的 addStreamProxy 只负责创建 PlayerProxy 任务，返回 "This stream already exists" 时
+     * 不能仅靠等待 runtime 恢复，需要把残留代理任务删掉后再重建。
+     */
+    private ProxyBootstrapResult openProxyStream(String streamApp, String streamId, String sourceUrl) {
+        ZlmResponse<Map<String, Object>> response = zlmApiClient.addStreamProxy(streamApp, streamId, sourceUrl);
+        if (response.isSuccess()) {
+            return new ProxyBootstrapResult(resolveAddedProxyKey(streamApp, streamId, response), true);
+        }
+        if (isStreamAlreadyExists(response)) {
+            if (isStreamReady(streamApp, streamId)) {
+                log.info("Reuse proxy stream after addStreamProxy conflict because runtime is already ready: app={}, streamId={}",
+                        streamApp, streamId);
+                return new ProxyBootstrapResult(resolveStreamProxyKeySafely(StreamMode.RTSP, streamApp, streamId, "proxy-conflict-reuse"), false);
+            }
+            String staleProxyKey = findStreamProxyKey(streamApp, streamId);
+            if (staleProxyKey != null) {
+                log.warn("Delete stale ZLM proxy before retry: app={}, streamId={}, proxyKey={}, sourceUrl={}",
+                        streamApp, streamId, staleProxyKey, sourceUrl);
+                deleteStreamProxy(staleProxyKey, streamApp, streamId, "proxy-conflict-retry");
+                ZlmResponse<Map<String, Object>> retryResponse = zlmApiClient.addStreamProxy(streamApp, streamId, sourceUrl);
+                if (retryResponse.isSuccess()) {
+                    return new ProxyBootstrapResult(resolveAddedProxyKey(streamApp, streamId, retryResponse), true);
+                }
+                if (isStreamAlreadyExists(retryResponse) && isStreamReady(streamApp, streamId)) {
+                    log.info("Reuse proxy stream after retry conflict because runtime became ready: app={}, streamId={}",
+                            streamApp, streamId);
+                    return new ProxyBootstrapResult(resolveStreamProxyKeySafely(StreamMode.RTSP, streamApp, streamId, "proxy-retry-conflict-reuse"), false);
+                }
+                throw new BizException(ResultCode.STREAM_START_FAILED, "视频流启动失败: " + retryResponse.getMsg());
+            }
+            log.warn("ZLM reported an existing proxy stream but listStreamProxy returned nothing: app={}, streamId={}, sourceUrl={}",
+                    streamApp, streamId, sourceUrl);
+        }
+        throw new BizException(ResultCode.STREAM_START_FAILED, "视频流启动失败: " + response.getMsg());
+    }
+
     private boolean isStreamAlreadyExists(ZlmResponse<?> response) {
         String message = trimToNull(response == null ? null : response.getMsg());
         return message != null && message.toLowerCase().contains("stream already exists");
@@ -340,6 +401,10 @@ public class VideoService {
         return streamMode == StreamMode.GB28181 ? RTP_APP : LIVE_APP;
     }
 
+    private boolean isProxyStreamMode(StreamMode streamMode) {
+        return streamMode == StreamMode.RTSP || streamMode == StreamMode.RTMP;
+    }
+
     private List<StreamSession> listActiveSessions(Long deviceId, String streamId) {
         LambdaQueryWrapper<StreamSession> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(StreamSession::getDeviceId, deviceId)
@@ -348,6 +413,14 @@ public class VideoService {
         if (streamId != null) {
             wrapper.eq(StreamSession::getStreamId, streamId);
         }
+        return streamSessionMapper.selectList(wrapper);
+    }
+
+    private List<StreamSession> listActiveSessionsByStreamId(String streamId) {
+        LambdaQueryWrapper<StreamSession> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(StreamSession::getStreamId, streamId)
+                .eq(StreamSession::getStatus, StreamStatus.ACTIVE)
+                .orderByDesc(StreamSession::getStartedAt);
         return streamSessionMapper.selectList(wrapper);
     }
 
@@ -411,16 +484,135 @@ public class VideoService {
             if (streamMode == StreamMode.GB28181) {
                 sipCommandSender.sendBye(device, session.getChannelId());
                 releaseGb28181RtpServer(session.getStreamId());
-            }
-            ZlmResponse<Map<String, Object>> response = zlmApiClient.closeStream(streamApp, session.getStreamId(), null);
-            if (response != null && !response.isSuccess()) {
-                log.warn("Close stream returned non-success: reason={}, deviceId={}, streamId={}, msg={}",
-                        reason, device.getDeviceId(), session.getStreamId(), response.getMsg());
+                closeStreamRuntime(streamApp, session.getStreamId(), reason, session.getDeviceId());
+            } else if (isProxyStreamMode(streamMode)) {
+                cleanupProxyStreamResources(streamApp, session.getStreamId(), session.getProxyKey(), reason);
+            } else {
+                closeStreamRuntime(streamApp, session.getStreamId(), reason, session.getDeviceId());
             }
         } catch (Exception ex) {
             log.warn("Close stream runtime cleanup failed: reason={}, deviceId={}, streamId={}, error={}",
-                    reason, device.getDeviceId(), session.getStreamId(), ex.getMessage());
+                    reason, session.getDeviceId(), session.getStreamId(), ex.getMessage());
         }
+        markSessionClosed(session);
+    }
+
+    private void cleanupProxyStreamResources(String streamApp, String streamId, String proxyKey, String reason) {
+        String resolvedProxyKey = trimToNull(proxyKey);
+        if (resolvedProxyKey == null) {
+            resolvedProxyKey = findStreamProxyKey(streamApp, streamId);
+        }
+        if (resolvedProxyKey != null) {
+            deleteStreamProxy(resolvedProxyKey, streamApp, streamId, reason);
+        }
+        closeStreamRuntime(streamApp, streamId, reason, null);
+    }
+
+    private void safeCleanupProxyStreamResources(String streamApp, String streamId, String proxyKey, String reason) {
+        try {
+            cleanupProxyStreamResources(streamApp, streamId, proxyKey, reason);
+        } catch (Exception ex) {
+            log.warn("Cleanup proxy stream failed after start error: reason={}, streamId={}, error={}",
+                    reason, streamId, ex.getMessage());
+        }
+    }
+
+    private void deleteStreamProxy(String proxyKey, String streamApp, String streamId, String reason) {
+        ZlmResponse<Map<String, Object>> response = zlmApiClient.delStreamProxy(proxyKey);
+        if (response != null && !response.isSuccess()) {
+            log.warn("Delete stream proxy returned non-success: reason={}, app={}, streamId={}, proxyKey={}, msg={}",
+                    reason, streamApp, streamId, proxyKey, response.getMsg());
+            return;
+        }
+        Object flag = response == null || response.getData() == null ? null : response.getData().get("flag");
+        if (Boolean.FALSE.equals(flag)) {
+            log.info("Stream proxy was already removed before cleanup: reason={}, app={}, streamId={}, proxyKey={}",
+                    reason, streamApp, streamId, proxyKey);
+        }
+    }
+
+    private void closeStreamRuntime(String streamApp, String streamId, String reason, Long deviceId) {
+        ZlmResponse<Map<String, Object>> response = zlmApiClient.closeStream(streamApp, streamId, null);
+        if (response != null && !response.isSuccess()) {
+            log.warn("Close stream returned non-success: reason={}, deviceId={}, streamId={}, msg={}",
+                    reason, deviceId, streamId, response.getMsg());
+        }
+    }
+
+    private String findStreamProxyKey(String streamApp, String streamId) {
+        ZlmResponse<List<ZlmStreamProxyInfo>> response = zlmApiClient.listStreamProxy();
+        if (response == null || !response.isSuccess()) {
+            throw new BizException(ResultCode.INTERNAL_ERROR,
+                    "查询 ZLM 代理任务失败: " + (response == null ? "empty response" : response.getMsg()));
+        }
+        List<ZlmStreamProxyInfo> proxies = response.getData();
+        if (proxies == null || proxies.isEmpty()) {
+            return null;
+        }
+        for (ZlmStreamProxyInfo proxy : proxies) {
+            if (streamApp.equals(trimToNull(proxy.resolveApp())) && streamId.equals(trimToNull(proxy.resolveStream()))) {
+                return trimToNull(proxy.getKey());
+            }
+        }
+        return null;
+    }
+
+    private String resolveAddedProxyKey(String streamApp, String streamId, ZlmResponse<Map<String, Object>> response) {
+        Map<String, Object> data = response == null ? null : response.getData();
+        Object rawProxyKey = data == null ? null : data.get("key");
+        String proxyKey = rawProxyKey == null ? null : trimToNull(String.valueOf(rawProxyKey));
+        if (proxyKey != null) {
+            return proxyKey;
+        }
+        String discoveredProxyKey = resolveStreamProxyKeySafely(StreamMode.RTSP, streamApp, streamId, "add-proxy-missing-key");
+        if (discoveredProxyKey == null) {
+            log.warn("ZLM addStreamProxy succeeded but no proxy key was returned: app={}, streamId={}", streamApp, streamId);
+        }
+        return discoveredProxyKey;
+    }
+
+    private String resolveStreamProxyKeySafely(StreamMode streamMode, String streamApp, String streamId, String reason) {
+        if (!isProxyStreamMode(streamMode)) {
+            return null;
+        }
+        try {
+            return findStreamProxyKey(streamApp, streamId);
+        } catch (Exception ex) {
+            log.warn("Resolve stream proxy key failed: reason={}, app={}, streamId={}, error={}",
+                    reason, streamApp, streamId, ex.getMessage());
+            return null;
+        }
+    }
+
+    private void backfillProxyKeyIfMissing(StreamSession session, StreamMode streamMode, String streamApp) {
+        if (!isProxyStreamMode(streamMode) || trimToNull(session.getProxyKey()) != null) {
+            return;
+        }
+        String proxyKey = resolveStreamProxyKeySafely(streamMode, streamApp, session.getStreamId(), "reuse-session-backfill");
+        if (proxyKey == null) {
+            return;
+        }
+        session.setProxyKey(proxyKey);
+        streamSessionMapper.updateById(session);
+    }
+
+    private String firstProxyKey(List<StreamSession> sessions) {
+        for (StreamSession session : sessions) {
+            String proxyKey = trimToNull(session.getProxyKey());
+            if (proxyKey != null) {
+                return proxyKey;
+            }
+        }
+        return null;
+    }
+
+    private void markSessionsClosed(List<StreamSession> sessions) {
+        for (StreamSession session : sessions) {
+            markSessionClosed(session);
+        }
+    }
+
+    private void markSessionClosed(StreamSession session) {
         session.setStatus(StreamStatus.CLOSED);
         session.setStoppedAt(LocalDateTime.now());
         streamSessionMapper.updateById(session);
@@ -459,5 +651,24 @@ public class VideoService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static final class ProxyBootstrapResult {
+
+        private final String proxyKey;
+        private final boolean cleanupOnFailure;
+
+        private ProxyBootstrapResult(String proxyKey, boolean cleanupOnFailure) {
+            this.proxyKey = proxyKey;
+            this.cleanupOnFailure = cleanupOnFailure;
+        }
+
+        private String getProxyKey() {
+            return proxyKey;
+        }
+
+        private boolean isCleanupOnFailure() {
+            return cleanupOnFailure;
+        }
     }
 }

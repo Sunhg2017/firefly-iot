@@ -149,8 +149,10 @@ cd ../firefly-simulator && npm run build:vite
 
 1. 检查 `firefly-media` 日志是否出现 `Reuse existing video stream session` 或 `Recover active video stream session from live runtime`。
 2. 若出现上述日志，说明平台已直接复用或补建 `live/{streamId}` 会话，本次播放不应再失败。
-3. 若仍直接报 `视频流启动失败: This stream already exists`，说明当前运行中的 `firefly-media` 还不是包含 RTSP / RTMP 会话复用修复的版本，需要重新发布。
-4. 同时检查 `stream_sessions` 中同一 `stream_id` 是否只保留最新一条 `ACTIVE` 记录，历史残留记录应已被自动改成 `CLOSED`。
+3. 若日志出现 `Delete stale ZLM proxy before retry`，说明平台已识别到 `listStreamProxy` 里残留的 PlayerProxy，并在重建前自动执行了 `delStreamProxy`；随后应继续看到新的 `addStreamProxy` 和 `getMediaList` 成功日志。
+4. 若 `getMediaList(app=live, stream={streamId})` 为空，但 `listStreamProxy` 仍能查到同一 `live/{streamId}`，可确认根因为 ZLM 残留代理任务；升级后的版本会自动清理，只有升级前旧版本才需要人工 `delStreamProxy`。
+5. 若仍直接报 `视频流启动失败: This stream already exists`，说明当前运行中的 `firefly-media` 还不是包含陈旧代理清理修复的版本，需要重新发布。
+6. 同时检查 `stream_sessions` 中同一 `stream_id` 是否只保留最新一条 `ACTIVE` 记录，历史残留记录应已被自动改成 `CLOSED`；新建会话的 `proxy_key` 应已落库，用于后续停流和无人观看回收。
 
 ### 6.7 视频状态没有回写到设备资产
 

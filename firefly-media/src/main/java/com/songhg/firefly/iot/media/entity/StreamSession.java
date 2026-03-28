@@ -18,6 +18,7 @@ public class StreamSession {
     private Long deviceId;
     private String channelId;
     private String streamId;
+    private String proxyKey;
     private StreamStatus status;
     private String flvUrl;
     private String hlsUrl;
