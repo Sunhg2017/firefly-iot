@@ -19,6 +19,9 @@ public class DeviceEventVO {
     @Schema(description = "Device ID")
     private Long deviceId;
 
+    @Schema(description = "Device name")
+    private String deviceName;
+
     @Schema(description = "Product ID")
     private Long productId;
 

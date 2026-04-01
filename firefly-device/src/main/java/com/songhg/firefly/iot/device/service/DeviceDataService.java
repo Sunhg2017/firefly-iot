@@ -33,8 +33,10 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -266,13 +268,28 @@ public class DeviceDataService {
         wrapper.orderByDesc(DeviceEvent::getOccurredAt);
 
         IPage<DeviceEvent> result = eventMapper.selectPage(page, wrapper);
-        return result.convert(this::toEventVO);
+        Map<Long, String> deviceNameMap = new HashMap<>();
+        List<Long> deviceIds = result.getRecords().stream()
+                .map(DeviceEvent::getDeviceId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (!deviceIds.isEmpty()) {
+            // 事件列表面向页面用户时优先补齐业务标识，避免前端再回退展示数据库主键。
+            deviceMapper.selectBatchIds(deviceIds).forEach(device -> {
+                if (device != null && device.getId() != null) {
+                    deviceNameMap.put(device.getId(), device.getDeviceName());
+                }
+            });
+        }
+        return result.convert(event -> toEventVO(event, deviceNameMap.get(event.getDeviceId())));
     }
 
-    private DeviceEventVO toEventVO(DeviceEvent e) {
+    private DeviceEventVO toEventVO(DeviceEvent e, String deviceName) {
         DeviceEventVO vo = new DeviceEventVO();
         vo.setId(e.getId());
         vo.setDeviceId(e.getDeviceId());
+        vo.setDeviceName(deviceName);
         vo.setProductId(e.getProductId());
         vo.setEventType(e.getEventType());
         vo.setEventName(e.getEventName());
