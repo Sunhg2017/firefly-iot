@@ -136,6 +136,7 @@
 - 新建规则时，系统会直接给出与当前 `transport / direction` 对应的推荐 `matchRuleJson` 和 `parserConfigJson`，不再从几乎空白的 JSON 起步。
 - 当用户切换协议方向、拆帧模式或发布方式时，如果相关 JSON 仍保持系统默认值，页面会自动同步到新的推荐默认值；一旦用户手改过，系统就不再覆盖，避免误伤自定义配置。
 - 脚本模式新增全屏编辑入口，行内编辑器与全屏编辑器共用同一份表单值，长脚本修改不需要复制来回切换。
+- `matchRuleJson`、`frameConfigJson`、`parserConfigJson`、`visualConfigJson`、`releaseConfigJson` 也统一支持全屏编辑；JSON 全屏窗口内可直接做格式化，减少长配置块在小窗里维护的成本。
 
 ### 3.5 复杂联动说明
 

@@ -267,6 +267,8 @@ type JsonEditorField =
   | 'visualConfigJson'
   | 'releaseConfigJson';
 
+type CodeEditorFieldName = JsonEditorField | 'scriptContent';
+
 type ParserConfigPresetKind =
   | 'UPLINK_JSON_PROPERTY'
   | 'UPLINK_TEXT_PAIR'
@@ -454,6 +456,53 @@ const EDITOR_STEP_JSON_FIELDS: Array<JsonEditorField[]> = [
 ];
 
 const EDITOR_CONFIG_STEP_COUNT = EDITOR_STEPS.length - 1;
+
+const CODE_EDITOR_FIELD_META: Record<
+  CodeEditorFieldName,
+  {
+    label: string;
+    language: 'json' | 'javascript';
+    fullscreenPath: string;
+    fullscreenTip: string;
+  }
+> = {
+  matchRuleJson: {
+    label: '匹配规则 JSON',
+    language: 'json',
+    fullscreenPath: 'file:///protocol-parser/matchRule.fullscreen.json',
+    fullscreenTip: '适合在大窗口里集中维护 topic、header 与设备匹配条件。',
+  },
+  frameConfigJson: {
+    label: '拆帧配置 JSON',
+    language: 'json',
+    fullscreenPath: 'file:///protocol-parser/frameConfig.fullscreen.json',
+    fullscreenTip: '适合连续调整 delimiter、fixedLength、lengthField 等拆帧参数。',
+  },
+  parserConfigJson: {
+    label: '解析配置 JSON',
+    language: 'json',
+    fullscreenPath: 'file:///protocol-parser/parserConfig.fullscreen.json',
+    fullscreenTip: '适合集中维护 defaultTopic、messageType 和业务字段映射。',
+  },
+  visualConfigJson: {
+    label: '可视化配置 JSON',
+    language: 'json',
+    fullscreenPath: 'file:///protocol-parser/visualConfig.fullscreen.json',
+    fullscreenTip: '适合边看结构边调整可视化流模板与字段映射。',
+  },
+  releaseConfigJson: {
+    label: '灰度配置 JSON',
+    language: 'json',
+    fullscreenPath: 'file:///protocol-parser/releaseConfig.fullscreen.json',
+    fullscreenTip: '适合在大窗口里维护 deviceNames 或百分比等发布策略细节。',
+  },
+  scriptContent: {
+    label: '脚本内容',
+    language: 'javascript',
+    fullscreenPath: 'file:///protocol-parser/scriptContent.fullscreen.js',
+    fullscreenTip: '适合连续编辑长脚本，关闭后会保留同一份表单内容。',
+  },
+};
 
 const DEFAULT_UPLINK_DEBUG_VALUES: UplinkDebugFormValues = {
   payloadEncoding: 'HEX',
@@ -956,7 +1005,7 @@ const ProtocolParserPage: React.FC = () => {
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>();
   const [editorStepIndex, setEditorStepIndex] = useState(0);
   const [editorMaxStepIndex, setEditorMaxStepIndex] = useState(0);
-  const [scriptEditorFullscreenOpen, setScriptEditorFullscreenOpen] = useState(false);
+  const [fullscreenEditorField, setFullscreenEditorField] = useState<CodeEditorFieldName | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [uplinkDebugOpen, setUplinkDebugOpen] = useState(false);
   const [downlinkDebugOpen, setDownlinkDebugOpen] = useState(false);
@@ -1003,6 +1052,21 @@ const ProtocolParserPage: React.FC = () => {
   const currentDownlinkDeviceName = Form.useWatch('deviceName', downlinkDebugForm);
   const currentDownlinkMessageType =
     Form.useWatch('messageType', downlinkDebugForm) || DEFAULT_DOWNLINK_DEBUG_VALUES.messageType;
+  const currentFullscreenEditorMeta = fullscreenEditorField ? CODE_EDITOR_FIELD_META[fullscreenEditorField] : undefined;
+  const currentFullscreenEditorValue =
+    fullscreenEditorField === 'matchRuleJson'
+      ? currentMatchRuleJson
+      : fullscreenEditorField === 'frameConfigJson'
+        ? currentFrameConfigJson
+        : fullscreenEditorField === 'parserConfigJson'
+          ? currentParserConfigJson
+          : fullscreenEditorField === 'visualConfigJson'
+            ? currentVisualConfigJson
+            : fullscreenEditorField === 'releaseConfigJson'
+              ? currentReleaseConfigJson
+              : fullscreenEditorField === 'scriptContent'
+                ? currentScriptContent
+                : '';
 
   const canCreate = hasPermission('protocol-parser:create');
   const canUpdate = hasPermission('protocol-parser:update');
@@ -1626,10 +1690,10 @@ const ProtocolParserPage: React.FC = () => {
   }, [currentDownlinkDeviceName, downlinkDebugForm, downlinkDeviceOptions]);
 
   useEffect(() => {
-    if (currentParserMode !== 'SCRIPT' && scriptEditorFullscreenOpen) {
-      setScriptEditorFullscreenOpen(false);
+    if (currentParserMode !== 'SCRIPT' && fullscreenEditorField === 'scriptContent') {
+      setFullscreenEditorField(null);
     }
-  }, [currentParserMode, scriptEditorFullscreenOpen]);
+  }, [currentParserMode, fullscreenEditorField]);
 
   // Auto-pick a detected version so plugin mode usually needs only one selection.
   useEffect(() => {
@@ -1647,7 +1711,7 @@ const ProtocolParserPage: React.FC = () => {
 
   const closeEditorModal = () => {
     setEditorOpen(false);
-    setScriptEditorFullscreenOpen(false);
+    setFullscreenEditorField(null);
     setCurrentRecord(null);
     setSelectedTemplateKey(undefined);
     setEditorStepIndex(0);
@@ -1701,6 +1765,32 @@ const ProtocolParserPage: React.FC = () => {
     }
     editorForm.setFieldsValue(nextValues);
     message.success(`已格式化${fields.map((field) => JSON_FIELD_LABELS[field]).join('、')}`);
+  };
+
+  const openFullscreenEditor = (field: CodeEditorFieldName) => {
+    setFullscreenEditorField(field);
+  };
+
+  const handleFullscreenEditorChange = (value: string) => {
+    if (!fullscreenEditorField) {
+      return;
+    }
+    editorForm.setFieldsValue({ [fullscreenEditorField]: value } as Partial<EditorFormValues>);
+  };
+
+  const handleFormatFullscreenEditor = () => {
+    if (!fullscreenEditorField || fullscreenEditorField === 'scriptContent') {
+      return;
+    }
+    try {
+      const currentValue = (editorForm.getFieldValue(fullscreenEditorField) as string | undefined) || '{}';
+      editorForm.setFieldsValue({
+        [fullscreenEditorField]: prettyJson(ensureJsonObjectText(currentValue, JSON_FIELD_LABELS[fullscreenEditorField])),
+      } as Partial<EditorFormValues>);
+      message.success(`已格式化${JSON_FIELD_LABELS[fullscreenEditorField]}`);
+    } catch (error) {
+      message.error(getErrorMessage(error, `${JSON_FIELD_LABELS[fullscreenEditorField]}格式化失败`));
+    }
   };
 
   const validateJsonObjectRule = (field: JsonEditorField) => async (_: unknown, value?: string) => {
@@ -2806,6 +2896,13 @@ const ProtocolParserPage: React.FC = () => {
                       >
                         按请求头
                       </Button>
+                      <Button
+                        size="small"
+                        icon={<FullscreenOutlined />}
+                        onClick={() => openFullscreenEditor('matchRuleJson')}
+                      >
+                        全屏编辑
+                      </Button>
                     </Space>
                   </Space>
                 }
@@ -2848,6 +2945,13 @@ const ProtocolParserPage: React.FC = () => {
                         onClick={() => applyEditorJsonPreset('frameConfigJson', buildFrameConfigPreset('LENGTH_FIELD'))}
                       >
                         2 字节长度字段
+                      </Button>
+                      <Button
+                        size="small"
+                        icon={<FullscreenOutlined />}
+                        onClick={() => openFullscreenEditor('frameConfigJson')}
+                      >
+                        全屏编辑
                       </Button>
                     </Space>
                   </Space>
@@ -2896,6 +3000,13 @@ const ProtocolParserPage: React.FC = () => {
                       >
                         HEX 下发
                       </Button>
+                      <Button
+                        size="small"
+                        icon={<FullscreenOutlined />}
+                        onClick={() => openFullscreenEditor('parserConfigJson')}
+                      >
+                        全屏编辑
+                      </Button>
                     </>
                   ) : (
                     <>
@@ -2931,6 +3042,13 @@ const ProtocolParserPage: React.FC = () => {
                         }
                       >
                         原始透传
+                      </Button>
+                      <Button
+                        size="small"
+                        icon={<FullscreenOutlined />}
+                        onClick={() => openFullscreenEditor('parserConfigJson')}
+                      >
+                        全屏编辑
                       </Button>
                     </>
                   )}
@@ -2982,7 +3100,18 @@ const ProtocolParserPage: React.FC = () => {
             <Form.Item
               name="visualConfigJson"
               label="可视化配置 JSON"
-              extra="三期轻量可视化编排：维护结构化配置，并一键生成 JS 脚本。"
+              extra={
+                <Space wrap>
+                  <Text type="secondary">三期轻量可视化编排：维护结构化配置，并一键生成 JS 脚本。</Text>
+                  <Button
+                    size="small"
+                    icon={<FullscreenOutlined />}
+                    onClick={() => openFullscreenEditor('visualConfigJson')}
+                  >
+                    全屏编辑
+                  </Button>
+                </Space>
+              }
               rules={[
                 { required: true, message: '请输入可视化配置 JSON' },
                 { validator: validateJsonObjectRule('visualConfigJson') },
@@ -3010,7 +3139,7 @@ const ProtocolParserPage: React.FC = () => {
                     <Button
                       size="small"
                       icon={<FullscreenOutlined />}
-                      onClick={() => setScriptEditorFullscreenOpen(true)}
+                      onClick={() => openFullscreenEditor('scriptContent')}
                     >
                       全屏编辑
                     </Button>
@@ -3126,17 +3255,24 @@ const ProtocolParserPage: React.FC = () => {
                         >
                           设备名单示例
                         </Button>
-                        <Button
-                          size="small"
-                          onClick={() =>
-                            applyEditorJsonPreset('releaseConfigJson', releaseModePreset('HASH_PERCENT'))
-                          }
-                        >
-                          百分比示例
-                        </Button>
-                      </Space>
+                      <Button
+                        size="small"
+                        onClick={() =>
+                          applyEditorJsonPreset('releaseConfigJson', releaseModePreset('HASH_PERCENT'))
+                        }
+                      >
+                        百分比示例
+                      </Button>
+                      <Button
+                        size="small"
+                        icon={<FullscreenOutlined />}
+                        onClick={() => openFullscreenEditor('releaseConfigJson')}
+                      >
+                        全屏编辑
+                      </Button>
                     </Space>
-                  }
+                  </Space>
+                }
                   rules={[
                     { required: true, message: '请输入灰度配置 JSON' },
                     { validator: validateJsonObjectRule('releaseConfigJson') },
@@ -3359,33 +3495,38 @@ const ProtocolParserPage: React.FC = () => {
       </Drawer>
 
       <Modal
-        title="脚本全屏编辑"
-        open={scriptEditorFullscreenOpen}
+        title={currentFullscreenEditorMeta ? `${currentFullscreenEditorMeta.label}全屏编辑` : '代码全屏编辑'}
+        open={Boolean(fullscreenEditorField)}
         width="96vw"
         destroyOnClose={false}
-        onCancel={() => setScriptEditorFullscreenOpen(false)}
+        onCancel={() => setFullscreenEditorField(null)}
         footer={
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button onClick={() => setScriptEditorFullscreenOpen(false)}>关闭</Button>
+            {fullscreenEditorField && fullscreenEditorField !== 'scriptContent' ? (
+              <Button onClick={handleFormatFullscreenEditor}>格式化 JSON</Button>
+            ) : null}
+            <Button onClick={() => setFullscreenEditorField(null)}>关闭</Button>
           </Space>
         }
         styles={{ body: { paddingTop: 12 } }}
       >
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message="全屏编辑会直接同步当前表单里的脚本内容。"
-            description="可以在这里专注修改长脚本，关闭后抽屉里的脚本字段会保留同一份内容。"
-          />
-          <ProtocolCodeEditor
-            language="javascript"
-            path="file:///protocol-parser/scriptContent.fullscreen.js"
-            height="72vh"
-            value={currentScriptContent}
-            onChange={(value) => editorForm.setFieldsValue({ scriptContent: value })}
-          />
-        </Space>
+        {currentFullscreenEditorMeta ? (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Alert
+              type="info"
+              showIcon
+              message={`${currentFullscreenEditorMeta.label}会直接同步当前表单内容。`}
+              description={currentFullscreenEditorMeta.fullscreenTip}
+            />
+            <ProtocolCodeEditor
+              language={currentFullscreenEditorMeta.language}
+              path={currentFullscreenEditorMeta.fullscreenPath}
+              height="72vh"
+              value={currentFullscreenEditorValue}
+              onChange={handleFullscreenEditorChange}
+            />
+          </Space>
+        ) : null}
       </Modal>
 
       <Drawer
