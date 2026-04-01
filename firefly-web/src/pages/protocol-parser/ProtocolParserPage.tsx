@@ -941,6 +941,9 @@ const normalizeVisualConfigSafely = (raw: string | undefined, direction: VisualF
   }
 };
 
+const buildScriptSkeletonByDirection = (direction: VisualFlowDirection) =>
+  buildScriptFromVisualConfig(defaultVisualConfigForDirection(direction), direction);
+
 const detectParserConfigPresetKind = (
   rawJson: string | undefined,
   direction: 'UPLINK' | 'DOWNLINK',
@@ -1805,6 +1808,52 @@ const ProtocolParserPage: React.FC = () => {
     }
   };
 
+  // Rebuild a field from the current transport/direction/frame/release context so users can
+  // quickly recover from exploratory edits without reopening presets one by one.
+  const getRecommendedEditorValue = (field: CodeEditorFieldName) => {
+    switch (field) {
+      case 'matchRuleJson':
+        return buildMatchRulePreset(currentEditorTransport, currentDirection);
+      case 'frameConfigJson':
+        return buildFrameConfigPreset(currentFrameMode);
+      case 'parserConfigJson':
+        return buildParserConfigPreset(
+          currentDirection === 'DOWNLINK' ? 'DOWNLINK_JSON' : 'UPLINK_JSON_PROPERTY',
+          currentEditorTransport,
+          editorBusinessIdentifiers,
+        );
+      case 'visualConfigJson':
+        return defaultVisualConfigForDirection(currentDirection as VisualFlowDirection);
+      case 'releaseConfigJson':
+        return releaseModePreset(currentReleaseMode);
+      case 'scriptContent':
+        return buildScriptSkeletonByDirection(currentDirection as VisualFlowDirection);
+      default:
+        return '';
+    }
+  };
+
+  const applyRecommendedEditorValue = (field: CodeEditorFieldName) => {
+    editorForm.setFieldsValue({ [field]: getRecommendedEditorValue(field) } as Partial<EditorFormValues>);
+  };
+
+  const handleRegenerateScriptFromVisual = () => {
+    try {
+      const direction = (editorForm.getFieldValue('direction') || 'UPLINK') as VisualFlowDirection;
+      const rawVisualConfig = (editorForm.getFieldValue('visualConfigJson') || '{}') as string;
+      const normalizedVisualConfig = normalizeVisualConfigText(rawVisualConfig, direction);
+      editorForm.setFieldsValue({
+        parserMode: 'SCRIPT',
+        scriptLanguage: 'JS',
+        visualConfigJson: normalizedVisualConfig,
+        scriptContent: buildScriptFromVisualConfig(normalizedVisualConfig, direction),
+      });
+      message.success('已按当前可视化配置重建脚本');
+    } catch (error) {
+      message.error(getErrorMessage(error, '按当前可视化配置重建脚本失败'));
+    }
+  };
+
   const validateJsonObjectRule = (field: JsonEditorField) => async (_: unknown, value?: string) => {
     const errorMessage = getJsonObjectError(value, JSON_FIELD_LABELS[field]);
     if (errorMessage) {
@@ -2105,21 +2154,7 @@ const ProtocolParserPage: React.FC = () => {
   };
 
   const handleGenerateVisualScript = () => {
-    try {
-      const direction = (editorForm.getFieldValue('direction') || 'UPLINK') as VisualFlowDirection;
-      const rawVisualConfig = (editorForm.getFieldValue('visualConfigJson') || '{}') as string;
-      const normalizedVisualConfig = normalizeVisualConfigText(rawVisualConfig, direction);
-      const scriptContent = buildScriptFromVisualConfig(normalizedVisualConfig, direction);
-      editorForm.setFieldsValue({
-        parserMode: 'SCRIPT',
-        scriptLanguage: 'JS',
-        visualConfigJson: normalizedVisualConfig,
-        scriptContent,
-      });
-      message.success('已根据可视化配置生成脚本');
-    } catch (error) {
-      message.error(getErrorMessage(error, '根据可视化配置生成脚本失败'));
-    }
+    handleRegenerateScriptFromVisual();
   };
 
   const openUplinkDebugModal = (record: ProtocolParserRecord) => {
@@ -3159,6 +3194,12 @@ const ProtocolParserPage: React.FC = () => {
                 label="脚本内容"
                 extra={
                   <Space wrap>
+                    <Button size="small" onClick={() => applyRecommendedEditorValue('scriptContent')}>
+                      当前方向骨架
+                    </Button>
+                    <Button size="small" onClick={handleRegenerateScriptFromVisual}>
+                      按可视化重建
+                    </Button>
                     <Button
                       size="small"
                       icon={<FullscreenOutlined />}
@@ -3614,8 +3655,17 @@ const ProtocolParserPage: React.FC = () => {
         onCancel={() => setFullscreenEditorField(null)}
         footer={
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            {fullscreenEditorField === 'scriptContent' ? (
+              <>
+                <Button onClick={() => applyRecommendedEditorValue('scriptContent')}>当前方向骨架</Button>
+                <Button onClick={handleRegenerateScriptFromVisual}>按可视化重建</Button>
+              </>
+            ) : null}
             {fullscreenEditorField && fullscreenEditorField !== 'scriptContent' ? (
-              <Button onClick={handleFormatFullscreenEditor}>格式化 JSON</Button>
+              <>
+                <Button onClick={() => applyRecommendedEditorValue(fullscreenEditorField)}>恢复推荐值</Button>
+                <Button onClick={handleFormatFullscreenEditor}>格式化 JSON</Button>
+              </>
             ) : null}
             <Button onClick={() => setFullscreenEditorField(null)}>关闭</Button>
           </Space>
