@@ -128,6 +128,7 @@ npm run bootstrap:custom-protocol-samples -- --access-token <your-access-token>
 2. 如果某一步显示“待补齐”，优先点击该步骤卡片返回对应步骤补字段。
 3. JSON 类字段优先使用“格式化 JSON”，再点“校验本步”，不要等到最终保存才排查括号或结构错误。
 4. 已进入“预览确认”但仍提示未完成时，说明前面步骤有字段被改坏，应按右侧提示回退修复，而不是反复点击保存。
+5. 切换 `transport / direction / frameMode / releaseMode` 后，先确认默认 JSON 是否已经自动跟随同步；如果该段 JSON 曾被手改，系统会保留原值，不会强行覆盖。
 
 该能力只改变前端校验和提示，不改变接口契约，也不替代发布前的上行/下行调试。
 
@@ -167,6 +168,8 @@ npm run bootstrap:custom-protocol-samples -- --access-token <your-access-token>
 - 编辑抽屉右侧能看到步骤进度、当前步骤检查和关键摘要
 - JSON 字段输入非法对象时会在当前步骤直接报错
 - “格式化 JSON” 后不会改坏业务字段，只调整结构和缩进
+- 新建规则时，匹配规则和解析配置会直接带出当前场景推荐值
+- 切换协议方向、拆帧模式或发布方式后，未手改过的默认 JSON 会自动跟随刷新
 - 设备模拟器的“自定义协议验证”卡片能按当前设备自动加载匹配规则
 - WebSocket / TCP / UDP 模拟设备能通过“平台身份绑定”进入真实运行态联调
 - 本地样本脚本执行后，终端能输出产品 `productKey`、规则 ID 和生成的模拟器导入文件路径
@@ -241,6 +244,13 @@ npm run bootstrap:custom-protocol-samples -- --access-token <your-access-token>
 - 脚本模式下 `scriptContent` 是否只有空白字符
 - 插件模式下 `pluginId` 是否为空，或插件列表尚未加载完成
 - 如果已经进入预览确认页，是否是前面某一步被回改后重新变成未就绪
+
+### 7.7 切换上下文后默认 JSON 没跟着变
+
+先区分两种情况：
+
+- 如果该段 JSON 还保持系统默认值，切换 `transport / direction / frameMode / releaseMode` 后应该自动同步；若没有同步，先重新打开抽屉复核当前规则是否带入了旧草稿。
+- 如果该段 JSON 已被人工修改过，系统会停止自动覆盖，这是当前设计行为；如需重置，使用页面上的预设按钮重新生成即可。
 
 ## 8. 巡检建议
 

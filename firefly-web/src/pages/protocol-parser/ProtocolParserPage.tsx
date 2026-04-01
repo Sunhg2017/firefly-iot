@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -245,6 +245,13 @@ type JsonEditorField =
   | 'parserConfigJson'
   | 'visualConfigJson'
   | 'releaseConfigJson';
+
+type ParserConfigPresetKind =
+  | 'UPLINK_JSON_PROPERTY'
+  | 'UPLINK_TEXT_PAIR'
+  | 'UPLINK_RAW'
+  | 'DOWNLINK_JSON'
+  | 'DOWNLINK_HEX';
 
 const PARSER_MODE_OPTIONS = [
   { value: 'SCRIPT', label: '脚本' },
@@ -657,6 +664,26 @@ const buildFrameConfigPreset = (frameMode?: string) => {
   }
 };
 
+const buildParserConfigPreset = (
+  presetKind: ParserConfigPresetKind,
+  transport?: string,
+  options: BusinessIdentifierPatch = {},
+) => {
+  switch (presetKind) {
+    case 'UPLINK_TEXT_PAIR':
+      return buildTextPairParserConfig(transport, options);
+    case 'UPLINK_RAW':
+      return buildRawDataParserConfig(transport, options);
+    case 'DOWNLINK_JSON':
+      return buildDownlinkJsonParserConfig(transport, options);
+    case 'DOWNLINK_HEX':
+      return buildDownlinkHexParserConfig(transport, options);
+    case 'UPLINK_JSON_PROPERTY':
+    default:
+      return buildJsonPropertyParserConfig(transport, options);
+  }
+};
+
 const withBusinessIdentifiers = (
   baseConfig: Record<string, unknown>,
   options: BusinessIdentifierPatch,
@@ -813,6 +840,43 @@ const injectBusinessIdentifiersIntoJson = (
   } catch {
     return rawJson;
   }
+};
+
+const normalizeJsonObjectForCompare = (raw?: string) => {
+  try {
+    return ensureJsonObjectText(raw || '{}', 'JSON');
+  } catch {
+    return undefined;
+  }
+};
+
+const isSameJsonObjectText = (left?: string, right?: string) => {
+  const normalizedLeft = normalizeJsonObjectForCompare(left);
+  const normalizedRight = normalizeJsonObjectForCompare(right);
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
+};
+
+const normalizeVisualConfigSafely = (raw: string | undefined, direction: VisualFlowDirection) => {
+  try {
+    return normalizeVisualConfigText(raw || '{}', direction);
+  } catch {
+    return undefined;
+  }
+};
+
+const detectParserConfigPresetKind = (
+  rawJson: string | undefined,
+  direction: 'UPLINK' | 'DOWNLINK',
+  transport?: string,
+  options: BusinessIdentifierPatch = {},
+) => {
+  const candidates: ParserConfigPresetKind[] =
+    direction === 'DOWNLINK'
+      ? ['DOWNLINK_JSON', 'DOWNLINK_HEX']
+      : ['UPLINK_JSON_PROPERTY', 'UPLINK_TEXT_PAIR', 'UPLINK_RAW'];
+  return candidates.find((presetKind) =>
+    isSameJsonObjectText(rawJson, buildParserConfigPreset(presetKind, transport, options)),
+  );
 };
 
 const formatReleaseSummary = (record: ProtocolParserRecord) => {
@@ -1393,6 +1457,142 @@ const ProtocolParserPage: React.FC = () => {
     }
   }, [editorBusinessIdentifiers, editorForm, editorOpen]);
 
+  const editorAutoSyncRef = useRef<{
+    direction: 'UPLINK' | 'DOWNLINK';
+    transport: string;
+    frameMode: string;
+    releaseMode: 'ALL' | 'DEVICE_LIST' | 'HASH_PERCENT';
+    parserMode: 'SCRIPT' | 'PLUGIN';
+    matchRuleJson: string;
+    frameConfigJson: string;
+    parserConfigJson: string;
+    visualConfigJson: string;
+    scriptContent: string;
+    releaseConfigJson: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!editorOpen) {
+      editorAutoSyncRef.current = null;
+      return;
+    }
+
+    const currentSnapshot = {
+      direction: currentDirection,
+      transport: currentEditorTransport,
+      frameMode: currentFrameMode,
+      releaseMode: currentReleaseMode,
+      parserMode: currentParserMode,
+      matchRuleJson: currentMatchRuleJson,
+      frameConfigJson: currentFrameConfigJson,
+      parserConfigJson: currentParserConfigJson,
+      visualConfigJson: currentVisualConfigJson,
+      scriptContent: currentScriptContent,
+      releaseConfigJson: currentReleaseConfigJson,
+    };
+    const previousSnapshot = editorAutoSyncRef.current;
+    if (!previousSnapshot) {
+      editorAutoSyncRef.current = currentSnapshot;
+      return;
+    }
+
+    // Only rotate fields that are still on generated defaults. Once a user edits a JSON block
+    // manually, we stop auto-overwriting it and leave the custom content untouched.
+    const patch: Partial<EditorFormValues> = {};
+    if (
+      previousSnapshot.transport !== currentEditorTransport ||
+      previousSnapshot.direction !== currentDirection
+    ) {
+      if (
+        isSameJsonObjectText(
+          previousSnapshot.matchRuleJson,
+          buildMatchRulePreset(previousSnapshot.transport, previousSnapshot.direction),
+        )
+      ) {
+        patch.matchRuleJson = buildMatchRulePreset(currentEditorTransport, currentDirection);
+      }
+
+      const parserPresetKind = detectParserConfigPresetKind(
+        previousSnapshot.parserConfigJson,
+        previousSnapshot.direction,
+        previousSnapshot.transport,
+        editorBusinessIdentifiers,
+      );
+      if (parserPresetKind) {
+        patch.parserConfigJson = buildParserConfigPreset(parserPresetKind, currentEditorTransport, editorBusinessIdentifiers);
+      }
+    }
+
+    if (
+      previousSnapshot.frameMode !== currentFrameMode &&
+      isSameJsonObjectText(previousSnapshot.frameConfigJson, buildFrameConfigPreset(previousSnapshot.frameMode))
+    ) {
+      patch.frameConfigJson = buildFrameConfigPreset(currentFrameMode);
+    }
+
+    if (previousSnapshot.direction !== currentDirection) {
+      const previousVisualDefault = defaultVisualConfigForDirection(previousSnapshot.direction);
+      if (isSameJsonObjectText(previousSnapshot.visualConfigJson, previousVisualDefault)) {
+        patch.visualConfigJson = defaultVisualConfigForDirection(currentDirection);
+      }
+
+      if (currentParserMode === 'SCRIPT') {
+        const previousVisualForScript =
+          normalizeVisualConfigSafely(patch.visualConfigJson ?? previousSnapshot.visualConfigJson, currentDirection) ||
+          normalizeVisualConfigSafely(previousSnapshot.visualConfigJson, previousSnapshot.direction);
+        const previousGeneratedScript = normalizeVisualConfigSafely(
+          previousSnapshot.visualConfigJson,
+          previousSnapshot.direction,
+        )
+          ? buildScriptFromVisualConfig(
+              normalizeVisualConfigSafely(previousSnapshot.visualConfigJson, previousSnapshot.direction)!,
+              previousSnapshot.direction,
+            )
+          : undefined;
+        if (!trimOptional(previousSnapshot.scriptContent) || previousSnapshot.scriptContent === previousGeneratedScript) {
+          const nextVisualConfig =
+            patch.visualConfigJson ||
+            normalizeVisualConfigSafely(currentVisualConfigJson, currentDirection) ||
+            previousVisualForScript;
+          if (nextVisualConfig) {
+            patch.scriptLanguage = 'JS';
+            patch.scriptContent = buildScriptFromVisualConfig(nextVisualConfig, currentDirection);
+          }
+        }
+      }
+    }
+
+    if (
+      previousSnapshot.releaseMode !== currentReleaseMode &&
+      isSameJsonObjectText(previousSnapshot.releaseConfigJson, releaseModePreset(previousSnapshot.releaseMode))
+    ) {
+      patch.releaseConfigJson = releaseModePreset(currentReleaseMode);
+    }
+
+    if (Object.keys(patch).length > 0) {
+      editorForm.setFieldsValue(patch);
+    }
+    editorAutoSyncRef.current = {
+      ...currentSnapshot,
+      ...patch,
+    };
+  }, [
+    currentDirection,
+    currentEditorTransport,
+    currentFrameConfigJson,
+    currentFrameMode,
+    currentMatchRuleJson,
+    currentParserConfigJson,
+    currentParserMode,
+    currentReleaseConfigJson,
+    currentReleaseMode,
+    currentScriptContent,
+    currentVisualConfigJson,
+    editorBusinessIdentifiers,
+    editorForm,
+    editorOpen,
+  ]);
+
   useEffect(() => {
     if (!currentDownlinkDeviceName) {
       return;
@@ -1623,7 +1823,13 @@ const ProtocolParserPage: React.FC = () => {
       productId: filters.productId,
       scopeType: createScopeType,
       scopeId: undefined,
-      parserConfigJson: injectBusinessIdentifiersIntoJson(DEFAULT_EDITOR_VALUES.parserConfigJson, createBusinessIdentifiers),
+      // Start from a usable scenario default so users can refine instead of typing from empty JSON.
+      matchRuleJson: buildMatchRulePreset(DEFAULT_EDITOR_VALUES.transport, DEFAULT_EDITOR_VALUES.direction),
+      parserConfigJson: buildParserConfigPreset(
+        'UPLINK_JSON_PROPERTY',
+        DEFAULT_EDITOR_VALUES.transport,
+        createBusinessIdentifiers,
+      ),
     });
     setCurrentRecord(null);
     setEditorMode('create');
@@ -3063,11 +3269,18 @@ const ProtocolParserPage: React.FC = () => {
                   style={{ borderRadius: 12 }}
                 >
                   {currentEditorStepCheck.ready ? (
-                    <Alert
-                      type="success"
-                      showIcon
-                      message="当前步骤已满足进入下一步的条件"
-                    />
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                      <Alert
+                        type="success"
+                        showIcon
+                        message="当前步骤已满足进入下一步的条件"
+                      />
+                      {editorStepIndex >= 1 && editorStepIndex <= 3 ? (
+                        <Text type="secondary">
+                          未手改过的默认 JSON 会跟随协议、方向、拆帧或发布方式自动同步。
+                        </Text>
+                      ) : null}
+                    </Space>
                   ) : (
                     <Space direction="vertical" size={8} style={{ width: '100%' }}>
                       <Alert
@@ -3075,6 +3288,11 @@ const ProtocolParserPage: React.FC = () => {
                         showIcon
                         message={`当前步骤还需补齐 ${currentEditorStepCheck.issues.length} 项`}
                       />
+                      {editorStepIndex >= 1 && editorStepIndex <= 3 ? (
+                        <Text type="secondary">
+                          如果刚切过协议、方向、拆帧或发布方式，可以先看默认 JSON 是否已经自动同步。
+                        </Text>
+                      ) : null}
                       <Space direction="vertical" size={6} style={{ width: '100%' }}>
                         {currentEditorStepCheck.issues.map((issue) => (
                           <Text key={issue} type="secondary">{`- ${issue}`}</Text>
