@@ -11,6 +11,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Progress,
   Row,
   Select,
   Space,
@@ -238,6 +239,13 @@ interface RollbackFormValues {
   version?: number;
 }
 
+type JsonEditorField =
+  | 'matchRuleJson'
+  | 'frameConfigJson'
+  | 'parserConfigJson'
+  | 'visualConfigJson'
+  | 'releaseConfigJson';
+
 const PARSER_MODE_OPTIONS = [
   { value: 'SCRIPT', label: '脚本' },
   { value: 'PLUGIN', label: '插件' },
@@ -401,6 +409,24 @@ const EDITOR_STEP_FIELDS: Array<Array<keyof EditorFormValues>> = [
   [],
 ];
 
+const JSON_FIELD_LABELS: Record<JsonEditorField, string> = {
+  matchRuleJson: '匹配规则',
+  frameConfigJson: '拆帧配置',
+  parserConfigJson: '解析配置',
+  visualConfigJson: '可视化配置',
+  releaseConfigJson: '灰度配置',
+};
+
+const EDITOR_STEP_JSON_FIELDS: Array<JsonEditorField[]> = [
+  [],
+  ['matchRuleJson', 'frameConfigJson'],
+  ['parserConfigJson', 'visualConfigJson'],
+  ['releaseConfigJson'],
+  [],
+];
+
+const EDITOR_CONFIG_STEP_COUNT = EDITOR_STEPS.length - 1;
+
 const DEFAULT_UPLINK_DEBUG_VALUES: UplinkDebugFormValues = {
   payloadEncoding: 'HEX',
   payload: '',
@@ -491,6 +517,15 @@ const prettyJson = (value?: string) => {
     return JSON.stringify(JSON.parse(source), null, 2);
   } catch {
     return source;
+  }
+};
+
+const getJsonObjectError = (raw: string | undefined, fieldName: string) => {
+  try {
+    ensureJsonObjectText(raw || '{}', fieldName);
+    return undefined;
+  } catch (error) {
+    return getErrorMessage(error, `${fieldName}必须是合法的 JSON`);
   }
 };
 
@@ -869,6 +904,13 @@ const ProtocolParserPage: React.FC = () => {
   const currentFrameMode = Form.useWatch('frameMode', editorForm) || DEFAULT_EDITOR_VALUES.frameMode;
   const currentTimeoutMs = Form.useWatch('timeoutMs', editorForm) || DEFAULT_EDITOR_VALUES.timeoutMs;
   const currentPluginId = Form.useWatch('pluginId', editorForm);
+  const currentScriptLanguage = Form.useWatch('scriptLanguage', editorForm) || DEFAULT_EDITOR_VALUES.scriptLanguage;
+  const currentScriptContent = Form.useWatch('scriptContent', editorForm) || '';
+  const currentMatchRuleJson = Form.useWatch('matchRuleJson', editorForm) || DEFAULT_EDITOR_VALUES.matchRuleJson;
+  const currentFrameConfigJson = Form.useWatch('frameConfigJson', editorForm) || DEFAULT_EDITOR_VALUES.frameConfigJson;
+  const currentParserConfigJson = Form.useWatch('parserConfigJson', editorForm) || DEFAULT_EDITOR_VALUES.parserConfigJson;
+  const currentVisualConfigJson = Form.useWatch('visualConfigJson', editorForm) || DEFAULT_EDITOR_VALUES.visualConfigJson;
+  const currentReleaseConfigJson = Form.useWatch('releaseConfigJson', editorForm) || DEFAULT_EDITOR_VALUES.releaseConfigJson;
   const currentEditorProductId = Form.useWatch('productId', editorForm);
   const currentUplinkTransport = Form.useWatch('transport', uplinkDebugForm) || DEFAULT_EDITOR_VALUES.transport;
   const currentDownlinkProductId = Form.useWatch('productId', downlinkDebugForm);
@@ -1111,6 +1153,109 @@ const ProtocolParserPage: React.FC = () => {
       selectedTemplate?.label,
     ],
   );
+  // Keep the side panel in sync with the live form state so users can spot missing fields
+  // or broken JSON before they navigate away from the current step.
+  const editorStepChecks = useMemo(() => {
+    const checks: Array<{ ready: boolean; issues: string[] }> = [];
+
+    checks.push({
+      ready: currentScopeType !== 'PRODUCT' || Boolean(currentEditorProductId),
+      issues: currentScopeType === 'PRODUCT' && !currentEditorProductId ? ['请选择产品'] : [],
+    });
+
+    const stepOneIssues: string[] = [];
+    if (!trimOptional(currentProtocol)) {
+      stepOneIssues.push('请选择协议');
+    }
+    if (!trimOptional(currentEditorTransport)) {
+      stepOneIssues.push('请选择传输方式');
+    }
+    if (!trimOptional(currentDirection)) {
+      stepOneIssues.push('请选择方向');
+    }
+    if (!currentTimeoutMs || currentTimeoutMs < 1) {
+      stepOneIssues.push('请输入有效的超时时间');
+    }
+    const matchRuleError = getJsonObjectError(currentMatchRuleJson, JSON_FIELD_LABELS.matchRuleJson);
+    if (matchRuleError) {
+      stepOneIssues.push(matchRuleError);
+    }
+    const frameConfigError = getJsonObjectError(currentFrameConfigJson, JSON_FIELD_LABELS.frameConfigJson);
+    if (frameConfigError) {
+      stepOneIssues.push(frameConfigError);
+    }
+    checks.push({
+      ready: stepOneIssues.length === 0,
+      issues: stepOneIssues,
+    });
+
+    const stepTwoIssues: string[] = [];
+    const parserConfigError = getJsonObjectError(currentParserConfigJson, JSON_FIELD_LABELS.parserConfigJson);
+    if (parserConfigError) {
+      stepTwoIssues.push(parserConfigError);
+    }
+    const visualConfigError = getJsonObjectError(currentVisualConfigJson, JSON_FIELD_LABELS.visualConfigJson);
+    if (visualConfigError) {
+      stepTwoIssues.push(visualConfigError);
+    }
+    if (currentParserMode === 'SCRIPT') {
+      if (!trimOptional(currentScriptLanguage)) {
+        stepTwoIssues.push('请选择脚本语言');
+      }
+      if (!trimOptional(currentScriptContent)) {
+        stepTwoIssues.push('请输入脚本内容');
+      }
+    } else if (!trimOptional(currentPluginId)) {
+      stepTwoIssues.push('请输入插件 ID');
+    }
+    checks.push({
+      ready: stepTwoIssues.length === 0,
+      issues: stepTwoIssues,
+    });
+
+    const stepThreeIssues: string[] = [];
+    if (!trimOptional(currentReleaseMode)) {
+      stepThreeIssues.push('请选择发布方式');
+    }
+    const releaseConfigError = getJsonObjectError(currentReleaseConfigJson, JSON_FIELD_LABELS.releaseConfigJson);
+    if (releaseConfigError) {
+      stepThreeIssues.push(releaseConfigError);
+    }
+    checks.push({
+      ready: stepThreeIssues.length === 0,
+      issues: stepThreeIssues,
+    });
+
+    const incompleteStepTitles = checks
+      .slice(0, EDITOR_CONFIG_STEP_COUNT)
+      .flatMap((item, index) => (item.ready ? [] : [`请先完成「${EDITOR_STEPS[index].title}」`]));
+    checks.push({
+      ready: incompleteStepTitles.length === 0,
+      issues: incompleteStepTitles,
+    });
+
+    return checks;
+  }, [
+    currentDirection,
+    currentEditorProductId,
+    currentEditorTransport,
+    currentFrameConfigJson,
+    currentMatchRuleJson,
+    currentParserConfigJson,
+    currentParserMode,
+    currentPluginId,
+    currentProtocol,
+    currentReleaseConfigJson,
+    currentReleaseMode,
+    currentScopeType,
+    currentScriptContent,
+    currentScriptLanguage,
+    currentTimeoutMs,
+    currentVisualConfigJson,
+  ]);
+  const currentEditorStepCheck = editorStepChecks[editorStepIndex] || { ready: true, issues: [] };
+  const readyEditorStepCount = editorStepChecks.slice(0, EDITOR_CONFIG_STEP_COUNT).filter((item) => item.ready).length;
+  const editorProgressPercent = Math.round((readyEditorStepCount / EDITOR_CONFIG_STEP_COUNT) * 100);
 
   const describeRecordScope = (record?: ProtocolParserRecord | null) => {
     if (!record) {
@@ -1311,6 +1456,32 @@ const ProtocolParserPage: React.FC = () => {
     editorForm.setFieldsValue({ [field]: value } as Partial<EditorFormValues>);
   };
 
+  const formatEditorJsonFields = (fields: JsonEditorField[]) => {
+    if (fields.length === 0) {
+      return;
+    }
+    const nextValues: Partial<EditorFormValues> = {};
+    for (const field of fields) {
+      const rawValue = (editorForm.getFieldValue(field) as string | undefined) || '{}';
+      try {
+        nextValues[field] = prettyJson(ensureJsonObjectText(rawValue, JSON_FIELD_LABELS[field]));
+      } catch (error) {
+        message.error(getErrorMessage(error, `${JSON_FIELD_LABELS[field]}格式化失败`));
+        return;
+      }
+    }
+    editorForm.setFieldsValue(nextValues);
+    message.success(`已格式化${fields.map((field) => JSON_FIELD_LABELS[field]).join('、')}`);
+  };
+
+  const validateJsonObjectRule = (field: JsonEditorField) => async (_: unknown, value?: string) => {
+    const errorMessage = getJsonObjectError(value, JSON_FIELD_LABELS[field]);
+    if (errorMessage) {
+      return Promise.reject(new Error(errorMessage));
+    }
+    return Promise.resolve();
+  };
+
   const handleEditorTransportChange = (transport: string) => {
     editorForm.setFieldsValue({
       protocol: inferProtocolByTransport(transport),
@@ -1330,6 +1501,24 @@ const ProtocolParserPage: React.FC = () => {
 
   const handleEditorProductChange = () => {
     editorForm.setFieldsValue({ scopeId: undefined });
+  };
+
+  const handleValidateCurrentEditorStep = async () => {
+    try {
+      if (editorStepIndex === EDITOR_CONFIG_STEP_COUNT) {
+        // The preview step has no own form fields, so validation here means re-checking
+        // every editable step before the final submit.
+        for (let stepIndex = 0; stepIndex < EDITOR_CONFIG_STEP_COUNT; stepIndex += 1) {
+          await validateEditorStep(stepIndex);
+        }
+        message.success('前置步骤已全部校验通过');
+        return;
+      }
+      await validateEditorStep();
+      message.success(`第 ${editorStepIndex + 1} 步已校验通过`);
+    } catch {
+      // antd form will surface validation feedback inline
+    }
   };
 
   const validateEditorStep = async (stepIndex = editorStepIndex) => {
@@ -2130,14 +2319,14 @@ const ProtocolParserPage: React.FC = () => {
       <Drawer
         title={editorMode === 'create' ? '新建协议解析规则' : '编辑协议解析规则'}
         open={editorOpen}
-        width={1080}
+        width={1280}
         destroyOnClose
         onClose={closeEditorModal}
         styles={{ body: { paddingBottom: 24 } }}
         footer={
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
             <Button onClick={closeEditorModal}>取消</Button>
-            {editorStepIndex > 0 ? <Button onClick={() => setEditorStepIndex(editorStepIndex - 1)}>上一步</Button> : null}
+            {editorStepIndex > 0 ? <Button onClick={() => moveToEditorStep(editorStepIndex - 1)}>上一步</Button> : null}
             {isLastEditorStep ? (
               <Button type="primary" loading={submitting} onClick={() => editorForm.submit()}>
               {editorMode === 'create' ? '新建协议解析规则' : '保存协议解析规则'}
@@ -2165,6 +2354,8 @@ const ProtocolParserPage: React.FC = () => {
             message={EDITOR_STEPS[editorStepIndex].description}
             description="抽屉会保留已经填写的内容，你可以返回前面的步骤继续调整。"
           />
+          <Row gutter={[16, 16]} align="top">
+            <Col xs={24} xl={16}>
           {editorStepIndex === 0 ? (
           <>
           <Card size="small" style={{ marginBottom: 16, borderRadius: 12 }}>
@@ -2383,7 +2574,10 @@ const ProtocolParserPage: React.FC = () => {
                     </Space>
                   </Space>
                 }
-                rules={[{ required: true, message: '请输入匹配规则 JSON' }]}
+                rules={[
+                  { required: true, message: '请输入匹配规则 JSON' },
+                  { validator: validateJsonObjectRule('matchRuleJson') },
+                ]}
               >
                 <ProtocolCodeEditor language="json" path="file:///protocol-parser/matchRule.json" height={220} />
               </Form.Item>
@@ -2423,7 +2617,10 @@ const ProtocolParserPage: React.FC = () => {
                     </Space>
                   </Space>
                 }
-                rules={[{ required: true, message: '请输入拆帧配置 JSON' }]}
+                rules={[
+                  { required: true, message: '请输入拆帧配置 JSON' },
+                  { validator: validateJsonObjectRule('frameConfigJson') },
+                ]}
               >
                 <ProtocolCodeEditor language="json" path="file:///protocol-parser/frameConfig.json" height={220} />
               </Form.Item>
@@ -2505,7 +2702,10 @@ const ProtocolParserPage: React.FC = () => {
                 </Space>
               </Space>
             }
-            rules={[{ required: true, message: '请输入解析配置 JSON' }]}
+            rules={[
+              { required: true, message: '请输入解析配置 JSON' },
+              { validator: validateJsonObjectRule('parserConfigJson') },
+            ]}
           >
             <ProtocolCodeEditor language="json" path="file:///protocol-parser/parserConfig.json" height={220} />
           </Form.Item>
@@ -2548,7 +2748,10 @@ const ProtocolParserPage: React.FC = () => {
               name="visualConfigJson"
               label="可视化配置 JSON"
               extra="三期轻量可视化编排：维护结构化配置，并一键生成 JS 脚本。"
-              rules={[{ required: true, message: '请输入可视化配置 JSON' }]}
+              rules={[
+                { required: true, message: '请输入可视化配置 JSON' },
+                { validator: validateJsonObjectRule('visualConfigJson') },
+              ]}
               style={{ marginBottom: 0 }}
             >
               <ProtocolCodeEditor language="json" path="file:///protocol-parser/visualConfig.json" height={220} />
@@ -2567,7 +2770,12 @@ const ProtocolParserPage: React.FC = () => {
               <Form.Item
                 name="scriptContent"
                 label="脚本内容"
-                rules={[{ required: true, message: '请输入脚本内容' }]}
+                rules={[
+                  {
+                    validator: async (_, value?: string) =>
+                      trimOptional(value) ? Promise.resolve() : Promise.reject(new Error('请输入脚本内容')),
+                  },
+                ]}
               >
                 <ProtocolCodeEditor language="javascript" path="file:///protocol-parser/scriptContent.js" height={320} />
               </Form.Item>
@@ -2577,7 +2785,12 @@ const ProtocolParserPage: React.FC = () => {
               <Form.Item
                 name="pluginId"
                 label="插件 ID"
-                rules={[{ required: true, message: '请输入插件 ID' }]}
+                rules={[
+                  {
+                    validator: async (_, value?: string) =>
+                      trimOptional(value) ? Promise.resolve() : Promise.reject(new Error('请输入插件 ID')),
+                  },
+                ]}
                 extra={
                   pluginOptions.length > 0
                     ? '优先从下拉中选择已安装或目录可见的插件，减少手工输入错误。'
@@ -2677,7 +2890,10 @@ const ProtocolParserPage: React.FC = () => {
                       </Space>
                     </Space>
                   }
-                  rules={[{ required: true, message: '请输入灰度配置 JSON' }]}
+                  rules={[
+                    { required: true, message: '请输入灰度配置 JSON' },
+                    { validator: validateJsonObjectRule('releaseConfigJson') },
+                  ]}
                 >
                   <ProtocolCodeEditor language="json" path="file:///protocol-parser/releaseConfig.json" height={220} />
                 </Form.Item>
@@ -2773,6 +2989,113 @@ const ProtocolParserPage: React.FC = () => {
               </Row>
             </Space>
           ) : null}
+            </Col>
+            <Col xs={24} xl={8}>
+              <Space direction="vertical" size={16} style={{ width: '100%', position: 'sticky', top: 0 }}>
+                <Card
+                  size="small"
+                  title="编辑进度"
+                  extra={<Text type="secondary">{readyEditorStepCount}/{EDITOR_CONFIG_STEP_COUNT} 步就绪</Text>}
+                  style={{ borderRadius: 12 }}
+                >
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    <Progress percent={editorProgressPercent} size="small" status="active" />
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                      {EDITOR_STEPS.map((step, index) => {
+                        const stepCheck = editorStepChecks[index] || { ready: true, issues: [] };
+                        const stepClickable = index !== editorStepIndex && index <= editorMaxStepIndex;
+                        const statusLabel =
+                          index === editorStepIndex
+                            ? '当前步骤'
+                            : stepCheck.ready
+                              ? '已就绪'
+                              : '待补齐';
+                        const statusColor = index === editorStepIndex ? 'processing' : stepCheck.ready ? 'success' : 'default';
+                        return (
+                          <Card
+                            key={step.title}
+                            size="small"
+                            hoverable={stepClickable}
+                            bodyStyle={{ padding: 12 }}
+                            onClick={stepClickable ? () => void handleEditorStepChange(index) : undefined}
+                            style={{
+                              borderRadius: 10,
+                              borderColor: index === editorStepIndex ? '#1677ff' : undefined,
+                              background: index === editorStepIndex ? '#f0f7ff' : undefined,
+                              cursor: stepClickable ? 'pointer' : 'default',
+                            }}
+                          >
+                            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                              <Space wrap align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
+                                <Text strong>{`${index + 1}. ${step.title}`}</Text>
+                                <Tag color={statusColor}>{statusLabel}</Tag>
+                              </Space>
+                              <Text type="secondary">{step.description}</Text>
+                              {stepCheck.issues.length > 0 && index !== EDITOR_STEPS.length - 1 ? (
+                                <Text type="secondary">{`待补齐 ${stepCheck.issues.length} 项`}</Text>
+                              ) : null}
+                            </Space>
+                          </Card>
+                        );
+                      })}
+                    </Space>
+                  </Space>
+                </Card>
+
+                <Card
+                  size="small"
+                  title="当前步骤检查"
+                  extra={
+                    <Space size={8}>
+                      {EDITOR_STEP_JSON_FIELDS[editorStepIndex].length > 0 ? (
+                        <Button
+                          size="small"
+                          onClick={() => formatEditorJsonFields(EDITOR_STEP_JSON_FIELDS[editorStepIndex])}
+                        >
+                          格式化 JSON
+                        </Button>
+                      ) : null}
+                      <Button size="small" onClick={() => void handleValidateCurrentEditorStep()}>
+                        校验本步
+                      </Button>
+                    </Space>
+                  }
+                  style={{ borderRadius: 12 }}
+                >
+                  {currentEditorStepCheck.ready ? (
+                    <Alert
+                      type="success"
+                      showIcon
+                      message="当前步骤已满足进入下一步的条件"
+                    />
+                  ) : (
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                      <Alert
+                        type="warning"
+                        showIcon
+                        message={`当前步骤还需补齐 ${currentEditorStepCheck.issues.length} 项`}
+                      />
+                      <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                        {currentEditorStepCheck.issues.map((issue) => (
+                          <Text key={issue} type="secondary">{`- ${issue}`}</Text>
+                        ))}
+                      </Space>
+                    </Space>
+                  )}
+                </Card>
+
+                <Card size="small" title="当前摘要" style={{ borderRadius: 12 }}>
+                  <Descriptions size="small" column={1}>
+                    {editorPreviewSummary.map((item) => (
+                      <Descriptions.Item key={item.key} label={item.label}>
+                        {item.value}
+                      </Descriptions.Item>
+                    ))}
+                  </Descriptions>
+                </Card>
+              </Space>
+            </Col>
+          </Row>
         </Form>
       </Drawer>
 
