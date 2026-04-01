@@ -14,7 +14,7 @@ interface CodeEditorFieldProps {
   path: string;
   value?: string;
   onChange?: (value: string) => void;
-  height?: number;
+  height?: number | string;
   readOnly?: boolean;
   readOnlyLabel?: string;
 }

@@ -27,6 +27,7 @@ import {
   ApiOutlined,
   BugOutlined,
   EditOutlined,
+  FullscreenOutlined,
   HistoryOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
@@ -58,10 +59,22 @@ const LazyCodeEditorField = React.lazy(() => import('../../components/CodeEditor
 interface ProtocolCodeEditorProps {
   language: 'json' | 'javascript';
   path: string;
-  height?: number;
+  height?: number | string;
+  value?: string;
+  onChange?: (value: string) => void;
+  readOnly?: boolean;
+  readOnlyLabel?: string;
 }
 
-const ProtocolCodeEditor: React.FC<ProtocolCodeEditorProps> = ({ language, path, height = 220 }) => (
+const ProtocolCodeEditor: React.FC<ProtocolCodeEditorProps> = ({
+  language,
+  path,
+  height = 220,
+  value,
+  onChange,
+  readOnly,
+  readOnlyLabel,
+}) => (
   <Suspense
     fallback={
       <div
@@ -79,7 +92,15 @@ const ProtocolCodeEditor: React.FC<ProtocolCodeEditorProps> = ({ language, path,
       </div>
     }
   >
-    <LazyCodeEditorField language={language} path={path} height={height} />
+    <LazyCodeEditorField
+      language={language}
+      path={path}
+      height={height}
+      value={value}
+      onChange={onChange}
+      readOnly={readOnly}
+      readOnlyLabel={readOnlyLabel}
+    />
   </Suspense>
 );
 
@@ -935,6 +956,7 @@ const ProtocolParserPage: React.FC = () => {
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>();
   const [editorStepIndex, setEditorStepIndex] = useState(0);
   const [editorMaxStepIndex, setEditorMaxStepIndex] = useState(0);
+  const [scriptEditorFullscreenOpen, setScriptEditorFullscreenOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [uplinkDebugOpen, setUplinkDebugOpen] = useState(false);
   const [downlinkDebugOpen, setDownlinkDebugOpen] = useState(false);
@@ -1603,6 +1625,12 @@ const ProtocolParserPage: React.FC = () => {
     }
   }, [currentDownlinkDeviceName, downlinkDebugForm, downlinkDeviceOptions]);
 
+  useEffect(() => {
+    if (currentParserMode !== 'SCRIPT' && scriptEditorFullscreenOpen) {
+      setScriptEditorFullscreenOpen(false);
+    }
+  }, [currentParserMode, scriptEditorFullscreenOpen]);
+
   // Auto-pick a detected version so plugin mode usually needs only one selection.
   useEffect(() => {
     if (currentParserMode !== 'PLUGIN' || !currentPluginId) {
@@ -1619,6 +1647,7 @@ const ProtocolParserPage: React.FC = () => {
 
   const closeEditorModal = () => {
     setEditorOpen(false);
+    setScriptEditorFullscreenOpen(false);
     setCurrentRecord(null);
     setSelectedTemplateKey(undefined);
     setEditorStepIndex(0);
@@ -2976,6 +3005,18 @@ const ProtocolParserPage: React.FC = () => {
               <Form.Item
                 name="scriptContent"
                 label="脚本内容"
+                extra={
+                  <Space wrap>
+                    <Button
+                      size="small"
+                      icon={<FullscreenOutlined />}
+                      onClick={() => setScriptEditorFullscreenOpen(true)}
+                    >
+                      全屏编辑
+                    </Button>
+                    <Text type="secondary">长脚本建议切到全屏后再写，保存仍以当前表单内容为准。</Text>
+                  </Space>
+                }
                 rules={[
                   {
                     validator: async (_, value?: string) =>
@@ -3316,6 +3357,36 @@ const ProtocolParserPage: React.FC = () => {
           </Row>
         </Form>
       </Drawer>
+
+      <Modal
+        title="脚本全屏编辑"
+        open={scriptEditorFullscreenOpen}
+        width="96vw"
+        destroyOnClose={false}
+        onCancel={() => setScriptEditorFullscreenOpen(false)}
+        footer={
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={() => setScriptEditorFullscreenOpen(false)}>关闭</Button>
+          </Space>
+        }
+        styles={{ body: { paddingTop: 12 } }}
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message="全屏编辑会直接同步当前表单里的脚本内容。"
+            description="可以在这里专注修改长脚本，关闭后抽屉里的脚本字段会保留同一份内容。"
+          />
+          <ProtocolCodeEditor
+            language="javascript"
+            path="file:///protocol-parser/scriptContent.fullscreen.js"
+            height="72vh"
+            value={currentScriptContent}
+            onChange={(value) => editorForm.setFieldsValue({ scriptContent: value })}
+          />
+        </Space>
+      </Modal>
 
       <Drawer
         title={debugRecord ? `上行调试 · ${describeRecordScope(debugRecord)}` : '上行调试'}
