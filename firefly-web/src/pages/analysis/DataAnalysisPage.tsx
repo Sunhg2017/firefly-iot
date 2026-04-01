@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import type { Dayjs } from 'dayjs';
-import { Alert, Button, Card, Col, DatePicker, Form, Row, Select, Statistic, Table, Tabs, message } from 'antd';
+import { Button, Card, Col, DatePicker, Form, Row, Select, Statistic, Table, Tabs, message } from 'antd';
 import {
   BarChartOutlined,
   DownloadOutlined,
@@ -482,13 +482,6 @@ const ExportTab: React.FC<TabProps> = ({ deviceOptions }) => {
 
   return (
     <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="导出说明"
-        description="提交后后台会生成 CSV，并在任务中心提供下载结果。"
-      />
       <Form form={form} layout="vertical" onFinish={handleExport} style={{ maxWidth: 560 }}>
         <Form.Item name="deviceIds" label="选择设备" rules={[{ required: true, message: '请选择设备' }]}>
           <Select
@@ -544,7 +537,7 @@ const DataAnalysisPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader title="数据分析" description="先选择时间范围和统计条件，再执行查询或导出。" />
+      <PageHeader title="数据分析" />
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Tabs
           defaultActiveKey="timeseries"

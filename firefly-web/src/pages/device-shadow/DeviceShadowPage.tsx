@@ -30,7 +30,7 @@ import ShadowPanelFullscreenDrawer from '../../components/ShadowPanelFullscreenD
 import { deviceApi, productApi } from '../../services/api';
 import { buildDesiredTemplateFromThingModel } from '../../utils/deviceShadowThingModel';
 
-const { Paragraph, Title } = Typography;
+const { Paragraph } = Typography;
 
 interface ShadowData {
   deviceId: number;
@@ -141,19 +141,10 @@ const readOnlyTitle = (title: string) => (
   </Space>
 );
 
-const desiredEditorDescription = (
-  <>
-    平台期望设备最终达到的目标状态。点击“编辑”时会先根据产品物模型自动补齐属性，再叠加当前
-    <code> desired </code>
-    内容；保存时会按字段合并，属性值设为
-    <code> null </code>
-    可删除对应属性。
-  </>
-);
-
-const reportedEditorDescription = '设备当前实际确认并上报的状态，仅用于查看和比对，不支持人工修改。';
-const deltaEditorDescription = '系统根据 desired 与 reported 自动计算出的差异项，用于判断设备还有哪些目标状态尚未追平。';
-const metadataEditorDescription = '字段更新时间、来源等元数据由系统自动维护，主要用于定位属性变更来源。';
+const desiredEditorDescription = <>属性值设为 <code>null</code> 可删除对应属性。</>;
+const reportedEditorDescription = null;
+const deltaEditorDescription = null;
+const metadataEditorDescription = null;
 
 const DeviceShadowPage: React.FC = () => {
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
@@ -355,7 +346,7 @@ const DeviceShadowPage: React.FC = () => {
     readOnlyLabel,
     height,
   }: {
-    description: React.ReactNode;
+    description?: React.ReactNode;
     path: string;
     value: string;
     onChange?: (value: string) => void;
@@ -364,10 +355,11 @@ const DeviceShadowPage: React.FC = () => {
     height: number;
   }) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', height: '100%' }}>
-      {/* Keep the four cards visually aligned even when descriptions wrap to different line counts. */}
-      <Paragraph style={{ margin: 0, color: '#64748b', minHeight: editorDescriptionMinHeight, lineHeight: 1.6 }}>
-        {description}
-      </Paragraph>
+      {description ? (
+        <Paragraph style={{ margin: 0, color: '#64748b', minHeight: editorDescriptionMinHeight, lineHeight: 1.6 }}>
+          {description}
+        </Paragraph>
+      ) : null}
       <CodeEditorField
         language="json"
         path={path}
@@ -531,10 +523,7 @@ const DeviceShadowPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader
-        title="设备影子"
-        description="先选择设备，再查看影子；只有 Desired 支持编辑。"
-      />
+      <PageHeader title="设备影子" />
 
       <Card
         style={{
@@ -545,16 +534,6 @@ const DeviceShadowPage: React.FC = () => {
         styles={{ body: { padding: 24 } }}
       >
         <Space direction="vertical" size={18} style={{ width: '100%' }}>
-          <Space direction="vertical" size={6} style={{ width: '100%' }}>
-            <Title level={4} style={{ margin: 0, color: '#0f172a' }}>
-              先选择设备，再查看影子状态
-            </Title>
-            <Paragraph style={{ margin: 0, color: '#64748b' }}>
-              这里优先用设备名称和别名定位设备，避免用户手工输入数据库主键。查询后可以直接维护
-              desired，同时查看设备实际上报状态、同步差异和元数据。
-            </Paragraph>
-          </Space>
-
           <Space wrap style={{ width: '100%' }} size={12}>
             <Select<number>
               showSearch
@@ -657,23 +636,13 @@ const DeviceShadowPage: React.FC = () => {
                 },
               ]}
             />
-          ) : (
-            <Alert
-              type="info"
-              showIcon
-              message="还未选择设备"
-              description="可以按设备名称或别名搜索，选中后再查看影子。"
-            />
-          )}
+          ) : null}
         </Space>
       </Card>
 
       {!shadow && !loading ? (
         <Card style={surfaceCardStyle} styles={{ body: { padding: 48 } }}>
-          <Empty
-            description="选择设备后即可查看影子、差异和元数据。"
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-          />
+          <Empty description="请选择设备" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         </Card>
       ) : null}
 
@@ -714,8 +683,7 @@ const DeviceShadowPage: React.FC = () => {
             type="info"
             showIcon
             style={{ ...surfaceCardStyle, marginBottom: 20 }}
-            message="编辑说明"
-            description="只有 Desired 可以人工维护。Reported 由设备上报，Delta 与 Metadata 由系统自动计算，这三部分页面仅支持查看和复制。"
+            message="仅 Desired 可编辑"
           />
 
           <Row gutter={[16, 16]}>

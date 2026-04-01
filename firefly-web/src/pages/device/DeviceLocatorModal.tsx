@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Button, Form, Input, Modal, Popconfirm, Space, Switch, Table, Tag, Typography, message } from 'antd';
+import { Button, Form, Input, Modal, Popconfirm, Space, Switch, Table, Tag, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import { deviceApi } from '../../services/api';
@@ -192,14 +192,6 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
         onClose();
       }}
     >
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="设备标识用于自定义协议设备识别。"
-        description="常见示例包括 IMEI、ICCID、MAC、序列号，或设备上行报文中携带的任意厂商自定义标识。"
-      />
-
       <Form form={form} layout="vertical" initialValues={DEFAULT_VALUES} onFinish={handleSubmit}>
         <Space align="start" style={{ display: 'flex', marginBottom: 16 }}>
           <Form.Item

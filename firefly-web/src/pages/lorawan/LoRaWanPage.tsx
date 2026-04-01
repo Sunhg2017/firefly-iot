@@ -220,15 +220,9 @@ const LoRaWanPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader
-        title="LoRaWAN 接入"
-        description="先确认网络服务器接入，再查看设备状态或发送下行。"
-      />
+      <PageHeader title="LoRaWAN 接入" />
 
-      <ProtocolAccessGuide
-        title="先确认接入，再进入设备链路"
-        description="完成网络服务器接入后可在这里查看状态；建立产品映射后到设备管理继续处理。"
-      />
+      <ProtocolAccessGuide />
 
       <Tabs
         activeKey={activeTab}

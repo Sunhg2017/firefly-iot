@@ -737,7 +737,6 @@ const RuleEngineList: React.FC = () => {
     <div>
       <PageHeader
         title="设备联动规则"
-        description="按消息来源筛选设备消息，并将命中结果转发到动作链路。"
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreateDrawer}>
             新建联动规则

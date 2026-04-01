@@ -134,7 +134,6 @@ const MessageTemplatePage: React.FC = () => {
     <div>
       <PageHeader
         title="消息模板"
-        description="先按渠道筛选，再维护主题、内容和变量。"
         extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor(null)}>新建模板</Button>}
       />
 

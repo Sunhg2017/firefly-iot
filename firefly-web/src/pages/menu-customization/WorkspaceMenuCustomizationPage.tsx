@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Button,
   Card,
   Col,
@@ -232,7 +231,6 @@ const WorkspaceMenuCustomizationPage: React.FC = () => {
     <div>
       <PageHeader
         title="菜单配置"
-        description={`先选择${currentWorkspaceLabel}菜单节点，再调整显示名称、层级和排序。`}
         extra={(
           <Space>
             <Button icon={<ReloadOutlined />} onClick={() => void loadMenuTree()}>
@@ -245,14 +243,6 @@ const WorkspaceMenuCustomizationPage: React.FC = () => {
             ) : null}
           </Space>
         )}
-      />
-
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="操作限制"
-        description="这里只调整当前空间已授权菜单的名称、层级和排序，不会新增或放大权限。"
       />
 
       <Row gutter={16}>

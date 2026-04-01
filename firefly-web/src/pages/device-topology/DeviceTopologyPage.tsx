@@ -401,7 +401,6 @@ const DeviceTopologyPage: React.FC = () => {
     <div className="animate-fade-in">
       <PageHeader
         title="设备拓扑"
-        description="先按产品、分组或状态筛选，再查看父子链路、独立设备和断链设备。"
         extra={
           <Space wrap>
             <Button icon={<ReloadOutlined />} onClick={() => void loadTopology()} loading={loading}>
@@ -636,7 +635,7 @@ const DeviceTopologyPage: React.FC = () => {
                   </Card>
                 </Space>
               ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="先在左侧选择一个节点" />
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请选择节点" />
               )}
             </Card>
 

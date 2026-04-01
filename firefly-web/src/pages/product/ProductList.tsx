@@ -1034,7 +1034,6 @@ const ProductList: React.FC = () => {
     <div>
       <PageHeader
         title="产品接入"
-        description="先维护产品，再进入设备接入、视频接入或协议联调。"
         extra={
           <Space>
             <Segmented

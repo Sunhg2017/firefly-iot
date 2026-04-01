@@ -467,7 +467,7 @@ const OtaTasksTab: React.FC = () => {
 const OtaList: React.FC = () => {
   return (
     <div>
-      <PageHeader title="OTA 升级" description="先维护固件版本，再创建或跟踪升级任务。" />
+      <PageHeader title="OTA 升级" />
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Tabs defaultActiveKey="firmware" items={[
           { key: 'firmware', label: <span><FileProtectOutlined style={{ marginRight: 6 }} />固件管理</span>, children: <FirmwareTab /> },

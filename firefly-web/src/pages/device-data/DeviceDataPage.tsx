@@ -490,7 +490,7 @@ const DeviceDataPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader title="设备数据" description="按设备名称选择目标，再查询最新值、历史数据、聚合统计或事件记录。" />
+      <PageHeader title="设备数据" />
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Tabs
           defaultActiveKey="latest"

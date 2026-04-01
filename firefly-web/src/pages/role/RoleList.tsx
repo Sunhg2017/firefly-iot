@@ -28,7 +28,6 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
 import { deviceGroupApi, projectApi, roleApi } from '../../services/api';
-import useAuthStore from '../../store/useAuthStore';
 
 interface RoleDataScopeConfig {
   projectIds?: number[];
@@ -117,7 +116,6 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
 };
 
 const RoleList: React.FC = () => {
-  const currentUser = useAuthStore((state) => state.user);
   const [queryForm] = Form.useForm();
   const [form] = Form.useForm<RoleFormValues>();
 
@@ -501,28 +499,11 @@ const RoleList: React.FC = () => {
     <div>
       <PageHeader
         title="角色管理"
-        description={
-          currentUser?.userType === 'SYSTEM_OPS'
-            ? '系统运维空间下创建的角色只能分配系统运维功能权限。'
-            : '租户空间下创建的角色只能分配当前租户已授权的空间权限。'
-        }
         extra={(
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreateDrawer}>
             新建角色
           </Button>
         )}
-      />
-
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="授权规则"
-        description={
-          currentUser?.userType === 'SYSTEM_OPS'
-            ? '系统运维角色仅可授权系统运维空间能力；租户业务能力不会出现在这里。'
-            : '租户角色的可选权限由“租户管理 > 空间授权”决定，未授权的模块不会出现在这里。'
-        }
       />
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
@@ -713,13 +694,6 @@ const RoleList: React.FC = () => {
 
           {stepIndex === 1 && (
             <Space direction="vertical" size={16} style={{ width: '100%' }}>
-              <Alert
-                type="info"
-                showIcon
-                message="权限选择"
-                description="按模块勾选需要授权的权限项，列表只显示当前空间可分配的权限。"
-              />
-
               <Card
                 size="small"
                 title="快速操作"

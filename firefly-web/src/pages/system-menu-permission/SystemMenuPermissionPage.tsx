@@ -339,7 +339,6 @@ const SystemMenuPermissionPage: React.FC = () => {
     <div>
       <PageHeader
         title="系统菜单权限管理"
-        description="先选择空间和菜单节点，再维护可分配权限集合。"
         extra={(
           <Space>
             <Button icon={<ReloadOutlined />} onClick={() => void loadMenuTree()}>
@@ -352,14 +351,6 @@ const SystemMenuPermissionPage: React.FC = () => {
             ) : null}
           </Space>
         )}
-      />
-
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="使用规则"
-        description="这里维护菜单授权基线；变更后会影响租户空间授权和角色权限目录。"
       />
 
       <Tabs

@@ -797,7 +797,6 @@ const TenantList: React.FC = () => {
     <div>
       <PageHeader
         title="租户管理"
-        description="先筛选租户，再维护基础信息、套餐、配额和菜单授权。"
         extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>新建租户</Button>}
       />
 

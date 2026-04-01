@@ -259,7 +259,6 @@ const DashboardPage: React.FC = () => {
     <div className="animate-fade-in">
       <PageHeader
         title="工作台"
-        description="先查看待处理告警、在线率和规则状态，再进入对应页面处理。"
       />
 
       <Card
@@ -286,11 +285,8 @@ const DashboardPage: React.FC = () => {
                 当前平台概览
               </Tag>
               <Title level={3} style={{ margin: '14px 0 8px', color: '#0f172a' }}>
-                先处理告警，再检查设备和规则
+                平台概览
               </Title>
-              <Text style={{ color: '#64748b', lineHeight: 1.8 }}>
-                优先查看待处理告警、在线率和离线设备，再进入设备、告警或规则页面继续处理。
-              </Text>
             </div>
 
             <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>

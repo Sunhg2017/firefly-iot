@@ -1,19 +1,13 @@
 import React from 'react';
 import { ApiOutlined, AppstoreOutlined, HddOutlined } from '@ant-design/icons';
-import { Button, Card, Space, Tag, Typography } from 'antd';
+import { Button, Card, Space, Tag } from 'antd';
 import { useNavigate } from 'react-router-dom';
 
 interface ProtocolAccessGuideProps {
-  title: string;
-  description: string;
   endpoint?: string;
 }
 
-const ProtocolAccessGuide: React.FC<ProtocolAccessGuideProps> = ({
-  title,
-  description,
-  endpoint,
-}) => {
+const ProtocolAccessGuide: React.FC<ProtocolAccessGuideProps> = ({ endpoint }) => {
   const navigate = useNavigate();
 
   return (
@@ -21,25 +15,14 @@ const ProtocolAccessGuide: React.FC<ProtocolAccessGuideProps> = ({
       style={{
         marginBottom: 16,
         borderRadius: 16,
-        border: '1px solid #dbeafe',
-        background: 'linear-gradient(135deg, #f8fbff 0%, #eef6ff 100%)',
       }}
-      styles={{ body: { padding: 20 } }}
+      styles={{ body: { padding: 16 } }}
     >
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space wrap size={[12, 12]} style={{ width: '100%', justifyContent: 'space-between' }}>
         <Space wrap size={[8, 8]}>
-          <Tag color="processing">操作入口</Tag>
+          <Tag color="processing">相关入口</Tag>
           {endpoint ? <Tag>{endpoint}</Tag> : null}
         </Space>
-
-        <div>
-          <Typography.Title level={5} style={{ margin: 0, color: '#0f172a' }}>
-            {title}
-          </Typography.Title>
-          <Typography.Paragraph style={{ margin: '8px 0 0', color: '#475569' }}>
-            {description}
-          </Typography.Paragraph>
-        </div>
 
         <Space wrap>
           <Button icon={<AppstoreOutlined />} onClick={() => navigate('/product')}>

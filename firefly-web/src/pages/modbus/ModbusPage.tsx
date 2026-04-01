@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Button,
   Card,
   Col,
@@ -485,16 +484,9 @@ const ModbusPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader
-        title="Modbus 接入"
-        description="先配置目标设备，再执行读写调试或维护采集任务。"
-      />
+      <PageHeader title="Modbus 接入" />
 
-      <ProtocolAccessGuide
-        title="先调试，再绑定采集上下文"
-        description="只做寄存器调试可直接使用工具；需要进入设备链路时再把采集任务绑定到产品和设备。"
-        endpoint="502 / TCP"
-      />
+      <ProtocolAccessGuide endpoint="502 / TCP" />
 
       <Tabs
         activeKey={activeTab}
@@ -670,13 +662,6 @@ const ModbusPage: React.FC = () => {
                   </Space>
                 }
               >
-                <Alert
-                  showIcon
-                  type="info"
-                  style={{ marginBottom: 16 }}
-                  message="采集任务说明"
-                  description="采集任务绑定到产品和设备后，寄存器数据会按设备链路归集，便于在设备管理、规则引擎和消息通知中直接复用。"
-                />
                 <Table<CollectorTask>
                   rowKey="taskId"
                   columns={collectorColumns}
@@ -708,14 +693,6 @@ const ModbusPage: React.FC = () => {
           </Space>
         }
       >
-        <Alert
-          showIcon
-          type="info"
-          style={{ marginBottom: 16 }}
-          message="寄存器定义说明"
-          description="一个采集任务可以定义多组寄存器。建议别名(alias)直接对应产品物模型字段，后续更容易串联设备数据和告警规则。"
-        />
-
         <Form
           form={collectorForm}
           layout="vertical"
@@ -725,7 +702,6 @@ const ModbusPage: React.FC = () => {
             name="taskId"
             label="任务标识"
             rules={[{ required: true, message: '请输入任务标识' }]}
-            extra="建议使用业务含义明确的编码，例如 plc-01-env。"
           >
             <Input placeholder="plc-01-env" />
           </Form.Item>

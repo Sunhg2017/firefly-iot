@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
   Button,
   Card,
   Descriptions,
@@ -189,23 +188,13 @@ const OpenApiPage: React.FC = () => {
     <div>
       <PageHeader
         title="OpenAPI 管理"
-        description="先按服务或关键字筛选，再查看网关路径、权限和状态。"
         extra={(
           <Button icon={<ReloadOutlined />} onClick={() => void fetchData()}>
             刷新
           </Button>
         )}
       />
-
       <Card>
-        <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="目录只读"
-        description="接口目录来自代码自动注册；修改后请重新发布对应服务，再点击刷新。"
-      />
-
         <Form form={queryForm} layout="inline" onFinish={() => void handleSearch()}>
           <Form.Item name="keyword" label="关键字">
             <Input allowClear placeholder="编码 / 名称 / 路径" style={{ width: 240 }} />
@@ -261,13 +250,6 @@ const OpenApiPage: React.FC = () => {
       >
         {detailRecord ? (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Alert
-              type="info"
-              showIcon
-              message="自动注册"
-              description="如需修改编码、路径、权限或状态，请调整对应微服务代码后重新部署。"
-            />
-
             <Descriptions column={1} bordered>
               <Descriptions.Item label="编码">
                 <Typography.Text code>{detailRecord.code}</Typography.Text>

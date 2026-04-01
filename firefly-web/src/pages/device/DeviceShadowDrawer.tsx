@@ -85,19 +85,10 @@ const readOnlyTitle = (title: string) => (
   </Space>
 );
 
-const desiredEditorDescription = (
-  <>
-    维护平台期望设备达到的目标状态。点击“编辑”时会先根据产品物模型自动补齐属性，再叠加当前
-    <code> desired </code>
-    内容；保存时会按字段合并，属性值设为
-    <code> null </code>
-    可删除对应属性。
-  </>
-);
-
-const reportedEditorDescription = '设备当前已经确认并上报的状态，用于与 desired 做同步差异比对，不支持人工修改。';
-const deltaEditorDescription = '系统自动计算 desired 与 reported 的差异项，便于快速判断设备还有哪些属性未同步。';
-const metadataEditorDescription = '字段来源和更新时间等元信息由系统自动维护，用于判断状态来自平台下发还是设备上报。';
+const desiredEditorDescription = <>属性值设为 <code>null</code> 可删除对应属性。</>;
+const reportedEditorDescription = null;
+const deltaEditorDescription = null;
+const metadataEditorDescription = null;
 
 const DeviceShadowDrawer: React.FC<Props> = ({
   deviceId,
@@ -321,7 +312,7 @@ const DeviceShadowDrawer: React.FC<Props> = ({
     readOnlyLabel,
     height,
   }: {
-    description: React.ReactNode;
+    description?: React.ReactNode;
     path: string;
     value: string;
     onChange?: (value: string) => void;
@@ -330,10 +321,11 @@ const DeviceShadowDrawer: React.FC<Props> = ({
     height: number;
   }) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', height: '100%' }}>
-      {/* Reserve a consistent description area so the four shadow cards keep one aligned baseline. */}
-      <Paragraph style={{ margin: 0, color: '#64748b', minHeight: editorDescriptionMinHeight, lineHeight: 1.6 }}>
-        {description}
-      </Paragraph>
+      {description ? (
+        <Paragraph style={{ margin: 0, color: '#64748b', minHeight: editorDescriptionMinHeight, lineHeight: 1.6 }}>
+          {description}
+        </Paragraph>
+      ) : null}
       <CodeEditorField
         language="json"
         path={path}
@@ -600,23 +592,14 @@ const DeviceShadowDrawer: React.FC<Props> = ({
                     type="warning"
                     showIcon
                     message="设备当前尚未完全同步 desired"
-                    description="可在下方查看 delta 差异项，判断设备还有哪些目标状态尚未追平。"
                   />
                 ) : (
                   <Alert
                     type="success"
                     showIcon
                     message="当前设备影子已同步"
-                    description="desired 与 reported 没有差异，设备状态已经与平台期望一致。"
                   />
                 )}
-
-                <Alert
-                  type="info"
-                  showIcon
-                  message="编辑说明"
-                  description="抽屉里只有 Desired 可以编辑。Reported、Delta、Metadata 都是设备或系统维护的数据，页面仅提供查看与复制。"
-                />
               </Space>
             </Card>
 

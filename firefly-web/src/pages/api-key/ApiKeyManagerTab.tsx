@@ -408,7 +408,6 @@ const ApiKeyManagerTab: React.FC = () => {
     <div>
       <PageHeader
         title="AppKey 管理"
-        description="先创建 AppKey，再勾选可调用接口；调用前可在右侧查看密钥详情。"
         extra={(
           <Space>
             <Button icon={<ReloadOutlined />} onClick={() => { void fetchList(); void fetchOpenApiOptions(); }}>
@@ -484,8 +483,7 @@ const ApiKeyManagerTab: React.FC = () => {
         <Form form={editForm} layout="vertical">
           <Card size="small" style={{ marginBottom: 16 }}>
             <Typography.Text type="secondary">
-              这里只能选择当前租户已订阅且处于启用状态的 OpenAPI。Secret Key 只会在创建成功时展示一次，
-              调用时只用于本地计算签名，不会随请求明文传输。
+              Secret Key 只会在创建成功时展示一次。
             </Typography.Text>
           </Card>
 

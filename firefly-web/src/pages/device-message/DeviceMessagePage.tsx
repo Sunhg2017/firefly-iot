@@ -418,12 +418,6 @@ const PropertySetTab: React.FC<PropertySetTabProps> = ({
             </Space>
           }
         >
-          <Alert
-            type={selectedDevice ? 'info' : 'warning'}
-            showIcon
-            message={selectedDevice ? '按物模型可写属性组织下发内容' : '请先在页面顶部选择目标设备'}
-            description={selectedDevice ? '右侧可以直接从产品物模型生成属性 JSON 骨架，避免手工敲字段名。' : '设备选定后，系统会自动加载该设备所属产品的可写属性模板。'}
-          />
           <CodeEditorField
             language="json"
             path={`file:///device-message/${selectedDevice?.value || 'draft'}/property-set.json`}
@@ -432,7 +426,6 @@ const PropertySetTab: React.FC<PropertySetTabProps> = ({
             height={340}
           />
           <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
-            <Text type="secondary">平台会按标准属性设置接口下发，不会修改你当前编辑器里的草稿。</Text>
             <Button type="primary" icon={<SettingOutlined />} loading={sending} disabled={!selectedDevice} onClick={() => void handleSend()}>
               发送属性设置
             </Button>
@@ -457,12 +450,11 @@ const PropertySetTab: React.FC<PropertySetTabProps> = ({
                 <Button disabled={!selectedProperties.length} onClick={() => applyTemplate(selectedProperties)}>填充已选属性</Button>
                 <Button disabled={!propertyOptions.length} onClick={() => applyTemplate(propertyOptions)}>填充全部可写属性</Button>
               </Space>
-              <Text type="secondary">适合先生成一版模板，再针对个别字段调整值。</Text>
             </Space>
           </Card>
           <Card title={`可写属性 (${propertyOptions.length})`} style={surfaceCardStyle} bodyStyle={helperCardBodyStyle}>
             {thingModelLoading ? (
-              <Alert type="info" showIcon message="正在加载物模型" description="加载完成后会自动展示当前产品可写属性。" />
+              <Alert type="info" showIcon message="正在加载物模型" />
             ) : propertyOptions.length ? (
               <Space wrap size={[8, 8]}>
                 {propertyOptions.map((item) => (
@@ -595,12 +587,6 @@ const ServiceInvokeTab: React.FC<ServiceInvokeTabProps> = ({
             </Space>
           }
         >
-          <Alert
-            type={selectedDevice ? 'info' : 'warning'}
-            showIcon
-            message={selectedDevice ? '选择服务并填写入参' : '请先在页面顶部选择目标设备'}
-            description={selectedDevice ? '服务列表会按当前设备所属产品自动加载。' : '选定设备后可直接开始属性、事件和服务调用。'}
-          />
           <Select
             showSearch
             optionFilterProp="label"
@@ -619,7 +605,6 @@ const ServiceInvokeTab: React.FC<ServiceInvokeTabProps> = ({
             height={340}
           />
           <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
-            <Text type="secondary">切换服务后会优先使用该服务的入参结构生成模板骨架。</Text>
             <Button type="primary" icon={<ThunderboltOutlined />} loading={sending} disabled={!selectedDevice || !selectedService} onClick={() => void handleSend()}>
               发送服务调用
             </Button>
@@ -628,9 +613,9 @@ const ServiceInvokeTab: React.FC<ServiceInvokeTabProps> = ({
       </Col>
       <Col xs={24} xl={8}>
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <Card title="服务说明" style={surfaceCardStyle} bodyStyle={helperCardBodyStyle}>
+          <Card title="服务信息" style={surfaceCardStyle} bodyStyle={helperCardBodyStyle}>
             {thingModelLoading ? (
-              <Alert type="info" showIcon message="正在加载物模型" description="加载完成后会展示服务描述、入参和出参摘要。" />
+              <Alert type="info" showIcon message="正在加载物模型" />
             ) : selectedService ? (
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
                 <Descriptions size="small" column={1}>
@@ -650,7 +635,7 @@ const ServiceInvokeTab: React.FC<ServiceInvokeTabProps> = ({
                     ))}
                   </Space>
                 ) : (
-                  <Alert type="info" showIcon message="当前服务没有定义输入参数" description="如果协议层需要参数，也可以在左侧编辑器里手工补充 JSON。" />
+                  <Alert type="info" showIcon message="当前服务没有定义输入参数" />
                 )}
               </Space>
             ) : (
@@ -751,12 +736,6 @@ const RawMessageTab: React.FC<BaseTabProps> = ({ selectedDevice, onFeedback }) =
             </Space>
           }
         >
-          <Alert
-            type="warning"
-            showIcon
-            message={selectedDevice ? '原始下行消息适合高级调试场景' : '请先在页面顶部选择目标设备'}
-            description={selectedDevice ? '当标准属性设置或服务调用无法覆盖协议细节时，再使用原始消息自行组织载荷。' : '设备选定后再发送，可避免把调试消息下发到错误设备。'}
-          />
           <Select
             value={messageType}
             onChange={handleTypeChange}
@@ -770,7 +749,6 @@ const RawMessageTab: React.FC<BaseTabProps> = ({ selectedDevice, onFeedback }) =
             height={340}
           />
           <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
-            <Text type="secondary">切换消息类型时，系统会尽量帮你带入对应类型的示例 JSON。</Text>
             <Button type="primary" icon={<SendOutlined />} loading={sending} disabled={!selectedDevice} onClick={() => void handleSend()}>
               发送原始消息
             </Button>
@@ -779,7 +757,7 @@ const RawMessageTab: React.FC<BaseTabProps> = ({ selectedDevice, onFeedback }) =
       </Col>
       <Col xs={24} xl={8}>
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <Card title="类型说明" style={surfaceCardStyle} bodyStyle={helperCardBodyStyle}>
+          <Card title="当前类型" style={surfaceCardStyle} bodyStyle={helperCardBodyStyle}>
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               <Descriptions size="small" column={1}>
                 <Descriptions.Item label="当前类型">{messageType}</Descriptions.Item>
@@ -788,7 +766,6 @@ const RawMessageTab: React.FC<BaseTabProps> = ({ selectedDevice, onFeedback }) =
               <Space wrap>
                 <Button onClick={() => applyTemplateByType(messageType, true)}>重新载入示例</Button>
               </Space>
-              <Alert type="info" showIcon message="发送前建议先检查载荷字段" description="原始消息不会替你校验业务字段，只会校验 JSON 是否可解析。" />
             </Space>
           </Card>
         </Space>
@@ -889,7 +866,6 @@ const DeviceMessagePage: React.FC = () => {
     <div>
       <PageHeader
         title="设备消息工作台"
-        description="先选择设备，再切换到属性设置、服务调用或原始消息页签继续发送。"
         extra={
           <Space wrap>
             <Button icon={<ReloadOutlined />} onClick={() => void fetchPageContext()} loading={deviceLoading}>刷新设备</Button>
@@ -902,10 +878,7 @@ const DeviceMessagePage: React.FC = () => {
         <Row gutter={[20, 20]} align="top">
           <Col xs={24} xl={14}>
             <Space direction="vertical" size={14} style={{ width: '100%' }}>
-              <div>
-                <Title level={5} style={{ margin: 0 }}>目标设备</Title>
-                <Text type="secondary">先选择设备，下面三个发送场景都会使用当前设备。</Text>
-              </div>
+              <Title level={5} style={{ margin: 0 }}>目标设备</Title>
               <Select
                 showSearch
                 allowClear
@@ -930,9 +903,7 @@ const DeviceMessagePage: React.FC = () => {
                   message={`${feedback.mode}结果：${feedback.title}`}
                   description={<Space direction="vertical" size={4}><span>{feedback.detail}</span><Text type="secondary">发送时间：{feedback.sentAt}</Text></Space>}
                 />
-              ) : (
-                <Alert type="info" showIcon message="操作提示" description="先选择设备，再切换到属性、事件或服务调用页签继续发送。" />
-              )}
+              ) : null}
             </Space>
           </Col>
           <Col xs={24} xl={10}>
@@ -948,7 +919,7 @@ const DeviceMessagePage: React.FC = () => {
                   <Descriptions.Item label="可调服务">{thingModelSummary.services.length}</Descriptions.Item>
                 </Descriptions>
               ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="先选择设备，再开始组织下发消息" />
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请选择设备" />
               )}
             </Card>
           </Col>

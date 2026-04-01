@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Avatar,
   Button,
   Card,
@@ -30,7 +29,6 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
 import { roleApi, userApi } from '../../services/api';
-import useAuthStore from '../../store/useAuthStore';
 import { generateRandomPassword } from '../../utils/password';
 
 interface UserRoleSummary {
@@ -106,7 +104,6 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
 };
 
 const UserList: React.FC = () => {
-  const currentUser = useAuthStore((state) => state.user);
   const [queryForm] = Form.useForm();
   const [form] = Form.useForm<UserFormValues>();
 
@@ -452,28 +449,11 @@ const UserList: React.FC = () => {
     <div>
       <PageHeader
         title="用户管理"
-        description={
-          currentUser?.userType === 'SYSTEM_OPS'
-            ? '系统运维空间下创建的用户只能分配系统运维角色。'
-            : '租户空间下创建的用户只能分配当前租户可用角色。'
-        }
         extra={(
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreateDrawer}>
             新建用户
           </Button>
         )}
-      />
-
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="用户创建说明"
-        description={
-          currentUser?.userType === 'SYSTEM_OPS'
-            ? '系统运维用户会自动归属系统运维空间，不能分配租户业务空间角色。'
-            : '租户用户会自动归属当前租户，角色选择范围只来自当前租户已启用角色。'
-        }
       />
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
@@ -621,13 +601,6 @@ const UserList: React.FC = () => {
 
           {stepIndex === 1 && (
             <Space direction="vertical" size={16} style={{ width: '100%' }}>
-              <Alert
-                type="info"
-                showIcon
-                message="角色分配"
-                description="勾选需要分配的角色，列表只显示当前空间可选角色。"
-              />
-
               <Card
                 size="small"
                 title="可分配角色"

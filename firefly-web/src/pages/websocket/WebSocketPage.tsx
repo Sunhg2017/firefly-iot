@@ -231,16 +231,9 @@ const WebSocketPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader
-        title="WebSocket 接入"
-        description="先选择在线会话，再发送定向消息或广播。"
-      />
+      <PageHeader title="WebSocket 接入" />
 
-      <ProtocolAccessGuide
-        title="先定位连接，再继续调试"
-        description="优先选择目标连接；已完成认证的设备会自动带出设备上下文。"
-        endpoint="/ws/device"
-      />
+      <ProtocolAccessGuide endpoint="/ws/device" />
 
       <Tabs
         activeKey={activeTab}

@@ -566,15 +566,9 @@ const TcpUdpPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader
-        title="TCP/UDP 原始 Socket 接入"
-        description="先绑定产品或设备上下文，再查看报文或发送消息。"
-      />
+      <PageHeader title="TCP/UDP 原始 Socket 接入" />
 
-      <ProtocolAccessGuide
-        title="先绑定上下文，再继续解析"
-        description="先把 TCP 会话或 UDP 端点绑定到产品或设备，再继续协议解析和消息调试。"
-      />
+      <ProtocolAccessGuide />
 
       <Tabs
         activeKey={activeTab}
@@ -745,11 +739,6 @@ const TcpUdpPage: React.FC = () => {
             </Space>
           </Card>
         ) : null}
-
-        <Typography.Paragraph type="secondary">
-          绑定后，后续原始报文会带上产品和设备上下文，便于协议解析、设备数据归集和告警处理统一使用。
-        </Typography.Paragraph>
-
         <Form form={bindingForm} layout="vertical">
           <Form.Item
             name="productId"

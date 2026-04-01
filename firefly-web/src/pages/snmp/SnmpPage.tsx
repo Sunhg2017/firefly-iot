@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Button,
   Card,
   Col,
@@ -444,16 +443,9 @@ const SnmpPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader
-        title="SNMP 接入"
-        description="先配置目标设备，再读取 OID 或维护采集任务。"
-      />
+      <PageHeader title="SNMP 接入" />
 
-      <ProtocolAccessGuide
-        title="先调试，再决定是否入链路"
-        description="只做连通性调试可直接读取；需要进入设备数据和规则链路时，再绑定产品和设备。"
-        endpoint="161 / UDP"
-      />
+      <ProtocolAccessGuide endpoint="161 / UDP" />
 
       <Tabs
         activeKey={activeTab}
@@ -584,13 +576,6 @@ const SnmpPage: React.FC = () => {
                   </Space>
                 }
               >
-                <Alert
-                  showIcon
-                  type="info"
-                  style={{ marginBottom: 16 }}
-                  message="采集任务说明"
-                  description="仅做连通性调试时可以不绑定产品和设备；如果希望采集数据进入设备管理、规则告警和数据分析链路，建议补充产品和设备关联。"
-                />
                 <Table<CollectorTask>
                   rowKey="taskId"
                   columns={collectorColumns}
@@ -622,14 +607,6 @@ const SnmpPage: React.FC = () => {
           </Space>
         }
       >
-        <Alert
-          showIcon
-          type="info"
-          style={{ marginBottom: 16 }}
-          message="上下文绑定建议"
-          description="采集任务绑定产品后，平台能按产品口径归档数据；继续绑定到设备后，采集数据可以直接用于设备画像、规则计算和后续通知。"
-        />
-
         <Form
           form={collectorForm}
           layout="vertical"
@@ -639,7 +616,6 @@ const SnmpPage: React.FC = () => {
             name="taskId"
             label="任务标识"
             rules={[{ required: true, message: '请输入任务标识' }]}
-            extra="建议使用业务含义明确的编码，例如 switch-01-traffic。"
           >
             <Input placeholder="switch-01-traffic" />
           </Form.Item>

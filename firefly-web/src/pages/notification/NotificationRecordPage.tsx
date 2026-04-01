@@ -63,7 +63,7 @@ const NotificationRecordPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader title="通知记录" description="先按渠道和状态筛选，再查看失败原因和重试情况。" />
+      <PageHeader title="通知记录" />
       <Card bordered={false} style={{ borderRadius: 12 }} title="发送记录">
         <Space wrap style={{ marginBottom: 16 }}>
           <Select allowClear placeholder="按渠道筛选" style={{ width: 160 }} options={notificationChannelOptions as unknown as { value: string; label: string }[]} onChange={(value) => setParams((prev) => ({ ...prev, pageNum: 1, channelType: value }))} />
