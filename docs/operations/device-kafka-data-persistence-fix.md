@@ -17,6 +17,7 @@
 - Kafka 消费事件上报后同步写入 `device_events`
 - 异步链路不再依赖请求线程中的租户上下文
 - 上行消息路由日志收敛到 `DEBUG`，避免高频设备场景刷满 `INFO`
+- 遥测 mapper XML 已补齐；`最新值 / 原始查询 / 聚合查询 / Kafka 遥测落库` 不再因 `Invalid bound statement` 失效
 
 ## 3. 验证步骤
 
@@ -36,5 +37,6 @@ mvn test "-Dtest=MessageRouterServiceTest"
 ## 4. 排查建议
 
 - 如果影子更新了但遥测仍为空，优先检查 `telemetryMapper.batchInsert(...)` 是否执行成功
+- 如果接口直接返回 `服务内部错误`，优先查看 `logs/firefly-device.log` 是否出现 `DeviceTelemetryMapper.* Invalid bound statement`
 - 如果事件列表为空，优先检查事件 payload 是否至少带有可识别的类型字段；若没有，系统会以 `EVENT_REPORT` 作为兜底类型入库
 - 若出现 `DEVICE_NOT_FOUND`，优先核对 Kafka 消息里的 `tenantId/deviceId` 是否与设备真实归属一致

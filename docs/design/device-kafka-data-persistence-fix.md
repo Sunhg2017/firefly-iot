@@ -33,9 +33,11 @@
   - `PROPERTY_REPORT` 时先落 telemetry，再更新影子，再转发规则引擎
   - `EVENT_REPORT` 时先落 event，再转发规则引擎
 - 事件 payload 允许协议侧自由上报，服务端兼容提取 `eventType` / `type` / `name` / `level` 等常见字段，缺失时使用兜底值
+- `DeviceTelemetryMapper.xml` 统一承接 `batchInsert / queryTelemetry / aggregateTelemetry / queryLatest`，避免 mapper 接口存在但 SQL 未落地时再次出现 `Invalid bound statement`
 
 ## 4. 影响范围
 
 - `firefly-device/src/main/java/com/songhg/firefly/iot/device/service/DeviceDataService.java`
 - `firefly-device/src/main/java/com/songhg/firefly/iot/device/service/MessageRouterService.java`
+- `firefly-device/src/main/resources/mapper/device/DeviceTelemetryMapper.xml`
 - `firefly-device/src/test/java/com/songhg/firefly/iot/device/service/MessageRouterServiceTest.java`

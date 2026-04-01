@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.device.mapper.DeviceTelemetryMapper">
+
+    <insert id="batchInsert">
+        INSERT INTO device_telemetry (
+            ts,
+            tenant_id,
+            device_id,
+            product_id,
+            property,
+            value_number,
+            value_string,
+            value_bool,
+            raw_payload
+        )
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+                #{item.ts},
+                #{item.tenantId},
+                #{item.deviceId},
+                #{item.productId},
+                #{item.property},
+                #{item.valueNumber},
+                #{item.valueString},
+                #{item.valueBool},
+                CAST(#{item.rawPayload, jdbcType=VARCHAR} AS JSONB)
+            )
+        </foreach>
+    </insert>
+
+    <select id="queryTelemetry" resultType="com.songhg.firefly.iot.device.dto.devicedata.TelemetryDataVO">
+        SELECT ts,
+               device_id AS deviceId,
+               property,
+               value_number AS valueNumber,
+               value_string AS valueString,
+               value_bool AS valueBool
+        FROM device_telemetry
+        WHERE tenant_id = #{tenantId}
+          AND device_id = #{deviceId}
+        <if test="property != null and property != ''">
+          AND property = #{property}
+        </if>
+        <if test="startTime != null and startTime != ''">
+          AND ts &gt;= CAST(#{startTime, jdbcType=VARCHAR} AS TIMESTAMPTZ)
+        </if>
+        <if test="endTime != null and endTime != ''">
+          AND ts &lt;= CAST(#{endTime, jdbcType=VARCHAR} AS TIMESTAMPTZ)
+        </if>
+        ORDER BY ts DESC, property ASC
+        <if test="limit != null and limit &gt; 0">
+          LIMIT #{limit}
+        </if>
+    </select>
+
+    <select id="aggregateTelemetry" resultType="com.songhg.firefly.iot.device.dto.devicedata.TelemetryAggregateVO">
+        WITH bucket_cfg AS (
+            SELECT CAST(
+                CASE
+                    WHEN #{interval} = '1m' OR #{interval} = '1 minute' THEN 60
+                    WHEN #{interval} = '5m' OR #{interval} = '5 minutes' THEN 300
+                    WHEN #{interval} = '15m' THEN 900
+                    WHEN #{interval} = '30m' THEN 1800
+                    WHEN #{interval} = '1h' OR #{interval} = '1 hour' THEN 3600
+                    WHEN #{interval} = '6h' THEN 21600
+                    WHEN #{interval} = '1d' OR #{interval} = '1 day' THEN 86400
+                    WHEN #{interval} = '7d' THEN 604800
+                    WHEN #{interval} = '30d' THEN 2592000
+                    ELSE 3600
+                END AS BIGINT
+            ) AS bucket_seconds
+        ),
+        filtered AS (
+            SELECT t.ts,
+                   t.value_number
+            FROM device_telemetry t
+            WHERE t.tenant_id = #{tenantId}
+              AND t.device_id = #{deviceId}
+              AND t.property = #{property}
+              AND t.value_number IS NOT NULL
+            <if test="startTime != null and startTime != ''">
+              AND t.ts &gt;= CAST(#{startTime, jdbcType=VARCHAR} AS TIMESTAMPTZ)
+            </if>
+            <if test="endTime != null and endTime != ''">
+              AND t.ts &lt;= CAST(#{endTime, jdbcType=VARCHAR} AS TIMESTAMPTZ)
+            </if>
+        ),
+        bucketed AS (
+            SELECT to_timestamp(
+                       floor(extract(epoch FROM f.ts) / cfg.bucket_seconds) * cfg.bucket_seconds
+                   ) AS bucket,
+                   f.value_number
+            FROM filtered f
+            CROSS JOIN bucket_cfg cfg
+        )
+        SELECT bucket AS bucket,
+               AVG(value_number) AS avgVal,
+               MAX(value_number) AS maxVal,
+               MIN(value_number) AS minVal,
+               COUNT(1) AS count
+        FROM bucketed
+        GROUP BY bucket
+        ORDER BY bucket DESC
+    </select>
+
+    <select id="queryLatest" resultType="com.songhg.firefly.iot.device.dto.devicedata.TelemetryLatestVO">
+        SELECT latest.property,
+               latest.value_number AS valueNumber,
+               latest.value_string AS valueString,
+               latest.value_bool AS valueBool,
+               latest.ts
+        FROM (
+            SELECT DISTINCT ON (property)
+                   property,
+                   value_number,
+                   value_string,
+                   value_bool,
+                   ts
+            FROM device_telemetry
+            WHERE tenant_id = #{tenantId}
+              AND device_id = #{deviceId}
+            ORDER BY property, ts DESC
+        ) latest
+        ORDER BY latest.property ASC
+    </select>
+
+</mapper>
