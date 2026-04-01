@@ -14,8 +14,8 @@ import net.sf.jsqlparser.expression.LongValue;
 import org.apache.ibatis.reflection.MetaObject;
 import org.apache.ibatis.type.JdbcType;
 import org.apache.ibatis.type.TypeHandlerRegistry;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -31,14 +31,13 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @Configuration
 @ConditionalOnClass(name = "com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor")
-@ConditionalOnBean(DataSource.class)
 public class MybatisPlusConfig {
 
-    private final DataSource dataSource;
+    private final ObjectProvider<DataSource> dataSourceProvider;
     private final Map<String, Boolean> tenantColumnCache = new ConcurrentHashMap<>();
 
-    public MybatisPlusConfig(DataSource dataSource) {
-        this.dataSource = dataSource;
+    public MybatisPlusConfig(ObjectProvider<DataSource> dataSourceProvider) {
+        this.dataSourceProvider = dataSourceProvider;
     }
 
     @Bean
@@ -112,6 +111,13 @@ public class MybatisPlusConfig {
     }
 
     private boolean queryHasTenantColumn(String tableName) {
+        DataSource dataSource = dataSourceProvider.getIfAvailable();
+        if (dataSource == null) {
+            // Keep tenant protection enabled when no DataSource is ready yet.
+            // Putting @ConditionalOnBean on this component-scanned config can skip the whole
+            // interceptor registration before DataSource auto-configuration has finished.
+            return true;
+        }
         try {
             try (Connection connection = dataSource.getConnection()) {
                 DatabaseMetaData metaData = connection.getMetaData();

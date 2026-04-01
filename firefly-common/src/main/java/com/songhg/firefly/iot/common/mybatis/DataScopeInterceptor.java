@@ -49,7 +49,7 @@ public class DataScopeInterceptor implements Interceptor {
 
     @Override
     public Object intercept(Invocation invocation) throws Throwable {
-        DataScopeContext ctx = DataScopeContextHolder.getAndClear();
+        DataScopeContext ctx = DataScopeContextHolder.get();
         if (ctx == null || ctx.getScopeType() == DataScopeType.ALL) {
             return invocation.proceed();
         }
