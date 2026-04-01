@@ -470,44 +470,37 @@ const CODE_EDITOR_FIELD_META: Record<
     label: string;
     language: 'json' | 'javascript';
     fullscreenPath: string;
-    fullscreenTip: string;
   }
 > = {
   matchRuleJson: {
     label: '匹配规则 JSON',
     language: 'json',
     fullscreenPath: 'file:///protocol-parser/matchRule.fullscreen.json',
-    fullscreenTip: '适合在大窗口里集中维护 topic、header 与设备匹配条件。',
   },
   frameConfigJson: {
     label: '拆帧配置 JSON',
     language: 'json',
     fullscreenPath: 'file:///protocol-parser/frameConfig.fullscreen.json',
-    fullscreenTip: '适合连续调整 delimiter、fixedLength、lengthField 等拆帧参数。',
   },
   parserConfigJson: {
     label: '解析配置 JSON',
     language: 'json',
     fullscreenPath: 'file:///protocol-parser/parserConfig.fullscreen.json',
-    fullscreenTip: '适合集中维护 defaultTopic、messageType 和业务字段映射。',
   },
   visualConfigJson: {
     label: '可视化配置 JSON',
     language: 'json',
     fullscreenPath: 'file:///protocol-parser/visualConfig.fullscreen.json',
-    fullscreenTip: '适合边看结构边调整可视化流模板与字段映射。',
   },
   releaseConfigJson: {
     label: '灰度配置 JSON',
     language: 'json',
     fullscreenPath: 'file:///protocol-parser/releaseConfig.fullscreen.json',
-    fullscreenTip: '适合在大窗口里维护 deviceNames 或百分比等发布策略细节。',
   },
   scriptContent: {
     label: '脚本内容',
     language: 'javascript',
     fullscreenPath: 'file:///protocol-parser/scriptContent.fullscreen.js',
-    fullscreenTip: '适合连续编辑长脚本，关闭后会保留同一份表单内容。',
   },
 };
 
@@ -1154,24 +1147,6 @@ const ProtocolParserPage: React.FC = () => {
       ),
     [currentDownlinkMessageType],
   );
-  const editorTopicOptions = useMemo(
-    () =>
-      buildTopicOptions(
-        currentDirection,
-        currentEditorTransport,
-        records
-          .filter((item) => item.direction === currentDirection)
-          .map((item) => {
-            try {
-              const parsed = JSON.parse(item.parserConfigJson || '{}') as Record<string, unknown>;
-              return typeof parsed.defaultTopic === 'string' ? parsed.defaultTopic : undefined;
-            } catch {
-              return undefined;
-            }
-          }),
-      ),
-    [currentDirection, currentEditorTransport, records],
-  );
   const uplinkTopicOptions = useMemo(
     () => buildTopicOptions('UPLINK', currentUplinkTransport),
     [currentUplinkTransport],
@@ -1248,15 +1223,6 @@ const ProtocolParserPage: React.FC = () => {
     return patch;
   }, [currentEditorProduct?.productKey, currentScopeType, currentTenant?.code]);
 
-  const editorScopeSummary = useMemo(() => {
-    if (currentScopeType === 'TENANT') {
-      return `租户默认级规则会自动绑定当前租户，界面展示为 tenantCode=${currentTenant?.code || '待加载'}。`;
-    }
-    if (currentEditorProduct) {
-      return `产品级规则会自动补齐 tenantCode=${currentTenant?.code || '待加载'} 与 ProductKey=${currentEditorProduct.productKey}。`;
-    }
-    return `产品级规则会在保存时补齐 tenantCode，选择产品后会自动带出 ProductKey。`;
-  }, [currentEditorProduct, currentScopeType, currentTenant?.code]);
   const editorPreviewSummary = useMemo<EditorPreviewSummaryItem[]>(
     () => [
       {
@@ -2735,7 +2701,6 @@ const ProtocolParserPage: React.FC = () => {
             showIcon
             style={{ marginBottom: 16 }}
             message={EDITOR_STEPS[editorStepIndex].description}
-            description="抽屉会保留已经填写的内容，你可以返回前面的步骤继续调整。"
           />
           <Row gutter={[16, 16]} align="top">
             <Col xs={24} xl={16}>
@@ -2783,16 +2748,11 @@ const ProtocolParserPage: React.FC = () => {
                         <Tag key={tag}>{tag}</Tag>
                       ))}
                     </Space>
-                    <Text type="secondary">{selectedTemplate.description}</Text>
-                    <Alert type="info" showIcon message={selectedTemplate.tip} />
                     <Space wrap>
                       <Button onClick={() => applyTemplate(selectedTemplate)}>应用模板</Button>
-                      <Text type="secondary">模板只会覆盖解析相关字段，会保留你当前选择的作用域。</Text>
                     </Space>
                   </Space>
-                ) : (
-                  <Text type="secondary">模板覆盖上行和下行常见场景，先一键填充，再做细化调整会更高效。</Text>
-                )}
+                ) : null}
               </Col>
             </Row>
           </Card>
@@ -2833,7 +2793,6 @@ const ProtocolParserPage: React.FC = () => {
           <Form.Item name="scopeId" hidden>
             <InputNumber min={1} />
           </Form.Item>
-          <Alert type="info" showIcon style={{ marginBottom: 16 }} message={editorScopeSummary} />
           </>
           ) : null}
 
@@ -2842,7 +2801,6 @@ const ProtocolParserPage: React.FC = () => {
               <Form.Item
                 name="protocol"
                 label="协议"
-                extra="用于匹配协议族，例如 TCP_UDP、MQTT、HTTP。"
                 rules={[{ required: true, message: '请选择协议' }]}
               >
                 <Select showSearch options={protocolOptions} optionFilterProp="label" placeholder="选择协议" />
@@ -2852,7 +2810,6 @@ const ProtocolParserPage: React.FC = () => {
               <Form.Item
                 name="transport"
                 label="传输方式"
-                extra="用于匹配实际通道；TCP/UDP 共用协议族 TCP_UDP，但运行时仍需区分 TCP 与 UDP。"
                 rules={[{ required: true, message: '请选择传输方式' }]}
               >
                 <Select
@@ -2894,74 +2851,56 @@ const ProtocolParserPage: React.FC = () => {
             </Col>
           </Row>
 
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 16 }}
-            message="一条解析规则即可覆盖产品级、租户默认级、上行解码、下行编码、灰度发布和可视化流配置。"
-            description={
-              currentDirection === 'DOWNLINK'
-                ? `下行规则会用于运行时编码和编码测试接口，当前推荐主题：${editorTopicOptions[0]?.value || defaultTopicByTransport(currentEditorTransport, 'DOWNLINK')}`
-                : `上行规则会用于运行时解析、设备标识匹配和调试解析接口，当前推荐主题：${editorTopicOptions[0]?.value || defaultTopicByTransport(currentEditorTransport, 'UPLINK')}`
-            }
-          />
-
           <Row gutter={16}>
             <Col xs={24} lg={12}>
               <Form.Item
                 name="matchRuleJson"
                 label="匹配规则 JSON"
                 extra={
-                  <Space direction="vertical" size={4}>
-                    <Text type="secondary">
-                      支持 topicPrefix、topicEquals、messageTypeEquals、deviceNameEquals、productKeyEquals、headerEquals 和
-                      remoteAddressPrefix。
-                    </Text>
-                    <Space wrap>
-                      <Button
-                        size="small"
-                        onClick={() =>
-                          applyEditorJsonPreset('matchRuleJson', buildMatchRulePreset(currentEditorTransport, currentDirection))
-                        }
-                      >
-                        按默认主题
-                      </Button>
-                      <Button
-                        size="small"
-                        onClick={() =>
-                          applyEditorJsonPreset(
-                            'matchRuleJson',
-                            formatJson({
-                              topicEquals: defaultTopicByTransport(currentEditorTransport, currentDirection),
-                            }),
-                          )
-                        }
-                      >
-                        精确主题
-                      </Button>
-                      <Button
-                        size="small"
-                        onClick={() =>
-                          applyEditorJsonPreset(
-                            'matchRuleJson',
-                            formatJson({
-                              headerEquals: {
-                                'content-type': 'application/json',
-                              },
-                            }),
-                          )
-                        }
-                      >
-                        按请求头
-                      </Button>
-                      <Button
-                        size="small"
-                        icon={<FullscreenOutlined />}
-                        onClick={() => openFullscreenEditor('matchRuleJson')}
-                      >
-                        全屏编辑
-                      </Button>
-                    </Space>
+                  <Space wrap>
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        applyEditorJsonPreset('matchRuleJson', buildMatchRulePreset(currentEditorTransport, currentDirection))
+                      }
+                    >
+                      按默认主题
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        applyEditorJsonPreset(
+                          'matchRuleJson',
+                          formatJson({
+                            topicEquals: defaultTopicByTransport(currentEditorTransport, currentDirection),
+                          }),
+                        )
+                      }
+                    >
+                      精确主题
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        applyEditorJsonPreset(
+                          'matchRuleJson',
+                          formatJson({
+                            headerEquals: {
+                              'content-type': 'application/json',
+                            },
+                          }),
+                        )
+                      }
+                    >
+                      按请求头
+                    </Button>
+                    <Button
+                      size="small"
+                      icon={<FullscreenOutlined />}
+                      onClick={() => openFullscreenEditor('matchRuleJson')}
+                    >
+                      全屏编辑
+                    </Button>
                   </Space>
                 }
                 rules={[
@@ -2977,41 +2916,38 @@ const ProtocolParserPage: React.FC = () => {
                 name="frameConfigJson"
                 label="拆帧配置 JSON"
                 extra={
-                  <Space direction="vertical" size={4}>
-                    <Text type="secondary">可使用 delimiter、fixedLength 或长度字段配置完成 TCP/UDP 报文切分。</Text>
-                    <Space wrap>
-                      <Button
-                        size="small"
-                        onClick={() => applyEditorJsonPreset('frameConfigJson', buildFrameConfigPreset(currentFrameMode))}
-                      >
-                        按当前模式
-                      </Button>
-                      <Button
-                        size="small"
-                        onClick={() => applyEditorJsonPreset('frameConfigJson', buildFrameConfigPreset('DELIMITER'))}
-                      >
-                        换行分隔
-                      </Button>
-                      <Button
-                        size="small"
-                        onClick={() => applyEditorJsonPreset('frameConfigJson', buildFrameConfigPreset('FIXED_LENGTH'))}
-                      >
-                        固定 32 字节
-                      </Button>
-                      <Button
-                        size="small"
-                        onClick={() => applyEditorJsonPreset('frameConfigJson', buildFrameConfigPreset('LENGTH_FIELD'))}
-                      >
-                        2 字节长度字段
-                      </Button>
-                      <Button
-                        size="small"
-                        icon={<FullscreenOutlined />}
-                        onClick={() => openFullscreenEditor('frameConfigJson')}
-                      >
-                        全屏编辑
-                      </Button>
-                    </Space>
+                  <Space wrap>
+                    <Button
+                      size="small"
+                      onClick={() => applyEditorJsonPreset('frameConfigJson', buildFrameConfigPreset(currentFrameMode))}
+                    >
+                      按当前模式
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() => applyEditorJsonPreset('frameConfigJson', buildFrameConfigPreset('DELIMITER'))}
+                    >
+                      换行分隔
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() => applyEditorJsonPreset('frameConfigJson', buildFrameConfigPreset('FIXED_LENGTH'))}
+                    >
+                      固定 32 字节
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() => applyEditorJsonPreset('frameConfigJson', buildFrameConfigPreset('LENGTH_FIELD'))}
+                    >
+                      2 字节长度字段
+                    </Button>
+                    <Button
+                      size="small"
+                      icon={<FullscreenOutlined />}
+                      onClick={() => openFullscreenEditor('frameConfigJson')}
+                    >
+                      全屏编辑
+                    </Button>
                   </Space>
                 }
                 rules={[
@@ -3030,87 +2966,83 @@ const ProtocolParserPage: React.FC = () => {
             name="parserConfigJson"
             label="解析配置 JSON"
             extra={
-              <Space direction="vertical" size={4}>
-                <Text type="secondary">会注入到运行时的 ctx.config，供脚本或插件执行时使用。</Text>
-                <Text type="secondary">系统会自动补齐 tenantCode 和 ProductKey，避免把数据库主键暴露给页面用户。</Text>
-                <Space wrap>
-                  {currentDirection === 'DOWNLINK' ? (
-                    <>
-                      <Button
-                        size="small"
-                        onClick={() =>
-                          applyEditorJsonPreset(
-                            'parserConfigJson',
-                            buildDownlinkJsonParserConfig(currentEditorTransport, editorBusinessIdentifiers),
-                          )
-                        }
-                      >
-                        JSON 下发
-                      </Button>
-                      <Button
-                        size="small"
-                        onClick={() =>
-                          applyEditorJsonPreset(
-                            'parserConfigJson',
-                            buildDownlinkHexParserConfig(currentEditorTransport, editorBusinessIdentifiers),
-                          )
-                        }
-                      >
-                        HEX 下发
-                      </Button>
-                      <Button
-                        size="small"
-                        icon={<FullscreenOutlined />}
-                        onClick={() => openFullscreenEditor('parserConfigJson')}
-                      >
-                        全屏编辑
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button
-                        size="small"
-                        onClick={() =>
-                          applyEditorJsonPreset(
-                            'parserConfigJson',
-                            buildJsonPropertyParserConfig(currentEditorTransport, editorBusinessIdentifiers),
-                          )
-                        }
-                      >
-                        JSON 属性
-                      </Button>
-                      <Button
-                        size="small"
-                        onClick={() =>
-                          applyEditorJsonPreset(
-                            'parserConfigJson',
-                            buildTextPairParserConfig(currentEditorTransport, editorBusinessIdentifiers),
-                          )
-                        }
-                      >
-                        文本键值对
-                      </Button>
-                      <Button
-                        size="small"
-                        onClick={() =>
-                          applyEditorJsonPreset(
-                            'parserConfigJson',
-                            buildRawDataParserConfig(currentEditorTransport, editorBusinessIdentifiers),
-                          )
-                        }
-                      >
-                        原始透传
-                      </Button>
-                      <Button
-                        size="small"
-                        icon={<FullscreenOutlined />}
-                        onClick={() => openFullscreenEditor('parserConfigJson')}
-                      >
-                        全屏编辑
-                      </Button>
-                    </>
-                  )}
-                </Space>
+              <Space wrap>
+                {currentDirection === 'DOWNLINK' ? (
+                  <>
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        applyEditorJsonPreset(
+                          'parserConfigJson',
+                          buildDownlinkJsonParserConfig(currentEditorTransport, editorBusinessIdentifiers),
+                        )
+                      }
+                    >
+                      JSON 下发
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        applyEditorJsonPreset(
+                          'parserConfigJson',
+                          buildDownlinkHexParserConfig(currentEditorTransport, editorBusinessIdentifiers),
+                        )
+                      }
+                    >
+                      HEX 下发
+                    </Button>
+                    <Button
+                      size="small"
+                      icon={<FullscreenOutlined />}
+                      onClick={() => openFullscreenEditor('parserConfigJson')}
+                    >
+                      全屏编辑
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        applyEditorJsonPreset(
+                          'parserConfigJson',
+                          buildJsonPropertyParserConfig(currentEditorTransport, editorBusinessIdentifiers),
+                        )
+                      }
+                    >
+                      JSON 属性
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        applyEditorJsonPreset(
+                          'parserConfigJson',
+                          buildTextPairParserConfig(currentEditorTransport, editorBusinessIdentifiers),
+                        )
+                      }
+                    >
+                      文本键值对
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        applyEditorJsonPreset(
+                          'parserConfigJson',
+                          buildRawDataParserConfig(currentEditorTransport, editorBusinessIdentifiers),
+                        )
+                      }
+                    >
+                      原始透传
+                    </Button>
+                    <Button
+                      size="small"
+                      icon={<FullscreenOutlined />}
+                      onClick={() => openFullscreenEditor('parserConfigJson')}
+                    >
+                      全屏编辑
+                    </Button>
+                  </>
+                )}
               </Space>
             }
             rules={[
@@ -3160,7 +3092,6 @@ const ProtocolParserPage: React.FC = () => {
               label="可视化配置 JSON"
               extra={
                 <Space wrap>
-                  <Text type="secondary">三期轻量可视化编排：维护结构化配置，并一键生成 JS 脚本。</Text>
                   <Button
                     size="small"
                     icon={<FullscreenOutlined />}
@@ -3207,7 +3138,6 @@ const ProtocolParserPage: React.FC = () => {
                     >
                       全屏编辑
                     </Button>
-                    <Text type="secondary">长脚本建议切到全屏后再写，保存仍以当前表单内容为准。</Text>
                   </Space>
                 }
                 rules={[
@@ -3231,11 +3161,6 @@ const ProtocolParserPage: React.FC = () => {
                       trimOptional(value) ? Promise.resolve() : Promise.reject(new Error('请输入插件 ID')),
                   },
                 ]}
-                extra={
-                  pluginOptions.length > 0
-                    ? '优先从下拉中选择已安装或目录可见的插件，减少手工输入错误。'
-                    : '插件可从 classpath 或 plugins/protocol-parsers 目录加载。'
-                }
               >
                 <Select
                   showSearch
@@ -3303,22 +3228,18 @@ const ProtocolParserPage: React.FC = () => {
                   name="releaseConfigJson"
                   label="灰度配置 JSON"
                   extra={
-                    <Space direction="vertical" size={4}>
-                      <Text type="secondary">
-                        ALL 使用 {'{}'}，DEVICE_LIST 优先使用 deviceNames，HASH_PERCENT 使用 {'{ percent }'}。
-                      </Text>
-                      <Space wrap>
-                        <Button size="small" onClick={() => applyEditorJsonPreset('releaseConfigJson', '{}')}>
-                          空配置
-                        </Button>
-                        <Button
-                          size="small"
-                          onClick={() =>
-                            applyEditorJsonPreset('releaseConfigJson', releaseModePreset('DEVICE_LIST'))
-                          }
-                        >
-                          设备名单示例
-                        </Button>
+                    <Space wrap>
+                      <Button size="small" onClick={() => applyEditorJsonPreset('releaseConfigJson', '{}')}>
+                        空配置
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() =>
+                          applyEditorJsonPreset('releaseConfigJson', releaseModePreset('DEVICE_LIST'))
+                        }
+                      >
+                        设备名单示例
+                      </Button>
                       <Button
                         size="small"
                         onClick={() =>
@@ -3335,8 +3256,7 @@ const ProtocolParserPage: React.FC = () => {
                         全屏编辑
                       </Button>
                     </Space>
-                  </Space>
-                }
+                  }
                   rules={[
                     { required: true, message: '请输入灰度配置 JSON' },
                     { validator: validateJsonObjectRule('releaseConfigJson') },
@@ -3553,7 +3473,6 @@ const ProtocolParserPage: React.FC = () => {
                                 <Text strong>{`${index + 1}. ${step.title}`}</Text>
                                 <Tag color={statusColor}>{statusLabel}</Tag>
                               </Space>
-                              <Text type="secondary">{step.description}</Text>
                               {stepCheck.issues.length > 0 && index !== EDITOR_STEPS.length - 1 ? (
                                 <Text type="secondary">{`待补齐 ${stepCheck.issues.length} 项`}</Text>
                               ) : null}
@@ -3590,26 +3509,16 @@ const ProtocolParserPage: React.FC = () => {
                       <Alert
                         type="success"
                         showIcon
-                        message="当前步骤已满足进入下一步的条件"
+                        message="本步已就绪"
                       />
-                      {editorStepIndex >= 1 && editorStepIndex <= 3 ? (
-                        <Text type="secondary">
-                          未手改过的默认 JSON 会跟随协议、方向、拆帧或发布方式自动同步。
-                        </Text>
-                      ) : null}
                     </Space>
                   ) : (
                     <Space direction="vertical" size={8} style={{ width: '100%' }}>
                       <Alert
                         type="warning"
                         showIcon
-                        message={`当前步骤还需补齐 ${currentEditorStepCheck.issues.length} 项`}
+                        message={`还需补齐 ${currentEditorStepCheck.issues.length} 项`}
                       />
-                      {editorStepIndex >= 1 && editorStepIndex <= 3 ? (
-                        <Text type="secondary">
-                          如果刚切过协议、方向、拆帧或发布方式，可以先看默认 JSON 是否已经自动同步。
-                        </Text>
-                      ) : null}
                       <Space direction="vertical" size={6} style={{ width: '100%' }}>
                         {currentEditorStepCheck.issues.map((issue) => (
                           <Text key={issue} type="secondary">{`- ${issue}`}</Text>
@@ -3673,21 +3582,13 @@ const ProtocolParserPage: React.FC = () => {
         styles={{ body: { paddingTop: 12 } }}
       >
         {currentFullscreenEditorMeta ? (
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
-            <Alert
-              type="info"
-              showIcon
-              message={`${currentFullscreenEditorMeta.label}会直接同步当前表单内容。`}
-              description={currentFullscreenEditorMeta.fullscreenTip}
-            />
-            <ProtocolCodeEditor
-              language={currentFullscreenEditorMeta.language}
-              path={currentFullscreenEditorMeta.fullscreenPath}
-              height="72vh"
-              value={currentFullscreenEditorValue}
-              onChange={handleFullscreenEditorChange}
-            />
-          </Space>
+          <ProtocolCodeEditor
+            language={currentFullscreenEditorMeta.language}
+            path={currentFullscreenEditorMeta.fullscreenPath}
+            height="72vh"
+            value={currentFullscreenEditorValue}
+            onChange={handleFullscreenEditorChange}
+          />
         ) : null}
       </Modal>
 
