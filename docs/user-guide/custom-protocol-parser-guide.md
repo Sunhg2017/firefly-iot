@@ -11,6 +11,7 @@
 - 运行时指标、插件目录、插件重载
 - 轻量可视化编排与一键生成脚本
 - 上行调试与下行编码测试
+- 设备模拟器内直接做上行调试、下行编码和运行态联调
 
 本轮页面优化的重点是：
 
@@ -115,6 +116,56 @@
 8. 编辑脚本或选择插件。
 9. 保存草稿。
 10. 先调试，再发布，再启用。
+
+### 4.1 设备模拟器直连验证
+
+当你已经有模拟设备，想直接围绕“当前设备”验证自定义协议时，推荐这样操作：
+
+1. 先登录设备模拟器当前环境。
+2. 在模拟设备里补齐 `ProductKey`。
+3. 如果是 WebSocket / TCP / UDP，再到第三步“高级配置”补齐“平台身份绑定”：
+   - 选择产品
+   - 选择或填写 `DeviceName`
+   - 按需填写定位器
+4. 选中设备后，在右侧“协议专属工具”打开“自定义协议验证”卡片。
+5. 用“直接上行调试”校验解析结果，用“直接下行编码”校验编码输出。
+6. 需要验证真实运行态时，保持设备在线后直接发送原始报文，或在设备消息工作台发送下行。
+
+这两条链路的区别要分清：
+
+- “直接上行调试 / 直接下行编码”
+  - 走的是协议解析调试接口
+  - 适合快速验证规则脚本、匹配条件、编码输出
+- “运行态联调”
+  - 走的是真实协议适配器与运行时匹配链路
+  - 适合验证设备在线时平台是否真的按当前规则处理报文
+
+### 4.2 本地最小联调样本
+
+如果你本地还没有任何 `CUSTOM` 产品和协议规则，先执行模拟器自带的样本脚本：
+
+```bash
+cd firefly-simulator
+npm run bootstrap:custom-protocol-samples -- --access-token <your-access-token>
+```
+
+脚本会自动：
+
+1. 创建或复用 `Simulator Custom Protocol Baseline` 产品。
+2. 创建 `sim_custom_ws_01`、`sim_custom_tcp_01`、`sim_custom_udp_01` 三个平台设备。
+3. 给三台设备补齐定位器。
+4. 创建并发布 `WEBSOCKET / TCP / UDP` 各一对上行/下行规则。
+5. 额外调用 `/api/v1/protocol-parsers/{id}/test` 与 `/encode-test` 做一次直接验证。
+6. 生成 `firefly-simulator/samples/custom-protocol-devices.local.json`，可直接导入模拟器。
+
+导入后建议按这个顺序验收：
+
+1. 在模拟器里导入 `custom-protocol-devices.local.json`。
+2. 选中 `Custom Protocol WebSocket Sample`、`Custom Protocol TCP Sample`、`Custom Protocol UDP Sample` 任一设备。
+3. 确认第三步“高级配置”里已经带出 `ProductKey / DeviceName / 定位器`。
+4. 打开右侧“自定义协议验证”卡片，确认规则可自动加载。
+5. 分别执行“直接上行调试”“直接下行编码”。
+6. 再连接设备做一次真实发送，确认运行态链路也能命中同一套规则。
 
 ## 5. 完整配置示例
 

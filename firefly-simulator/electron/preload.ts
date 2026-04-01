@@ -37,11 +37,54 @@ contextBridge.exposeInMainWorld('electronAPI', {
     userAgent?: string,
   ) => ipcRenderer.invoke('simulator:productList', baseUrl, token, query, userAgent),
 
+  simulatorDeviceList: (
+    baseUrl: string,
+    token: string,
+    query?: {
+      pageNum?: number;
+      pageSize?: number;
+      keyword?: string;
+      productId?: number;
+      status?: string;
+    },
+    userAgent?: string,
+  ) => ipcRenderer.invoke('simulator:deviceList', baseUrl, token, query, userAgent),
+
   simulatorProductSecret: (baseUrl: string, token: string, productId: number, userAgent?: string) =>
     ipcRenderer.invoke('simulator:productSecret', baseUrl, token, productId, userAgent),
 
   simulatorProductThingModel: (baseUrl: string, token: string, productKey: string, userAgent?: string) =>
     ipcRenderer.invoke('simulator:productThingModel', baseUrl, token, productKey, userAgent),
+
+  simulatorProtocolParserList: (
+    baseUrl: string,
+    token: string,
+    query?: {
+      pageNum?: number;
+      pageSize?: number;
+      productId?: number;
+      protocol?: string;
+      transport?: string;
+      status?: string;
+    },
+    userAgent?: string,
+  ) => ipcRenderer.invoke('simulator:protocolParserList', baseUrl, token, query, userAgent),
+
+  simulatorProtocolParserTest: (
+    baseUrl: string,
+    token: string,
+    definitionId: number,
+    payload?: Record<string, unknown>,
+    userAgent?: string,
+  ) => ipcRenderer.invoke('simulator:protocolParserTest', baseUrl, token, definitionId, payload, userAgent),
+
+  simulatorProtocolParserEncodeTest: (
+    baseUrl: string,
+    token: string,
+    definitionId: number,
+    payload?: Record<string, unknown>,
+    userAgent?: string,
+  ) => ipcRenderer.invoke('simulator:protocolParserEncodeTest', baseUrl, token, definitionId, payload, userAgent),
 
   // HTTP Protocol
   httpAuth: (baseUrl: string, productKey: string, deviceName: string, deviceSecret: string) =>

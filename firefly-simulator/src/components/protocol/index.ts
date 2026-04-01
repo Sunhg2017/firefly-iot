@@ -8,6 +8,7 @@ export { default as ModbusControlPanel } from './ModbusControlPanel';
 export { default as WebSocketControlPanel } from './WebSocketControlPanel';
 export { default as TcpUdpControlPanel } from './TcpUdpControlPanel';
 export { default as LoRaWanControlPanel } from './LoRaWanControlPanel';
+export { default as CustomProtocolValidationPanel } from './CustomProtocolValidationPanel';
 
 export type { HttpHistoryEntry } from './HttpControlPanel';
 export type { MqttMsg } from './MqttControlPanel';

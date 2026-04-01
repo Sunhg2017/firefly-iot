@@ -10,6 +10,7 @@
 - Video 模式对齐平台最新视频资产链路。
 - 视频设备同步统一走 `DEVICE`，媒体控制统一走 `MEDIA`。
 - 设备列表支持直接编辑已有模拟设备，编辑和新建统一复用同一个抽屉表单。
+- WebSocket / TCP / UDP 通过统一“平台身份绑定”进入自定义协议直调与运行态联调。
 
 ## 2. Video 模式设计
 
@@ -138,3 +139,16 @@
   - `mediaWidth`
   - `mediaHeight`
 - 旧 `sipPassword` 字段不再导入导出；历史配置需人工改录到统一认证字段。
+
+## 6. 自定义协议联调基线
+
+- 模拟器不新增独立“自定义协议设备类型”，仍然复用现有 `WebSocket / TCP / UDP` 设备配置。
+- 三类设备在第三步“高级配置”统一提供“平台身份绑定”：
+  - `ProductKey`
+  - `DeviceName`
+  - `locators`
+- 这套业务身份同时服务于三条链路：
+  - WebSocket 查询参数 / TCP-UDP `_fireflyBinding`
+  - 设备消息工作台统一下行
+  - 右侧“自定义协议验证”卡片的规则加载与直接调试
+- 仓库提供 `firefly-simulator/scripts/bootstrap-custom-protocol-samples.mjs`，用于在空白本地环境里一键补齐 `CUSTOM` 产品、样本设备、协议规则和模拟器导入文件。

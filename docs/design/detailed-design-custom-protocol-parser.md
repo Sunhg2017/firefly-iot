@@ -39,6 +39,10 @@
 - 灰度发布 `ALL / DEVICE_LIST / HASH_PERCENT`。
 - 轻量可视化编排 `visualConfigJson` 与一键生成 `scriptContent`。
 - 运行时面板、插件目录、插件热重载。
+- 设备模拟器内直连的自定义协议验证入口：
+  - HTTP / MQTT / CoAP / WebSocket / TCP / UDP 共用一套“自定义协议验证”面板。
+  - WebSocket / TCP / UDP 在模拟器侧统一补齐 `ProductKey / DeviceName / 定位器` 绑定入口，用于真实运行态联调。
+  - 面板内的直接调试继续复用 `/api/v1/protocol-parsers/{id}/test` 与 `/encode-test`，不再额外造一套模拟器私有调试接口。
 
 ## 3. 核心设计
 
@@ -149,6 +153,7 @@ flowchart LR
 
 - 上行链路与调试接口共用解析核心逻辑。
 - 下行编码与编码测试接口共用编码链路。
+- 设备模拟器中的“直接调试”与“运行态联调”继续共用同一套规则定义、协议上下文和编码/解析核心。
 - 已发布版本才参与运行时匹配。
 - 产品级规则优先于租户默认级规则。
 - 灰度发布在“已发布规则集合内部”进行命中决策。
@@ -215,6 +220,32 @@ flowchart LR
 - 产品级规则会自动带出对应产品。
 - 租户默认级规则调试时需要用户明确选择产品上下文。
 
+### 6.5 设备模拟器联调入口
+
+- 设备模拟器按当前模拟设备的协议自动推导调试上下文：
+  - HTTP -> `protocol=HTTP` / `transport=HTTP`
+  - MQTT -> `protocol=MQTT` / `transport=MQTT`
+  - CoAP -> `protocol=COAP` / `transport=COAP`
+  - WebSocket -> `protocol=WEBSOCKET` / `transport=WEBSOCKET`
+  - TCP -> `protocol=TCP_UDP` / `transport=TCP`
+  - UDP -> `protocol=TCP_UDP` / `transport=UDP`
+- WebSocket / TCP / UDP 不再只停留在“原始连通性测试”：
+  - 模拟器高级配置新增“平台身份绑定”卡片，统一填写 `ProductKey / DeviceName / 定位器`。
+  - WebSocket 连接参数与 TCP/UDP `_fireflyBinding` 保留报文都会复用这套业务身份。
+  - 因此同一套配置可以同时支撑设备消息工作台下行、真实运行态解析、自定义协议验证面板的直接调试。
+- 模拟器内的直接调试默认按当前设备的 `ProductKey / DeviceName` 带出产品上下文；如果设备未补齐业务身份，只保留原始连通性能力，不再误导用户以为已经进入真实协议解析链路。
+
+### 6.6 本地最小联调基线
+
+- 仓库内额外提供本地初始化脚本 `firefly-simulator/scripts/bootstrap-custom-protocol-samples.mjs`，用于在空白本地环境里快速补齐联调基线。
+- 基线固定收口为 1 个 `CUSTOM` 产品 + 3 台样本设备：
+  - `sim_custom_ws_01`
+  - `sim_custom_tcp_01`
+  - `sim_custom_udp_01`
+- 每种 transport 固定创建 1 条 `UPLINK` 与 1 条 `DOWNLINK` 规则，并在 `parserConfigJson` 中写入 `sampleKey = SIMULATOR_CUSTOM_PROTOCOL_BASELINE_V1`，便于脚本后续幂等更新。
+- 规则发布方式统一使用 `DEVICE_LIST`，只对白名单样本设备生效，避免本地样本规则误伤用户自己的其他测试设备。
+- 脚本除了创建平台样本外，还会生成模拟器导入文件 `samples/custom-protocol-devices.local.json`，让“平台样本”和“模拟器样本”始终保持同一套 `ProductKey / DeviceName / 定位器`。
+
 ## 7. 设计结果
 
 通过本轮收口，自定义协议解析功能在设计上达到以下状态：
@@ -223,6 +254,7 @@ flowchart LR
 - 页面交互符合“少输入、少暴露主键、优先业务键”的规则。
 - 复杂联动点已在代码和文档中补充说明。
 - 既保留现有后端稳定契约，又把前端展示口径收敛到业务可理解信息。
+- 自定义协议规则的页面调试、设备模拟器直接调试、设备模拟器运行态联调三条路径已统一收口到同一套协议上下文与业务身份口径。
 
 ## 2026-03-12 Runtime Hardening Update
 

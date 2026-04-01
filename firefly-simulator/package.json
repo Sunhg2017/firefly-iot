@@ -5,6 +5,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "ensure:electron": "node ./scripts/ensure-electron.mjs",
+    "bootstrap:custom-protocol-samples": "node ./scripts/bootstrap-custom-protocol-samples.mjs",
     "dev": "vite",
     "build": "tsc && vite build && electron-builder",
     "build:vite": "tsc && vite build",

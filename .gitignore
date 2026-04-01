@@ -75,6 +75,7 @@ firefly-simulator/dist-electron/
 firefly-simulator/release/
 firefly-simulator/electron-stdout.log
 firefly-simulator/electron-stderr.log
+firefly-simulator/samples/*.local.json
 
 # ============================================================
 # Runtime / Logs

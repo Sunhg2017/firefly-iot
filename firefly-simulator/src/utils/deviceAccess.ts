@@ -192,6 +192,11 @@ export function getDeviceAccessOverviewItems(device: SimDevice): AccessOverviewI
     case 'WebSocket':
       return [
         { label: 'Endpoint', value: trim(device.wsEndpoint) || '未配置' },
+        { label: 'ProductKey', value: trim(device.productKey) || '未配置' },
+        { label: 'DeviceName', value: trim(device.deviceName) || '未配置' },
+        ...(device.locators.length > 0
+          ? [{ label: '定位器', value: `${device.locators.length} 个` }]
+          : []),
         { label: 'Device ID', value: trim(device.wsDeviceId) || '未设置' },
         { label: 'Product ID', value: trim(device.wsProductId) || '未设置' },
         { label: 'Tenant ID', value: trim(device.wsTenantId) || '未设置' },
@@ -200,11 +205,21 @@ export function getDeviceAccessOverviewItems(device: SimDevice): AccessOverviewI
       return [
         { label: 'TCP 主机', value: trim(device.tcpHost) || '未配置' },
         { label: '端口', value: String(device.tcpPort || 8900) },
+        { label: 'ProductKey', value: trim(device.productKey) || '未配置' },
+        { label: 'DeviceName', value: trim(device.deviceName) || '未配置' },
+        ...(device.locators.length > 0
+          ? [{ label: '定位器', value: `${device.locators.length} 个` }]
+          : []),
       ];
     case 'UDP':
       return [
         { label: 'UDP 主机', value: trim(device.udpHost) || '未配置' },
         { label: '端口', value: String(device.udpPort || 8901) },
+        { label: 'ProductKey', value: trim(device.productKey) || '未配置' },
+        { label: 'DeviceName', value: trim(device.deviceName) || '未配置' },
+        ...(device.locators.length > 0
+          ? [{ label: '定位器', value: `${device.locators.length} 个` }]
+          : []),
       ];
     case 'LoRaWAN':
       return [

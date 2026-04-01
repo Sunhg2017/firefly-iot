@@ -159,6 +159,23 @@ interface SimulatorProductListPayload {
   status?: string;
 }
 
+interface SimulatorDeviceListPayload {
+  pageNum?: number;
+  pageSize?: number;
+  keyword?: string;
+  productId?: number;
+  status?: string;
+}
+
+interface SimulatorProtocolParserListPayload {
+  pageNum?: number;
+  pageSize?: number;
+  productId?: number;
+  protocol?: string;
+  transport?: string;
+  status?: string;
+}
+
 const SIMULATOR_PLATFORM = 'WEB';
 const SIMULATOR_USER_AGENT = 'Firefly-Simulator/1.0';
 
@@ -1361,6 +1378,26 @@ ipcMain.handle('simulator:productList', async (_e, baseUrl: string, token: strin
   }
 });
 
+ipcMain.handle('simulator:deviceList', async (_e, baseUrl: string, token: string, query?: SimulatorDeviceListPayload, userAgent?: string) => {
+  try {
+    const result = await httpRequest(
+      buildGatewayServiceUrl(baseUrl, 'DEVICE', '/api/v1/devices/list'),
+      'POST',
+      buildGatewayHeaders(trimRequired(token, '登录令牌不存在'), userAgent),
+      JSON.stringify({
+        pageNum: Math.max(1, Number(query?.pageNum) || 1),
+        pageSize: Math.min(500, Math.max(1, Number(query?.pageSize) || 200)),
+        keyword: (query?.keyword || '').trim() || undefined,
+        productId: Number.isFinite(Number(query?.productId)) ? Number(query?.productId) : undefined,
+        status: (query?.status || '').trim() || undefined,
+      }),
+    );
+    return parseGatewayJsonResponse(result);
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+});
+
 ipcMain.handle('simulator:productSecret', async (_e, baseUrl: string, token: string, productId: number, userAgent?: string) => {
   try {
     const result = await httpRequest(
@@ -1452,6 +1489,64 @@ ipcMain.handle('simulator:productThingModel', async (_e, baseUrl: string, token:
     return { success: false, message: err.message };
   }
 });
+
+ipcMain.handle(
+  'simulator:protocolParserList',
+  async (_e, baseUrl: string, token: string, query?: SimulatorProtocolParserListPayload, userAgent?: string) => {
+    try {
+      const result = await httpRequest(
+        buildGatewayServiceUrl(baseUrl, 'DEVICE', '/api/v1/protocol-parsers/list'),
+        'POST',
+        buildGatewayHeaders(trimRequired(token, '登录令牌不存在'), userAgent),
+        JSON.stringify({
+          pageNum: Math.max(1, Number(query?.pageNum) || 1),
+          pageSize: Math.min(200, Math.max(1, Number(query?.pageSize) || 100)),
+          productId: Number.isFinite(Number(query?.productId)) ? Number(query?.productId) : undefined,
+          protocol: (query?.protocol || '').trim() || undefined,
+          transport: (query?.transport || '').trim() || undefined,
+          status: (query?.status || '').trim() || undefined,
+        }),
+      );
+      return parseGatewayJsonResponse(result);
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  },
+);
+
+ipcMain.handle(
+  'simulator:protocolParserTest',
+  async (_e, baseUrl: string, token: string, definitionId: number, payload?: any, userAgent?: string) => {
+    try {
+      const result = await httpRequest(
+        buildGatewayServiceUrl(baseUrl, 'DEVICE', `/api/v1/protocol-parsers/${definitionId}/test`),
+        'POST',
+        buildGatewayHeaders(trimRequired(token, '登录令牌不存在'), userAgent),
+        JSON.stringify(payload || {}),
+      );
+      return parseGatewayJsonResponse(result);
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  },
+);
+
+ipcMain.handle(
+  'simulator:protocolParserEncodeTest',
+  async (_e, baseUrl: string, token: string, definitionId: number, payload?: any, userAgent?: string) => {
+    try {
+      const result = await httpRequest(
+        buildGatewayServiceUrl(baseUrl, 'DEVICE', `/api/v1/protocol-parsers/${definitionId}/encode-test`),
+        'POST',
+        buildGatewayHeaders(trimRequired(token, '登录令牌不存在'), userAgent),
+        JSON.stringify(payload || {}),
+      );
+      return parseGatewayJsonResponse(result);
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  },
+);
 
 ipcMain.handle('device:dynamicRegister', async (
   _e,

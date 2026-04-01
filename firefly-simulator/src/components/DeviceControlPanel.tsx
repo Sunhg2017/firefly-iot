@@ -36,6 +36,7 @@ import {
 } from '../workspaceStore';
 import {
   CoapControlPanel,
+  CustomProtocolValidationPanel,
   HttpControlPanel,
   LoRaWanControlPanel,
   ModbusControlPanel,
@@ -2059,6 +2060,12 @@ export default function DeviceControlPanel() {
             />
           ) : null}
           <div>
+            <CustomProtocolValidationPanel
+              device={device}
+              mqttMessages={mqttMessages}
+              wsMessages={wsMessages}
+              tcpMessages={tcpMessages}
+            />
             <HttpControlPanel device={device} httpHistory={httpHistory} setHttpHistory={setHttpHistory} />
             <MqttControlPanel device={device} mqttQos={mqttQos} setMqttQos={setMqttQos} mqttRetain={mqttRetain} setMqttRetain={setMqttRetain} mqttSubs={mqttSubs} setMqttSubs={setMqttSubs} mqttMessages={mqttMessages} setMqttMessages={setMqttMessages} />
             <CoapControlPanel device={device} coapShadowPolling={coapShadowPolling} setCoapShadowPolling={setCoapShadowPolling} coapShadowData={coapShadowData} setCoapShadowData={setCoapShadowData} coapPollRef={coapPollRef} />

@@ -36,6 +36,8 @@
   - WebSocket/TCP/UDP/LoRaWAN 连接与验证能力
   - 下行消息展示与轮询
   - 长 payload 展示
+  - 自定义协议验证面板与运行态业务身份复用
+  - 本地 `CUSTOM` 联调样本初始化脚本
 
 本次不覆盖：
 
@@ -78,6 +80,7 @@
   - 已有的 `deviceId/productId/tenantId`
 - 连接器优先按 `deviceId` 补齐平台设备元数据。
 - 若没有 `deviceId`，则按 `productKey + deviceName/locators` 解析平台设备。
+- 同一套 `productKey + deviceName/locators` 也会被模拟器右侧“自定义协议验证”卡片复用，用来加载匹配当前设备的解析规则。
 
 #### TCP / UDP
 
@@ -102,6 +105,7 @@
 - 连接器在 `TcpUdpProtocolAdapter` 中识别该保留报文。
 - 该报文只用于建立 `TcpUdpBindingContext`，不会继续作为上行消息发布。
 - 建立绑定后，统一下行分发器即可根据平台 `deviceId` 找到当前 TCP/UDP 会话。
+- 由于绑定报文与自定义协议验证共用同一套业务身份，WebSocket/TCP/UDP 现在既能验证工作台下行，也能直接验证协议解析规则。
 
 ### 4.4 LoRaWAN 下行验证
 
@@ -125,6 +129,7 @@
 - 没有为 WebSocket/TCP/UDP 单独再造一套下行编码接口，而是统一复用协议解析器里的下行编码能力，减少多套实现漂移。
 - TCP/UDP 不要求用户在 UI 中手工绑定平台设备主键，而是直接复用产品唯一键、设备名和定位器，符合“尽量减少用户手工输入”的仓库规则。
 - LoRaWAN 采用“连接器内存暂存 + 模拟器轮询”而不是强推送，是因为当前模拟器验证目标是联调确认，不需要引入额外消息通道和外部依赖。
+- 自定义协议验证继续复用现有 `/api/v1/protocol-parsers/{id}/test` 与 `/encode-test` 接口，不额外新增模拟器专用调试后端。
 
 ## 6. 风险与边界
 
@@ -150,3 +155,4 @@ npm run build:vite
 3. 确认对应协议面板能看到完整 payload。
 4. TCP/UDP 重新连接后再次验证，确认 `_fireflyBinding` 自动生效。
 5. LoRaWAN 发送后确认模拟器轮询列表出现新下行记录。
+6. 在支持自定义协议的模拟设备上打开“自定义协议验证”卡片，确认能加载当前协议规则并执行直接调试。

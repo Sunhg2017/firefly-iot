@@ -20,6 +20,7 @@
 - **多设备管理** — 同时模拟多个设备并发接入
 - **设备编辑** — 支持直接编辑已有模拟设备，保存时只更新配置字段
 - **批量导入/导出** — JSON/CSV 文件批量导入设备，一键导出当前设备配置
+- **自定义协议验证** — 在模拟器内直接加载当前设备可用规则，执行上行调试、下行编码，并辅助做真实运行态联调
 - **压力测试** — 并发 N 台设备×M 轮发送，实时统计 TPS/成功率/耗时
 - **配置持久化** — 设备配置和自定义模板自动保存到 localStorage，刷新后恢复
 - **实时日志** — 查看所有设备的连接、发送、错误日志，完整保留 MQTT 下行 payload
@@ -47,6 +48,35 @@ npm run electron:build
 - `npm run electron:dev` 与 `npm run electron:build` 会先执行 `npm run ensure:electron`
 - 如果本地 `node_modules/electron` 缺少实际 Electron 二进制，脚本会先自动补装，再继续启动
 - 若补装失败，优先检查网络是否可访问 Electron 下载源，然后在 `firefly-simulator` 目录重新执行 `npm install` 或 `npm run ensure:electron`
+
+## 本地自定义协议联调样本
+
+如果你要在本地直接验证“自定义协议验证”卡片和 `WebSocket / TCP / UDP` 运行态绑定，先执行：
+
+```bash
+cd firefly-simulator
+npm run bootstrap:custom-protocol-samples -- --access-token <your-access-token>
+```
+
+也可以改用账号密码：
+
+```bash
+cd firefly-simulator
+npm run bootstrap:custom-protocol-samples -- --username <username> --password <password>
+```
+
+脚本会自动完成以下动作：
+
+- 创建或复用 `Simulator Custom Protocol Baseline` 产品
+- 创建 `sim_custom_ws_01`、`sim_custom_tcp_01`、`sim_custom_udp_01` 三个样本设备及定位器
+- 创建并发布 `WEBSOCKET / TCP / UDP` 各 1 条上行规则和 1 条下行规则
+- 自动调用 `/test` 与 `/encode-test` 做一次联调验证
+- 生成可直接导入模拟器的本地文件 `samples/custom-protocol-devices.local.json`
+
+说明：
+
+- 生成文件已加入 `.gitignore`，只用于本机导入，不参与仓库提交
+- `ProductKey` 由平台自动生成，因此请优先导入脚本生成的 `.local.json`，不要手工抄旧值
 
 ## 对接说明
 
@@ -203,6 +233,14 @@ Simulator connects to the `firefly-connector` WebSocket endpoint for real-time b
 | 2. Send | JSON messages via WebSocket frame |
 | 3. Receive | Real-time incoming messages displayed in panel |
 
+补充说明：
+
+- 第三步“高级配置”新增“平台身份绑定”，可补齐 `ProductKey / DeviceName / 定位器`
+- 这套业务身份会同时用于：
+  - WebSocket 真实运行态设备识别
+  - 设备消息工作台下行回推
+  - 模拟器内“自定义协议验证”卡片的规则加载与直接调试
+
 ### TCP/UDP Mode
 
 Simulator connects to the `firefly-connector` Netty TCP/UDP server:
@@ -211,6 +249,15 @@ Simulator connects to the `firefly-connector` Netty TCP/UDP server:
 |----------|-------------|-------------|
 | TCP | 8900 | Line-delimited text messages via TCP socket |
 | UDP | 8901 | Fire-and-forget UDP datagrams |
+
+补充说明：
+
+- TCP/UDP 建连成功后会自动发送 `_fireflyBinding` 保留报文
+- `_fireflyBinding` 里的 `ProductKey / DeviceName / 定位器` 来自模拟器第三步“高级配置”中的“平台身份绑定”
+- 因此同一套配置可以同时支撑：
+  - 自定义协议真实运行态解析
+  - 设备消息工作台统一下行
+  - 模拟器内“自定义协议验证”卡片的直接调试
 
 ### LoRaWAN Mode
 
@@ -271,7 +318,7 @@ name,protocol,productKey,deviceName,deviceSecret,httpBaseUrl
 温湿度传感器-01,HTTP,pk_001,dev_01,secret_01,http://localhost:9070
 ```
 
-支持的字段: `name`, `protocol` (HTTP/MQTT/CoAP/Video/SNMP/Modbus/WebSocket/TCP/UDP/LoRaWAN), `productKey`, `deviceName`, `deviceSecret`, `httpBaseUrl`, `coapBaseUrl`, `mqttBrokerUrl`, `mqttClientId`, `mqttUsername`, `mqttPassword`, `streamMode`, `videoSourceType`, `gbDeviceId`, `gbDomain`, `sourceUrl`, `ip`, `sipServerIp`, `sipServerPort`, `sipServerId`, `sipLocalPort`, `sipKeepaliveInterval`, `authEnabled`, `authUsername`, `authPassword`, `sipTransport`, `cameraDevice`, `mediaFps`, `mediaWidth`, `mediaHeight`, `tcpHost`, `tcpPort`, `udpHost`, `udpPort`, `loraWebhookUrl`, `loraDevEui`, `loraAppId`, `loraFPort`
+支持的字段: `name`, `protocol` (HTTP/MQTT/CoAP/Video/SNMP/Modbus/WebSocket/TCP/UDP/LoRaWAN), `productKey`, `deviceName`, `deviceSecret`, `locators`, `httpBaseUrl`, `coapBaseUrl`, `mqttBrokerUrl`, `mqttClientId`, `mqttUsername`, `mqttPassword`, `streamMode`, `videoSourceType`, `gbDeviceId`, `gbDomain`, `sourceUrl`, `ip`, `sipServerIp`, `sipServerPort`, `sipServerId`, `sipLocalPort`, `sipKeepaliveInterval`, `authEnabled`, `authUsername`, `authPassword`, `sipTransport`, `cameraDevice`, `mediaFps`, `mediaWidth`, `mediaHeight`, `tcpHost`, `tcpPort`, `udpHost`, `udpPort`, `loraWebhookUrl`, `loraDevEui`, `loraAppId`, `loraFPort`
 
 示例文件: `samples/devices.json`, `samples/devices.csv`
 

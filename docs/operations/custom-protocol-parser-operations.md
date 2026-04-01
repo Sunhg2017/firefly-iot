@@ -12,11 +12,13 @@
 - `firefly-connector`
 - `firefly-plugin-api`
 - `firefly-web`
+- `firefly-simulator`
 
 相关页面：
 
 - 设备中心 -> 自定义协议解析
 - 设备中心 -> 设备管理 -> 定位器
+- 设备模拟器 -> 右侧工作区 -> 自定义协议验证
 
 相关接口：
 
@@ -51,6 +53,37 @@
 2. 选择需要回滚到的版本号。
 3. 系统根据历史快照生成新的草稿版本。
 4. 对回滚后的草稿重新调试、发布、启用。
+
+### 3.4 设备模拟器联调
+
+1. 登录设备模拟器当前环境。
+2. 为需要联调的模拟设备补齐 `ProductKey`。
+3. 如果协议是 WebSocket / TCP / UDP，进入第三步“高级配置”里的“平台身份绑定”卡片：
+   - 优先选择产品
+   - 选择或填写 `DeviceName`
+   - 按需补充定位器
+4. 打开右侧“协议专属工具”中的“自定义协议验证”卡片：
+   - “直接上行调试”用于调用 `/api/v1/protocol-parsers/{id}/test`
+   - “直接下行编码”用于调用 `/api/v1/protocol-parsers/{id}/encode-test`
+5. 若要验证真实运行态链路，保持设备在线后直接发送原始报文，或在设备消息工作台发送下行。
+
+### 3.5 本地样本初始化
+
+当本地环境还没有任何 `CUSTOM` 产品和规则时，优先执行：
+
+```bash
+cd firefly-simulator
+npm run bootstrap:custom-protocol-samples -- --access-token <your-access-token>
+```
+
+脚本会自动完成：
+
+- 创建或复用 `Simulator Custom Protocol Baseline`
+- 创建三台样本设备：`sim_custom_ws_01`、`sim_custom_tcp_01`、`sim_custom_udp_01`
+- 为三台设备补齐定位器
+- 创建并发布 `WEBSOCKET / TCP / UDP` 各一对上行/下行规则
+- 输出 `samples/custom-protocol-devices.local.json` 供模拟器导入
+- 自动做一次 `/test` 与 `/encode-test` 校验
 
 ## 4. 页面使用口径
 
@@ -120,6 +153,9 @@
 - 规则状态为 `ENABLED`
 - 运行时面板指标有变化
 - 产品展示为 `产品名称 (productKey)`，而不是裸主键
+- 设备模拟器的“自定义协议验证”卡片能按当前设备自动加载匹配规则
+- WebSocket / TCP / UDP 模拟设备能通过“平台身份绑定”进入真实运行态联调
+- 本地样本脚本执行后，终端能输出产品 `productKey`、规则 ID 和生成的模拟器导入文件路径
 
 ### 6.2 接口侧
 
@@ -159,6 +195,9 @@
 - 灰度发布是否排除了当前设备
 - Connector 是否收到缓存刷新事件
 - 正式报文的 `protocol / transport / topic / headers` 是否与规则匹配
+- 如果正式链路来自设备模拟器，确认模拟器里的 `ProductKey / DeviceName / 定位器` 是否与平台设备一致
+- WebSocket / TCP / UDP 还要确认模拟器是否已经在线，且连接建立后已发送身份绑定
+- 若本地环境本来没有 `CUSTOM` 样本，先跑一遍 `bootstrap:custom-protocol-samples`，避免把“没有基线数据”误判成规则加载故障
 
 ### 7.4 TCP/UDP 解析异常
 

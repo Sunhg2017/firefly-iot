@@ -34,8 +34,47 @@ interface ElectronAPI {
     },
     userAgent?: string,
   ) => Promise<any>;
+  simulatorDeviceList: (
+    baseUrl: string,
+    token: string,
+    query?: {
+      pageNum?: number;
+      pageSize?: number;
+      keyword?: string;
+      productId?: number;
+      status?: string;
+    },
+    userAgent?: string,
+  ) => Promise<any>;
   simulatorProductSecret: (baseUrl: string, token: string, productId: number, userAgent?: string) => Promise<any>;
   simulatorProductThingModel: (baseUrl: string, token: string, productKey: string, userAgent?: string) => Promise<any>;
+  simulatorProtocolParserList: (
+    baseUrl: string,
+    token: string,
+    query?: {
+      pageNum?: number;
+      pageSize?: number;
+      productId?: number;
+      protocol?: string;
+      transport?: string;
+      status?: string;
+    },
+    userAgent?: string,
+  ) => Promise<any>;
+  simulatorProtocolParserTest: (
+    baseUrl: string,
+    token: string,
+    definitionId: number,
+    payload?: Record<string, unknown>,
+    userAgent?: string,
+  ) => Promise<any>;
+  simulatorProtocolParserEncodeTest: (
+    baseUrl: string,
+    token: string,
+    definitionId: number,
+    payload?: Record<string, unknown>,
+    userAgent?: string,
+  ) => Promise<any>;
 
   httpAuth: (baseUrl: string, productKey: string, deviceName: string, deviceSecret: string) => Promise<any>;
   httpReportProperty: (baseUrl: string, token: string, properties: Record<string, any>) => Promise<any>;

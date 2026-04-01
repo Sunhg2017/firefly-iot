@@ -31,7 +31,7 @@ import {
   PlusOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
-import { Protocol, SimDevice, useSimStore } from '../store';
+import { Protocol, SimDevice, type SimDeviceLocator, useSimStore } from '../store';
 import {
   buildEnvironmentDeviceDefaults,
   getActiveEnvironment,
@@ -112,6 +112,32 @@ function parseCSV(content: string): Record<string, string>[] {
   });
 }
 
+function normalizeImportedLocators(rawValue: unknown): SimDeviceLocator[] {
+  const source = Array.isArray(rawValue)
+    ? rawValue
+    : typeof rawValue === 'string' && rawValue.trim()
+      ? (() => {
+        try {
+          return JSON.parse(rawValue);
+        } catch {
+          return [];
+        }
+      })()
+      : [];
+
+  if (!Array.isArray(source)) {
+    return [];
+  }
+
+  return source
+    .map((item) => ({
+      locatorType: typeof item?.locatorType === 'string' ? item.locatorType.trim() : '',
+      locatorValue: typeof item?.locatorValue === 'string' ? item.locatorValue.trim() : '',
+      primaryLocator: Boolean(item?.primaryLocator),
+    }))
+    .filter((item) => item.locatorType && item.locatorValue);
+}
+
 function getDeviceSubtitle(device: SimDevice) {
   if (device.protocol === 'HTTP' || device.protocol === 'CoAP' || device.protocol === 'MQTT') {
     const missing = getDeviceAccessMissingFields(device);
@@ -134,12 +160,21 @@ function getDeviceSubtitle(device: SimDevice) {
     return `${device.modbusHost || '-'}:${device.modbusPort || '-'}`;
   }
   if (device.protocol === 'WebSocket') {
+    if (device.productKey && device.deviceName) {
+      return `${device.productKey} / ${device.deviceName}`;
+    }
     return device.wsEndpoint || '未配置 WebSocket 地址';
   }
   if (device.protocol === 'TCP') {
+    if (device.productKey && device.deviceName) {
+      return `${device.productKey} / ${device.deviceName}`;
+    }
     return `${device.tcpHost || '-'}:${device.tcpPort || '-'}`;
   }
   if (device.protocol === 'UDP') {
+    if (device.productKey && device.deviceName) {
+      return `${device.productKey} / ${device.deviceName}`;
+    }
     return `${device.udpHost || '-'}:${device.udpPort || '-'}`;
   }
   if (device.protocol === 'LoRaWAN') {
@@ -260,6 +295,7 @@ export default function DeviceListPanel() {
       httpRegisterBaseUrl: device.httpRegisterBaseUrl,
       deviceName: device.deviceName,
       deviceSecret: device.deviceSecret,
+      locators: device.locators,
       httpBaseUrl: device.httpBaseUrl,
       coapBaseUrl: device.coapBaseUrl,
       mqttAuthMode: device.mqttAuthMode,
@@ -388,6 +424,7 @@ export default function DeviceListPanel() {
           productSecret: row.productSecret || '',
           deviceName: row.deviceName || '',
           deviceSecret: row.deviceSecret || '',
+          locators: normalizeImportedLocators((row as { locators?: unknown }).locators),
           mqttAuthMode: (row.mqttAuthMode as never) || 'DEVICE_SECRET',
           mqttRegisterBaseUrl: row.mqttRegisterBaseUrl || String(environmentDefaults.mqttRegisterBaseUrl),
           mqttBrokerUrl: row.mqttBrokerUrl || String(environmentDefaults.mqttBrokerUrl),

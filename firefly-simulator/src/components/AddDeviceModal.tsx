@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
+  AutoComplete,
   Button,
   Card,
   Col,
@@ -57,6 +58,13 @@ interface TenantProductRecord {
   name: string;
   protocol: string;
   deviceAuthType: 'DEVICE_SECRET' | 'PRODUCT_SECRET';
+}
+
+interface TenantDeviceRecord {
+  id: number;
+  productId: number;
+  deviceName: string;
+  nickname: string;
 }
 
 interface LocalVideoSourceOption {
@@ -133,7 +141,7 @@ function resolveEffectiveDeviceName(values: Record<string, unknown>): string {
 }
 
 function supportsTenantProductSelection(protocol: Protocol): boolean {
-  return protocol === 'HTTP' || protocol === 'MQTT' || protocol === 'CoAP' || protocol === 'Video';
+  return protocol === 'HTTP' || protocol === 'MQTT' || protocol === 'CoAP' || protocol === 'Video' || protocol === 'WebSocket' || protocol === 'TCP' || protocol === 'UDP';
 }
 
 function resolveProductProtocolQuery(protocol: Protocol, streamMode?: string): string | undefined {
@@ -146,9 +154,17 @@ function resolveProductProtocolQuery(protocol: Protocol, streamMode?: string): s
       return 'COAP';
     case 'Video':
       return resolveVideoProductProtocol(streamMode);
+    case 'WebSocket':
+    case 'TCP':
+    case 'UDP':
+      return 'CUSTOM';
     default:
       return undefined;
   }
+}
+
+function supportsOptionalTransportIdentity(protocol: Protocol): boolean {
+  return protocol === 'WebSocket' || protocol === 'TCP' || protocol === 'UDP';
 }
 
 function normalizeVideoSourceType(value: unknown): 'LOCAL_CAMERA' | 'REMOTE_SOURCE' {
@@ -513,7 +529,13 @@ function buildSummary(
       label: '接入地址',
       value: protocol === 'Video'
         ? videoEndpoint || '-'
-        : values.httpBaseUrl || values.coapBaseUrl || values.mqttBrokerUrl || values.loraWebhookUrl || '-',
+        : protocol === 'WebSocket'
+          ? values.wsEndpoint || '-'
+          : protocol === 'TCP'
+            ? `${values.tcpHost || '-'}:${values.tcpPort || '-'}`
+            : protocol === 'UDP'
+              ? `${values.udpHost || '-'}:${values.udpPort || '-'}`
+              : values.httpBaseUrl || values.coapBaseUrl || values.mqttBrokerUrl || values.loraWebhookUrl || '-',
     },
   ];
   return items;
@@ -537,6 +559,9 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
   const [products, setProducts] = useState<TenantProductRecord[]>([]);
   const [productLoading, setProductLoading] = useState(false);
   const [productLoadError, setProductLoadError] = useState('');
+  const [tenantDevices, setTenantDevices] = useState<TenantDeviceRecord[]>([]);
+  const [tenantDeviceLoading, setTenantDeviceLoading] = useState(false);
+  const [tenantDeviceLoadError, setTenantDeviceLoadError] = useState('');
   const [localVideoSources, setLocalVideoSources] = useState<LocalVideoSourceOption[]>([]);
   const [localVideoSourceLoading, setLocalVideoSourceLoading] = useState(false);
   const [localVideoModes, setLocalVideoModes] = useState<LocalVideoModeOption[]>([]);
@@ -594,6 +619,19 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
     && Boolean(activeSession?.accessToken)
     && !productLoadError
     && (productLoading || products.length > 0);
+  const selectedProductKey = trimText(formSnapshot.productKey as string | undefined);
+  const selectedTenantProduct = useMemo(
+    () => products.find((item) => item.productKey === selectedProductKey),
+    [products, selectedProductKey],
+  );
+  const supportsTransportIdentity = supportsOptionalTransportIdentity(protocol);
+  const deviceAutoCompleteOptions = useMemo(
+    () => tenantDevices.map((item) => ({
+      value: item.deviceName,
+      label: item.nickname ? `${item.nickname} (${item.deviceName})` : item.deviceName,
+    })),
+    [tenantDevices],
+  );
 
   const drawerTitle = editingDevice ? '编辑设备' : '新建设备';
   const submitButtonLabel = editingDevice ? '保存修改' : '创建设备';
@@ -762,6 +800,88 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
     open,
     protocol,
     streamMode,
+  ]);
+
+  useEffect(() => {
+    if (!open || !supportsTransportIdentity) {
+      setTenantDevices([]);
+      setTenantDeviceLoadError('');
+      setTenantDeviceLoading(false);
+      return;
+    }
+    if (!activeSession?.accessToken || !selectedTenantProduct?.id) {
+      setTenantDevices([]);
+      setTenantDeviceLoadError('');
+      setTenantDeviceLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const loadTenantDevices = async () => {
+      // WebSocket/TCP/UDP 的平台身份绑定复用真实租户设备列表，
+      // 这样模拟器联调时优先按业务唯一键选择，避免再手工输入内部主键。
+      setTenantDeviceLoading(true);
+      setTenantDeviceLoadError('');
+      const result = await window.electronAPI.simulatorDeviceList(
+        activeEnvironment.gatewayBaseUrl,
+        activeSession.accessToken,
+        {
+          pageNum: 1,
+          pageSize: 200,
+          productId: selectedTenantProduct.id,
+        },
+        navigator.userAgent,
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      if (isSimulatorAuthInvalid(result)) {
+        clearWorkspaceSession(activeEnvironment.id);
+        setTenantDevices([]);
+        setTenantDeviceLoadError('登录已失效，请重新登录');
+        setTenantDeviceLoading(false);
+        return;
+      }
+
+      if (!result?.success || (typeof result.code === 'number' && result.code !== 0)) {
+        setTenantDevices([]);
+        setTenantDeviceLoadError(result?.message || '设备列表加载失败');
+        setTenantDeviceLoading(false);
+        return;
+      }
+
+      const records = Array.isArray(result.data?.records)
+        ? result.data.records
+        : Array.isArray(result.data)
+          ? result.data
+          : [];
+      setTenantDevices(
+        records.map((item: any) => ({
+          id: Number(item.id),
+          productId: Number(item.productId || selectedTenantProduct.id),
+          deviceName: String(item.deviceName || ''),
+          nickname: String(item.nickname || ''),
+        })).filter((item: TenantDeviceRecord) => item.deviceName),
+      );
+      setTenantDeviceLoadError('');
+      setTenantDeviceLoading(false);
+    };
+
+    void loadTenantDevices();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeEnvironment.gatewayBaseUrl,
+    activeEnvironment.id,
+    activeSession?.accessToken,
+    clearWorkspaceSession,
+    open,
+    selectedTenantProduct?.id,
+    supportsTransportIdentity,
   ]);
 
   useEffect(() => {
@@ -1057,48 +1177,57 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
     </Space>
   );
 
-  const renderProductField = () => {
+  const renderProductField = (options?: {
+    required?: boolean;
+    label?: string;
+    extra?: string;
+  }) => {
+    const required = options?.required ?? true;
+    const label = options?.label || (required ? '所属产品' : '所属产品（可选）');
     if (canSelectTenantProduct) {
       return (
         <Form.Item
           name="productKey"
-          label="所属产品"
-          rules={[{ required: true, message: '请选择产品' }]}
-          extra={productLoading ? '正在加载当前租户产品' : undefined}
+          label={label}
+          rules={required ? [{ required: true, message: '请选择产品' }] : []}
+          extra={options?.extra || (productLoading ? '正在加载当前租户产品' : undefined)}
         >
           <Select
             showSearch
+            allowClear={!required}
             loading={productLoading}
             optionFilterProp="label"
-            placeholder="请选择产品"
+            placeholder={required ? '请选择产品' : '不做平台身份绑定时可留空'}
             options={products.map((item) => ({
               value: item.productKey,
               label: `${item.name} (${item.productKey}) · ${AUTH_MODE_LABELS[item.deviceAuthType]}`,
             }))}
             onChange={(value) => {
-              void handleProductSelect(value);
+              if (value) {
+                void handleProductSelect(value);
+              }
             }}
           />
         </Form.Item>
       );
     }
 
-    const extraText = !activeSession
-      ? '未登录时请手工填写 ProductKey'
+    const extraText = options?.extra || (!activeSession
+      ? required ? '未登录时请手工填写 ProductKey' : '未登录时可手工填写 ProductKey 做平台身份绑定'
       : productLoadError
         ? `${productLoadError}，可改为手工填写`
         : !productLoading && supportsTenantProductSelection(protocol)
           ? '当前协议下未查询到产品，可手工填写'
-          : undefined;
+          : undefined);
 
     return (
       <Form.Item
         name="productKey"
-        label="ProductKey"
-        rules={[{ required: true, message: '请输入 ProductKey' }]}
+        label={required ? 'ProductKey' : 'ProductKey（可选）'}
+        rules={required ? [{ required: true, message: '请输入 ProductKey' }] : []}
         extra={extraText}
       >
-        <Input placeholder="例如：sensor_gateway" />
+        <Input placeholder={required ? '例如：sensor_gateway' : '做平台身份绑定时填写，例如：custom_gateway'} />
       </Form.Item>
     );
   };
@@ -1117,6 +1246,43 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
       </Form.Item>
     </>
   );
+
+  const renderTransportIdentityCard = () => {
+    if (!supportsTransportIdentity) {
+      return null;
+    }
+
+    const resolvedExtra = activeSession
+      ? '用于自定义协议解析、工作台下行和运行态设备绑定；纯连通性测试可留空。'
+      : '未登录时仍可手工填写 ProductKey / DeviceName 做平台身份绑定。';
+
+    return (
+      <Card size="small" title="平台身份绑定" style={drawerSectionCardStyle}>
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          {renderProductField({ required: false, extra: resolvedExtra })}
+          <Form.Item
+            name="deviceName"
+            label="DeviceName（可选）"
+            extra={tenantDeviceLoadError || (selectedTenantProduct
+              ? '优先从当前产品现有设备中选择；也可以直接手工填写。'
+              : '选择产品后可联动出现当前产品设备建议。')}
+          >
+            <AutoComplete
+              allowClear
+              options={deviceAutoCompleteOptions}
+              placeholder={selectedTenantProduct ? '优先选择当前产品下的 DeviceName' : '不做设备级绑定时可留空'}
+              notFoundContent={tenantDeviceLoading ? '正在加载设备列表...' : '当前产品下暂无设备'}
+              filterOption={(inputValue, option) => {
+                const optionText = String(option?.label || option?.value || '').toLowerCase();
+                return optionText.includes(inputValue.toLowerCase());
+              }}
+            />
+          </Form.Item>
+          {renderLocatorList('定位器是可选项；当设备名留空或需要按 IMEI/ICCID/MAC/SERIAL 识别时再补充。')}
+        </Space>
+      </Card>
+    );
+  };
 
   const renderLocatorList = (description: string) => (
     <Card size="small" style={drawerSectionCardStyle}>
@@ -1597,6 +1763,8 @@ export default function AddDeviceModal({ open, onClose, editingDevice = null }: 
           </Row>
         </Card>
       ) : null}
+
+      {supportsTransportIdentity ? renderTransportIdentityCard() : null}
 
       <Card size="small" title="配置摘要" style={drawerPanelCardStyle}>
         <Descriptions

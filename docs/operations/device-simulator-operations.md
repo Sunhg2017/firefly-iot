@@ -25,8 +25,26 @@ npm run build:vite
 8. macOS 本地摄像头起流时，若 `avfoundation` 拒绝默认输入像素格式，系统会继续按 `Supported pixel formats` 自动重试。
 9. 环境管理里已补齐 `ZLM 推流主机 / RTSP 端口 / RTMP 端口`，默认值与共享 ZLM `192.168.123.102:18554/1935` 对齐。
 10. Video 设备配置已统一改成 `authEnabled/authUsername/authPassword`；历史本地配置中的 `sipPassword` 需人工重新录入到统一认证字段。
+11. 如需本地验证自定义协议链路，已可执行 `npm run bootstrap:custom-protocol-samples` 自动补齐 `CUSTOM` 产品、样本设备和规则。
 
 ## 3. 联调检查
+
+### 3.0 自定义协议本地样本
+
+当本地环境还没有 `CUSTOM` 产品时，先执行：
+
+```bash
+cd firefly-simulator
+npm run bootstrap:custom-protocol-samples -- --access-token <your-access-token>
+```
+
+执行成功后应满足：
+
+1. 终端输出 `Simulator Custom Protocol Baseline` 产品信息。
+2. 终端输出三台样本设备：`sim_custom_ws_01`、`sim_custom_tcp_01`、`sim_custom_udp_01`。
+3. 终端输出 `WEBSOCKET / TCP / UDP` 各一对上行/下行规则 ID。
+4. 本地生成 `samples/custom-protocol-devices.local.json`，可直接导入模拟器。
+5. 终端里的 `/test` 与 `/encode-test` 验证全部成功。
 
 ### 3.1 GB28181
 

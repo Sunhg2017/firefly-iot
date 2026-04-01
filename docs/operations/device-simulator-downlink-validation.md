@@ -22,6 +22,7 @@
   - WebSocket/TCP/UDP 绑定报文发送
   - LoRaWAN 下行轮询
   - 长 payload 完整展示
+  - 自定义协议验证卡片
 
 ## 3. 发布前检查
 
@@ -35,6 +36,7 @@
 
 - 安装包或工作目录来自本次最新构建。
 - Electron 主进程与 preload 已同步更新，不能只替换前端静态资源。
+- 若本地环境尚无 `CUSTOM` 联调样本，可先执行 `npm run bootstrap:custom-protocol-samples` 自动补齐产品、设备、规则和模拟器导入文件。
 
 ## 4. 构建与验证
 
@@ -58,12 +60,14 @@ npm run build:vite
 1. 模拟器连接 WebSocket 设备。
 2. 确认连接 URL 自动带出 `productKey/deviceName/locators`。
 3. 从工作台发送下行，确认模拟器消息面板收到完整文本。
+4. 打开“自定义协议验证”卡片，确认当前产品和 WebSocket 规则能自动加载。
 
 ### 5.2 TCP / UDP
 
 1. 模拟器连接成功后，确认连接器日志中出现 bootstrap binding 建立日志。
 2. 从工作台发送下行，确认能路由到当前会话。
 3. 断开重连后再次发送，确认绑定会自动重新建立。
+4. 在“自定义协议验证”卡片里确认当前设备的 `ProductKey / DeviceName / 定位器` 已被复用到规则联调上下文。
 
 ### 5.3 LoRaWAN
 
@@ -84,6 +88,7 @@ GET /api/v1/lorawan/devices/{devEui}/downlinks?sinceTs=...
 - 检查平台设备是否能通过 `productKey + deviceName/locators` 解析到真实设备。
 - 检查模拟器是否已发送 `_fireflyBinding` 保留报文。
 - 检查连接器是否存在旧的失效 MQTT 路由；本次实现会自动清理，但仍建议确认连接器日志。
+- 若“自定义协议验证”卡片也加载不到规则，优先检查当前设备是否已经补齐 `ProductKey`，以及该产品下是否存在匹配协议的解析定义。
 
 ### 6.2 UDP 可以上行，不能下行
 
@@ -114,6 +119,9 @@ GET /api/v1/lorawan/devices/{devEui}/downlinks?sinceTs=...
 - `bootstrap binding established`
 - `Delivered downstream message through non-MQTT transport`
 - `LoRaWAN downlink queued`
+- `协议规则加载失败`
+- `自定义协议上行调试失败`
+- `自定义协议下行编码失败`
 
 ## 8. 回滚说明
 
