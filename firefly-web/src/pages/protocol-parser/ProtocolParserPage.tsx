@@ -260,6 +260,13 @@ interface RollbackFormValues {
   version?: number;
 }
 
+interface EditorPreviewSummaryItem {
+  key: string;
+  label: string;
+  value: string;
+  stepIndex: number;
+}
+
 type JsonEditorField =
   | 'matchRuleJson'
   | 'frameConfigJson'
@@ -1247,12 +1254,13 @@ const ProtocolParserPage: React.FC = () => {
     }
     return `产品级规则会在保存时补齐 tenantCode，选择产品后会自动带出 ProductKey。`;
   }, [currentEditorProduct, currentScopeType, currentTenant?.code]);
-  const editorPreviewSummary = useMemo(
+  const editorPreviewSummary = useMemo<EditorPreviewSummaryItem[]>(
     () => [
       {
         key: 'template',
         label: '已选模板',
         value: selectedTemplate?.label || '未使用模板',
+        stepIndex: 0,
       },
       {
         key: 'scope',
@@ -1263,6 +1271,7 @@ const ProtocolParserPage: React.FC = () => {
             : currentEditorProduct
               ? `${currentEditorProduct.name} (${currentEditorProduct.productKey})`
               : '产品级（待选择产品）',
+        stepIndex: 0,
       },
       {
         key: 'protocol',
@@ -1271,6 +1280,7 @@ const ProtocolParserPage: React.FC = () => {
           TRANSPORT_OPTIONS,
           currentEditorTransport,
         )}`,
+        stepIndex: 1,
       },
       {
         key: 'direction',
@@ -1279,6 +1289,7 @@ const ProtocolParserPage: React.FC = () => {
           PARSER_MODE_OPTIONS,
           currentParserMode,
         )}`,
+        stepIndex: 2,
       },
       {
         key: 'frame',
@@ -1287,6 +1298,7 @@ const ProtocolParserPage: React.FC = () => {
           RELEASE_MODE_OPTIONS,
           currentReleaseMode,
         )}`,
+        stepIndex: 3,
       },
     ],
     [
@@ -1891,6 +1903,17 @@ const ProtocolParserPage: React.FC = () => {
     } catch {
       // keep the user on the current step when required fields are incomplete
     }
+  };
+
+  const navigateToEditorStep = (targetStep: number) => {
+    if (targetStep === editorStepIndex) {
+      return;
+    }
+    if (targetStep < editorStepIndex) {
+      moveToEditorStep(targetStep);
+      return;
+    }
+    void handleEditorStepChange(targetStep);
   };
 
   // Switching transport also aligns the protocol and default debug payload shape.
@@ -3299,7 +3322,19 @@ const ProtocolParserPage: React.FC = () => {
 
               <Row gutter={[16, 16]}>
                 <Col xs={24} lg={12}>
-                  <Card size="small" title="匹配规则" style={{ borderRadius: 12 }}>
+                  <Card
+                    size="small"
+                    title="匹配规则"
+                    extra={
+                      <Space size={4}>
+                        <Button size="small" onClick={() => navigateToEditorStep(1)}>回到本步</Button>
+                        <Button size="small" icon={<FullscreenOutlined />} onClick={() => openFullscreenEditor('matchRuleJson')}>
+                          全屏编辑
+                        </Button>
+                      </Space>
+                    }
+                    style={{ borderRadius: 12 }}
+                  >
                     <TextArea
                       readOnly
                       value={(editorForm.getFieldValue('matchRuleJson') as string) || '{}'}
@@ -3309,7 +3344,19 @@ const ProtocolParserPage: React.FC = () => {
                   </Card>
                 </Col>
                 <Col xs={24} lg={12}>
-                  <Card size="small" title="拆帧配置" style={{ borderRadius: 12 }}>
+                  <Card
+                    size="small"
+                    title="拆帧配置"
+                    extra={
+                      <Space size={4}>
+                        <Button size="small" onClick={() => navigateToEditorStep(1)}>回到本步</Button>
+                        <Button size="small" icon={<FullscreenOutlined />} onClick={() => openFullscreenEditor('frameConfigJson')}>
+                          全屏编辑
+                        </Button>
+                      </Space>
+                    }
+                    style={{ borderRadius: 12 }}
+                  >
                     <TextArea
                       readOnly
                       value={(editorForm.getFieldValue('frameConfigJson') as string) || '{}'}
@@ -3319,7 +3366,19 @@ const ProtocolParserPage: React.FC = () => {
                   </Card>
                 </Col>
                 <Col xs={24} lg={12}>
-                  <Card size="small" title="解析配置" style={{ borderRadius: 12 }}>
+                  <Card
+                    size="small"
+                    title="解析配置"
+                    extra={
+                      <Space size={4}>
+                        <Button size="small" onClick={() => navigateToEditorStep(2)}>回到本步</Button>
+                        <Button size="small" icon={<FullscreenOutlined />} onClick={() => openFullscreenEditor('parserConfigJson')}>
+                          全屏编辑
+                        </Button>
+                      </Space>
+                    }
+                    style={{ borderRadius: 12 }}
+                  >
                     <TextArea
                       readOnly
                       value={(editorForm.getFieldValue('parserConfigJson') as string) || '{}'}
@@ -3329,7 +3388,19 @@ const ProtocolParserPage: React.FC = () => {
                   </Card>
                 </Col>
                 <Col xs={24} lg={12}>
-                  <Card size="small" title="可视化流" style={{ borderRadius: 12 }}>
+                  <Card
+                    size="small"
+                    title="可视化流"
+                    extra={
+                      <Space size={4}>
+                        <Button size="small" onClick={() => navigateToEditorStep(2)}>回到本步</Button>
+                        <Button size="small" icon={<FullscreenOutlined />} onClick={() => openFullscreenEditor('visualConfigJson')}>
+                          全屏编辑
+                        </Button>
+                      </Space>
+                    }
+                    style={{ borderRadius: 12 }}
+                  >
                     <TextArea
                       readOnly
                       value={(editorForm.getFieldValue('visualConfigJson') as string) || '{}'}
@@ -3339,7 +3410,23 @@ const ProtocolParserPage: React.FC = () => {
                   </Card>
                 </Col>
                 <Col xs={24} lg={12}>
-                  <Card size="small" title={currentParserMode === 'SCRIPT' ? '脚本内容' : '插件信息'} style={{ borderRadius: 12 }}>
+                  <Card
+                    size="small"
+                    title={currentParserMode === 'SCRIPT' ? '脚本内容' : '插件信息'}
+                    extra={
+                      currentParserMode === 'SCRIPT' ? (
+                        <Space size={4}>
+                          <Button size="small" onClick={() => navigateToEditorStep(2)}>回到本步</Button>
+                          <Button size="small" icon={<FullscreenOutlined />} onClick={() => openFullscreenEditor('scriptContent')}>
+                            全屏编辑
+                          </Button>
+                        </Space>
+                      ) : (
+                        <Button size="small" onClick={() => navigateToEditorStep(2)}>回到本步</Button>
+                      )
+                    }
+                    style={{ borderRadius: 12 }}
+                  >
                     {currentParserMode === 'SCRIPT' ? (
                       <TextArea
                         readOnly
@@ -3360,7 +3447,19 @@ const ProtocolParserPage: React.FC = () => {
                   </Card>
                 </Col>
                 <Col xs={24} lg={12}>
-                  <Card size="small" title="发布配置" style={{ borderRadius: 12 }}>
+                  <Card
+                    size="small"
+                    title="发布配置"
+                    extra={
+                      <Space size={4}>
+                        <Button size="small" onClick={() => navigateToEditorStep(3)}>回到本步</Button>
+                        <Button size="small" icon={<FullscreenOutlined />} onClick={() => openFullscreenEditor('releaseConfigJson')}>
+                          全屏编辑
+                        </Button>
+                      </Space>
+                    }
+                    style={{ borderRadius: 12 }}
+                  >
                     <TextArea
                       readOnly
                       value={(editorForm.getFieldValue('releaseConfigJson') as string) || '{}'}
@@ -3483,7 +3582,20 @@ const ProtocolParserPage: React.FC = () => {
                   <Descriptions size="small" column={1}>
                     {editorPreviewSummary.map((item) => (
                       <Descriptions.Item key={item.key} label={item.label}>
-                        {item.value}
+                        <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                          <Text>{item.value}</Text>
+                          {item.stepIndex <= editorMaxStepIndex ? (
+                            <Button
+                              type="link"
+                              size="small"
+                              disabled={item.stepIndex === editorStepIndex}
+                              style={{ paddingInline: 0, alignSelf: 'flex-start' }}
+                              onClick={() => navigateToEditorStep(item.stepIndex)}
+                            >
+                              {item.stepIndex === editorStepIndex ? '正在编辑本步' : `回到第 ${item.stepIndex + 1} 步`}
+                            </Button>
+                          ) : null}
+                        </Space>
                       </Descriptions.Item>
                     ))}
                   </Descriptions>
