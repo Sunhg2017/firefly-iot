@@ -34,86 +34,88 @@ spring:
         locator:
           enabled: false
       routes:
+        # Local IDE keeps the default 127.0.0.1 fallback, while compose injects
+        # service-name hosts so the dev profile still works inside containers.
         - id: system-route
-          uri: http://127.0.0.1:8081
+          uri: http://${FIREFLY_GATEWAY_SYSTEM_HOST:127.0.0.1}:8081
           predicates:
             - Path=/SYSTEM/api/**
           filters:
             - RewritePath=/SYSTEM/api/(?<segment>.*), /api/${segment}
         - id: open-system-route
-          uri: http://127.0.0.1:8081
+          uri: http://${FIREFLY_GATEWAY_SYSTEM_HOST:127.0.0.1}:8081
           predicates:
             - Path=/open/SYSTEM/api/**
           filters:
             - RewritePath=/open/SYSTEM/api/(?<segment>.*), /api/${segment}
         - id: data-route
-          uri: http://127.0.0.1:9050
+          uri: http://${FIREFLY_GATEWAY_DATA_HOST:127.0.0.1}:9050
           predicates:
             - Path=/DATA/api/**
           filters:
             - RewritePath=/DATA/api/(?<segment>.*), /api/${segment}
         - id: open-data-route
-          uri: http://127.0.0.1:9050
+          uri: http://${FIREFLY_GATEWAY_DATA_HOST:127.0.0.1}:9050
           predicates:
             - Path=/open/DATA/api/**
           filters:
             - RewritePath=/open/DATA/api/(?<segment>.*), /api/${segment}
         - id: media-route
-          uri: http://127.0.0.1:9040
+          uri: http://${FIREFLY_GATEWAY_MEDIA_HOST:127.0.0.1}:9040
           predicates:
             - Path=/MEDIA/api/**
           filters:
             - RewritePath=/MEDIA/api/(?<segment>.*), /api/${segment}
         - id: open-media-route
-          uri: http://127.0.0.1:9040
+          uri: http://${FIREFLY_GATEWAY_MEDIA_HOST:127.0.0.1}:9040
           predicates:
             - Path=/open/MEDIA/api/**
           filters:
             - RewritePath=/open/MEDIA/api/(?<segment>.*), /api/${segment}
         - id: support-route
-          uri: http://127.0.0.1:9060
+          uri: http://${FIREFLY_GATEWAY_SUPPORT_HOST:127.0.0.1}:9060
           predicates:
             - Path=/SUPPORT/api/**
           filters:
             - RewritePath=/SUPPORT/api/(?<segment>.*), /api/${segment}
         - id: open-support-route
-          uri: http://127.0.0.1:9060
+          uri: http://${FIREFLY_GATEWAY_SUPPORT_HOST:127.0.0.1}:9060
           predicates:
             - Path=/open/SUPPORT/api/**
           filters:
             - RewritePath=/open/SUPPORT/api/(?<segment>.*), /api/${segment}
         - id: rule-route
-          uri: http://127.0.0.1:9030
+          uri: http://${FIREFLY_GATEWAY_RULE_HOST:127.0.0.1}:9030
           predicates:
             - Path=/RULE/api/**
           filters:
             - RewritePath=/RULE/api/(?<segment>.*), /api/${segment}
         - id: open-rule-route
-          uri: http://127.0.0.1:9030
+          uri: http://${FIREFLY_GATEWAY_RULE_HOST:127.0.0.1}:9030
           predicates:
             - Path=/open/RULE/api/**
           filters:
             - RewritePath=/open/RULE/api/(?<segment>.*), /api/${segment}
         - id: device-route
-          uri: http://127.0.0.1:9020
+          uri: http://${FIREFLY_GATEWAY_DEVICE_HOST:127.0.0.1}:9020
           predicates:
             - Path=/DEVICE/api/**
           filters:
             - RewritePath=/DEVICE/api/(?<segment>.*), /api/${segment}
         - id: open-device-route
-          uri: http://127.0.0.1:9020
+          uri: http://${FIREFLY_GATEWAY_DEVICE_HOST:127.0.0.1}:9020
           predicates:
             - Path=/open/DEVICE/api/**
           filters:
             - RewritePath=/open/DEVICE/api/(?<segment>.*), /api/${segment}
         - id: connector-route
-          uri: http://127.0.0.1:9070
+          uri: http://${FIREFLY_GATEWAY_CONNECTOR_HOST:127.0.0.1}:9070
           predicates:
             - Path=/CONNECTOR/api/**
           filters:
             - RewritePath=/CONNECTOR/api/(?<segment>.*), /api/${segment}
         - id: open-connector-route
-          uri: http://127.0.0.1:9070
+          uri: http://${FIREFLY_GATEWAY_CONNECTOR_HOST:127.0.0.1}:9070
           predicates:
             - Path=/open/CONNECTOR/api/**
           filters:
@@ -159,4 +161,3 @@ management:
 logging:
   level:
     org.springframework.cloud.gateway: INFO
-

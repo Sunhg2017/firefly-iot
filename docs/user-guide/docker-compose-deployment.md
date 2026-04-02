@@ -35,6 +35,7 @@
 - 开发联调宿主机：保持 `dev` / `firefly-dev`
 - 正式生产宿主机：显式改成 `prod` / `firefly-prod`
 - 如果 `.env` 留空 `NACOS_NAMESPACE`，`deploy.sh` 会自动按 `firefly-${DEPLOY_ENV}` 推导
+- 即使保持 `DEPLOY_ENV=dev`，当前 Compose 也会自动把 Gateway 的内部转发宿主改成 `firefly-system`、`firefly-device` 等服务名，不需要再手工把共享宿主机切成 `prod`
 
 ## 3. 常用命令
 
@@ -74,3 +75,15 @@
 - 设备连接端口：`1883`
 - 不需要再单独启动 EMQX
 - 如果历史环境仍有 `firefly-emqx`，应先停掉，避免端口冲突
+
+## 7. 登录异常自查
+
+如果页面能打开，但登录接口返回 500，优先检查 Gateway 是否还在把开发环境路由打到 `127.0.0.1`。
+
+你应该看到：
+
+- `firefly-gateway` 容器已启动
+- `firefly-system` 容器已启动
+- Gateway 容器环境里存在 `FIREFLY_GATEWAY_SYSTEM_HOST=firefly-system`
+
+如果缺少这些变量，重新执行一次 `bash deploy.sh up`，让 Gateway 按当前 Compose 配置重建。

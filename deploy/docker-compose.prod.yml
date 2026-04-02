@@ -208,6 +208,15 @@ services:
       <<: *java-env
       SPRING_CLOUD_SENTINEL_TRANSPORT_DASHBOARD: ${SENTINEL_DASHBOARD:-sentinel:8858}
       AUTH_JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+      # Shared host stays on dev profile, so inject compose service names to
+      # stop the gateway's dev static routes from looping back to itself.
+      FIREFLY_GATEWAY_SYSTEM_HOST: firefly-system
+      FIREFLY_GATEWAY_DEVICE_HOST: firefly-device
+      FIREFLY_GATEWAY_RULE_HOST: firefly-rule
+      FIREFLY_GATEWAY_DATA_HOST: firefly-data
+      FIREFLY_GATEWAY_SUPPORT_HOST: firefly-support
+      FIREFLY_GATEWAY_MEDIA_HOST: firefly-media
+      FIREFLY_GATEWAY_CONNECTOR_HOST: firefly-connector
     depends_on:
       redis:
         condition: service_healthy

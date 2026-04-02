@@ -19,6 +19,7 @@
 - 明确旧版独立 EMQX 已退出当前默认部署，MQTT 1883 由 `firefly-connector` 内置 Broker 负责。
 - 让 Kafka 广播地址能同时适配“全量 Compose”与“局域网共享基础设施”两种部署口径，避免客户端拿到 `localhost:9092` 后回连失败。
 - 让当前仍处于开发阶段的共享宿主机默认落到 `dev` Profile 和 `firefly-dev` 命名空间，禁止再以 `prod` 作为隐式默认值。
+- 让共享宿主机即使保持 `DEPLOY_ENV=dev`，Gateway 也能在容器网络内正确转发 `/SYSTEM|DEVICE|RULE|DATA|SUPPORT|MEDIA|CONNECTOR` 路由，不再误回环到容器自身的 `127.0.0.1`。
 
 ## 3. 非目标
 
@@ -94,6 +95,32 @@
 - `deploy/docker-compose.prod.yml` 中业务容器的 `SPRING_PROFILES_ACTIVE` 改为引用 `${DEPLOY_ENV}`
 
 这样当前阶段的默认行为就是明确的开发环境；只有在运维显式改成 `DEPLOY_ENV=prod` 后，才会进入生产口径。
+
+### 4.6 Gateway 开发环境路由宿主收口
+
+`firefly-gateway` 的 `application.yml` 原本把开发环境静态路由写死成：
+
+- `http://127.0.0.1:8081`
+- `http://127.0.0.1:9020`
+- `http://127.0.0.1:9030`
+- `http://127.0.0.1:9040`
+- `http://127.0.0.1:9050`
+- `http://127.0.0.1:9060`
+- `http://127.0.0.1:9070`
+
+这个口径只适合“Gateway 和所有业务服务都直接跑在同一台宿主机进程里”的本地开发方式；一旦 Gateway 自己跑进 Docker 容器，`127.0.0.1` 就只指向 Gateway 容器本身，登录等接口会直接报 `Connection refused`。
+
+本次收口方案：
+
+- 开发环境静态路由改为读取 `FIREFLY_GATEWAY_*_HOST` 环境变量，默认仍回落到 `127.0.0.1`
+- `deploy/docker-compose.prod.yml` 仅对 Gateway 容器注入 `firefly-system`、`firefly-device` 等 Compose 服务名
+- 这样共享宿主机仍可保持 `DEPLOY_ENV=dev`，但容器内路由会自动走 Compose 网络服务名，不再和本地 IDE 口径打架
+
+结果：
+
+- 本地直跑 Gateway 时，不配环境变量仍沿用 `127.0.0.1`
+- 单机 Compose 部署时，Gateway 自动转发到 `firefly-*` 容器服务名
+- 不需要把共享开发宿主机整体切到 `prod` 才能让登录链路恢复
 
 ## 5. 风险与约束
 

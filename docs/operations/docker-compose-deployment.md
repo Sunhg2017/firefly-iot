@@ -29,6 +29,7 @@
 - `deploy.sh` 会校验 `DEPLOY_ENV` 只能是 `dev` 或 `prod`
 - 如果 `.env` 没写 `NACOS_NAMESPACE`，脚本会自动推导为 `firefly-${DEPLOY_ENV}`
 - `bash deploy.sh infra` / `bash deploy.sh up` 日志会打印当前环境和命名空间，便于值班时快速识别
+- 当前 Compose 会额外给 `firefly-gateway` 注入 `FIREFLY_GATEWAY_*_HOST=firefly-*`，保证 `DEPLOY_ENV=dev` 时容器内静态路由仍转发到 Compose 网络服务名，而不是误连 Gateway 容器自己的 `127.0.0.1`
 
 Kafka 额外要求：
 
@@ -129,6 +130,31 @@ Kafka 额外要求：
 2. 把 `.env` 改回 `NACOS_NAMESPACE=firefly-dev`
 3. 确认共享基础设施宿主机只保留开发命名空间服务：`curl 'http://127.0.0.1:8848/nacos/v1/ns/catalog/services?namespaceId=firefly-dev&pageNo=1&pageSize=50'`
 4. 如该宿主机未来需要起业务容器，再执行 `bash deploy.sh up`，避免继续以 `prod` Profile 启动
+
+### 5.6 Gateway 登录接口报 `Connection refused: /127.0.0.1:8081`
+
+如果访问 `/SYSTEM/api/v1/auth/login` 时出现：
+
+- 返回 `500 Internal Server Error`
+- `firefly-gateway` 日志包含 `Connection refused: /127.0.0.1:8081`
+
+根因通常是 Gateway 还在使用旧的开发环境静态路由口径，容器内把 `127.0.0.1` 解析成了 Gateway 自身，而不是 `firefly-system` 容器。
+
+处理步骤：
+
+1. 确认当前版本已经包含 Gateway 路由宿主收口修复。
+2. 检查 `firefly-gateway` 容器环境变量里是否存在：
+   - `FIREFLY_GATEWAY_SYSTEM_HOST=firefly-system`
+   - `FIREFLY_GATEWAY_DEVICE_HOST=firefly-device`
+   - `FIREFLY_GATEWAY_RULE_HOST=firefly-rule`
+   - `FIREFLY_GATEWAY_DATA_HOST=firefly-data`
+   - `FIREFLY_GATEWAY_SUPPORT_HOST=firefly-support`
+   - `FIREFLY_GATEWAY_MEDIA_HOST=firefly-media`
+   - `FIREFLY_GATEWAY_CONNECTOR_HOST=firefly-connector`
+3. 重建 Gateway：`bash deploy.sh up` 或单独执行 `docker compose ... up -d --build gateway`
+4. 再用 `curl http://127.0.0.1:8080/SYSTEM/api/v1/auth/login` 复验
+
+不要为了绕开这个问题把共享开发宿主机直接改成 `DEPLOY_ENV=prod`；这不是环境名问题，而是容器内静态路由错误使用了 `127.0.0.1`。
 
 ## 6. 回滚说明
 
