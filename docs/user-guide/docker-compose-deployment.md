@@ -37,6 +37,7 @@
 - 如果上一次构建是异常中断，脚本会先检查残留 BuildKit 锁；必要时会提示你授权一次 sudo 来清理后再继续
 - `bash deploy.sh up` 返回成功前，会额外等待基础设施健康、后端容器健康，以及 `Gateway / Rule / Web` 入口真正可访问
 - 基础设施阶段不会再在每次执行时重编译 ZLMediaKit；只有第一次缺少镜像时才会自动构建
+- 稳定持久化卷现在按 external volume 管理，重复部署不会再出现旧卷归属告警；如果执行 `bash deploy.sh clean`，这些卷也会被脚本一并删除
 
 `KAFKA_ADVERTISED_HOST` 的选择规则：
 

@@ -185,6 +185,7 @@
 - `deploy.sh build` 改为顺序构建后端服务镜像，再单独构建前端，避免多个服务冷启动时并发重复下载同一批依赖
 - `deploy.sh up` 不再调用宿主机 Maven，而是按“基础设施 -> 顺序构建后端 -> 启动后端 -> 构建并启动前端 -> 等待基础设施与关键入口就绪”执行
 - `deploy.sh infra` / `deploy.sh up` 启动基础设施时不再携带 `--build`；重复部署默认复用现有 `firefly-zlmediakit` 镜像，只在镜像首次缺失时才让 Compose 自动补构建
+- 持久化卷改为 `deploy.sh` 预创建、Compose 以 `external: true` 方式挂载；卷的生命周期统一归脚本管理，Compose 不再对历史稳定卷做归属校验
 - 仓库根目录新增 `.dockerignore`，显式排除 `target/`、`node_modules/`、`deploy/.env`、运行时目录和模拟器等无关上下文，避免把本地产物重新打进构建上下文
 
 这样标准部署宿主机只需要：
@@ -203,6 +204,7 @@
 - 如果前一次构建是异常中断，脚本会优先尝试清理残留 BuildKit executor；只有检测到另一个构建仍在运行时才会拒绝继续，避免误杀有效任务。
 - `deploy.sh up` 最终返回前会等待 `postgres/redis/kafka/nacos/minio` 的容器健康检查通过，并额外探测 `ZLMediaKit API`、`Gateway actuator`、`Rule actuator` 与 `Web` 首页，避免容器刚启动就被宿主机侧探活撞到瞬时 `connection reset`。
 - `192.168.123.102` 的远端复验已确认：此前每次 `up` 都会重跑 ZLMediaKit 的整套 C++ 编译；去掉基础设施阶段的 `--build` 后，重复部署不再触发这段无意义重编译。
+- `192.168.123.102` 的远端卷也已确认都是稳定卷但无 Compose labels；改成 external volume 后重复部署不再出现 `already exists but was not created by Docker Compose` 告警。
 
 ## 5. 风险与约束
 

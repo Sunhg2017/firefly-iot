@@ -132,6 +132,7 @@ Kafka 额外要求：
 - 如果上一次构建异常中断，`deploy.sh` 会先检查并清理残留的 BuildKit executor，再进入真正的镜像构建
 - `deploy.sh up` 会在返回前等待基础设施健康检查、后端容器健康状态以及 `Gateway / Rule / Web` 宿主机入口可访问
 - `deploy.sh infra` / `deploy.sh up` 不会再在每次执行时强制重编译 ZLMediaKit；只有镜像缺失时才会由 Compose 自动补建
+- 持久化卷已经切到 external volume 口径；只要卷名稳定，Compose 不再对历史卷标签报警
 
 排查顺序：
 
@@ -176,6 +177,15 @@ Kafka 额外要求：
 - 只有镜像首次缺失时，Compose 才会自动触发一次构建
 
 `192.168.123.102` 的实测证据已经确认：此前重复 `up` 时日志会重新出现 ZLMediaKit 的大段 `Building CXX object ...`；调整后这段重复编译不再出现，部署时间明显收敛。
+
+### 5.1.7 重复部署时出现 `volume already exists but was not created by Docker Compose`
+
+当前版本已经把稳定卷声明成 external volume，并由 `deploy.sh` 提前创建。
+
+- 重复执行 `bash deploy.sh infra` / `bash deploy.sh up` 时，不应再出现这类 volume 归属告警
+- `bash deploy.sh clean` 会在 `docker compose down -v` 之后额外删除这些稳定卷，保持“清空数据”的语义不变
+
+如果仍然出现旧告警，优先检查当前宿主机是否真的已经同步到最新仓库版本。
 
 ### 5.2 新容器启动后数据为空
 

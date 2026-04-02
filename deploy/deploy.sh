@@ -166,9 +166,6 @@ volume_name_for() {
 ensure_named_volumes() {
     require_docker_access
 
-    local compose_project
-    compose_project="$(compose_project_name)"
-
     for volume_key in postgres_data redis_data kafka_data minio_data connector_mqtt_data; do
         local volume_name
         volume_name="$(volume_name_for "$volume_key")"
@@ -179,9 +176,25 @@ ensure_named_volumes() {
 
         log_info "Creating volume ${volume_name}"
         docker volume create \
-            --label "com.docker.compose.project=${compose_project}" \
-            --label "com.docker.compose.volume=${volume_key}" \
+            --label "firefly.managed=true" \
+            --label "firefly.volume=${volume_key}" \
             "$volume_name" >/dev/null
+    done
+}
+
+remove_managed_volumes() {
+    require_docker_access
+
+    for volume_key in postgres_data redis_data kafka_data minio_data connector_mqtt_data; do
+        local volume_name
+        volume_name="$(volume_name_for "$volume_key")"
+
+        if ! docker volume inspect "$volume_name" >/dev/null 2>&1; then
+            continue
+        fi
+
+        log_info "Removing volume ${volume_name}"
+        docker volume rm -f "$volume_name" >/dev/null
     done
 }
 
@@ -564,6 +577,7 @@ cmd_clean() {
     read -p "Continue? (y/N) " confirm
     if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
         dc down -v --remove-orphans
+        remove_managed_volumes
         docker image prune -f --filter "label=app=firefly-iot"
         log_info "Cleanup completed"
     else

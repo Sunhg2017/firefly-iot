@@ -395,14 +395,19 @@ services:
 
 volumes:
   postgres_data:
+    external: true
     name: ${POSTGRES_VOLUME_NAME:-firefly-postgres-data}
   redis_data:
+    external: true
     name: ${REDIS_VOLUME_NAME:-firefly-redis-data}
   kafka_data:
+    external: true
     name: ${KAFKA_VOLUME_NAME:-firefly-kafka-data}
   minio_data:
+    external: true
     name: ${MINIO_VOLUME_NAME:-firefly-minio-data}
   connector_mqtt_data:
+    external: true
     name: ${CONNECTOR_MQTT_VOLUME_NAME:-firefly-connector-mqtt-data}
 
 networks:

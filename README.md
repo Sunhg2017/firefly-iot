@@ -144,6 +144,7 @@ bash deploy.sh up
 - 如果上一次构建异常中断，`deploy.sh` 会先检查残留 BuildKit executor；必要时会提示一次 sudo 清理，避免下一轮继续卡在 Maven 共享缓存锁上。
 - `bash deploy.sh up` 现在会等待基础设施健康检查、Java 服务容器健康状态以及 `Gateway / Rule / Web` 的宿主机入口可访问后再返回，避免刚重建完成就被外部探活打到连接重置。
 - `bash deploy.sh infra` / `bash deploy.sh up` 不会再在每次执行时重编译 ZLMediaKit；只有镜像首次缺失时才会按 Compose 默认行为自动构建。
+- PostgreSQL / Redis / Kafka / MinIO / MQTT 持久化卷现在统一按“脚本预创建 + Compose external volume”管理，重复部署不再打印旧卷归属告警；`bash deploy.sh clean` 会显式删除这些稳定卷。
 - 持久化卷名称通过 `POSTGRES_VOLUME_NAME`、`REDIS_VOLUME_NAME`、`KAFKA_VOLUME_NAME`、`MINIO_VOLUME_NAME`、`CONNECTOR_MQTT_VOLUME_NAME` 固定下来，默认不会再跟 Compose 工程名绑定。
 - 如果宿主机以前跑过旧版 `/home/<user>/docker-compose.yml`，请先迁移或保留原数据卷，再移除旧容器后执行 `bash deploy.sh infra` / `bash deploy.sh up`。
 - 旧版独立 `firefly-emqx` 不应继续和当前部署并存；现在由 `firefly-connector` 内置 Broker 占用 `1883`。
