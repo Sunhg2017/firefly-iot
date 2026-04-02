@@ -33,6 +33,7 @@
 
 - 第一次冷启动时会看到 Maven 下载日志，这是正常现象
 - 同一台宿主机后续再次执行 `bash deploy.sh build` / `bash deploy.sh up` 会明显更快
+- 当前默认使用华为云 Maven 镜像，不再直接走 Maven Central
 
 `KAFKA_ADVERTISED_HOST` 的选择规则：
 

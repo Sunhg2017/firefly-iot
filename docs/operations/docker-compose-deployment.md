@@ -38,6 +38,7 @@
 - `bash deploy.sh infra` / `bash deploy.sh up` 日志会打印当前环境和命名空间，便于值班时快速识别
 - `bash deploy.sh build` / `bash deploy.sh up` 直接从源码构建镜像，不再依赖宿主机 Maven
 - 后端镜像会按服务顺序构建，并复用 Docker BuildKit 的 Maven 缓存；首次冷启动时间取决于制品源网络，但不会再被多服务并发重复下载放大
+- 后端 Docker 构建默认改走华为云 Maven 镜像，避免当前宿主机直连 Maven Central 极慢
 - 当前 Compose 会额外给 `firefly-gateway` 注入 `FIREFLY_GATEWAY_*_HOST=firefly-*`，保证 `DEPLOY_ENV=dev` 时容器内静态路由仍转发到 Compose 网络服务名，而不是误连 Gateway 容器自己的 `127.0.0.1`
 - 当前 Compose 文件已经移除废弃的 `version` 顶层字段；如果值班时再次看到 `the attribute 'version' is obsolete`，说明宿主机仍在使用旧版 Compose 文件
 
@@ -127,12 +128,13 @@ Kafka 额外要求：
 
 - 后端服务顺序构建，不再并发重复拉同一批依赖
 - Docker BuildKit 会复用 `/root/.m2` 缓存，后续构建明显加快
+- 默认仓库源已经切到华为云 Maven 镜像；如果这里仍然慢，优先判断宿主机到镜像源本身的网络质量
 
 排查顺序：
 
 1. 确认 `deploy/Dockerfile` 顶部包含 `# syntax=docker/dockerfile:1.7`
 2. 确认 `deploy.sh` 执行时带着 `DOCKER_BUILDKIT=1`
-3. 若长时间卡在首个后端服务的 Maven 下载，优先检查宿主机到 Maven Central 或私有镜像源的网络质量
+3. 若长时间卡在首个后端服务的 Maven 下载，优先检查宿主机到华为云 Maven 镜像或私有镜像源的网络质量
 
 在当前标准链路下，冷启动慢属于网络/制品源问题，不需要再回退到宿主机手工 Maven 打包。
 

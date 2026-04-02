@@ -8,8 +8,25 @@
 FROM maven:3.9.9-eclipse-temurin-21-alpine AS builder
 
 ARG MODULE
+ARG MAVEN_MIRROR_URL=https://repo.huaweicloud.com/repository/maven/
 
 WORKDIR /workspace
+
+# 远端已确认 Maven Central 在当前宿主机极慢，这里直接收口到稳定镜像源。
+RUN mkdir -p /root/.m2 && cat > /root/.m2/settings.xml <<EOF
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <mirrors>
+    <mirror>
+      <id>firefly-fast-mirror</id>
+      <name>Firefly fast mirror</name>
+      <url>${MAVEN_MIRROR_URL}</url>
+      <mirrorOf>*</mirrorOf>
+    </mirror>
+  </mirrors>
+</settings>
+EOF
 
 COPY pom.xml pom.xml
 COPY firefly-common/pom.xml firefly-common/pom.xml

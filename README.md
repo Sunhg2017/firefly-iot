@@ -140,6 +140,7 @@ bash deploy.sh up
 
 - 当前标准部署只要求宿主机具备 Docker Engine / Docker Compose v2；后端和前端都会在 Docker 多阶段构建中完成编译，不再依赖宿主机本地 Maven 或 Node.js。
 - 后端镜像构建现在复用 Docker BuildKit 的共享 Maven 缓存，并按服务顺序逐个构建；首次冷启动仍会下载依赖，但不会再让多个服务并发重复拉同一批制品。
+- 后端 Docker 构建默认通过华为云 Maven 镜像拉取依赖；这是按 `192.168.123.102` 的实测速度收口后的默认值。
 - 持久化卷名称通过 `POSTGRES_VOLUME_NAME`、`REDIS_VOLUME_NAME`、`KAFKA_VOLUME_NAME`、`MINIO_VOLUME_NAME`、`CONNECTOR_MQTT_VOLUME_NAME` 固定下来，默认不会再跟 Compose 工程名绑定。
 - 如果宿主机以前跑过旧版 `/home/<user>/docker-compose.yml`，请先迁移或保留原数据卷，再移除旧容器后执行 `bash deploy.sh infra` / `bash deploy.sh up`。
 - 旧版独立 `firefly-emqx` 不应继续和当前部署并存；现在由 `firefly-connector` 内置 Broker 占用 `1883`。
