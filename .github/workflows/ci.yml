@@ -3,7 +3,7 @@
 # ============================================================
 # 触发条件:
 #   push / PR → main, develop     → 编译 + 测试
-#   push tag  → v*                → 编译 + 构建镜像 + 推送
+#   push tag  → v*                → 编译 + 构建镜像 + 推送 + 部署
 # ============================================================
 
 name: CI/CD
@@ -19,16 +19,26 @@ env:
   JAVA_VERSION: '21'
   NODE_VERSION: '20'
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/firefly-iot
 
 permissions:
   contents: read
   packages: write
 
-# ============================================================
-# 阶段 1: 后端编译 + 测试
-# ============================================================
 jobs:
+  prepare:
+    name: Prepare Release Metadata
+    runs-on: ubuntu-latest
+    outputs:
+      image_namespace: ${{ steps.vars.outputs.image_namespace }}
+    steps:
+      - name: Compute image namespace
+        id: vars
+        run: |
+          echo "image_namespace=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+  # ============================================================
+  # 阶段 1: 后端编译 + 测试
+  # ============================================================
   backend-build:
     name: Backend Build & Test
     runs-on: ubuntu-latest
@@ -46,27 +56,11 @@ jobs:
       - name: Maven Build & Test
         run: mvn clean verify -T 4 --batch-mode --no-transfer-progress
 
-      - name: Upload JARs
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-jars
-          retention-days: 1
-          path: |
-            firefly-gateway/target/firefly-gateway-*.jar
-            firefly-system/target/firefly-system-*.jar
-            firefly-device/target/firefly-device-*.jar
-            firefly-rule/target/firefly-rule-*.jar
-            firefly-media/target/firefly-media-*.jar
-            firefly-data/target/firefly-data-*.jar
-            firefly-support/target/firefly-support-*.jar
-            firefly-connector/target/firefly-connector-*.jar
-
   # ============================================================
   # 阶段 2: 前端编译 + 检查
   # ============================================================
   frontend-build:
-    name: Frontend Build & Lint
+    name: Frontend Build & Type Check
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -91,20 +85,12 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Upload Dist
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          retention-days: 1
-          path: firefly-web/dist/
-
   # ============================================================
   # 阶段 3: 构建并推送 Docker 镜像 (仅 main 分支 / tag)
   # ============================================================
   docker-build:
     name: Build & Push Docker Images
-    needs: [backend-build, frontend-build]
+    needs: [prepare, backend-build, frontend-build]
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     strategy:
@@ -130,10 +116,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download Backend JARs
-        uses: actions/download-artifact@v4
-        with:
-          name: backend-jars
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -146,11 +130,11 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.module }}
+          images: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_namespace }}/${{ matrix.module }}
           tags: |
             type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,prefix=
 
       - name: Build & Push ${{ matrix.module }}
@@ -164,18 +148,23 @@ jobs:
           build-args: |
             MODULE=${{ matrix.module }}
             PORT=${{ matrix.port }}
+          cache-from: type=gha,scope=${{ matrix.module }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.module }}
 
   # ============================================================
   # 阶段 3b: 构建前端 Docker 镜像
   # ============================================================
   docker-build-web:
     name: Build & Push Web Image
-    needs: [frontend-build]
+    needs: [prepare, frontend-build]
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -188,11 +177,11 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/firefly-web
+          images: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_namespace }}/firefly-web
           tags: |
             type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,prefix=
 
       - name: Build & Push Web
@@ -203,41 +192,36 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=firefly-web
+          cache-to: type=gha,mode=max,scope=firefly-web
 
   # ============================================================
   # 阶段 4: 部署到服务器 (仅 tag 触发)
   # ============================================================
   deploy:
     name: Deploy to Production
-    needs: [docker-build, docker-build-web]
+    needs: [prepare, docker-build, docker-build-web]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
+        env:
+          APP_IMAGE_REGISTRY: ${{ env.REGISTRY }}
+          APP_IMAGE_NAMESPACE: ${{ needs.prepare.outputs.image_namespace }}
+          APP_IMAGE_TAG: ${{ github.ref_name }}
+          APP_IMAGE_REGISTRY_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          APP_IMAGE_REGISTRY_PASSWORD: ${{ secrets.GHCR_TOKEN }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: APP_IMAGE_REGISTRY,APP_IMAGE_NAMESPACE,APP_IMAGE_TAG,APP_IMAGE_REGISTRY_USERNAME,APP_IMAGE_REGISTRY_PASSWORD
           script: |
+            set -e
             cd ${{ secrets.DEPLOY_PATH }}
-            
-            # 拉取最新代码
-            git pull origin main
-            
-            # 拉取最新镜像
-            docker compose -f deploy/docker-compose.prod.yml pull
-            
-            # 滚动更新微服务
-            docker compose -f deploy/docker-compose.prod.yml up -d \
-              --no-build --pull always \
-              gateway system device rule media data support connector web
-            
-            # 清理旧镜像
-            docker image prune -f --filter "label=app=firefly-iot"
-            
-            echo "✅ Deploy completed: ${{ github.ref_name }}"
+            git fetch origin --tags
+            git checkout "${{ github.ref_name }}"
+            cd deploy
+            bash deploy.sh release

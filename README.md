@@ -162,6 +162,20 @@ bash deploy.sh up
 - MinIO: [http://localhost:9001](http://localhost:9001)
 - Sentinel: [http://localhost:8858](http://localhost:8858)
 
+### GitHub Actions 自动发布
+
+仓库已补齐 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 与 [`deploy/docker-compose.github.yml`](deploy/docker-compose.github.yml) 的自动发布链路：
+
+- 推送到 `main` / `develop` 或发起 PR 时，自动执行后端 Maven 校验与前端 TypeScript 构建。
+- 推送 `v*` 标签时，自动构建并推送 `firefly-gateway`、`firefly-system`、`firefly-device`、`firefly-rule`、`firefly-media`、`firefly-data`、`firefly-support`、`firefly-connector`、`firefly-web` 到 GHCR。
+- 标签发布时，工作流会通过 SSH 登录目标服务器，执行 `bash deploy.sh release`，按标签版本拉取 GHCR 镜像并完成部署。
+
+GitHub 仓库和服务器的具体配置步骤请查看：
+
+- [GitHub Actions CI/CD 设计说明](docs/design/github-actions-cicd.md)
+- [GitHub Actions CI/CD 运维说明](docs/operations/github-actions-cicd.md)
+- [GitHub Actions CI/CD 使用说明](docs/user-guide/github-actions-cicd.md)
+
 ### 关键 MQTT 环境变量
 
 完整变量请查看 [deploy/.env.example](deploy/.env.example)。
@@ -196,6 +210,9 @@ bash deploy.sh up
 - [Docker Compose 部署设计](docs/design/docker-compose-deployment.md)
 - [Docker Compose 部署运维说明](docs/operations/docker-compose-deployment.md)
 - [Docker Compose 部署使用说明](docs/user-guide/docker-compose-deployment.md)
+- [GitHub Actions CI/CD 设计说明](docs/design/github-actions-cicd.md)
+- [GitHub Actions CI/CD 运维说明](docs/operations/github-actions-cicd.md)
+- [GitHub Actions CI/CD 使用说明](docs/user-guide/github-actions-cicd.md)
 - [产品设计](docs/design/product-design.md)
 - [用户权限详细设计](docs/design/detailed-design-user-permissions.md)
 - [租户管理详细设计](docs/design/detailed-design-tenant-management.md)

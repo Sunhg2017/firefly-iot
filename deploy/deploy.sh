@@ -7,6 +7,7 @@
 #   infra    Start infrastructure only
 #   build    Build application images
 #   up       Build and start the full stack
+#   release  Pull prebuilt application images and start the full stack
 #   down     Stop all containers
 #   restart  Restart application services
 #   logs     Tail logs
@@ -19,6 +20,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.prod.yml"
+RELEASE_COMPOSE_FILE="$SCRIPT_DIR/docker-compose.github.yml"
 ENV_FILE="$SCRIPT_DIR/.env"
 BUILD_STATE_DIR="$SCRIPT_DIR/runtime/build-state"
 DOCKER_ACCESS_CHECKED=0
@@ -220,6 +222,38 @@ remove_managed_volumes() {
         log_info "Removing volume ${volume_name}"
         docker volume rm -f "$volume_name" >/dev/null
     done
+}
+
+require_release_image_config() {
+    APP_IMAGE_REGISTRY="${APP_IMAGE_REGISTRY:-ghcr.io}"
+    APP_IMAGE_TAG="${APP_IMAGE_TAG:-latest}"
+
+    if [ -z "${APP_IMAGE_NAMESPACE:-}" ]; then
+        log_error "APP_IMAGE_NAMESPACE is required for release deployment."
+        log_info "Export APP_IMAGE_NAMESPACE=<owner>/<repo> before running 'bash deploy.sh release'."
+        exit 1
+    fi
+
+    export APP_IMAGE_REGISTRY
+    export APP_IMAGE_TAG
+}
+
+registry_login_if_configured() {
+    local username="${APP_IMAGE_REGISTRY_USERNAME:-}"
+    local password="${APP_IMAGE_REGISTRY_PASSWORD:-}"
+
+    if [ -z "$username" ] && [ -z "$password" ]; then
+        return 0
+    fi
+
+    if [ -z "$username" ] || [ -z "$password" ]; then
+        log_error "APP_IMAGE_REGISTRY_USERNAME and APP_IMAGE_REGISTRY_PASSWORD must be provided together."
+        exit 1
+    fi
+
+    require_docker_access
+    log_step "Logging in to image registry ${APP_IMAGE_REGISTRY}"
+    printf '%s' "$password" | docker login "$APP_IMAGE_REGISTRY" --username "$username" --password-stdin >/dev/null
 }
 
 check_container_conflicts() {
@@ -703,6 +737,11 @@ dc() {
     docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"
 }
 
+dc_release() {
+    require_docker_access
+    docker compose -f "$RELEASE_COMPOSE_FILE" --env-file "$ENV_FILE" "$@"
+}
+
 cmd_infra() {
     load_env
     log_info "Using deploy environment '${DEPLOY_ENV}' with Nacos namespace '${NACOS_NAMESPACE}'"
@@ -758,6 +797,47 @@ cmd_up() {
     dc ps
 }
 
+cmd_release() {
+    load_env
+    require_release_image_config
+    log_info "Using deploy environment '${DEPLOY_ENV}' with Nacos namespace '${NACOS_NAMESPACE}'"
+    log_info "Using application images ${APP_IMAGE_REGISTRY}/${APP_IMAGE_NAMESPACE}: ${APP_IMAGE_TAG}"
+    ensure_named_volumes
+    prepare_zlm_config
+    check_container_conflicts postgres redis kafka nacos minio sentinel zlmediakit gateway system device rule media data support connector web
+    log_step "=== Firefly IoT GitHub release deployment ==="
+
+    log_step "[1/4] Starting infrastructure..."
+    dc_release up -d postgres redis kafka nacos minio sentinel zlmediakit
+    wait_for_infrastructure_ready
+
+    log_step "[2/4] Pulling application images..."
+    registry_login_if_configured
+    dc_release pull gateway system device rule media data support connector web
+
+    log_step "[3/4] Starting backend services..."
+    dc_release up -d --no-build gateway system device rule media data support connector
+
+    log_step "[4/4] Starting frontend..."
+    dc_release up -d --no-build web
+    wait_for_application_ready
+
+    echo ""
+    log_info "=== Release deployment completed ==="
+    echo ""
+    echo "  Frontend:            http://localhost"
+    echo "  Gateway API:         http://localhost:8080"
+    echo "  Connector HTTP:      http://localhost:9070"
+    echo "  MQTT endpoint:       mqtt://localhost:1883"
+    echo "  CoAP endpoint:       coap://localhost:5683"
+    echo "  Nacos console:       http://localhost:8848/nacos"
+    echo "  MinIO console:       http://localhost:9001"
+    echo "  Sentinel dashboard:  http://localhost:8858"
+    echo "  ZLMediaKit HTTP:     http://localhost:${ZLM_PORT:-18080}"
+    echo ""
+    dc_release ps
+}
+
 cmd_down() {
     log_step "Stopping all services..."
     dc down
@@ -796,17 +876,19 @@ case "${1:-up}" in
     infra)   cmd_infra ;;
     build)   cmd_build ;;
     up)      cmd_up ;;
+    release) cmd_release ;;
     down)    cmd_down ;;
     restart) cmd_restart ;;
     logs)    shift; cmd_logs "$@" ;;
     status)  cmd_status ;;
     clean)   cmd_clean ;;
     *)
-        echo "Usage: $0 {infra|build|up|down|restart|logs|status|clean}"
+        echo "Usage: $0 {infra|build|up|release|down|restart|logs|status|clean}"
         echo ""
         echo "  infra    Start PostgreSQL, Redis, Kafka, Nacos, MinIO, Sentinel, ZLMediaKit"
         echo "  build    Build application images"
         echo "  up       Full deployment (default)"
+        echo "  release  Pull GHCR application images and deploy the full stack"
         echo "  down     Stop all services"
         echo "  restart  Restart application services"
         echo "  logs     Tail logs, optionally pass service names"
