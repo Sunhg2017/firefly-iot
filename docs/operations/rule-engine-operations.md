@@ -72,6 +72,11 @@ mvn spring-boot:run
 - `DEVICE_COMMAND`
   - 由 `firefly-rule` 投递到 `device.message.down`
 
+升级到当前版本时还会自动执行：
+
+- 删除历史 `DB_WRITE` 动作
+- 自动停用“没有任何启用动作”的旧规则
+
 ### 3.3 管理台依赖
 
 控制台规则页本次改为链路化视图，前端除了规则接口外，还会调用项目列表接口展示项目范围：
@@ -160,7 +165,6 @@ mvn spring-boot:run
 
 ### 4.5 当前限制
 
-- `DB_WRITE` 暂不支持运行时执行，配置后会触发失败统计和错误日志。
 - `WEBHOOK` 暂未内置重试、熔断和回退。
 
 ## 5. 监控与告警建议
@@ -192,6 +196,8 @@ mvn spring-boot:run
 2. 若列表有数据但项目名称为空，检查项目服务是否可用。
 3. 若编辑抽屉无法回填，检查详情接口返回是否包含 `sqlExpr` 与 `actions`。
 4. 若动作模板填入后提交失败，检查 JSON 是否被手工改坏。
+5. 若编辑后发现项目范围或规则说明没有被清空，确认后端是否已升级到当前版本；本版开始会把空值真正落库，而不是保留旧值。
+6. 若保存接口直接报参数错误，先检查请求体是否仍携带了完整 `actions` 列表。
 
 ### 6.1 规则启用后没有触发
 
@@ -202,6 +208,7 @@ mvn spring-boot:run
 3. 确认规则 `status = ENABLED`。
 4. 对照 `sqlExpr` 检查 `FROM` 是否匹配真实 topic/type。
 5. 对照 `WHERE` 检查字段名是否和运行时上下文一致。
+6. 若启用接口直接报参数错误，检查规则是否仍保留旧 `DB_WRITE` 动作，或是否把所有动作都关成了停用。
 
 ### 6.2 项目级规则一直不生效
 
@@ -241,6 +248,7 @@ mvn spring-boot:run
 核心迁移脚本：
 
 - [V1__init_rules.sql](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/db/migration/V1__init_rules.sql)
+- [V6__cleanup_unsupported_rule_actions.sql](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/db/migration/V6__cleanup_unsupported_rule_actions.sql)
 - [RuleEngineMapper.xml](/E:/codeRepo/service/firefly-iot/firefly-rule/src/main/resources/mapper/rule/RuleEngineMapper.xml)
 
 核心表：

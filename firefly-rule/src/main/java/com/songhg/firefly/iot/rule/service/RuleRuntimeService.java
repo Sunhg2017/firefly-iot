@@ -18,6 +18,7 @@ import com.songhg.firefly.iot.rule.mapper.RuleActionMapper;
 import com.songhg.firefly.iot.rule.mapper.RuleEngineMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.expression.MapAccessor;
 import org.springframework.expression.Expression;
 import org.springframework.expression.ExpressionParser;
@@ -67,11 +68,10 @@ public class RuleRuntimeService {
     private final DeviceClient deviceClient;
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
+    @Qualifier("ruleRuntimeHttpClient")
+    private final HttpClient httpClient;
 
     private final ExpressionParser spelParser = new SpelExpressionParser();
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
-            .build();
 
     public void process(DeviceMessage message) {
         if (message == null || message.getTenantId() == null) {

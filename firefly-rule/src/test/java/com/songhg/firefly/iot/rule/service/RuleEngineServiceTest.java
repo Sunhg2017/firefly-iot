@@ -11,6 +11,7 @@ import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.rule.dto.ruleengine.RuleActionDTO;
 import com.songhg.firefly.iot.rule.dto.ruleengine.RuleEngineCreateDTO;
 import com.songhg.firefly.iot.rule.dto.ruleengine.RuleEngineQueryDTO;
+import com.songhg.firefly.iot.rule.dto.ruleengine.RuleEngineUpdateDTO;
 import com.songhg.firefly.iot.rule.dto.ruleengine.RuleEngineVO;
 import com.songhg.firefly.iot.rule.entity.RuleAction;
 import com.songhg.firefly.iot.rule.entity.RuleEngine;
@@ -120,6 +121,19 @@ class RuleEngineServiceTest {
     }
 
     @Test
+    void createRuleShouldRejectUnsupportedActionType() {
+        RuleEngineCreateDTO dto = new RuleEngineCreateDTO();
+        dto.setName("Rule");
+        dto.setSqlExpr("SELECT * FROM topic");
+        dto.setActions(List.of(buildActionDto(RuleActionType.DB_WRITE, "{\"table\":\"iot_rule_events\"}")));
+
+        BizException ex = assertThrows(BizException.class, () -> ruleEngineService.createRule(dto));
+        assertEquals(1001, ex.getCode());
+        assertEquals("rule action type DB_WRITE is not supported", ex.getMessage());
+        verify(ruleEngineMapper, never()).insert(any(RuleEngine.class));
+    }
+
+    @Test
     void getRuleByIdShouldUseTenantScopedLookup() {
         RuleEngine rule = buildRule(12L, "Scoped Rule");
         when(ruleEngineMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(rule);
@@ -166,6 +180,93 @@ class RuleEngineServiceTest {
         assertEquals(RuleActionType.WEBHOOK, result.getRecords().get(0).getActions().get(0).getActionType());
         assertEquals(RuleActionType.EMAIL, result.getRecords().get(1).getActions().get(0).getActionType());
         verify(ruleActionMapper).selectList(any(LambdaQueryWrapper.class));
+    }
+
+    @Test
+    void updateRuleShouldAllowClearingDescriptionAndProjectScope() {
+        RuleEngine existingRule = buildRule(18L, "Old Rule");
+        existingRule.setProjectId(801L);
+        existingRule.setDescription("legacy description");
+        existingRule.setSqlExpr("SELECT * FROM 'PROPERTY_REPORT'");
+
+        RuleEngineUpdateDTO dto = new RuleEngineUpdateDTO();
+        dto.setName("  Updated Rule  ");
+        dto.setDescription("   ");
+        dto.setProjectId(null);
+        dto.setSqlExpr("  SELECT * FROM 'EVENT_REPORT'  ");
+        dto.setActions(List.of(buildActionDto(
+                RuleActionType.KAFKA_FORWARD,
+                "{\"topic\":\"runtime.alerts\",\"payload\":{\"code\":\"${code}\"}}"
+        )));
+
+        when(ruleEngineMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(existingRule);
+        when(ruleActionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(buildAction(
+                18L,
+                RuleActionType.KAFKA_FORWARD,
+                "{\"topic\":\"runtime.alerts\",\"payload\":{\"code\":\"${code}\"}}"
+        )));
+
+        RuleEngineVO result = ruleEngineService.updateRule(18L, dto);
+
+        ArgumentCaptor<RuleEngine> ruleCaptor = ArgumentCaptor.forClass(RuleEngine.class);
+        verify(ruleEngineMapper).updateById(ruleCaptor.capture());
+        RuleEngine savedRule = ruleCaptor.getValue();
+        assertEquals("Updated Rule", savedRule.getName());
+        assertEquals("SELECT * FROM 'EVENT_REPORT'", savedRule.getSqlExpr());
+        assertEquals(null, savedRule.getDescription());
+        assertEquals(null, savedRule.getProjectId());
+
+        verify(ruleActionMapper).delete(any(LambdaQueryWrapper.class));
+        verify(ruleActionMapper).insert(any(RuleAction.class));
+        assertEquals(null, result.getDescription());
+        assertEquals(null, result.getProjectId());
+    }
+
+    @Test
+    void enableRuleShouldRejectUnsupportedEnabledAction() {
+        RuleEngine rule = buildRule(21L, "Bad Rule");
+        RuleAction action = buildAction(21L, RuleActionType.DB_WRITE, "{\"table\":\"alarm_records\"}");
+        action.setEnabled(true);
+
+        when(ruleEngineMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(rule);
+        when(ruleActionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(action));
+
+        BizException ex = assertThrows(BizException.class, () -> ruleEngineService.enableRule(21L));
+        assertEquals(1001, ex.getCode());
+        assertEquals("rule action type DB_WRITE is not supported", ex.getMessage());
+        verify(ruleEngineMapper, never()).updateById(any(RuleEngine.class));
+    }
+
+    @Test
+    void enableRuleShouldRejectRuleWithoutEnabledRuntimeAction() {
+        RuleEngine rule = buildRule(22L, "Disabled Actions");
+        RuleAction action = buildAction(22L, RuleActionType.WEBHOOK, "{\"url\":\"https://example.com/hook\"}");
+        action.setEnabled(false);
+
+        when(ruleEngineMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(rule);
+        when(ruleActionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(action));
+
+        BizException ex = assertThrows(BizException.class, () -> ruleEngineService.enableRule(22L));
+        assertEquals(1001, ex.getCode());
+        assertEquals("rule must contain at least one enabled runtime action", ex.getMessage());
+        verify(ruleEngineMapper, never()).updateById(any(RuleEngine.class));
+    }
+
+    private RuleActionDTO buildActionDto(RuleActionType actionType, String actionConfig) {
+        RuleActionDTO action = new RuleActionDTO();
+        action.setActionType(actionType);
+        action.setActionConfig(actionConfig);
+        return action;
+    }
+
+    private RuleAction buildAction(Long ruleId, RuleActionType actionType, String actionConfig) {
+        RuleAction action = new RuleAction();
+        action.setRuleId(ruleId);
+        action.setActionType(actionType);
+        action.setActionConfig(actionConfig);
+        action.setSortOrder(1);
+        action.setEnabled(true);
+        return action;
     }
 
     private RuleEngine buildRule(Long id, String name) {

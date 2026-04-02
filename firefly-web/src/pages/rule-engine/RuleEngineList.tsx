@@ -36,7 +36,7 @@ const { Paragraph, Text } = Typography;
 const { TextArea } = Input;
 
 type RuleStatus = 'ENABLED' | 'DISABLED';
-type RuleActionType = 'DB_WRITE' | 'KAFKA_FORWARD' | 'WEBHOOK' | 'EMAIL' | 'SMS' | 'DEVICE_COMMAND';
+type RuleActionType = 'KAFKA_FORWARD' | 'WEBHOOK' | 'EMAIL' | 'SMS' | 'DEVICE_COMMAND';
 
 interface RuleActionRecord {
   id?: number;
@@ -102,15 +102,6 @@ const actionTypeMeta: Record<
   RuleActionType,
   { label: string; shortLabel: string; color: string; template: Record<string, unknown> }
 > = {
-  DB_WRITE: {
-    label: '数据写入',
-    shortLabel: '写入',
-    color: 'red',
-    template: {
-      table: 'iot_rule_events',
-      fields: { deviceName: '${deviceName}', payload: '${payloadJson}' },
-    },
-  },
   KAFKA_FORWARD: {
     label: 'Kafka 转发',
     shortLabel: 'Kafka',
@@ -192,7 +183,9 @@ function parseRuleExpression(sqlExpr?: string): ParsedRuleExpression {
   }
   // The backend still persists a single sqlExpr, so the console splits it into structured fields here.
   const normalized = sqlExpr.replace(/\r\n/g, '\n').trim();
-  const match = normalized.match(/^\s*SELECT\s+([\s\S]+?)\s+FROM\s+'([^']+)'\s*(?:WHERE\s+([\s\S]+?))?\s*$/i);
+  const match = normalized.match(
+    /^\s*SELECT\s+([\s\S]+?)\s+FROM\s+(?:'([^']+)'|"([^"]+)"|([^\s]+))\s*(?:WHERE\s+([\s\S]+?))?\s*$/i,
+  );
   if (!match) {
     return {
       selectClause: normalized || '*',
@@ -200,10 +193,11 @@ function parseRuleExpression(sqlExpr?: string): ParsedRuleExpression {
       whereClause: '',
     };
   }
+  const sourcePattern = match[2]?.trim() || match[3]?.trim() || match[4]?.trim() || '';
   return {
     selectClause: match[1]?.trim() || '*',
-    sourcePattern: match[2]?.trim() || '',
-    whereClause: match[3]?.trim() || '',
+    sourcePattern,
+    whereClause: match[5]?.trim() || '',
   };
 }
 
@@ -270,9 +264,6 @@ function getActionSummary(action: RuleActionRecord): string {
   }
   if (action.actionType === 'DEVICE_COMMAND' && typeof config.commandType === 'string') {
     return `${meta.label} · ${config.commandType}`;
-  }
-  if (action.actionType === 'DB_WRITE' && typeof config.table === 'string') {
-    return `${meta.label} · ${config.table}`;
   }
   return meta.label;
 }
@@ -984,7 +975,6 @@ const RuleEngineList: React.FC = () => {
                           <Button type="link" disabled={!currentActionType} onClick={() => upsertActionTemplate(name, currentActionType)}>
                             填入模板
                           </Button>
-                          {currentActionType === 'DB_WRITE' ? <Text type="warning">当前运行时暂不执行 DB_WRITE</Text> : null}
                         </div>
                       </div>
                     );

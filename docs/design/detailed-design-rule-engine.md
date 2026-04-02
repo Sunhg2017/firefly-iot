@@ -34,7 +34,6 @@
 本次暂不覆盖：
 
 - 自定义 SQL 方言的完整解析器
-- `DB_WRITE` 动作的通用落库框架
 - 规则执行缓存、分布式编译缓存、回放重跑
 
 ## 4. 运行时架构
@@ -74,7 +73,11 @@
 
 ### 5.1 规则表
 
-沿用现有 `rules`、`rule_actions` 表结构，不新增迁移脚本。
+沿用现有 `rules`、`rule_actions` 表结构，并新增一次收口迁移：
+
+- `V6__cleanup_unsupported_rule_actions.sql`
+  - 删除历史 `DB_WRITE` 动作
+  - 自动停用“清理后没有任何启用动作”的规则
 
 新增运行时统计更新 SQL：
 
@@ -169,11 +172,11 @@ WHERE payload.code == 'overheat'
 - `DEVICE_COMMAND`
   - 组装下行 `DeviceMessage` 并投递到 `device.message.down`
 
-### 7.2 暂不支持动作
+### 7.2 动作收口
 
-- `DB_WRITE`
-  - 当前没有通用、安全且可运维的动态落库目标定义
-  - 运行时遇到该动作会记一次失败统计并输出错误日志
+- 规则引擎当前只允许配置 5 种运行态动作：`KAFKA_FORWARD`、`WEBHOOK`、`EMAIL`、`SMS`、`DEVICE_COMMAND`
+- `DB_WRITE` 不再出现在控制台和保存接口中
+- 历史 `DB_WRITE` 记录通过 Flyway 迁移清理，不再继续保留“可配置但只会失败”的旧分支
 
 ### 7.3 动作模板渲染
 
@@ -200,8 +203,10 @@ WHERE payload.code == 'overheat'
   - 避免 `selectById -> Java 累加 -> updateById` 带来的并发覆盖问题。
 - 项目过滤通过内部设备接口兜底
   - 没有强行修改所有消息模型和所有上游生产者，先用内部查询补齐项目维度。
-- `DB_WRITE` 明确失败而不是静默忽略
-  - 避免规则看似启用、实际上没有任何动作落地。
+- 规则更新改为显式覆盖可选字段
+  - 控制台编辑时清空“项目范围 / 规则说明”必须真正落库为空，不能再被 `null` 忽略后残留旧值。
+- 不再暴露未落地动作
+  - `DB_WRITE` 既然没有运行时实现，就直接从配置入口和升级数据里移除，不再让用户创建必然失败的规则。
 
 ## 9. 风险与后续建议
 
@@ -209,6 +214,7 @@ WHERE payload.code == 'overheat'
 - `WEBHOOK` 为同步调用，若远端慢会拖长单条消息处理时延，后续可引入异步派发或超时/重试策略。
 - 目前 `EMAIL`、`SMS` 走统一通知中心，后续若增加 `PHONE`、`WECHAT`、`IN_APP`，建议在枚举和动作配置层统一扩展。
 - 如果未来规则量增长明显，建议增加按租户缓存启用规则、按 topic/type 建索引分桶。
+- `RuleRuntimeService` 现已改为注入 `HttpClient` Bean，后续若要统一代理、TLS 或超时策略，可直接在 Spring 配置层调整并复用单测覆盖。
 
 ## 10. 控制台交互收口
 

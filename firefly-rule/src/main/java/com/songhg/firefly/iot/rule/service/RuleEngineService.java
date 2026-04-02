@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.enums.RuleActionType;
 import com.songhg.firefly.iot.common.enums.RuleEngineStatus;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.mybatis.DataScope;
@@ -26,15 +27,25 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class RuleEngineService {
+
+    private static final Set<RuleActionType> SUPPORTED_RUNTIME_ACTION_TYPES = EnumSet.of(
+            RuleActionType.KAFKA_FORWARD,
+            RuleActionType.WEBHOOK,
+            RuleActionType.EMAIL,
+            RuleActionType.SMS,
+            RuleActionType.DEVICE_COMMAND
+    );
 
     private final RuleEngineMapper ruleEngineMapper;
     private final RuleActionMapper ruleActionMapper;
@@ -45,6 +56,7 @@ public class RuleEngineService {
         Long tenantId = AppContextHolder.getTenantId();
         Long userId = AppContextHolder.getUserId();
         sanitizeCreatePayload(dto);
+        validateConfiguredActions(dto.getActions());
         normalizeActionConfigs(dto.getActions());
 
         RuleEngine rule = RuleEngineConvert.INSTANCE.toEntity(dto);
@@ -93,9 +105,10 @@ public class RuleEngineService {
     @Transactional
     public RuleEngineVO updateRule(Long id, RuleEngineUpdateDTO dto) {
         sanitizeUpdatePayload(dto);
+        validateConfiguredActions(dto.getActions());
         normalizeActionConfigs(dto.getActions());
         RuleEngine rule = requireOwnedRule(id);
-        RuleEngineConvert.INSTANCE.updateEntity(dto, rule);
+        applyUpdatePayload(dto, rule);
         ruleEngineMapper.updateById(rule);
 
         if (dto.getActions() != null) {
@@ -109,6 +122,7 @@ public class RuleEngineService {
     @Transactional
     public void enableRule(Long id) {
         RuleEngine rule = requireOwnedRule(id);
+        validateEnabledRuntimeActions(loadActionsByRuleId(id));
         rule.setStatus(RuleEngineStatus.ENABLED);
         ruleEngineMapper.updateById(rule);
         log.info("Rule enabled: id={}, name={}", id, rule.getName());
@@ -144,6 +158,13 @@ public class RuleEngineService {
         }
     }
 
+    private List<RuleAction> loadActionsByRuleId(Long ruleId) {
+        return ruleActionMapper.selectList(new LambdaQueryWrapper<RuleAction>()
+                .eq(RuleAction::getRuleId, ruleId)
+                .orderByAsc(RuleAction::getSortOrder)
+                .orderByAsc(RuleAction::getId));
+    }
+
     private void normalizeActionConfigs(List<RuleActionDTO> actions) {
         if (actions == null) {
             return;
@@ -167,6 +188,55 @@ public class RuleEngineService {
         if (dto.getSqlExpr() != null) {
             dto.setSqlExpr(normalizeRequiredText(dto.getSqlExpr(), "rule expression"));
         }
+    }
+
+    private void validateConfiguredActions(List<RuleActionDTO> actions) {
+        if (actions == null || actions.isEmpty()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "rule must contain at least one action");
+        }
+        for (RuleActionDTO action : actions) {
+            if (action == null || action.getActionType() == null) {
+                throw new BizException(ResultCode.PARAM_ERROR, "rule action type is required");
+            }
+            if (!SUPPORTED_RUNTIME_ACTION_TYPES.contains(action.getActionType())) {
+                throw new BizException(ResultCode.PARAM_ERROR,
+                        "rule action type " + action.getActionType().getValue() + " is not supported");
+            }
+        }
+    }
+
+    private void validateEnabledRuntimeActions(List<RuleAction> actions) {
+        if (actions == null || actions.isEmpty()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "rule must contain at least one action");
+        }
+
+        boolean hasEnabledRuntimeAction = false;
+        for (RuleAction action : actions) {
+            if (action == null || !Boolean.TRUE.equals(action.getEnabled())) {
+                continue;
+            }
+            if (!SUPPORTED_RUNTIME_ACTION_TYPES.contains(action.getActionType())) {
+                throw new BizException(ResultCode.PARAM_ERROR,
+                        "rule action type " + action.getActionType().getValue() + " is not supported");
+            }
+            hasEnabledRuntimeAction = true;
+        }
+
+        if (!hasEnabledRuntimeAction) {
+            throw new BizException(ResultCode.PARAM_ERROR, "rule must contain at least one enabled runtime action");
+        }
+    }
+
+    private void applyUpdatePayload(RuleEngineUpdateDTO dto, RuleEngine rule) {
+        if (dto.getName() != null) {
+            rule.setName(dto.getName());
+        }
+        if (dto.getSqlExpr() != null) {
+            rule.setSqlExpr(dto.getSqlExpr());
+        }
+        // PUT updates come from the full edit form, so null means "clear this optional field".
+        rule.setDescription(dto.getDescription());
+        rule.setProjectId(dto.getProjectId());
     }
 
     private String normalizeRequiredText(String value, String fieldName) {
