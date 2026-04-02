@@ -103,6 +103,12 @@ order by permission;
 - 先确认设备资产本身存在
 - 再确认 `firefly-device` 已发布到包含 `/api/v1/device-firmwares/list` 的版本
 
+### 设备版本页报 `column p.deleted_at does not exist`
+
+- 根因是 `/api/v1/device-firmwares/list` 的联表 SQL 误把 `products` 当成带逻辑删除列的表，追加了不存在的 `p.deleted_at`
+- 当前产品表只有 `tenant_id / project_id / product_key / status` 等字段，没有 `deleted_at`
+- 发布包含本次修复的 `firefly-device` 后重试
+
 ## 回滚
 
 - 回滚代码时，需要同时回滚前后端与系统模块

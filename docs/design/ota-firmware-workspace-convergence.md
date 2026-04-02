@@ -37,6 +37,7 @@
 - 新增 `/api/v1/device-firmwares/list`
 - 查询口径从“按固件看已绑定设备”扩展为“所有设备 + 当前版本登记”
 - 后端通过 `devices LEFT JOIN latest device_firmwares` 返回设备总览
+- `products` 关联只按 `p.id = d.product_id` 连接，不再追加不存在的 `p.deleted_at` 条件；当前产品表没有逻辑删除列
 - 绑定时只传 `firmwareId`
 - 服务端根据固件记录自动回填 `currentVersion`
 - 服务端校验设备与固件必须属于同一产品
