@@ -156,6 +156,23 @@ Kafka 额外要求：
 
 不要为了绕开这个问题把共享开发宿主机直接改成 `DEPLOY_ENV=prod`；这不是环境名问题，而是容器内静态路由错误使用了 `127.0.0.1`。
 
+### 5.7 登录接口报 `Tenant context not set`
+
+如果 Gateway 已经不再报 `/127.0.0.1:8081`，但登录仍返回 `500`，并且 `firefly-system` 日志出现：
+
+- `Tenant context not set`
+- 堆栈落在 `UserMapper.findByIdentifierGlobal`
+
+根因是账号密码登录在“租户尚未解析出来”之前就先按用户名/手机号/邮箱全局查用户；这类全局查询必须显式绕过 MyBatis Plus 的租户行拦截，否则第一次查用户就会直接抛错。
+
+处理步骤：
+
+1. 确认 `firefly-system` 版本已经包含 `UserMapper.findByIdentifierGlobal` 的 `@InterceptorIgnore(tenantLine = "true")` 修复。
+2. 重建 `firefly-system`：`docker compose ... up -d --build system`
+3. 再次调用 `POST /SYSTEM/api/v1/auth/login` 验证
+
+这个问题也不要靠手工补默认租户、改数据库或临时切 `prod` 规避，正确修复点就是让“登录前的全局用户定位”脱离租户行拦截。
+
 ## 6. 回滚说明
 
 - 如果当前 Compose 刚接管失败，但旧卷仍保留，可停掉新容器后重新恢复旧容器。

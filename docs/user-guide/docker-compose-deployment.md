@@ -87,3 +87,5 @@
 - Gateway 容器环境里存在 `FIREFLY_GATEWAY_SYSTEM_HOST=firefly-system`
 
 如果缺少这些变量，重新执行一次 `bash deploy.sh up`，让 Gateway 按当前 Compose 配置重建。
+
+如果 Gateway 已经正常转发，但登录仍然返回 500，再看 `firefly-system` 日志里是否有 `Tenant context not set`。出现这个报错时，说明系统服务还没有升级到“登录前全局查用户绕过租户拦截”的版本，需要重建 `firefly-system` 后再试。

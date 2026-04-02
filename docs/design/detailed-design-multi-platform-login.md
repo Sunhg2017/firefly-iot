@@ -292,6 +292,8 @@ CREATE TABLE qrcode_login_tickets (
 
 ### 5.1 账号密码登录
 
+账号密码登录的第一步是“全局定位登录账号”，这一步发生在租户尚未确定之前，因此实现上必须先绕过租户行拦截，拿到唯一用户后再按 `user.tenantId` 建立临时租户上下文继续后续校验、登录失败计数和 Session 创建。
+
 ```java
 public AuthResult passwordLogin(PasswordLoginRequest req) {
     // 1. 查找用户 (支持用户名/手机号/邮箱)
