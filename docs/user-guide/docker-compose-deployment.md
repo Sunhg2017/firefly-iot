@@ -35,6 +35,8 @@
 - 同一台宿主机后续再次执行 `bash deploy.sh build` / `bash deploy.sh up` 会明显更快
 - 当前默认使用华为云 Maven 镜像，不再直接走 Maven Central
 - 如果上一次构建是异常中断，脚本会先检查残留 BuildKit 锁；必要时会提示你授权一次 sudo 来清理后再继续
+- 脚本会把后端和前端源码指纹记录到 `deploy/runtime/build-state/`；源码没变化且镜像还在时，会直接跳过对应构建
+- 如果你这次就是要强制重建，执行 `FIREFLY_FORCE_BUILD=1 bash deploy.sh build` 或 `FIREFLY_FORCE_BUILD=1 bash deploy.sh up`
 - `bash deploy.sh up` 返回成功前，会额外等待基础设施健康、后端容器健康，以及 `Gateway / Rule / Web` 入口真正可访问
 - 基础设施阶段不会再在每次执行时重编译 ZLMediaKit；只有第一次缺少镜像时才会自动构建
 - 稳定持久化卷现在按 external volume 管理，重复部署不会再出现旧卷归属告警；如果执行 `bash deploy.sh clean`，这些卷也会被脚本一并删除
@@ -66,6 +68,11 @@
 如果你看到 `mvn: command not found`，也说明宿主机还在跑旧版部署链路；同步到当前版本后，这个问题会随着 Docker 内部构建一起消失。
 
 如果第一次执行 `bash deploy.sh build` 比较久，先看日志是否在持续下载 Maven 依赖；当前版本会自动复用缓存，首次构建完成后后续速度会恢复正常。
+
+如果你再次执行 `bash deploy.sh build` / `bash deploy.sh up`，正常预期是：
+
+- 源码没变化时，日志直接提示后端或前端镜像跳过重建
+- 只有源码变化、镜像缺失或你主动设置 `FIREFLY_FORCE_BUILD=1` 时，才会重新编译镜像
 
 如果前一次构建是手工中断、SSH 断开或宿主机异常退出，下一次执行 `bash deploy.sh build` / `bash deploy.sh up` 时：
 

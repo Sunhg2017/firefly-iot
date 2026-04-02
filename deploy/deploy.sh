@@ -17,8 +17,10 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.prod.yml"
 ENV_FILE="$SCRIPT_DIR/.env"
+BUILD_STATE_DIR="$SCRIPT_DIR/runtime/build-state"
 DOCKER_ACCESS_CHECKED=0
 
 RED='\033[0;31m'
@@ -30,6 +32,28 @@ NC='\033[0m'
 export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
 
 BACKEND_BUILD_SERVICES=(gateway system device rule media data support connector)
+BACKEND_FINGERPRINT_PATHS=(
+    .dockerignore
+    deploy/Dockerfile
+    pom.xml
+    firefly-common
+    firefly-api
+    firefly-plugin-api
+    firefly-system
+    firefly-device
+    firefly-rule
+    firefly-data
+    firefly-support
+    firefly-media
+    firefly-connector
+    firefly-gateway
+)
+WEB_FINGERPRINT_PATHS=(
+    .dockerignore
+    deploy/Dockerfile.web
+    deploy/nginx/default.conf
+    firefly-web
+)
 BUILDKIT_EXECUTOR_PATTERN="/var/lib/docker/buildkit/executor/"
 
 log_info()  { echo -e "${GREEN}[INFO]${NC}  $1"; }
@@ -287,6 +311,167 @@ config_path.write_text("\n".join(updated) + "\n")
 PY
 }
 
+ensure_build_state_dir() {
+    mkdir -p "$BUILD_STATE_DIR"
+}
+
+force_build_requested() {
+    case "${FIREFLY_FORCE_BUILD:-0}" in
+        1|true|TRUE|yes|YES|on|ON) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+compute_path_fingerprint() {
+    # Persisting a content fingerprint lets repeated deploy.sh runs skip image
+    # rebuilds when the effective Docker build inputs have not changed.
+    python3 - "$REPO_ROOT" "$@" <<'PY'
+from pathlib import Path
+import hashlib
+import os
+import sys
+
+root = Path(sys.argv[1]).resolve()
+paths = sys.argv[2:]
+ignore_names = {".git", ".idea", "node_modules", "target", "dist", "logs", ".DS_Store"}
+digest = hashlib.sha256()
+
+
+def update_bytes(prefix: str, rel_path: str, payload: bytes = b"") -> None:
+    digest.update(prefix.encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(rel_path.encode("utf-8"))
+    digest.update(b"\0")
+    if payload:
+        digest.update(payload)
+    digest.update(b"\0")
+
+
+def update_file(file_path: Path) -> None:
+    rel_path = file_path.relative_to(root).as_posix()
+    update_bytes("FILE", rel_path)
+    with file_path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+
+
+for raw_path in sorted(set(paths)):
+    path = (root / raw_path).resolve()
+    rel_input = Path(raw_path).as_posix()
+
+    if not path.exists():
+        update_bytes("MISSING", rel_input)
+        continue
+
+    if path.is_symlink():
+        update_bytes("SYMLINK", rel_input, os.readlink(path).encode("utf-8"))
+        continue
+
+    if path.is_file():
+        update_file(path)
+        continue
+
+    for current_root, dir_names, file_names in os.walk(path):
+        dir_names[:] = sorted(name for name in dir_names if name not in ignore_names)
+        file_names = sorted(name for name in file_names if name not in ignore_names)
+
+        current_path = Path(current_root)
+        update_bytes("DIR", current_path.relative_to(root).as_posix())
+
+        for file_name in file_names:
+            file_path = current_path / file_name
+            if file_path.is_symlink():
+                update_bytes(
+                    "SYMLINK",
+                    file_path.relative_to(root).as_posix(),
+                    os.readlink(file_path).encode("utf-8"),
+                )
+            else:
+                update_file(file_path)
+
+print(digest.hexdigest())
+PY
+}
+
+compute_backend_fingerprint() {
+    compute_path_fingerprint "${BACKEND_FINGERPRINT_PATHS[@]}"
+}
+
+compute_web_fingerprint() {
+    compute_path_fingerprint "${WEB_FINGERPRINT_PATHS[@]}"
+}
+
+state_file_for_scope() {
+    echo "$BUILD_STATE_DIR/$1.sha256"
+}
+
+image_name_for_service() {
+    echo "$(compose_project_name)-$1:latest"
+}
+
+service_image_exists() {
+    local service="$1"
+
+    require_docker_access
+    docker image inspect "$(image_name_for_service "$service")" >/dev/null 2>&1
+}
+
+scope_label() {
+    case "$1" in
+        backend) echo "Backend" ;;
+        web) echo "Frontend" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+scope_needs_build() {
+    local scope="$1"
+    local fingerprint="$2"
+    shift 2
+
+    ensure_build_state_dir
+
+    local label
+    label="$(scope_label "$scope")"
+    local state_file
+    state_file="$(state_file_for_scope "$scope")"
+
+    if force_build_requested; then
+        log_info "FIREFLY_FORCE_BUILD is enabled; rebuilding ${label} images."
+        return 0
+    fi
+
+    if [ ! -f "$state_file" ]; then
+        log_info "${label} build fingerprint not found; rebuilding images."
+        return 0
+    fi
+
+    local saved_fingerprint
+    saved_fingerprint="$(cat "$state_file" 2>/dev/null || true)"
+    if [ "$saved_fingerprint" != "$fingerprint" ]; then
+        log_info "${label} source fingerprint changed; rebuilding images."
+        return 0
+    fi
+
+    local service
+    for service in "$@"; do
+        if ! service_image_exists "$service"; then
+            log_info "Image $(image_name_for_service "$service") is missing; rebuilding ${label} images."
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+write_scope_fingerprint() {
+    local scope="$1"
+    local fingerprint="$2"
+
+    ensure_build_state_dir
+    printf '%s\n' "$fingerprint" > "$(state_file_for_scope "$scope")"
+}
+
 list_buildkit_executor_processes() {
     ps -eo pid=,user=,args= | awk -v pattern="$BUILDKIT_EXECUTOR_PATTERN" '
         index($0, pattern) > 0 {
@@ -471,24 +656,46 @@ wait_for_application_ready() {
 build_application_images() {
     load_env
     log_info "Using deploy environment '${DEPLOY_ENV}' with Nacos namespace '${NACOS_NAMESPACE}'"
-    ensure_buildkit_ready
-    log_step "Building application images from source..."
+    log_step "Preparing application images..."
     build_backend_images
     build_web_image
     log_info "Application images are ready"
 }
 
 build_backend_images() {
+    local fingerprint
+    fingerprint="$(compute_backend_fingerprint)"
+
+    # All Java service images share the same backend source tree, so one
+    # fingerprint is enough to decide whether the sequential rebuild is needed.
+    if ! scope_needs_build backend "$fingerprint" "${BACKEND_BUILD_SERVICES[@]}"; then
+        log_info "Backend images are unchanged; skipping rebuild."
+        return 0
+    fi
+
+    ensure_buildkit_ready
+
     local service
     for service in "${BACKEND_BUILD_SERVICES[@]}"; do
         log_step "Building backend image: ${service}"
         dc build "${service}"
     done
+
+    write_scope_fingerprint backend "$fingerprint"
 }
 
 build_web_image() {
+    local fingerprint
+    fingerprint="$(compute_web_fingerprint)"
+
+    if ! scope_needs_build web "$fingerprint" web; then
+        log_info "Frontend image is unchanged; skipping rebuild."
+        return 0
+    fi
+
     log_step "Building frontend image: web"
     dc build web
+    write_scope_fingerprint web "$fingerprint"
 }
 
 dc() {
@@ -524,14 +731,13 @@ cmd_up() {
     dc up -d postgres redis kafka nacos minio sentinel zlmediakit
     wait_for_infrastructure_ready
 
-    log_step "[2/4] Building backend images..."
-    ensure_buildkit_ready
+    log_step "[2/4] Preparing backend images..."
     build_backend_images
 
     log_step "[3/4] Starting backend services..."
     dc up -d gateway system device rule media data support connector
 
-    log_step "[4/4] Building and starting frontend..."
+    log_step "[4/4] Preparing and starting frontend..."
     build_web_image
     dc up -d web
     wait_for_application_ready
@@ -578,6 +784,7 @@ cmd_clean() {
     if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
         dc down -v --remove-orphans
         remove_managed_volumes
+        rm -rf "$BUILD_STATE_DIR"
         docker image prune -f --filter "label=app=firefly-iot"
         log_info "Cleanup completed"
     else

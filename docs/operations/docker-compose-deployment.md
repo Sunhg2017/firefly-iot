@@ -39,6 +39,8 @@
 - `bash deploy.sh build` / `bash deploy.sh up` 直接从源码构建镜像，不再依赖宿主机 Maven
 - 后端镜像会按服务顺序构建，并复用 Docker BuildKit 的 Maven 缓存；首次冷启动时间取决于制品源网络，但不会再被多服务并发重复下载放大
 - 后端 Docker 构建默认改走华为云 Maven 镜像，避免当前宿主机直连 Maven Central 极慢
+- `deploy.sh` 会把业务源码指纹记录在 `deploy/runtime/build-state/`；源码未变化且目标镜像还在时，会跳过后端或前端构建
+- 如果本轮必须忽略源码指纹缓存，执行 `FIREFLY_FORCE_BUILD=1 bash deploy.sh build` 或 `FIREFLY_FORCE_BUILD=1 bash deploy.sh up`
 - 当前 Compose 会额外给 `firefly-gateway` 注入 `FIREFLY_GATEWAY_*_HOST=firefly-*`，保证 `DEPLOY_ENV=dev` 时容器内静态路由仍转发到 Compose 网络服务名，而不是误连 Gateway 容器自己的 `127.0.0.1`
 - 当前 Compose 文件已经移除废弃的 `version` 顶层字段；如果值班时再次看到 `the attribute 'version' is obsolete`，说明宿主机仍在使用旧版 Compose 文件
 
@@ -130,6 +132,7 @@ Kafka 额外要求：
 - Docker BuildKit 会复用 `/root/.m2` 缓存，后续构建明显加快
 - 默认仓库源已经切到华为云 Maven 镜像；如果这里仍然慢，优先判断宿主机到镜像源本身的网络质量
 - 如果上一次构建异常中断，`deploy.sh` 会先检查并清理残留的 BuildKit executor，再进入真正的镜像构建
+- 如果源码没有变化且镜像仍然存在，`deploy.sh build` / `deploy.sh up` 会直接跳过后端或前端构建，日志里会明确打印 skip 原因
 - `deploy.sh up` 会在返回前等待基础设施健康检查、后端容器健康状态以及 `Gateway / Rule / Web` 宿主机入口可访问
 - `deploy.sh infra` / `deploy.sh up` 不会再在每次执行时强制重编译 ZLMediaKit；只有镜像缺失时才会由 Compose 自动补建
 - 持久化卷已经切到 external volume 口径；只要卷名稳定，Compose 不再对历史卷标签报警
@@ -186,6 +189,21 @@ Kafka 额外要求：
 - `bash deploy.sh clean` 会在 `docker compose down -v` 之后额外删除这些稳定卷，保持“清空数据”的语义不变
 
 如果仍然出现旧告警，优先检查当前宿主机是否真的已经同步到最新仓库版本。
+
+### 5.1.8 重复执行 `deploy.sh up` 仍然重新构建后端或前端
+
+当前版本只有以下三种情况会重新构建业务镜像：
+
+- 相关源码指纹发生变化
+- 目标镜像已经不存在
+- 显式设置了 `FIREFLY_FORCE_BUILD=1`
+
+排查顺序：
+
+1. 看 `deploy/runtime/build-state/backend.sha256`、`deploy/runtime/build-state/web.sha256` 是否存在
+2. 看日志里是否打印了 `source fingerprint changed`、`build fingerprint not found`、`image ... is missing` 或 `FIREFLY_FORCE_BUILD is enabled`
+3. 用 `docker images | grep '^firefly-iot-'` 确认目标镜像是否还在
+4. 如果本轮确实要彻底重建，直接显式执行 `FIREFLY_FORCE_BUILD=1 bash deploy.sh up`
 
 ### 5.2 新容器启动后数据为空
 

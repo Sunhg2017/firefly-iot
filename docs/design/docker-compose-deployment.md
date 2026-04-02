@@ -182,8 +182,9 @@
 - `deploy/Dockerfile` 直接写入 Maven `settings.xml` 并通过 `mvn -s` 显式启用，默认把全部仓库请求镜像到 `https://repo.huaweicloud.com/repository/maven/`
 - `deploy/Dockerfile` 通过 BuildKit `type=cache` 共享 `/root/.m2`，让顺序构建时后续服务直接复用前序服务已经下载好的 Maven 依赖
 - `deploy.sh` 在进入构建前会先检查 `/var/lib/docker/buildkit/executor/` 残留进程；如果上一次异常退出留下了 BuildKit 锁，会先清理后再继续构建，避免再次卡死在首个 Maven 步骤
-- `deploy.sh build` 改为顺序构建后端服务镜像，再单独构建前端，避免多个服务冷启动时并发重复下载同一批依赖
-- `deploy.sh up` 不再调用宿主机 Maven，而是按“基础设施 -> 顺序构建后端 -> 启动后端 -> 构建并启动前端 -> 等待基础设施与关键入口就绪”执行
+- `deploy.sh` 为后端和前端分别计算源码指纹，并把结果落到 `deploy/runtime/build-state/backend.sha256`、`deploy/runtime/build-state/web.sha256`；只有源码变化、目标镜像缺失或显式设置 `FIREFLY_FORCE_BUILD=1` 时才会重新构建
+- `deploy.sh build` 改为“按源码指纹决定是否顺序构建后端服务镜像，再按源码指纹决定是否单独构建前端”，避免重复 `up/build` 时继续做无意义镜像构建
+- `deploy.sh up` 不再调用宿主机 Maven，而是按“基础设施 -> 按需准备后端镜像 -> 启动后端 -> 按需准备前端镜像 -> 启动前端 -> 等待基础设施与关键入口就绪”执行
 - `deploy.sh infra` / `deploy.sh up` 启动基础设施时不再携带 `--build`；重复部署默认复用现有 `firefly-zlmediakit` 镜像，只在镜像首次缺失时才让 Compose 自动补构建
 - 持久化卷改为 `deploy.sh` 预创建、Compose 以 `external: true` 方式挂载；卷的生命周期统一归脚本管理，Compose 不再对历史稳定卷做归属校验
 - 仓库根目录新增 `.dockerignore`，显式排除 `target/`、`node_modules/`、`deploy/.env`、运行时目录和模拟器等无关上下文，避免把本地产物重新打进构建上下文
@@ -201,6 +202,7 @@
 - 首次冷启动构建仍会下载 Maven 依赖，但同一台宿主机后续构建会复用 BuildKit Maven 缓存。
 - 华为云 Maven 镜像是按 `192.168.123.102` 实测结果选出的默认值：同一 Lombok 2.1MB JAR 下载从 Maven Central 的约 148 秒降到约 0.33 秒。
 - 后端镜像按服务顺序构建，牺牲一点并发换取稳定的弱网表现和可复用缓存。
+- 重复执行 `deploy.sh build/up` 时，如果源码指纹未变化且镜像仍在，脚本会直接跳过后端或前端构建，避免值班阶段每次发布都重新走一遍 Docker 多阶段编译。
 - 如果前一次构建是异常中断，脚本会优先尝试清理残留 BuildKit executor；只有检测到另一个构建仍在运行时才会拒绝继续，避免误杀有效任务。
 - `deploy.sh up` 最终返回前会等待 `postgres/redis/kafka/nacos/minio` 的容器健康检查通过，并额外探测 `ZLMediaKit API`、`Gateway actuator`、`Rule actuator` 与 `Web` 首页，避免容器刚启动就被宿主机侧探活撞到瞬时 `connection reset`。
 - `192.168.123.102` 的远端复验已确认：此前每次 `up` 都会重跑 ZLMediaKit 的整套 C++ 编译；去掉基础设施阶段的 `--build` 后，重复部署不再触发这段无意义重编译。

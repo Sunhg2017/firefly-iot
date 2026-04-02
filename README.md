@@ -142,6 +142,8 @@ bash deploy.sh up
 - 后端镜像构建现在复用 Docker BuildKit 的共享 Maven 缓存，并按服务顺序逐个构建；首次冷启动仍会下载依赖，但不会再让多个服务并发重复拉同一批制品。
 - 后端 Docker 构建默认通过华为云 Maven 镜像拉取依赖；这是按 `192.168.123.102` 的实测速度收口后的默认值。
 - 如果上一次构建异常中断，`deploy.sh` 会先检查残留 BuildKit executor；必要时会提示一次 sudo 清理，避免下一轮继续卡在 Maven 共享缓存锁上。
+- `deploy.sh build` / `deploy.sh up` 现在会把后端与前端源码指纹记录到 `deploy/runtime/build-state/`；当源码未变化且目标镜像仍存在时，会直接跳过后端 / 前端重建。
+- 如需强制重建全部业务镜像，可在执行前追加 `FIREFLY_FORCE_BUILD=1`。
 - `bash deploy.sh up` 现在会等待基础设施健康检查、Java 服务容器健康状态以及 `Gateway / Rule / Web` 的宿主机入口可访问后再返回，避免刚重建完成就被外部探活打到连接重置。
 - `bash deploy.sh infra` / `bash deploy.sh up` 不会再在每次执行时重编译 ZLMediaKit；只有镜像首次缺失时才会按 Compose 默认行为自动构建。
 - PostgreSQL / Redis / Kafka / MinIO / MQTT 持久化卷现在统一按“脚本预创建 + Compose external volume”管理，重复部署不再打印旧卷归属告警；`bash deploy.sh clean` 会显式删除这些稳定卷。
