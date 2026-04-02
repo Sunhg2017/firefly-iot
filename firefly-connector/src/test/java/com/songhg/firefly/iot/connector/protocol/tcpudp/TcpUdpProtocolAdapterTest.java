@@ -8,6 +8,7 @@ import com.songhg.firefly.iot.connector.parser.model.ParseContext;
 import com.songhg.firefly.iot.connector.parser.model.ProtocolParseOutcome;
 import com.songhg.firefly.iot.connector.parser.service.FrameDecodeEngine;
 import com.songhg.firefly.iot.connector.parser.service.ProtocolParseEngine;
+import com.songhg.firefly.iot.connector.protocol.downstream.DeviceIdentityResolveService;
 import com.songhg.firefly.iot.connector.service.DeviceMessageProducer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,9 @@ class TcpUdpProtocolAdapterTest {
     @Mock
     private FrameDecodeEngine frameDecodeEngine;
 
+    @Mock
+    private DeviceIdentityResolveService deviceIdentityResolveService;
+
     private TcpUdpProtocolAdapter tcpUdpProtocolAdapter;
 
     @BeforeEach
@@ -46,7 +50,8 @@ class TcpUdpProtocolAdapterTest {
                 new ObjectMapper(),
                 deviceMessageProducer,
                 protocolParseEngine,
-                frameDecodeEngine
+                frameDecodeEngine,
+                deviceIdentityResolveService
         );
     }
 

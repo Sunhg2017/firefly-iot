@@ -14,6 +14,8 @@ import com.songhg.firefly.iot.device.dto.device.DeviceTopologyVO;
 import com.songhg.firefly.iot.device.entity.Device;
 import com.songhg.firefly.iot.device.entity.Product;
 import com.songhg.firefly.iot.device.mapper.DeviceMapper;
+import com.songhg.firefly.iot.device.mapper.DeviceVideoChannelMapper;
+import com.songhg.firefly.iot.device.mapper.DeviceVideoProfileMapper;
 import com.songhg.firefly.iot.device.mapper.ProductMapper;
 import com.songhg.firefly.iot.device.protocolparser.service.DeviceLocatorService;
 import org.junit.jupiter.api.AfterEach;
@@ -38,8 +40,18 @@ class DeviceServiceTest {
     private final DeviceLocatorService deviceLocatorService = mock(DeviceLocatorService.class);
     private final DeviceTagService deviceTagService = mock(DeviceTagService.class);
     private final DeviceGroupService deviceGroupService = mock(DeviceGroupService.class);
+    private final DeviceVideoProfileMapper deviceVideoProfileMapper = mock(DeviceVideoProfileMapper.class);
+    private final DeviceVideoChannelMapper deviceVideoChannelMapper = mock(DeviceVideoChannelMapper.class);
     private final DeviceService service =
-            new DeviceService(deviceMapper, productMapper, deviceLocatorService, deviceTagService, deviceGroupService);
+            new DeviceService(
+                    deviceMapper,
+                    productMapper,
+                    deviceLocatorService,
+                    deviceTagService,
+                    deviceGroupService,
+                    deviceVideoProfileMapper,
+                    deviceVideoChannelMapper
+            );
 
     @AfterEach
     void tearDown() {
