@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 # ============================================================
 # 通用 Dockerfile — 适用于所有 firefly-* Java 微服务
 # 直接在镜像构建阶段完成 Maven 打包，宿主机无需预先安装 Maven
@@ -22,6 +24,10 @@ COPY firefly-media/pom.xml firefly-media/pom.xml
 COPY firefly-connector/pom.xml firefly-connector/pom.xml
 COPY firefly-gateway/pom.xml firefly-gateway/pom.xml
 
+# 先基于 POM 预热共享 Maven 仓库缓存，避免每个服务镜像冷启动时重复下载依赖。
+RUN --mount=type=cache,id=firefly-maven-repo,target=/root/.m2,sharing=locked \
+    mvn -pl "${MODULE}" -am dependency:go-offline -DskipTests
+
 COPY firefly-common/src firefly-common/src
 COPY firefly-api/src firefly-api/src
 COPY firefly-plugin-api/src firefly-plugin-api/src
@@ -34,7 +40,8 @@ COPY firefly-media/src firefly-media/src
 COPY firefly-connector/src firefly-connector/src
 COPY firefly-gateway/src firefly-gateway/src
 
-RUN mvn -pl "${MODULE}" -am package -DskipTests
+RUN --mount=type=cache,id=firefly-maven-repo,target=/root/.m2,sharing=locked \
+    mvn -pl "${MODULE}" -am package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 

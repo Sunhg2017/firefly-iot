@@ -37,6 +37,7 @@
 - 如果 `.env` 没写 `NACOS_NAMESPACE`，脚本会自动推导为 `firefly-${DEPLOY_ENV}`
 - `bash deploy.sh infra` / `bash deploy.sh up` 日志会打印当前环境和命名空间，便于值班时快速识别
 - `bash deploy.sh build` / `bash deploy.sh up` 直接从源码构建镜像，不再依赖宿主机 Maven
+- 后端镜像会按服务顺序构建，并复用 Docker BuildKit 的 Maven 缓存；首次冷启动时间取决于制品源网络，但不会再被多服务并发重复下载放大
 - 当前 Compose 会额外给 `firefly-gateway` 注入 `FIREFLY_GATEWAY_*_HOST=firefly-*`，保证 `DEPLOY_ENV=dev` 时容器内静态路由仍转发到 Compose 网络服务名，而不是误连 Gateway 容器自己的 `127.0.0.1`
 - 当前 Compose 文件已经移除废弃的 `version` 顶层字段；如果值班时再次看到 `the attribute 'version' is obsolete`，说明宿主机仍在使用旧版 Compose 文件
 
@@ -117,6 +118,23 @@ Kafka 额外要求：
 3. 重新执行 `bash deploy.sh build` 或 `bash deploy.sh up`
 
 标准版本下，这个报错不应该再出现。
+
+### 5.1.3 首次 `bash deploy.sh build` 很慢
+
+如果远端是第一次冷启动构建，常见现象是日志里连续出现 Maven 制品下载。
+
+当前版本的预期行为：
+
+- 后端服务顺序构建，不再并发重复拉同一批依赖
+- Docker BuildKit 会复用 `/root/.m2` 缓存，后续构建明显加快
+
+排查顺序：
+
+1. 确认 `deploy/Dockerfile` 顶部包含 `# syntax=docker/dockerfile:1.7`
+2. 确认 `deploy.sh` 执行时带着 `DOCKER_BUILDKIT=1`
+3. 若长时间卡在 Maven 下载，优先检查宿主机到 Maven Central 或私有镜像源的网络质量
+
+在当前标准链路下，冷启动慢属于网络/制品源问题，不需要再回退到宿主机手工 Maven 打包。
 
 ### 5.2 新容器启动后数据为空
 

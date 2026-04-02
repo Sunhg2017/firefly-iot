@@ -23,6 +23,7 @@
 - 让部署用户 `shg` 直接具备 Docker CLI 执行能力，后续运行 `bash deploy.sh status/up/logs` 不再依赖额外 `sudo` 包裹。
 - 让 Compose 文件对齐当前 Docker Compose v2 规范，删除已经废弃且只会产生告警的 `version` 顶层字段。
 - 让后端服务镜像在 Docker 构建阶段直接完成 Maven 打包，宿主机部署入口不再依赖本地 Maven 安装。
+- 让弱网宿主机上的首次源码构建不再被多服务并发重复下载 Maven 依赖拖垮，保证标准 `deploy.sh build/up` 链路可预测。
 
 ## 3. 非目标
 
@@ -178,8 +179,9 @@
 
 - `deploy/Dockerfile.web` 继续沿用前端多阶段构建
 - `deploy/Dockerfile` 改成后端多阶段构建，第一阶段用 Maven 镜像在容器内执行 `mvn -pl <module> -am package -DskipTests`
-- `deploy.sh build` 改为直接执行 `docker compose build ...`
-- `deploy.sh up` 不再调用宿主机 Maven，只保留 `docker compose up -d --build ...`
+- `deploy/Dockerfile` 在复制源码前先基于各模块 `pom.xml` 执行 `dependency:go-offline`，并通过 BuildKit `type=cache` 共享 `/root/.m2`
+- `deploy.sh build` 改为顺序构建后端服务镜像，再单独构建前端，避免多个服务冷启动时并发重复下载同一批依赖
+- `deploy.sh up` 不再调用宿主机 Maven，而是按“基础设施 -> 顺序构建后端 -> 启动后端 -> 构建并启动前端”执行
 - 仓库根目录新增 `.dockerignore`，显式排除 `target/`、`node_modules/`、`deploy/.env`、运行时目录和模拟器等无关上下文，避免把本地产物重新打进构建上下文
 
 这样标准部署宿主机只需要：
@@ -189,6 +191,11 @@
 - 访问基础镜像仓库和 Maven/NPM 制品源的网络能力
 
 不再要求宿主机额外安装 Maven 或 Node.js。
+
+补充约束：
+
+- 首次冷启动构建仍会下载 Maven 依赖，但同一台宿主机后续构建会复用 BuildKit Maven 缓存。
+- 后端镜像按服务顺序构建，牺牲一点并发换取稳定的弱网表现和可复用缓存。
 
 ## 5. 风险与约束
 

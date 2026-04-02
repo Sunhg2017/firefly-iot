@@ -29,6 +29,11 @@
 
 当前标准部署不再要求宿主机预装 Maven 或 Node.js；`deploy.sh build` / `deploy.sh up` 会直接在 Docker 多阶段构建里完成后端和前端编译。
 
+现在后端镜像会按服务顺序构建，并复用 Docker BuildKit 的 Maven 缓存：
+
+- 第一次冷启动时会看到 Maven 下载日志，这是正常现象
+- 同一台宿主机后续再次执行 `bash deploy.sh build` / `bash deploy.sh up` 会明显更快
+
 `KAFKA_ADVERTISED_HOST` 的选择规则：
 
 - 全量 Compose 部署：保持默认值 `kafka`
@@ -54,6 +59,8 @@
 如果你发现命令输出里还在提示 `the attribute 'version' is obsolete`，说明当前宿主机还没切到新版 Compose 文件，需要先同步最新仓库再执行部署。
 
 如果你看到 `mvn: command not found`，也说明宿主机还在跑旧版部署链路；同步到当前版本后，这个问题会随着 Docker 内部构建一起消失。
+
+如果第一次执行 `bash deploy.sh build` 比较久，先看日志是否在持续下载 Maven 依赖；当前版本会自动复用缓存，首次构建完成后后续速度会恢复正常。
 
 ## 4. 持久化卷配置
 

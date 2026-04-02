@@ -27,6 +27,10 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
+
+BACKEND_BUILD_SERVICES=(gateway system device rule media data support connector)
+
 log_info()  { echo -e "${GREEN}[INFO]${NC}  $1"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
@@ -273,8 +277,22 @@ build_application_images() {
     load_env
     log_info "Using deploy environment '${DEPLOY_ENV}' with Nacos namespace '${NACOS_NAMESPACE}'"
     log_step "Building application images from source..."
-    dc build gateway system device rule media data support connector web
+    build_backend_images
+    build_web_image
     log_info "Application images are ready"
+}
+
+build_backend_images() {
+    local service
+    for service in "${BACKEND_BUILD_SERVICES[@]}"; do
+        log_step "Building backend image: ${service}"
+        dc build "${service}"
+    done
+}
+
+build_web_image() {
+    log_step "Building frontend image: web"
+    dc build web
 }
 
 dc() {
@@ -311,16 +329,20 @@ cmd_up() {
     check_container_conflicts postgres redis kafka nacos minio sentinel zlmediakit gateway system device rule media data support connector web
     log_step "=== Firefly IoT full deployment ==="
 
-    log_step "[1/3] Starting infrastructure..."
+    log_step "[1/4] Starting infrastructure..."
     dc up -d --build postgres redis kafka nacos minio sentinel zlmediakit
     log_info "Waiting for infrastructure health checks..."
     sleep 15
 
-    log_step "[2/3] Building and starting application services..."
-    dc up -d --build gateway system device rule media data support connector
+    log_step "[2/4] Building backend images..."
+    build_backend_images
 
-    log_step "[3/3] Building and starting frontend..."
-    dc up -d --build web
+    log_step "[3/4] Starting backend services..."
+    dc up -d gateway system device rule media data support connector
+
+    log_step "[4/4] Building and starting frontend..."
+    build_web_image
+    dc up -d web
 
     echo ""
     log_info "=== Deployment completed ==="
