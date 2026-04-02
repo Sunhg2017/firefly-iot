@@ -288,19 +288,13 @@ list_buildkit_executor_processes() {
 }
 
 list_other_build_processes() {
-    local self_pid="$$"
-    local parent_pid="$PPID"
-
-    ps -eo pid=,user=,cmd= | awk -v self_pid="$self_pid" -v parent_pid="$parent_pid" '
-        /docker compose .* build/ || /docker buildx build/ || /buildctl build/ || /deploy\.sh (build|up)/ {
+    ps -eo pid=,user=,comm=,args= | awk '
+        ($3 == "docker" && ($0 ~ / compose .* build/ || $0 ~ / buildx build/)) || ($3 == "buildctl" && $0 ~ / build/) {
             pid = $1
-            if (pid == self_pid || pid == parent_pid) {
-                next
-            }
-
             user = $2
             $1 = ""
             $2 = ""
+            $3 = ""
             sub(/^  */, "", $0)
             printf "%s\t%s\t%s\n", pid, user, $0
         }
