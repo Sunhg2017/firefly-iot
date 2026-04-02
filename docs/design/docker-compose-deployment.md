@@ -179,7 +179,7 @@
 
 - `deploy/Dockerfile.web` 继续沿用前端多阶段构建
 - `deploy/Dockerfile` 改成后端多阶段构建，第一阶段用 Maven 镜像在容器内执行 `mvn -pl <module> -am package -DskipTests`
-- `deploy/Dockerfile` 在复制源码前先基于各模块 `pom.xml` 执行 `dependency:go-offline`，并通过 BuildKit `type=cache` 共享 `/root/.m2`
+- `deploy/Dockerfile` 通过 BuildKit `type=cache` 共享 `/root/.m2`，让顺序构建时后续服务直接复用前序服务已经下载好的 Maven 依赖
 - `deploy.sh build` 改为顺序构建后端服务镜像，再单独构建前端，避免多个服务冷启动时并发重复下载同一批依赖
 - `deploy.sh up` 不再调用宿主机 Maven，而是按“基础设施 -> 顺序构建后端 -> 启动后端 -> 构建并启动前端”执行
 - 仓库根目录新增 `.dockerignore`，显式排除 `target/`、`node_modules/`、`deploy/.env`、运行时目录和模拟器等无关上下文，避免把本地产物重新打进构建上下文

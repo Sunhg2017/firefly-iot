@@ -24,10 +24,6 @@ COPY firefly-media/pom.xml firefly-media/pom.xml
 COPY firefly-connector/pom.xml firefly-connector/pom.xml
 COPY firefly-gateway/pom.xml firefly-gateway/pom.xml
 
-# 先基于 POM 预热共享 Maven 仓库缓存，避免每个服务镜像冷启动时重复下载依赖。
-RUN --mount=type=cache,id=firefly-maven-repo,target=/root/.m2,sharing=locked \
-    mvn -pl "${MODULE}" -am dependency:go-offline -DskipTests
-
 COPY firefly-common/src firefly-common/src
 COPY firefly-api/src firefly-api/src
 COPY firefly-plugin-api/src firefly-plugin-api/src
@@ -40,6 +36,7 @@ COPY firefly-media/src firefly-media/src
 COPY firefly-connector/src firefly-connector/src
 COPY firefly-gateway/src firefly-gateway/src
 
+# 各服务镜像共用同一份 Maven 缓存，顺序构建时后续服务可直接复用首个服务下载的依赖。
 RUN --mount=type=cache,id=firefly-maven-repo,target=/root/.m2,sharing=locked \
     mvn -pl "${MODULE}" -am package -DskipTests
 

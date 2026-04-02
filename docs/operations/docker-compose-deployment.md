@@ -132,7 +132,7 @@ Kafka 额外要求：
 
 1. 确认 `deploy/Dockerfile` 顶部包含 `# syntax=docker/dockerfile:1.7`
 2. 确认 `deploy.sh` 执行时带着 `DOCKER_BUILDKIT=1`
-3. 若长时间卡在 Maven 下载，优先检查宿主机到 Maven Central 或私有镜像源的网络质量
+3. 若长时间卡在首个后端服务的 Maven 下载，优先检查宿主机到 Maven Central 或私有镜像源的网络质量
 
 在当前标准链路下，冷启动慢属于网络/制品源问题，不需要再回退到宿主机手工 Maven 打包。
 
