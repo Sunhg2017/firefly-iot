@@ -20,6 +20,8 @@
 - 让 Kafka 广播地址能同时适配“全量 Compose”与“局域网共享基础设施”两种部署口径，避免客户端拿到 `localhost:9092` 后回连失败。
 - 让当前仍处于开发阶段的共享宿主机默认落到 `dev` Profile 和 `firefly-dev` 命名空间，禁止再以 `prod` 作为隐式默认值。
 - 让共享宿主机即使保持 `DEPLOY_ENV=dev`，Gateway 也能在容器网络内正确转发 `/SYSTEM|DEVICE|RULE|DATA|SUPPORT|MEDIA|CONNECTOR` 路由，不再误回环到容器自身的 `127.0.0.1`。
+- 让部署用户 `shg` 直接具备 Docker CLI 执行能力，后续运行 `bash deploy.sh status/up/logs` 不再依赖额外 `sudo` 包裹。
+- 让 Compose 文件对齐当前 Docker Compose v2 规范，删除已经废弃且只会产生告警的 `version` 顶层字段。
 
 ## 3. 非目标
 
@@ -121,6 +123,21 @@
 - 本地直跑 Gateway 时，不配环境变量仍沿用 `127.0.0.1`
 - 单机 Compose 部署时，Gateway 自动转发到 `firefly-*` 容器服务名
 - 不需要把共享开发宿主机整体切到 `prod` 才能让登录链路恢复
+
+### 4.7 部署入口权限与 Compose 规范收口
+
+当前宿主机上的标准部署入口是仓库内 `deploy/deploy.sh`。如果部署用户本身不在 `docker` 组里，脚本虽然还能通过 `sudo bash deploy.sh ...` 运行，但会带来两个实际问题：
+
+- 值班或联调时，同一个用户执行 `bash deploy.sh status` / `bash deploy.sh logs` 会直接报 Docker socket 权限错误
+- 部署入口会被人为拆成“有时直接跑、有时再包一层 sudo”，长期容易演变成新的运维分叉
+
+本次收口约定：
+
+- 共享宿主机上的标准部署用户加入 `docker` 组
+- 后续默认直接以该用户执行 `bash deploy.sh infra|up|status|logs`
+- `sudo` 只保留给系统级维护动作，不再作为日常 Compose 入口前缀
+
+同时，`deploy/docker-compose.yml` 与 `deploy/docker-compose.prod.yml` 删除顶层 `version` 字段。当前 Docker Compose v2 已按 Compose Specification 解析配置，保留 `version` 只会持续打印 `the attribute 'version' is obsolete` 告警，不再提供任何兼容收益。
 
 ## 5. 风险与约束
 

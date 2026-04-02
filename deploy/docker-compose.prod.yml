@@ -6,7 +6,6 @@
 # Current defaults target the shared development environment.
 # Switch DEPLOY_ENV / NACOS_NAMESPACE explicitly before formal production deployment.
 # ============================================================
-version: '3.8'
 
 x-java-service: &java-service
   build:

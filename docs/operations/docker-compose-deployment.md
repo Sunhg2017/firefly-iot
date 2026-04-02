@@ -7,6 +7,7 @@
 ## 2. 依赖服务
 
 - Docker Engine / Docker Compose v2
+- 标准部署用户需要加入 `docker` 组，否则直接执行 `bash deploy.sh status/logs/up` 会因为 Docker socket 权限失败
 - 宿主机可用端口：`80`、`8080`、`8848`、`9000`、`9001`、`10000`、`18080`、`1883` 等
 - 持久化卷：PostgreSQL、Redis、Kafka、MinIO、Connector MQTT 数据目录
 
@@ -30,6 +31,7 @@
 - 如果 `.env` 没写 `NACOS_NAMESPACE`，脚本会自动推导为 `firefly-${DEPLOY_ENV}`
 - `bash deploy.sh infra` / `bash deploy.sh up` 日志会打印当前环境和命名空间，便于值班时快速识别
 - 当前 Compose 会额外给 `firefly-gateway` 注入 `FIREFLY_GATEWAY_*_HOST=firefly-*`，保证 `DEPLOY_ENV=dev` 时容器内静态路由仍转发到 Compose 网络服务名，而不是误连 Gateway 容器自己的 `127.0.0.1`
+- 当前 Compose 文件已经移除废弃的 `version` 顶层字段；如果值班时再次看到 `the attribute 'version' is obsolete`，说明宿主机仍在使用旧版 Compose 文件
 
 Kafka 额外要求：
 
@@ -84,6 +86,16 @@ Kafka 额外要求：
 ### 5.1 `container name is already in use`
 
 说明宿主机存在同名旧容器。当前 `deploy.sh` 会在 `docker compose up` 之前直接报出容器名和旧工程名。按“旧 Compose 收口步骤”先退役旧容器后再执行部署。
+
+### 5.1.1 `permission denied while trying to connect to the Docker daemon socket`
+
+如果当前用户直接执行 `bash deploy.sh status`、`bash deploy.sh logs` 或 `docker ps` 时出现 Docker socket 权限错误，按下面顺序处理：
+
+1. 确认部署用户已加入 `docker` 组：`id`
+2. 如果还没加入，执行 `sudo usermod -aG docker <deploy-user>`
+3. 重新登录一个新的 shell / SSH 会话后复验 `docker ps`
+
+共享宿主机已经收口为“部署用户直接跑脚本”的口径，不建议再长期依赖 `sudo bash deploy.sh ...` 作为日常入口。
 
 ### 5.2 新容器启动后数据为空
 

@@ -25,6 +25,8 @@
 6. 启动基础设施：`bash deploy.sh infra`
 7. 启动全量服务：`bash deploy.sh up`
 
+在共享宿主机上，执行这些命令的部署用户需要已经加入 `docker` 组；否则直接运行 `bash deploy.sh status` 或 `docker ps` 会报权限错误。
+
 `KAFKA_ADVERTISED_HOST` 的选择规则：
 
 - 全量 Compose 部署：保持默认值 `kafka`
@@ -45,6 +47,8 @@
 - 查看日志：`bash deploy.sh logs <service>`
 - 停止服务：`bash deploy.sh down`
 - 重启业务服务：`bash deploy.sh restart`
+
+如果你发现命令输出里还在提示 `the attribute 'version' is obsolete`，说明当前宿主机还没切到新版 Compose 文件，需要先同步最新仓库再执行部署。
 
 ## 4. 持久化卷配置
 
