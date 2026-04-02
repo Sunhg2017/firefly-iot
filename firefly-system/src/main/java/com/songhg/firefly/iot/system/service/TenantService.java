@@ -534,7 +534,7 @@ public class TenantService {
         assertSystemOpsOperator();
         Tenant tenant = requireTenant(tenantId);
         ensureTenantSupportsSpaceAuthorization(tenant);
-        return tenantMenuConfigService.getTenantSpaceAuthorization(tenantId);
+        return withTenantContext(tenantId, () -> tenantMenuConfigService.getTenantSpaceAuthorization(tenantId));
     }
 
     @Transactional
@@ -545,7 +545,9 @@ public class TenantService {
         if (items == null || items.getMenuKeys() == null || items.getMenuKeys().isEmpty()) {
             throw new BizException(ResultCode.PARAM_ERROR, "请至少选择一个租户空间功能");
         }
-        TenantSpaceMenuAuthorizationVO menuTree = tenantMenuConfigService.replaceMenus(tenantId, items.getMenuKeys());
+        TenantSpaceMenuAuthorizationVO menuTree = withTenantContext(
+                tenantId,
+                () -> tenantMenuConfigService.replaceMenus(tenantId, items.getMenuKeys()));
         syncTenantRolePermissionsToAuthorizedScope(tenantId);
         return menuTree;
     }
@@ -554,7 +556,7 @@ public class TenantService {
         assertSystemOpsOperator();
         Tenant tenant = requireTenant(tenantId);
         ensureTenantSupportsOpenApiSubscription(tenant);
-        return tenantOpenApiSubscriptionService.listSubscriptions(tenantId);
+        return withTenantContext(tenantId, () -> tenantOpenApiSubscriptionService.listSubscriptions(tenantId));
     }
 
     @Transactional
@@ -562,7 +564,7 @@ public class TenantService {
         assertSystemOpsOperator();
         Tenant tenant = requireTenant(tenantId);
         ensureTenantSupportsOpenApiSubscription(tenant);
-        return tenantOpenApiSubscriptionService.replaceSubscriptions(tenantId, dto);
+        return withTenantContext(tenantId, () -> tenantOpenApiSubscriptionService.replaceSubscriptions(tenantId, dto));
     }
 
     private Long createTenantAdmin(Tenant tenant, TenantCreateDTO.AdminUserDTO adminUser, Long operatorId) {
@@ -681,47 +683,53 @@ public class TenantService {
     }
 
     public void syncTenantRolePermissionsToAuthorizedScope(Long tenantId) {
-        Set<String> allowedPermissions = workspacePermissionCatalogService.getTenantWorkspacePermissions(tenantId);
-        List<Role> roles = roleMapper.selectList(new LambdaQueryWrapper<Role>()
-                .eq(Role::getTenantId, tenantId));
-        if (roles.isEmpty()) {
-            return;
-        }
+        withTenantContext(tenantId, () -> {
+            // Platform-side tenant management must run under the managed tenant context,
+            // otherwise the tenant-line interceptor will hide the target tenant's roles,
+            // role_permissions and menu authorization records.
+            Set<String> allowedPermissions = workspacePermissionCatalogService.getTenantWorkspacePermissions(tenantId);
+            List<Role> roles = roleMapper.selectList(new LambdaQueryWrapper<Role>()
+                    .eq(Role::getTenantId, tenantId));
+            if (roles.isEmpty()) {
+                return null;
+            }
 
-        Map<Long, List<UserRole>> userRolesByRoleId = userRoleMapper.selectList(new LambdaQueryWrapper<UserRole>()
-                        .in(UserRole::getRoleId, roles.stream().map(Role::getId).toList()))
-                .stream()
-                .collect(Collectors.groupingBy(UserRole::getRoleId));
-
-        for (Role role : roles) {
-            Set<String> currentPermissions = rolePermissionMapper.selectList(new LambdaQueryWrapper<RolePermission>()
-                            .eq(RolePermission::getRoleId, role.getId()))
+            Map<Long, List<UserRole>> userRolesByRoleId = userRoleMapper.selectList(new LambdaQueryWrapper<UserRole>()
+                            .in(UserRole::getRoleId, roles.stream().map(Role::getId).toList()))
                     .stream()
-                    .map(RolePermission::getPermission)
-                    .filter(permission -> permission != null && !permission.isBlank())
-                    .collect(Collectors.toCollection(LinkedHashSet::new));
+                    .collect(Collectors.groupingBy(UserRole::getRoleId));
 
-            Set<String> nextPermissions = Boolean.TRUE.equals(role.getSystemFlag())
-                    ? new LinkedHashSet<>(allowedPermissions)
-                    : workspacePermissionCatalogService.retainTenantAuthorizedPermissions(tenantId, currentPermissions);
-            if (currentPermissions.equals(nextPermissions)) {
-                continue;
-            }
+            for (Role role : roles) {
+                Set<String> currentPermissions = rolePermissionMapper.selectList(new LambdaQueryWrapper<RolePermission>()
+                                .eq(RolePermission::getRoleId, role.getId()))
+                        .stream()
+                        .map(RolePermission::getPermission)
+                        .filter(permission -> permission != null && !permission.isBlank())
+                        .collect(Collectors.toCollection(LinkedHashSet::new));
 
-            rolePermissionMapper.delete(new LambdaQueryWrapper<RolePermission>()
-                    .eq(RolePermission::getRoleId, role.getId()));
-            for (String permission : nextPermissions) {
-                RolePermission rolePermission = new RolePermission();
-                rolePermission.setRoleId(role.getId());
-                rolePermission.setPermission(permission);
-                rolePermission.setCreatedAt(LocalDateTime.now());
-                rolePermissionMapper.insert(rolePermission);
-            }
+                Set<String> nextPermissions = Boolean.TRUE.equals(role.getSystemFlag())
+                        ? new LinkedHashSet<>(allowedPermissions)
+                        : workspacePermissionCatalogService.retainTenantAuthorizedPermissions(tenantId, currentPermissions);
+                if (currentPermissions.equals(nextPermissions)) {
+                    continue;
+                }
 
-            for (UserRole userRole : userRolesByRoleId.getOrDefault(role.getId(), List.of())) {
-                permissionService.evictUserCache(userRole.getUserId());
+                rolePermissionMapper.delete(new LambdaQueryWrapper<RolePermission>()
+                        .eq(RolePermission::getRoleId, role.getId()));
+                for (String permission : nextPermissions) {
+                    RolePermission rolePermission = new RolePermission();
+                    rolePermission.setRoleId(role.getId());
+                    rolePermission.setPermission(permission);
+                    rolePermission.setCreatedAt(LocalDateTime.now());
+                    rolePermissionMapper.insert(rolePermission);
+                }
+
+                for (UserRole userRole : userRolesByRoleId.getOrDefault(role.getId(), List.of())) {
+                    permissionService.evictUserCache(userRole.getUserId());
+                }
             }
-        }
+            return null;
+        });
     }
 
     public void syncAllTenantRolePermissionsToAuthorizedScope() {
@@ -795,6 +803,15 @@ public class TenantService {
         AppContext previous = AppContextHolder.get();
         AppContext temp = new AppContext();
         temp.setTenantId(tenantId);
+        if (previous != null) {
+            temp.setUserId(previous.getUserId());
+            temp.setUsername(previous.getUsername());
+            temp.setPlatform(previous.getPlatform());
+            temp.setAppKeyId(previous.getAppKeyId());
+            temp.setOpenApiCode(previous.getOpenApiCode());
+            temp.setRoles(previous.getRoles());
+            temp.setPermissions(previous.getPermissions());
+        }
         AppContextHolder.set(temp);
         try {
             return supplier.get();

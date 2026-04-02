@@ -36,6 +36,13 @@
 - `WorkspacePermissionCatalogService` 仅允许对当前租户已授权菜单对应的权限做角色分配。
 - 前端 `BasicLayout`、`workspaceRoutes.ts` 继续基于 `authorizedMenuPaths + permissions` 做页面可见性和首页决策。
 
+### 3.4 平台侧代管租户必须切到目标租户上下文
+
+- 系统运维在“租户管理 -> 空间授权”或租户 OpenAPI 订阅页操作目标租户时，后端不能继续沿用平台租户上下文。
+- 相关服务在读写 `tenant_menu_configs`、`tenant_open_api_subscriptions`、`roles`、`role_permissions`、`user_roles` 这类带 `tenant_id` 的表前，必须先切到目标租户上下文。
+- 切换上下文时不能丢掉当前操作者身份；`userId`、`username`、`platform` 等审计信息需要继续保留，避免 `created_by`、缓存清理和审计日志失真。
+- 否则会出现“`authorizedMenuPaths` 已经有菜单，但 `/users/me/permissions` 为空”的异常状态：菜单授权写进去了，但角色权限同步被租户隔离拦截，租户超级管理员登录后首页仍会落到 `/403`。
+
 ## 4. 影响范围
 
 - `firefly-system/src/main/java/com/songhg/firefly.iot.system.service.TenantService`
@@ -57,3 +64,4 @@
 
 - 收口后，新租户在系统运维未完成空间授权前，租户管理员可见能力会明显变少，这是符合权限模型的预期，不再做兼容性放开。
 - 如果历史库中仍残留旧租户的全量授权数据，需要运维按租户实际授权要求清理 `tenant_menu_configs`，而不是在代码里继续保留默认放开逻辑。
+- 对已受“目标租户上下文缺失”影响的租户，需要在发布修复后重新同步一次角色权限；否则旧的空权限数据不会自动恢复。
