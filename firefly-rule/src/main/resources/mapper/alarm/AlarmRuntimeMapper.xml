@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.rule.mapper.AlarmRuntimeMapper">
+
+    <select id="selectMetricAggregate" resultType="com.songhg.firefly.iot.rule.dto.alarmruntime.AlarmMetricAggregate">
+        WITH filtered AS (
+            SELECT ts,
+                   value_number
+            FROM device_telemetry
+            WHERE tenant_id = #{tenantId}
+              AND device_id = #{deviceId}
+              AND property = #{property}
+              AND value_number IS NOT NULL
+              AND ts &gt;= #{startTime}
+              AND ts &lt;= #{endTime}
+        ),
+        latest AS (
+            SELECT value_number
+            FROM filtered
+            ORDER BY ts DESC
+            LIMIT 1
+        )
+        SELECT COUNT(1) AS sampleCount,
+               AVG(value_number) AS avgValue,
+               MAX(value_number) AS maxValue,
+               MIN(value_number) AS minValue,
+               SUM(value_number) AS sumValue,
+               (SELECT value_number FROM latest) AS latestValue
+        FROM filtered
+    </select>
+
+    <select id="selectRecentNumericValues" resultType="com.songhg.firefly.iot.rule.dto.alarmruntime.AlarmMetricValuePoint">
+        SELECT ts,
+               value_number AS valueNumber
+        FROM device_telemetry
+        WHERE tenant_id = #{tenantId}
+          AND device_id = #{deviceId}
+          AND property = #{property}
+          AND value_number IS NOT NULL
+        ORDER BY ts DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectExistingGroupCodes" resultType="string">
+        SELECT code
+        FROM alarm_recipient_groups
+        WHERE tenant_id = #{tenantId}
+          AND code IN
+        <foreach collection="groupCodes" item="code" open="(" separator="," close=")">
+            #{code}
+        </foreach>
+        ORDER BY code ASC
+    </select>
+
+    <select id="selectActiveUsersByUsernames" resultType="com.songhg.firefly.iot.rule.dto.alarmruntime.AlarmRecipientUser">
+        SELECT id AS userId,
+               username,
+               real_name AS realName,
+               phone,
+               email
+        FROM users
+        WHERE tenant_id = #{tenantId}
+          AND username IN
+        <foreach collection="usernames" item="username" open="(" separator="," close=")">
+            #{username}
+        </foreach>
+          AND status = 'ACTIVE'
+          AND deleted_at IS NULL
+        ORDER BY username ASC
+    </select>
+
+    <select id="selectActiveGroupUsers" resultType="com.songhg.firefly.iot.rule.dto.alarmruntime.AlarmRecipientUser">
+        SELECT DISTINCT u.id AS userId,
+                        u.username,
+                        u.real_name AS realName,
+                        u.phone,
+                        u.email
+        FROM alarm_recipient_groups g
+        JOIN alarm_recipient_group_members gm
+          ON gm.tenant_id = g.tenant_id
+         AND gm.group_id = g.id
+        JOIN users u
+          ON u.id = gm.user_id
+         AND u.tenant_id = g.tenant_id
+        WHERE g.tenant_id = #{tenantId}
+          AND g.code IN
+        <foreach collection="groupCodes" item="code" open="(" separator="," close=")">
+            #{code}
+        </foreach>
+          AND u.status = 'ACTIVE'
+          AND u.deleted_at IS NULL
+        ORDER BY u.username ASC
+    </select>
+
+    <select id="selectAvailableChannelsByTypes" resultType="com.songhg.firefly.iot.rule.dto.alarmruntime.AlarmChannelOption">
+        SELECT id,
+               tenant_id AS tenantId,
+               type,
+               name
+        FROM notification_channels
+        WHERE enabled = TRUE
+          AND type IN
+        <foreach collection="types" item="type" open="(" separator="," close=")">
+            #{type}
+        </foreach>
+          AND (
+            tenant_id = #{tenantId}
+            OR (
+                tenant_id = 0
+                AND #{tenantId} IS NOT NULL
+                AND #{tenantId} &lt;&gt; 0
+                AND type &lt;&gt; 'WEBHOOK'
+            )
+          )
+        ORDER BY type ASC,
+                 CASE WHEN tenant_id = #{tenantId} THEN 0 ELSE 1 END ASC,
+                 id ASC
+    </select>
+
+</mapper>

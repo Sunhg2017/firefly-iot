@@ -29,7 +29,7 @@ public class DashboardService {
         long alarmToday = countOrZero(
                 "SELECT COUNT(*) FROM alarm_records WHERE tenant_id = ? AND created_at >= CURRENT_DATE", tenantId);
         long alarmPending = countOrZero(
-                "SELECT COUNT(*) FROM alarm_records WHERE tenant_id = ? AND status = 'TRIGGERED'", tenantId);
+                "SELECT COUNT(*) FROM alarm_records WHERE tenant_id = ? AND status IN ('TRIGGERED', 'CONFIRMED')", tenantId);
         long ruleTotal = countOrZero("SELECT COUNT(*) FROM rule_engines WHERE tenant_id = ?", tenantId);
         long ruleEnabled = countOrZero(
                 "SELECT COUNT(*) FROM rule_engines WHERE tenant_id = ? AND status = 'ENABLED'", tenantId);
@@ -81,7 +81,19 @@ public class DashboardService {
 
     public List<Map<String, Object>> getRecentAlarms(int limit) {
         Long tenantId = AppContextHolder.getTenantId();
-        String sql = "SELECT id, device_id, rule_name, level, status, message, created_at FROM alarm_records WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?";
+        String sql = """
+                SELECT id,
+                       device_id,
+                       title AS rule_name,
+                       level,
+                       status,
+                       content AS message,
+                       created_at
+                FROM alarm_records
+                WHERE tenant_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """;
         try {
             return jdbcTemplate.queryForList(sql, tenantId, limit);
         } catch (Exception e) {

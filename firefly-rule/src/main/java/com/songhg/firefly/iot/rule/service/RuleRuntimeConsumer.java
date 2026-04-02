@@ -15,12 +15,22 @@ public class RuleRuntimeConsumer {
 
     private final ObjectMapper objectMapper;
     private final RuleRuntimeService ruleRuntimeService;
+    private final AlarmRuntimeService alarmRuntimeService;
 
     @KafkaListener(topics = KafkaTopics.RULE_ENGINE_INPUT, groupId = "firefly-rule-runtime")
     public void onMessage(String payload) {
         try {
             DeviceMessage message = objectMapper.readValue(payload, DeviceMessage.class);
-            ruleRuntimeService.process(message);
+            try {
+                ruleRuntimeService.process(message);
+            } catch (Exception ex) {
+                log.error("Rule runtime execution failed: {}", ex.getMessage(), ex);
+            }
+            try {
+                alarmRuntimeService.process(message);
+            } catch (Exception ex) {
+                log.error("Alarm runtime execution failed: {}", ex.getMessage(), ex);
+            }
         } catch (Exception ex) {
             log.error("Failed to consume rule runtime message: {}", ex.getMessage(), ex);
         }

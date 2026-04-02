@@ -130,7 +130,7 @@ public class NotificationSender {
 
             NotificationChannel channel = getEnabledChannel(tenantId, channelId);
             NotificationChannelType channelType = NotificationChannelType.of(channel.getType());
-            MessageTemplate template = templateService.getEntityByCode(tenantId, templateCode);
+            MessageTemplate template = templateService.getEntityByCodeWithPlatformFallback(tenantId, templateCode);
             if (template == null || !Boolean.TRUE.equals(template.getEnabled())) {
                 throw new BizException(ResultCode.NOT_FOUND, "notification template is missing or disabled");
             }

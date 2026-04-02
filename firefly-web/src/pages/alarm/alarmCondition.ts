@@ -225,10 +225,16 @@ const getMetricLabel = (metricKey: string | undefined, metricLabelMap?: Record<s
   return metricLabelMap?.[metricKey] || metricKey;
 };
 
-const normalizeConditionItem = (item: AlarmConditionItemFormValues): Required<AlarmConditionItemFormValues> => ({
-  ...DEFAULT_ALARM_CONDITION_ITEM,
-  ...item,
-});
+const normalizeConditionItem = (item: AlarmConditionItemFormValues): Required<AlarmConditionItemFormValues> => {
+  const normalized = {
+    ...DEFAULT_ALARM_CONDITION_ITEM,
+    ...item,
+  };
+  if (normalized.conditionType === 'THRESHOLD') {
+    normalized.aggregateType = 'LATEST';
+  }
+  return normalized;
+};
 
 const normalizeRuleGroup = (group: AlarmRuleGroupFormValues): Required<AlarmRuleGroupFormValues> => ({
   ...DEFAULT_ALARM_RULE_GROUP,

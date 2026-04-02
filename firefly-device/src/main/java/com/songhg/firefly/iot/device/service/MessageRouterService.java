@@ -50,8 +50,8 @@ public class MessageRouterService {
 
     private void handlePropertyReport(DeviceMessage message) {
         Map<String, Object> payload = normalizePropertyPayload(message.getPayload());
+        DeviceMessage normalizedMessage = payload != null && !payload.isEmpty() ? withPayload(message, payload) : message;
         if (payload != null && !payload.isEmpty()) {
-            DeviceMessage normalizedMessage = withPayload(message, payload);
             try {
                 deviceDataService.writeTelemetryFromMessage(normalizedMessage);
             } catch (Exception ex) {
@@ -66,7 +66,7 @@ public class MessageRouterService {
                         message.getDeviceId(), ex.getMessage());
             }
         }
-        forwardToRuleEngine(message);
+        forwardToRuleEngine(normalizedMessage);
     }
 
     private void handleEventReport(DeviceMessage message) {

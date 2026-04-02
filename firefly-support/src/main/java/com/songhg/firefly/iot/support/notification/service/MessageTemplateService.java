@@ -80,6 +80,14 @@ public class MessageTemplateService {
                 .eq(MessageTemplate::getCode, normalizeCode(code)));
     }
 
+    public MessageTemplate getEntityByCodeWithPlatformFallback(Long tenantId, String code) {
+        MessageTemplate template = getEntityByCode(tenantId, code);
+        if (template != null || tenantId == null || tenantId == 0L) {
+            return template;
+        }
+        return getEntityByCode(0L, code);
+    }
+
     public IPage<MessageTemplate> list(MessageTemplateQueryDTO query) {
         Long tenantId = AppContextHolder.getTenantId();
         Page<MessageTemplate> page = new Page<>(query.getPageNum(), query.getPageSize());

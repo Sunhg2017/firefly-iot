@@ -25,15 +25,20 @@ import com.songhg.firefly.iot.rule.entity.AlarmRecord;
 import com.songhg.firefly.iot.rule.entity.AlarmRule;
 import com.songhg.firefly.iot.rule.mapper.AlarmRecordMapper;
 import com.songhg.firefly.iot.rule.mapper.AlarmRuleMapper;
+import com.songhg.firefly.iot.rule.mapper.AlarmRuntimeMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -66,6 +71,7 @@ public class AlarmService {
 
     private final AlarmRuleMapper alarmRuleMapper;
     private final AlarmRecordMapper alarmRecordMapper;
+    private final AlarmRuntimeMapper alarmRuntimeMapper;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -90,11 +96,7 @@ public class AlarmService {
     }
 
     public AlarmRuleVO getAlarmRuleById(Long id) {
-        AlarmRule rule = alarmRuleMapper.selectById(id);
-        if (rule == null) {
-            throw new BizException(ResultCode.ALARM_RULE_NOT_FOUND);
-        }
-        return AlarmConvert.INSTANCE.toRuleVO(rule);
+        return AlarmConvert.INSTANCE.toRuleVO(requireOwnedRule(id));
     }
 
     @DataScope(projectColumn = "project_id", productColumn = "product_id", deviceColumn = "device_id", groupColumn = "")
@@ -127,10 +129,7 @@ public class AlarmService {
 
     @Transactional
     public AlarmRuleVO updateAlarmRule(Long id, AlarmRuleUpdateDTO dto) {
-        AlarmRule rule = alarmRuleMapper.selectById(id);
-        if (rule == null) {
-            throw new BizException(ResultCode.ALARM_RULE_NOT_FOUND);
-        }
+        AlarmRule rule = requireOwnedRule(id);
 
         if (dto.getConditionExpr() != null) {
             NormalizedCondition normalizedCondition = normalizeConditionExpr(dto.getConditionExpr());
@@ -153,9 +152,12 @@ public class AlarmService {
 
     @Transactional
     public void deleteAlarmRule(Long id) {
-        AlarmRule rule = alarmRuleMapper.selectById(id);
-        if (rule == null) {
-            throw new BizException(ResultCode.ALARM_RULE_NOT_FOUND);
+        AlarmRule rule = requireOwnedRule(id);
+        Long recordCount = alarmRecordMapper.selectCount(new LambdaQueryWrapper<AlarmRecord>()
+                .eq(AlarmRecord::getTenantId, rule.getTenantId())
+                .eq(AlarmRecord::getAlarmRuleId, id));
+        if (recordCount != null && recordCount > 0) {
+            throw new BizException(ResultCode.CONFLICT, "告警规则已有历史记录，禁止直接删除，请先停用并保留历史告警。");
         }
         alarmRuleMapper.deleteById(id);
         log.info("Alarm rule deleted: id={}, name={}", id, rule.getName());
@@ -193,35 +195,26 @@ public class AlarmService {
     }
 
     public AlarmRecordVO getAlarmRecordById(Long id) {
-        AlarmRecord record = alarmRecordMapper.selectById(id);
-        if (record == null) {
-            throw new BizException(ResultCode.ALARM_RECORD_NOT_FOUND);
-        }
-        return AlarmConvert.INSTANCE.toRecordVO(record);
+        return AlarmConvert.INSTANCE.toRecordVO(requireOwnedRecord(id));
     }
 
     @Transactional
     public void confirmAlarmRecord(Long id) {
-        AlarmRecord record = alarmRecordMapper.selectById(id);
-        if (record == null) {
-            throw new BizException(ResultCode.ALARM_RECORD_NOT_FOUND);
-        }
+        AlarmRecord record = requireOwnedRecord(id);
         if (record.getStatus() != AlarmStatus.TRIGGERED) {
             throw new BizException(ResultCode.ALARM_STATUS_ERROR);
         }
         record.setStatus(AlarmStatus.CONFIRMED);
         record.setConfirmedBy(AppContextHolder.getUserId());
         record.setConfirmedAt(LocalDateTime.now());
+        record.setUpdatedAt(LocalDateTime.now());
         alarmRecordMapper.updateById(record);
         log.info("Alarm record confirmed: id={}", id);
     }
 
     @Transactional
     public void processAlarmRecord(Long id, AlarmProcessDTO dto) {
-        AlarmRecord record = alarmRecordMapper.selectById(id);
-        if (record == null) {
-            throw new BizException(ResultCode.ALARM_RECORD_NOT_FOUND);
-        }
+        AlarmRecord record = requireOwnedRecord(id);
         if (record.getStatus() != AlarmStatus.TRIGGERED && record.getStatus() != AlarmStatus.CONFIRMED) {
             throw new BizException(ResultCode.ALARM_STATUS_ERROR);
         }
@@ -231,17 +224,16 @@ public class AlarmService {
         if (dto != null && dto.getProcessRemark() != null) {
             record.setProcessRemark(dto.getProcessRemark());
         }
+        record.setUpdatedAt(LocalDateTime.now());
         alarmRecordMapper.updateById(record);
         log.info("Alarm record processed: id={}", id);
     }
 
     @Transactional
     public void closeAlarmRecord(Long id) {
-        AlarmRecord record = alarmRecordMapper.selectById(id);
-        if (record == null) {
-            throw new BizException(ResultCode.ALARM_RECORD_NOT_FOUND);
-        }
+        AlarmRecord record = requireOwnedRecord(id);
         record.setStatus(AlarmStatus.CLOSED);
+        record.setUpdatedAt(LocalDateTime.now());
         alarmRecordMapper.updateById(record);
         log.info("Alarm record closed: id={}", id);
     }
@@ -335,6 +327,7 @@ public class AlarmService {
                 unsupportedChannels.removeAll(SUPPORTED_NOTIFY_CHANNEL_TYPES);
                 throw new BizException(ResultCode.PARAM_ERROR, "存在不支持的通知方式: " + String.join(", ", unsupportedChannels));
             }
+            validateNotifyTargets(channels, recipientGroupCodes, recipientUsernames);
 
             ObjectNode normalizedNode = objectMapper.createObjectNode();
             normalizedNode.put("version", 1);
@@ -366,7 +359,12 @@ public class AlarmService {
         requireNumber(condition, "threshold", buildConditionMessage(groupIndex, conditionIndex, "缺少触发阈值"));
 
         if ("THRESHOLD".equals(type)) {
-            requireText(condition, "aggregateType", buildConditionMessage(groupIndex, conditionIndex, "缺少统计口径"));
+            String aggregateType = requireText(condition, "aggregateType",
+                    buildConditionMessage(groupIndex, conditionIndex, "缺少统计口径"));
+            if (!"LATEST".equals(aggregateType)) {
+                throw new BizException(ResultCode.PARAM_ERROR,
+                        buildConditionMessage(groupIndex, conditionIndex, "阈值触发仅支持“最新值”口径"));
+            }
             requireText(condition, "operator", buildConditionMessage(groupIndex, conditionIndex, "缺少比较符"));
             return;
         }
@@ -451,6 +449,127 @@ public class AlarmService {
             }
         });
         return values;
+    }
+
+    private void validateNotifyTargets(Set<String> channels,
+                                       Set<String> recipientGroupCodes,
+                                       Set<String> recipientUsernames) {
+        Long tenantId = requireTenantId();
+
+        validateSelectedChannels(tenantId, channels);
+        validateRecipientGroups(tenantId, recipientGroupCodes);
+
+        Map<String, com.songhg.firefly.iot.rule.dto.alarmruntime.AlarmRecipientUser> directUsers = recipientUsernames.isEmpty()
+                ? Map.of()
+                : alarmRuntimeMapper.selectActiveUsersByUsernames(tenantId, new ArrayList<>(recipientUsernames)).stream()
+                .collect(Collectors.toMap(
+                        com.songhg.firefly.iot.rule.dto.alarmruntime.AlarmRecipientUser::getUsername,
+                        item -> item,
+                        (left, right) -> left));
+        if (!recipientUsernames.isEmpty() && directUsers.size() != recipientUsernames.size()) {
+            List<String> missingUsers = recipientUsernames.stream()
+                    .filter(username -> !directUsers.containsKey(username))
+                    .toList();
+            throw new BizException(ResultCode.PARAM_ERROR, "以下接收人不存在或不可用: " + String.join(", ", missingUsers));
+        }
+
+        LinkedHashMap<Long, com.songhg.firefly.iot.rule.dto.alarmruntime.AlarmRecipientUser> targetUsers = new LinkedHashMap<>();
+        if (!recipientGroupCodes.isEmpty()) {
+            alarmRuntimeMapper.selectActiveGroupUsers(tenantId, new ArrayList<>(recipientGroupCodes))
+                    .forEach(user -> {
+                        if (user != null && user.getUserId() != null) {
+                            targetUsers.putIfAbsent(user.getUserId(), user);
+                        }
+                    });
+        }
+        directUsers.values().forEach(user -> {
+            if (user != null && user.getUserId() != null) {
+                targetUsers.putIfAbsent(user.getUserId(), user);
+            }
+        });
+
+        if (channels.contains("IN_APP") && targetUsers.isEmpty()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "站内信通知至少需要一个可用接收人");
+        }
+        if (channels.contains("EMAIL") && targetUsers.values().stream().noneMatch(item -> trimToNull(item.getEmail()) != null)) {
+            throw new BizException(ResultCode.PARAM_ERROR, "邮件通知至少需要一个已维护邮箱的接收人");
+        }
+        if ((channels.contains("SMS") || channels.contains("PHONE"))
+                && targetUsers.values().stream().noneMatch(item -> trimToNull(item.getPhone()) != null)) {
+            throw new BizException(ResultCode.PARAM_ERROR, "短信/电话通知至少需要一个已维护手机号的接收人");
+        }
+    }
+
+    private void validateSelectedChannels(Long tenantId, Set<String> channels) {
+        if (channels.isEmpty()) {
+            return;
+        }
+        Set<String> resolvedTypes = alarmRuntimeMapper.selectAvailableChannelsByTypes(tenantId, new ArrayList<>(channels)).stream()
+                .map(item -> item.getType())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (resolvedTypes.containsAll(channels)) {
+            return;
+        }
+        List<String> missingTypes = channels.stream()
+                .filter(type -> !resolvedTypes.contains(type))
+                .toList();
+        throw new BizException(ResultCode.PARAM_ERROR, "以下通知方式未配置可用渠道: " + String.join(", ", missingTypes));
+    }
+
+    private void validateRecipientGroups(Long tenantId, Set<String> recipientGroupCodes) {
+        if (recipientGroupCodes.isEmpty()) {
+            return;
+        }
+        Set<String> existingCodes = new LinkedHashSet<>(
+                alarmRuntimeMapper.selectExistingGroupCodes(tenantId, new ArrayList<>(recipientGroupCodes))
+        );
+        if (existingCodes.containsAll(recipientGroupCodes)) {
+            return;
+        }
+        List<String> missingCodes = recipientGroupCodes.stream()
+                .filter(code -> !existingCodes.contains(code))
+                .toList();
+        throw new BizException(ResultCode.PARAM_ERROR, "以下告警接收组不存在: " + String.join(", ", missingCodes));
+    }
+
+    private AlarmRule requireOwnedRule(Long id) {
+        Long tenantId = requireTenantId();
+        AlarmRule rule = alarmRuleMapper.selectOne(new LambdaQueryWrapper<AlarmRule>()
+                .eq(AlarmRule::getId, id)
+                .eq(AlarmRule::getTenantId, tenantId)
+                .last("LIMIT 1"));
+        if (rule == null) {
+            throw new BizException(ResultCode.ALARM_RULE_NOT_FOUND);
+        }
+        return rule;
+    }
+
+    private AlarmRecord requireOwnedRecord(Long id) {
+        Long tenantId = requireTenantId();
+        AlarmRecord record = alarmRecordMapper.selectOne(new LambdaQueryWrapper<AlarmRecord>()
+                .eq(AlarmRecord::getId, id)
+                .eq(AlarmRecord::getTenantId, tenantId)
+                .last("LIMIT 1"));
+        if (record == null) {
+            throw new BizException(ResultCode.ALARM_RECORD_NOT_FOUND);
+        }
+        return record;
+    }
+
+    private Long requireTenantId() {
+        Long tenantId = AppContextHolder.getTenantId();
+        if (tenantId == null || tenantId <= 0) {
+            throw new BizException(ResultCode.PARAM_ERROR, "租户上下文缺失");
+        }
+        return tenantId;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private String buildGroupMessage(int groupIndex, String message) {

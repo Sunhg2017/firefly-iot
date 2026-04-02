@@ -207,7 +207,7 @@ const getConditionValidationPaths = (
 
   switch (conditionType) {
     case 'THRESHOLD':
-      paths.push([...basePath, 'aggregateType'], [...basePath, 'operator'], [...basePath, 'threshold']);
+      paths.push([...basePath, 'operator'], [...basePath, 'threshold']);
       break;
     case 'COMPARE':
       paths.push(

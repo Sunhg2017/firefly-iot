@@ -264,23 +264,26 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
         style={{ marginBottom: 16, borderRadius: 12, background: '#fafafa', border: '1px dashed #d9d9d9' }}
       >
         {conditionType === 'THRESHOLD' && (
-          <Row gutter={12}>
-            <Col xs={24} md={8}>
-              <Form.Item name={[conditionIndex, 'aggregateType']} label={ALARM_TEXT.aggregateType}>
-                <Select options={AGGREGATE_OPTIONS} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={8}>
-              <Form.Item name={[conditionIndex, 'operator']} label={ALARM_TEXT.operator}>
-                <Select options={OPERATOR_OPTIONS} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={8}>
-              <Form.Item name={[conditionIndex, 'threshold']} label={ALARM_TEXT.thresholdValue}>
-                <InputNumber style={{ width: '100%' }} placeholder={ALARM_TEXT.thresholdPlaceholder} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <>
+            <Alert
+              showIcon
+              type="info"
+              message={ALARM_TEXT.thresholdAggregateFixed}
+              style={{ marginBottom: 16 }}
+            />
+            <Row gutter={12}>
+              <Col xs={24} md={12}>
+                <Form.Item name={[conditionIndex, 'operator']} label={ALARM_TEXT.operator}>
+                  <Select options={OPERATOR_OPTIONS} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item name={[conditionIndex, 'threshold']} label={ALARM_TEXT.thresholdValue}>
+                  <InputNumber style={{ width: '100%' }} placeholder={ALARM_TEXT.thresholdPlaceholder} />
+                </Form.Item>
+              </Col>
+            </Row>
+          </>
         )}
 
         {conditionType === 'COMPARE' && (

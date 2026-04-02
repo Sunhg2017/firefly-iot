@@ -96,6 +96,10 @@ class MessageRouterServiceTest {
                 actual != null && params.equals(actual.getPayload())
         ));
         verify(shadowService).updateReported(eq(3L), eq(params));
+        verify(messageProducer).publishToTopic(
+                eq(KafkaTopics.RULE_ENGINE_INPUT),
+                argThat(ruleMessage -> ruleMessage != null && params.equals(ruleMessage.getPayload()))
+        );
     }
 
     @Test
