@@ -130,6 +130,7 @@ Kafka 额外要求：
 - Docker BuildKit 会复用 `/root/.m2` 缓存，后续构建明显加快
 - 默认仓库源已经切到华为云 Maven 镜像；如果这里仍然慢，优先判断宿主机到镜像源本身的网络质量
 - 如果上一次构建异常中断，`deploy.sh` 会先检查并清理残留的 BuildKit executor，再进入真正的镜像构建
+- `deploy.sh up` 会在返回前等待基础设施健康检查、后端容器健康状态以及 `Gateway / Rule / Web` 宿主机入口可访问
 
 排查顺序：
 
@@ -155,6 +156,16 @@ Kafka 额外要求：
 3. 如果当前是非交互会话，按脚本提示在宿主机执行 `sudo kill <pid...>` 后再重试
 
 当前实测根因样本来自 `192.168.123.102`：上一次中断构建留下了 root 侧 BuildKit executor，导致后续顺序构建长期卡在 `/root/.m2` 共享缓存锁；清理残留进程后构建立即恢复。
+
+### 5.1.5 `deploy.sh up` 已结束，但外部立刻探活偶发 `connection reset`
+
+当前版本的 `deploy.sh up` 已经补上启动后等待：
+
+- 基础设施：`postgres/redis/kafka/nacos/minio` 健康检查 + `ZLMediaKit API`
+- 应用容器：`gateway/system/device/rule/media/data/support/connector/web` 健康检查
+- 宿主机入口：`http://localhost:8080/actuator/health`、`http://localhost:9030/actuator/health`、`http://localhost/`
+
+如果脚本已经返回成功，默认就表示这些关键入口已经可访问；不需要再自行额外插入 `sleep 30` 之类的兜底等待。
 
 ### 5.2 新容器启动后数据为空
 

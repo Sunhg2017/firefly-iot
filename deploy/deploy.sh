@@ -372,6 +372,89 @@ ensure_buildkit_ready() {
     log_info "Stale BuildKit executor lock cleared; continuing with image build."
 }
 
+service_container_name() {
+    echo "firefly-$1"
+}
+
+wait_for_service_healthy() {
+    require_docker_access
+
+    local service="$1"
+    local timeout_seconds="${2:-180}"
+    local container_name
+    container_name="$(service_container_name "$service")"
+    local elapsed=0
+
+    log_info "Waiting for ${service} to become healthy..."
+
+    while [ "$elapsed" -lt "$timeout_seconds" ]; do
+        local runtime_state health_state
+        runtime_state="$(docker inspect -f '{{.State.Status}}' "$container_name" 2>/dev/null || true)"
+        health_state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_name" 2>/dev/null || true)"
+
+        if [ "$runtime_state" = "running" ] && [ "$health_state" = "healthy" ]; then
+            return 0
+        fi
+
+        if [ "$runtime_state" = "exited" ] || [ "$runtime_state" = "dead" ]; then
+            log_error "Service ${service} stopped before becoming healthy."
+            dc logs --tail=50 "$service" || true
+            exit 1
+        fi
+
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+
+    log_error "Timed out waiting for ${service} to become healthy."
+    dc ps "$service" || true
+    dc logs --tail=50 "$service" || true
+    exit 1
+}
+
+wait_for_http_endpoint() {
+    local name="$1"
+    local url="$2"
+    local timeout_seconds="${3:-120}"
+    local elapsed=0
+
+    log_info "Waiting for ${name} endpoint: ${url}"
+
+    while [ "$elapsed" -lt "$timeout_seconds" ]; do
+        if curl -fsS "$url" >/dev/null 2>&1; then
+            return 0
+        fi
+
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+
+    log_error "Timed out waiting for ${name} endpoint: ${url}"
+    exit 1
+}
+
+wait_for_infrastructure_ready() {
+    wait_for_service_healthy postgres 120
+    wait_for_service_healthy redis 120
+    wait_for_service_healthy kafka 180
+    wait_for_service_healthy nacos 180
+    wait_for_service_healthy minio 120
+    wait_for_http_endpoint "ZLMediaKit API" "http://localhost:${ZLM_PORT:-18080}/index/api/getServerConfig?secret=${ZLM_SECRET:-035c73f7bb6b4889a715d9eb2d1925cc}" 120
+}
+
+wait_for_application_ready() {
+    local service
+
+    for service in gateway system device rule media data support connector; do
+        wait_for_service_healthy "$service" 180
+    done
+
+    wait_for_service_healthy web 120
+    wait_for_http_endpoint "Gateway health" "http://localhost:8080/actuator/health" 120
+    wait_for_http_endpoint "Rule health" "http://localhost:9030/actuator/health" 120
+    wait_for_http_endpoint "Web" "http://localhost/" 120
+}
+
 build_application_images() {
     load_env
     log_info "Using deploy environment '${DEPLOY_ENV}' with Nacos namespace '${NACOS_NAMESPACE}'"
@@ -408,12 +491,7 @@ cmd_infra() {
     check_container_conflicts postgres redis kafka nacos minio sentinel zlmediakit
     log_step "Starting infrastructure services..."
     dc up -d --build postgres redis kafka nacos minio sentinel zlmediakit
-    log_info "Waiting for PostgreSQL to become ready..."
-    dc exec postgres sh -c 'until pg_isready -U firefly; do sleep 2; done' 2>/dev/null
-    log_info "Waiting for ZLMediaKit API to become ready..."
-    until curl -fsS "http://localhost:${ZLM_PORT:-18080}/index/api/getServerConfig?secret=${ZLM_SECRET:-035c73f7bb6b4889a715d9eb2d1925cc}" >/dev/null 2>&1; do
-        sleep 2
-    done
+    wait_for_infrastructure_ready
     log_info "Infrastructure services are ready"
 }
 
@@ -431,8 +509,7 @@ cmd_up() {
 
     log_step "[1/4] Starting infrastructure..."
     dc up -d --build postgres redis kafka nacos minio sentinel zlmediakit
-    log_info "Waiting for infrastructure health checks..."
-    sleep 15
+    wait_for_infrastructure_ready
 
     log_step "[2/4] Building backend images..."
     ensure_buildkit_ready
@@ -444,6 +521,7 @@ cmd_up() {
     log_step "[4/4] Building and starting frontend..."
     build_web_image
     dc up -d web
+    wait_for_application_ready
 
     echo ""
     log_info "=== Deployment completed ==="

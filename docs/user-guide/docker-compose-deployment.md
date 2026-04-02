@@ -35,6 +35,7 @@
 - 同一台宿主机后续再次执行 `bash deploy.sh build` / `bash deploy.sh up` 会明显更快
 - 当前默认使用华为云 Maven 镜像，不再直接走 Maven Central
 - 如果上一次构建是异常中断，脚本会先检查残留 BuildKit 锁；必要时会提示你授权一次 sudo 来清理后再继续
+- `bash deploy.sh up` 返回成功前，会额外等待基础设施健康、后端容器健康，以及 `Gateway / Rule / Web` 入口真正可访问
 
 `KAFKA_ADVERTISED_HOST` 的选择规则：
 
@@ -69,6 +70,14 @@
 - 脚本会先检查是否有残留 BuildKit executor
 - 如果只是残留锁，没有别的构建在跑，会先清理再继续
 - 如果当前是非交互终端，脚本会直接给出需要执行的 `sudo kill <pid...>` 提示，不会继续假装构建
+
+如果你是用 `bash deploy.sh up` 做标准部署，脚本结束后可以直接开始验收：
+
+- `http://localhost:8080/actuator/health`
+- `http://localhost:9030/actuator/health`
+- `http://localhost/`
+
+这三个入口已经被脚本自身等到可访问，不需要再额外手工 `sleep`。
 
 ## 4. 持久化卷配置
 

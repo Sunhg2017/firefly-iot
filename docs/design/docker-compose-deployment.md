@@ -183,7 +183,7 @@
 - `deploy/Dockerfile` 通过 BuildKit `type=cache` 共享 `/root/.m2`，让顺序构建时后续服务直接复用前序服务已经下载好的 Maven 依赖
 - `deploy.sh` 在进入构建前会先检查 `/var/lib/docker/buildkit/executor/` 残留进程；如果上一次异常退出留下了 BuildKit 锁，会先清理后再继续构建，避免再次卡死在首个 Maven 步骤
 - `deploy.sh build` 改为顺序构建后端服务镜像，再单独构建前端，避免多个服务冷启动时并发重复下载同一批依赖
-- `deploy.sh up` 不再调用宿主机 Maven，而是按“基础设施 -> 顺序构建后端 -> 启动后端 -> 构建并启动前端”执行
+- `deploy.sh up` 不再调用宿主机 Maven，而是按“基础设施 -> 顺序构建后端 -> 启动后端 -> 构建并启动前端 -> 等待基础设施与关键入口就绪”执行
 - 仓库根目录新增 `.dockerignore`，显式排除 `target/`、`node_modules/`、`deploy/.env`、运行时目录和模拟器等无关上下文，避免把本地产物重新打进构建上下文
 
 这样标准部署宿主机只需要：
@@ -200,6 +200,7 @@
 - 华为云 Maven 镜像是按 `192.168.123.102` 实测结果选出的默认值：同一 Lombok 2.1MB JAR 下载从 Maven Central 的约 148 秒降到约 0.33 秒。
 - 后端镜像按服务顺序构建，牺牲一点并发换取稳定的弱网表现和可复用缓存。
 - 如果前一次构建是异常中断，脚本会优先尝试清理残留 BuildKit executor；只有检测到另一个构建仍在运行时才会拒绝继续，避免误杀有效任务。
+- `deploy.sh up` 最终返回前会等待 `postgres/redis/kafka/nacos/minio` 的容器健康检查通过，并额外探测 `ZLMediaKit API`、`Gateway actuator`、`Rule actuator` 与 `Web` 首页，避免容器刚启动就被宿主机侧探活撞到瞬时 `connection reset`。
 
 ## 5. 风险与约束
 
