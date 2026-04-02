@@ -490,7 +490,7 @@ cmd_infra() {
     prepare_zlm_config
     check_container_conflicts postgres redis kafka nacos minio sentinel zlmediakit
     log_step "Starting infrastructure services..."
-    dc up -d --build postgres redis kafka nacos minio sentinel zlmediakit
+    dc up -d postgres redis kafka nacos minio sentinel zlmediakit
     wait_for_infrastructure_ready
     log_info "Infrastructure services are ready"
 }
@@ -508,7 +508,7 @@ cmd_up() {
     log_step "=== Firefly IoT full deployment ==="
 
     log_step "[1/4] Starting infrastructure..."
-    dc up -d --build postgres redis kafka nacos minio sentinel zlmediakit
+    dc up -d postgres redis kafka nacos minio sentinel zlmediakit
     wait_for_infrastructure_ready
 
     log_step "[2/4] Building backend images..."

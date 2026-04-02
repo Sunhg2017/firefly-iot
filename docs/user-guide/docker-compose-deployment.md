@@ -36,6 +36,7 @@
 - 当前默认使用华为云 Maven 镜像，不再直接走 Maven Central
 - 如果上一次构建是异常中断，脚本会先检查残留 BuildKit 锁；必要时会提示你授权一次 sudo 来清理后再继续
 - `bash deploy.sh up` 返回成功前，会额外等待基础设施健康、后端容器健康，以及 `Gateway / Rule / Web` 入口真正可访问
+- 基础设施阶段不会再在每次执行时重编译 ZLMediaKit；只有第一次缺少镜像时才会自动构建
 
 `KAFKA_ADVERTISED_HOST` 的选择规则：
 

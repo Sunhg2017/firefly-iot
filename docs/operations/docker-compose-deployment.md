@@ -131,6 +131,7 @@ Kafka 额外要求：
 - 默认仓库源已经切到华为云 Maven 镜像；如果这里仍然慢，优先判断宿主机到镜像源本身的网络质量
 - 如果上一次构建异常中断，`deploy.sh` 会先检查并清理残留的 BuildKit executor，再进入真正的镜像构建
 - `deploy.sh up` 会在返回前等待基础设施健康检查、后端容器健康状态以及 `Gateway / Rule / Web` 宿主机入口可访问
+- `deploy.sh infra` / `deploy.sh up` 不会再在每次执行时强制重编译 ZLMediaKit；只有镜像缺失时才会由 Compose 自动补建
 
 排查顺序：
 
@@ -166,6 +167,15 @@ Kafka 额外要求：
 - 宿主机入口：`http://localhost:8080/actuator/health`、`http://localhost:9030/actuator/health`、`http://localhost/`
 
 如果脚本已经返回成功，默认就表示这些关键入口已经可访问；不需要再自行额外插入 `sleep 30` 之类的兜底等待。
+
+### 5.1.6 每次 `deploy.sh up` 都重新编译 ZLMediaKit
+
+当前版本已经去掉基础设施阶段的 `--build`，所以重复执行 `bash deploy.sh infra` / `bash deploy.sh up` 时：
+
+- 已存在的 `firefly-zlmediakit` 镜像会直接复用
+- 只有镜像首次缺失时，Compose 才会自动触发一次构建
+
+`192.168.123.102` 的实测证据已经确认：此前重复 `up` 时日志会重新出现 ZLMediaKit 的大段 `Building CXX object ...`；调整后这段重复编译不再出现，部署时间明显收敛。
 
 ### 5.2 新容器启动后数据为空
 
