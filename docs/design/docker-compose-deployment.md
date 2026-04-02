@@ -24,6 +24,7 @@
 - 让 Compose 文件对齐当前 Docker Compose v2 规范，删除已经废弃且只会产生告警的 `version` 顶层字段。
 - 让后端服务镜像在 Docker 构建阶段直接完成 Maven 打包，宿主机部署入口不再依赖本地 Maven 安装。
 - 让弱网宿主机上的首次源码构建不再被多服务并发重复下载 Maven 依赖拖垮，保证标准 `deploy.sh build/up` 链路可预测。
+- 让正式生产部署所需的 OpenAPI AppKey 密钥能够通过 Compose 明确注入，避免 `firefly-system` 在健康检查阶段因缺少密钥直接失败。
 
 ## 3. 非目标
 
@@ -207,6 +208,22 @@
 - `deploy.sh up` 最终返回前会等待 `postgres/redis/kafka/nacos/minio` 的容器健康检查通过，并额外探测 `ZLMediaKit API`、`Gateway actuator`、`Rule actuator` 与 `Web` 首页，避免容器刚启动就被宿主机侧探活撞到瞬时 `connection reset`。
 - `192.168.123.102` 的远端复验已确认：此前每次 `up` 都会重跑 ZLMediaKit 的整套 C++ 编译；去掉基础设施阶段的 `--build` 后，重复部署不再触发这段无意义重编译。
 - `192.168.123.102` 的远端卷也已确认都是稳定卷但无 Compose labels；改成 external volume 后重复部署不再出现 `already exists but was not created by Docker Compose` 告警。
+
+### 4.10 OpenAPI AppKey 生产密钥注入口径
+
+`firefly-system` 的生产配置已经要求：
+
+- `FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY`
+
+该值必须是独立生成的 32 字节原文密钥，或可解码成 32 字节的 Base64 密钥，用于 AppKey secret 的 AES-GCM 加解密。开发环境仍可使用 `application.yml` 中的固定默认值，但正式生产部署不能再回退到该默认值。
+
+本次收口方案：
+
+- 在 `deploy/.env.example` 中显式暴露 `FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY`
+- `deploy/docker-compose.prod.yml` 和 `deploy/docker-compose.github.yml` 的公共 Java 环境统一透传该变量
+- 同时把 `FIREFLY_OPENAPI_APPKEY_SIGNATURE_WINDOW_SECONDS` 也纳入公共 Java 环境，保证网关与系统服务在需要调整签名窗口时能保持一致
+
+这样无论是源码构建部署还是 GHCR 预构建镜像部署，只要正式生产宿主机按 `.env` 补齐密钥，`firefly-system` 就能在首次冷启动时完成健康检查，不会再出现“镜像已构建完成但系统服务因缺失密钥卡死”的部署假成功。
 
 ## 5. 风险与约束
 

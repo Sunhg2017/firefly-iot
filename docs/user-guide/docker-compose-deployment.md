@@ -13,6 +13,7 @@
    - `NACOS_NAMESPACE`
    - `POSTGRES_PASSWORD`
    - `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`
+   - `FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY`
    - `KAFKA_ADVERTISED_HOST`
    - `ZLM_HOST` / `ZLM_PUBLIC_HOST`
    - `ZLM_SECRET`
@@ -22,6 +23,7 @@
 5. 只有正式生产部署时，才切换为：
    - `DEPLOY_ENV=prod`
    - `NACOS_NAMESPACE=firefly-prod`
+   - `FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY=<独立生成的 32 字节原文或可解码为 32 字节的 Base64 密钥>`
 6. 启动基础设施：`bash deploy.sh infra`
 7. 启动全量服务：`bash deploy.sh up`
 
@@ -52,6 +54,7 @@
 - 正式生产宿主机：显式改成 `prod` / `firefly-prod`
 - 如果 `.env` 留空 `NACOS_NAMESPACE`，`deploy.sh` 会自动按 `firefly-${DEPLOY_ENV}` 推导
 - 即使保持 `DEPLOY_ENV=dev`，当前 Compose 也会自动把 Gateway 的内部转发宿主改成 `firefly-system`、`firefly-device` 等服务名，不需要再手工把共享宿主机切成 `prod`
+- 正式生产部署时，`firefly-system` 不会回退使用开发默认 AppKey 密钥；如果没配置 `FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY`，`bash deploy.sh up` 会在系统服务健康检查阶段失败
 
 ## 3. 常用命令
 

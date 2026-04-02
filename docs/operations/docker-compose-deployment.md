@@ -23,6 +23,7 @@
 4. 只有在正式生产部署时，才显式改成：
    - `DEPLOY_ENV=prod`
    - `NACOS_NAMESPACE=firefly-prod`
+   - `FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY=<独立生成的 32 字节原文或可解码为 32 字节的 Base64 密钥>`
 5. 启动基础设施：`bash deploy.sh infra`
 6. 启动全量服务：`bash deploy.sh up`
 7. 查看状态：`bash deploy.sh status`
@@ -42,6 +43,7 @@
 - `deploy.sh` 会把业务源码指纹记录在 `deploy/runtime/build-state/`；源码未变化且目标镜像还在时，会跳过后端或前端构建
 - 如果本轮必须忽略源码指纹缓存，执行 `FIREFLY_FORCE_BUILD=1 bash deploy.sh build` 或 `FIREFLY_FORCE_BUILD=1 bash deploy.sh up`
 - 当前 Compose 会额外给 `firefly-gateway` 注入 `FIREFLY_GATEWAY_*_HOST=firefly-*`，保证 `DEPLOY_ENV=dev` 时容器内静态路由仍转发到 Compose 网络服务名，而不是误连 Gateway 容器自己的 `127.0.0.1`
+- 当前 Compose 会把 `FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY` 与 `FIREFLY_OPENAPI_APPKEY_SIGNATURE_WINDOW_SECONDS` 透传给 Java 服务；正式生产部署缺少前者时，`firefly-system` 会在健康检查阶段直接失败
 - 当前 Compose 文件已经移除废弃的 `version` 顶层字段；如果值班时再次看到 `the attribute 'version' is obsolete`，说明宿主机仍在使用旧版 Compose 文件
 
 Kafka 额外要求：
@@ -108,7 +110,21 @@ Kafka 额外要求：
 
 共享宿主机已经收口为“部署用户直接跑脚本”的口径，不建议再长期依赖 `sudo bash deploy.sh ...` 作为日常入口。
 
-### 5.1.2 `mvn: command not found`
+### 5.1.2 `Timed out waiting for system to become healthy`
+
+如果 `deploy.sh up` 卡在系统服务健康检查，先看 `firefly-system` 日志里是否出现下面这类报错：
+
+- `firefly.openapi.appkey.secret-encrypt-key must be configured with 32-byte raw or base64 key`
+
+出现该报错时，按下面顺序处理：
+
+1. 确认当前宿主机确实是正式生产部署：`DEPLOY_ENV=prod`
+2. 确认 `deploy/.env` 已设置独立的 `FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY`
+3. 重新执行 `bash deploy.sh up`
+
+当前生产口径下不能回退使用开发默认密钥，也不要把这项密钥写死回源码。
+
+### 5.1.3 `mvn: command not found`
 
 如果当前宿主机还是在执行旧版脚本，可能会看到：
 
@@ -122,7 +138,7 @@ Kafka 额外要求：
 
 标准版本下，这个报错不应该再出现。
 
-### 5.1.3 首次 `bash deploy.sh build` 很慢
+### 5.1.4 首次 `bash deploy.sh build` 很慢
 
 如果远端是第一次冷启动构建，常见现象是日志里连续出现 Maven 制品下载。
 
@@ -146,7 +162,7 @@ Kafka 额外要求：
 
 在当前标准链路下，冷启动慢属于网络/制品源问题，不需要再回退到宿主机手工 Maven 打包。
 
-### 5.1.4 构建卡在首个 Maven 步骤且前一次曾被中断
+### 5.1.5 构建卡在首个 Maven 步骤且前一次曾被中断
 
 当前版本会先检查是否存在 `/var/lib/docker/buildkit/executor/` 残留进程。
 
@@ -162,7 +178,7 @@ Kafka 额外要求：
 
 当前实测根因样本来自 `192.168.123.102`：上一次中断构建留下了 root 侧 BuildKit executor，导致后续顺序构建长期卡在 `/root/.m2` 共享缓存锁；清理残留进程后构建立即恢复。
 
-### 5.1.5 `deploy.sh up` 已结束，但外部立刻探活偶发 `connection reset`
+### 5.1.6 `deploy.sh up` 已结束，但外部立刻探活偶发 `connection reset`
 
 当前版本的 `deploy.sh up` 已经补上启动后等待：
 
@@ -172,7 +188,7 @@ Kafka 额外要求：
 
 如果脚本已经返回成功，默认就表示这些关键入口已经可访问；不需要再自行额外插入 `sleep 30` 之类的兜底等待。
 
-### 5.1.6 每次 `deploy.sh up` 都重新编译 ZLMediaKit
+### 5.1.7 每次 `deploy.sh up` 都重新编译 ZLMediaKit
 
 当前版本已经去掉基础设施阶段的 `--build`，所以重复执行 `bash deploy.sh infra` / `bash deploy.sh up` 时：
 
@@ -181,7 +197,7 @@ Kafka 额外要求：
 
 `192.168.123.102` 的实测证据已经确认：此前重复 `up` 时日志会重新出现 ZLMediaKit 的大段 `Building CXX object ...`；调整后这段重复编译不再出现，部署时间明显收敛。
 
-### 5.1.7 重复部署时出现 `volume already exists but was not created by Docker Compose`
+### 5.1.8 重复部署时出现 `volume already exists but was not created by Docker Compose`
 
 当前版本已经把稳定卷声明成 external volume，并由 `deploy.sh` 提前创建。
 
@@ -190,7 +206,7 @@ Kafka 额外要求：
 
 如果仍然出现旧告警，优先检查当前宿主机是否真的已经同步到最新仓库版本。
 
-### 5.1.8 重复执行 `deploy.sh up` 仍然重新构建后端或前端
+### 5.1.9 重复执行 `deploy.sh up` 仍然重新构建后端或前端
 
 当前版本只有以下三种情况会重新构建业务镜像：
 
