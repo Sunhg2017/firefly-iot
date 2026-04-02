@@ -6,6 +6,8 @@ import com.songhg.firefly.iot.common.security.RequiresPermission;
 import com.songhg.firefly.iot.device.convert.FirmwareConvert;
 import com.songhg.firefly.iot.device.dto.firmware.DeviceFirmwareBatchBindDTO;
 import com.songhg.firefly.iot.device.dto.firmware.DeviceFirmwareBindDTO;
+import com.songhg.firefly.iot.device.dto.firmware.DeviceFirmwareListQueryDTO;
+import com.songhg.firefly.iot.device.dto.firmware.DeviceFirmwareListVO;
 import com.songhg.firefly.iot.device.dto.firmware.DeviceFirmwareQueryDTO;
 import com.songhg.firefly.iot.device.dto.firmware.DeviceFirmwareStatusDTO;
 import com.songhg.firefly.iot.device.dto.firmware.DeviceFirmwareVO;
@@ -35,9 +37,16 @@ public class DeviceFirmwareController {
         return R.ok(FirmwareConvert.INSTANCE.toDeviceFirmwareVO(deviceFirmwareService.getDeviceFirmware(deviceId)));
     }
 
+    @Operation(summary = "分页查询设备固件总览")
+    @PostMapping("/list")
+    @RequiresPermission("ota:read")
+    public R<IPage<DeviceFirmwareListVO>> listBindings(@RequestBody DeviceFirmwareListQueryDTO query) {
+        return R.ok(deviceFirmwareService.listBindings(query));
+    }
+
     @Operation(summary = "按固件查询绑定设备")
     @PostMapping("/by-firmware/{firmwareId}/list")
-    @RequiresPermission("firmware:read")
+    @RequiresPermission("ota:read")
     public R<IPage<DeviceFirmwareVO>> listByFirmware(
             @Parameter(description = "固件编号", required = true) @PathVariable Long firmwareId,
             @RequestBody DeviceFirmwareQueryDTO query) {
@@ -47,7 +56,7 @@ public class DeviceFirmwareController {
 
     @Operation(summary = "按版本查询设备固件")
     @GetMapping("/by-version")
-    @RequiresPermission("firmware:read")
+    @RequiresPermission("ota:read")
     public R<List<DeviceFirmwareVO>> listByVersion(
             @Parameter(description = "固件版本", required = true) @RequestParam String version) {
         return R.ok(deviceFirmwareService.listByVersion(version).stream()
@@ -55,24 +64,24 @@ public class DeviceFirmwareController {
     }
 
     @PostMapping("/bind")
-    @RequiresPermission("firmware:update")
+    @RequiresPermission("ota:upload")
     @Operation(summary = "绑定固件")
     public R<DeviceFirmwareVO> bindFirmware(@Valid @RequestBody DeviceFirmwareBindDTO dto) {
         return R.ok(FirmwareConvert.INSTANCE.toDeviceFirmwareVO(
-                deviceFirmwareService.bindFirmware(dto.getDeviceId(), dto.getFirmwareId(), dto.getVersion())));
+                deviceFirmwareService.bindFirmware(dto.getDeviceId(), dto.getFirmwareId())));
     }
 
     @Operation(summary = "批量绑定固件")
     @PostMapping("/batch-bind")
-    @RequiresPermission("firmware:update")
+    @RequiresPermission("ota:upload")
     public R<Void> batchBindFirmware(@Valid @RequestBody DeviceFirmwareBatchBindDTO dto) {
-        deviceFirmwareService.batchBindFirmware(dto.getDeviceIds(), dto.getFirmwareId(), dto.getVersion());
+        deviceFirmwareService.batchBindFirmware(dto.getDeviceIds(), dto.getFirmwareId());
         return R.ok();
     }
 
     @Operation(summary = "更新升级状态")
     @PutMapping("/{deviceId}/status")
-    @RequiresPermission("firmware:update")
+    @RequiresPermission("ota:upload")
     public R<Void> updateUpgradeStatus(
             @Parameter(description = "设备编号", required = true) @PathVariable Long deviceId,
             @Valid @RequestBody DeviceFirmwareStatusDTO dto) {

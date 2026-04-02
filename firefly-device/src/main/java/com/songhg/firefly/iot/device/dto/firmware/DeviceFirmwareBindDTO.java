@@ -18,7 +18,4 @@ public class DeviceFirmwareBindDTO {
     @Schema(description = "固件编号")
     @NotNull(message = "固件ID不能为空")
     private Long firmwareId;
-
-    @Schema(description = "目标固件版本", example = "1.2.0")
-    private String version;
 }

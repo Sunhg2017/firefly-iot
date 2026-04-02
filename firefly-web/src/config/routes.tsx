@@ -36,7 +36,6 @@ import {
   TeamOutlined,
   ThunderboltOutlined,
   ToolOutlined,
-  UsbOutlined,
 } from '@ant-design/icons';
 import { ALARM_TEXT } from '../pages/alarm/alarmText';
 
@@ -234,8 +233,7 @@ const routeConfigs: RouteEntry[] = [
     icon: <ToolOutlined />,
     workspace: 'tenant',
     children: [
-      { path: '/firmware', label: '固件管理', icon: <UsbOutlined />, permission: 'firmware:read', workspace: 'tenant' },
-      { path: '/ota', label: 'OTA 升级', icon: <CloudUploadOutlined />, permission: 'ota:read', workspace: 'tenant' },
+      { path: '/ota', label: 'OTA 与固件', icon: <CloudUploadOutlined />, permission: 'ota:read', workspace: 'tenant' },
     ],
   },
 ];

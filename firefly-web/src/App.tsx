@@ -19,7 +19,6 @@ const DeviceTopologyPage = React.lazy(() => import('./pages/device-topology/Devi
 const DeviceGroupPage = React.lazy(() => import('./pages/device-group/DeviceGroupPage'));
 const DeviceTagPage = React.lazy(() => import('./pages/device-tag/DeviceTagPage'));
 const GeoFencePage = React.lazy(() => import('./pages/geo/GeoFencePage'));
-const FirmwarePage = React.lazy(() => import('./pages/firmware/FirmwarePage'));
 const ExportPage = React.lazy(() => import('./pages/export/ExportPage'));
 const DeviceLogPage = React.lazy(() => import('./pages/device-log/DeviceLogPage'));
 const MessageTemplatePage = React.lazy(() => import('./pages/message-template/MessageTemplatePage'));
@@ -88,7 +87,6 @@ const App: React.FC = () => {
             <Route path="device-group" element={<DeviceGroupPage />} />
             <Route path="device-tag" element={<DeviceTagPage />} />
             <Route path="geo-fence" element={<GeoFencePage />} />
-            <Route path="firmware" element={<FirmwarePage />} />
             <Route path="export" element={<ExportPage />} />
             <Route path="device-log" element={<DeviceLogPage />} />
             <Route path="message-template" element={<MessageTemplatePage />} />

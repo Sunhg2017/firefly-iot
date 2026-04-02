@@ -743,6 +743,7 @@ export const loraWanApi = {
 // ==================== Device Firmware API ====================
 export const deviceFirmwareApi = {
   get: (deviceId: number) => deviceRequest.get(`/device-firmwares/${deviceId}`),
+  list: (data: Record<string, unknown> = {}) => deviceRequest.post('/device-firmwares/list', data),
   listByFirmware: (firmwareId: number, data: Record<string, unknown> = {}) => deviceRequest.post(`/device-firmwares/by-firmware/${firmwareId}/list`, data),
   listByVersion: (version: string) => deviceRequest.get(`/device-firmwares/by-version?version=${version}`),
   bind: (data: Record<string, unknown>) => deviceRequest.post('/device-firmwares/bind', data),

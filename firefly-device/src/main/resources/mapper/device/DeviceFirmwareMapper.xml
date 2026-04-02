@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.device.mapper.DeviceFirmwareMapper">
+
+    <select id="selectBindingPage" resultType="com.songhg.firefly.iot.device.dto.firmware.DeviceFirmwareListVO">
+        SELECT d.id AS deviceId,
+               d.device_name AS deviceName,
+               d.nickname AS nickname,
+               d.product_id AS productId,
+               p.product_key AS productKey,
+               p.name AS productName,
+               d.online_status AS onlineStatus,
+               df.firmware_id AS firmwareId,
+               df.current_version AS currentVersion,
+               df.target_version AS targetVersion,
+               COALESCE(df.upgrade_status, 'IDLE') AS upgradeStatus,
+               COALESCE(df.upgrade_progress, 0) AS upgradeProgress,
+               df.last_upgrade_at AS lastUpgradeAt,
+               COALESCE(df.updated_at, d.updated_at) AS updatedAt
+        FROM devices d
+        LEFT JOIN products p
+               ON p.id = d.product_id
+              AND p.deleted_at IS NULL
+        LEFT JOIN LATERAL (
+            SELECT df1.*
+            FROM device_firmwares df1
+            WHERE df1.device_id = d.id
+            ORDER BY df1.updated_at DESC NULLS LAST, df1.id DESC
+            LIMIT 1
+        ) df ON TRUE
+        WHERE d.tenant_id = #{tenantId}
+          AND d.deleted_at IS NULL
+        <if test="query.productId != null">
+            AND d.product_id = #{query.productId}
+        </if>
+        <if test="query.firmwareId != null">
+            AND df.firmware_id = #{query.firmwareId}
+        </if>
+        <if test="query.onlineStatus != null">
+            AND d.online_status = #{query.onlineStatus}
+        </if>
+        <if test="query.upgradeStatus != null and query.upgradeStatus != ''">
+            AND COALESCE(df.upgrade_status, 'IDLE') = #{query.upgradeStatus}
+        </if>
+        <if test="query.keyword != null and query.keyword != ''">
+            AND (
+                d.device_name LIKE CONCAT('%', #{query.keyword}, '%')
+                OR COALESCE(d.nickname, '') LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        ORDER BY COALESCE(df.updated_at, d.updated_at) DESC NULLS LAST, d.id DESC
+    </select>
+
+</mapper>

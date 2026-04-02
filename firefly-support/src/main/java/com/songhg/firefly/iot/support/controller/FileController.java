@@ -8,9 +8,11 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.util.DigestUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.UUID;
 
@@ -48,7 +50,7 @@ public class FileController {
     @Operation(summary = "固件文件上传")
     @PostMapping("/upload/firmware")
     @RequiresPermission("ota:upload")
-    public R<Map<String, String>> uploadFirmware(@Parameter(description = "固件文件") @RequestParam("file") MultipartFile file) {
+    public R<Map<String, String>> uploadFirmware(@Parameter(description = "固件文件") @RequestParam("file") MultipartFile file) throws IOException {
         Long tenantId = AppContextHolder.getTenantId();
         String originalName = file.getOriginalFilename();
         String ext = "";
@@ -57,8 +59,9 @@ public class FileController {
         }
         String objectName = tenantId + "/firmware/" + UUID.randomUUID().toString().replace("-", "") + ext;
         String url = minioService.upload(objectName, file);
+        String md5Checksum = DigestUtils.md5DigestAsHex(file.getInputStream());
         return R.ok(Map.of("url", url, "objectName", objectName, "originalName", originalName != null ? originalName : "",
-                "fileSize", String.valueOf(file.getSize())));
+                "fileSize", String.valueOf(file.getSize()), "md5Checksum", md5Checksum));
     }
 
     /**

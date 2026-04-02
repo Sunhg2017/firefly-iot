@@ -18,7 +18,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-@Tag(name = "OTA 升级", description = "固件管理与 OTA 升级任务")
+@Tag(name = "OTA 与固件", description = "固件库、设备版本与 OTA 升级任务")
 @RestController
 @RequestMapping("/api/v1")
 @RequiredArgsConstructor
