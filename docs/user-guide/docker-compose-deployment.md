@@ -34,6 +34,7 @@
 - 第一次冷启动时会看到 Maven 下载日志，这是正常现象
 - 同一台宿主机后续再次执行 `bash deploy.sh build` / `bash deploy.sh up` 会明显更快
 - 当前默认使用华为云 Maven 镜像，不再直接走 Maven Central
+- 如果上一次构建是异常中断，脚本会先检查残留 BuildKit 锁；必要时会提示你授权一次 sudo 来清理后再继续
 
 `KAFKA_ADVERTISED_HOST` 的选择规则：
 
@@ -62,6 +63,12 @@
 如果你看到 `mvn: command not found`，也说明宿主机还在跑旧版部署链路；同步到当前版本后，这个问题会随着 Docker 内部构建一起消失。
 
 如果第一次执行 `bash deploy.sh build` 比较久，先看日志是否在持续下载 Maven 依赖；当前版本会自动复用缓存，首次构建完成后后续速度会恢复正常。
+
+如果前一次构建是手工中断、SSH 断开或宿主机异常退出，下一次执行 `bash deploy.sh build` / `bash deploy.sh up` 时：
+
+- 脚本会先检查是否有残留 BuildKit executor
+- 如果只是残留锁，没有别的构建在跑，会先清理再继续
+- 如果当前是非交互终端，脚本会直接给出需要执行的 `sudo kill <pid...>` 提示，不会继续假装构建
 
 ## 4. 持久化卷配置
 

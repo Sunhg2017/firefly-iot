@@ -30,6 +30,7 @@ NC='\033[0m'
 export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
 
 BACKEND_BUILD_SERVICES=(gateway system device rule media data support connector)
+BUILDKIT_EXECUTOR_PATTERN="/var/lib/docker/buildkit/executor/"
 
 log_info()  { echo -e "${GREEN}[INFO]${NC}  $1"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
@@ -273,9 +274,112 @@ config_path.write_text("\n".join(updated) + "\n")
 PY
 }
 
+list_buildkit_executor_processes() {
+    ps -eo pid=,user=,cmd= | awk -v pattern="$BUILDKIT_EXECUTOR_PATTERN" '
+        index($0, pattern) > 0 {
+            pid = $1
+            user = $2
+            $1 = ""
+            $2 = ""
+            sub(/^  */, "", $0)
+            printf "%s\t%s\t%s\n", pid, user, $0
+        }
+    '
+}
+
+list_other_build_processes() {
+    local self_pid="$$"
+    local parent_pid="$PPID"
+
+    ps -eo pid=,user=,cmd= | awk -v self_pid="$self_pid" -v parent_pid="$parent_pid" '
+        /docker compose .* build/ || /docker buildx build/ || /buildctl build/ || /deploy\.sh (build|up)/ {
+            pid = $1
+            if (pid == self_pid || pid == parent_pid) {
+                next
+            }
+
+            user = $2
+            $1 = ""
+            $2 = ""
+            sub(/^  */, "", $0)
+            printf "%s\t%s\t%s\n", pid, user, $0
+        }
+    '
+}
+
+print_process_table() {
+    local process_list="$1"
+    local pid user cmd
+
+    while IFS=$'\t' read -r pid user cmd; do
+        [ -n "$pid" ] || continue
+        echo "  PID ${pid} (${user}): ${cmd}"
+    done <<< "$process_list"
+}
+
+ensure_buildkit_ready() {
+    require_docker_access
+
+    # The Maven cache mount is intentionally shared across sequential image builds.
+    # If the previous build was interrupted, BuildKit can leave behind an executor
+    # process that keeps the cache lock alive until the host clears it.
+    local stale_executors
+    stale_executors="$(list_buildkit_executor_processes)"
+    if [ -z "$stale_executors" ]; then
+        return 0
+    fi
+
+    local active_builds
+    active_builds="$(list_other_build_processes)"
+    if [ -n "$active_builds" ]; then
+        log_error "Detected active Docker build processes; deploy.sh will not clear BuildKit state concurrently."
+        print_process_table "$active_builds"
+        log_error "Wait for the running build to finish or stop it first, then rerun deploy.sh."
+        exit 1
+    fi
+
+    log_warn "Detected stale BuildKit executor processes from a previous interrupted build:"
+    print_process_table "$stale_executors"
+
+    local stale_pids
+    stale_pids="$(printf '%s\n' "$stale_executors" | awk -F '\t' '{print $1}' | tr '\n' ' ')"
+
+    if command -v sudo >/dev/null 2>&1; then
+        if sudo -n true 2>/dev/null; then
+            log_info "Clearing stale BuildKit executor lock with sudo..."
+            sudo kill $stale_pids
+        elif [ -t 0 ]; then
+            log_warn "A one-time sudo confirmation is required to clear the stale BuildKit lock."
+            sudo kill $stale_pids
+        else
+            log_error "Stale BuildKit executor lock detected, but sudo is not available non-interactively in this session."
+            log_info "Run 'sudo kill ${stale_pids}' on the host, then rerun deploy.sh."
+            exit 1
+        fi
+    else
+        log_error "Stale BuildKit executor lock detected, but sudo is unavailable."
+        log_info "Kill the above PIDs as root, then rerun deploy.sh."
+        exit 1
+    fi
+
+    sleep 2
+
+    local remaining_executors
+    remaining_executors="$(list_buildkit_executor_processes)"
+    if [ -n "$remaining_executors" ]; then
+        log_error "BuildKit executor lock still exists after cleanup."
+        print_process_table "$remaining_executors"
+        exit 1
+    fi
+
+    docker builder prune -f >/dev/null 2>&1 || true
+    log_info "Stale BuildKit executor lock cleared; continuing with image build."
+}
+
 build_application_images() {
     load_env
     log_info "Using deploy environment '${DEPLOY_ENV}' with Nacos namespace '${NACOS_NAMESPACE}'"
+    ensure_buildkit_ready
     log_step "Building application images from source..."
     build_backend_images
     build_web_image
@@ -335,6 +439,7 @@ cmd_up() {
     sleep 15
 
     log_step "[2/4] Building backend images..."
+    ensure_buildkit_ready
     build_backend_images
 
     log_step "[3/4] Starting backend services..."

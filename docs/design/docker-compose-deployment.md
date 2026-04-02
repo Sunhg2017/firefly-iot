@@ -181,6 +181,7 @@
 - `deploy/Dockerfile` 改成后端多阶段构建，第一阶段用 Maven 镜像在容器内执行 `mvn -pl <module> -am package -DskipTests`
 - `deploy/Dockerfile` 直接写入 Maven `settings.xml` 并通过 `mvn -s` 显式启用，默认把全部仓库请求镜像到 `https://repo.huaweicloud.com/repository/maven/`
 - `deploy/Dockerfile` 通过 BuildKit `type=cache` 共享 `/root/.m2`，让顺序构建时后续服务直接复用前序服务已经下载好的 Maven 依赖
+- `deploy.sh` 在进入构建前会先检查 `/var/lib/docker/buildkit/executor/` 残留进程；如果上一次异常退出留下了 BuildKit 锁，会先清理后再继续构建，避免再次卡死在首个 Maven 步骤
 - `deploy.sh build` 改为顺序构建后端服务镜像，再单独构建前端，避免多个服务冷启动时并发重复下载同一批依赖
 - `deploy.sh up` 不再调用宿主机 Maven，而是按“基础设施 -> 顺序构建后端 -> 启动后端 -> 构建并启动前端”执行
 - 仓库根目录新增 `.dockerignore`，显式排除 `target/`、`node_modules/`、`deploy/.env`、运行时目录和模拟器等无关上下文，避免把本地产物重新打进构建上下文
@@ -198,6 +199,7 @@
 - 首次冷启动构建仍会下载 Maven 依赖，但同一台宿主机后续构建会复用 BuildKit Maven 缓存。
 - 华为云 Maven 镜像是按 `192.168.123.102` 实测结果选出的默认值：同一 Lombok 2.1MB JAR 下载从 Maven Central 的约 148 秒降到约 0.33 秒。
 - 后端镜像按服务顺序构建，牺牲一点并发换取稳定的弱网表现和可复用缓存。
+- 如果前一次构建是异常中断，脚本会优先尝试清理残留 BuildKit executor；只有检测到另一个构建仍在运行时才会拒绝继续，避免误杀有效任务。
 
 ## 5. 风险与约束
 
