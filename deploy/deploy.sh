@@ -20,6 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.prod.yml"
 ENV_FILE="$SCRIPT_DIR/.env"
+DOCKER_ACCESS_CHECKED=0
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -31,6 +32,63 @@ log_info()  { echo -e "${GREEN}[INFO]${NC}  $1"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step()  { echo -e "${BLUE}[STEP]${NC}  $1"; }
+
+docker_group_configured_for_user() {
+    local current_user
+    current_user="$(id -un)"
+
+    if ! command -v getent >/dev/null 2>&1; then
+        return 1
+    fi
+
+    getent group docker 2>/dev/null | awk -F: '{print $4}' | tr ',' '\n' | grep -qx "$current_user"
+}
+
+docker_group_active_in_shell() {
+    id -nG | tr ' ' '\n' | grep -qx "docker"
+}
+
+require_docker_access() {
+    if [ "$DOCKER_ACCESS_CHECKED" -eq 1 ]; then
+        return 0
+    fi
+
+    if ! command -v docker >/dev/null 2>&1; then
+        log_error "Docker CLI not found in PATH."
+        log_info "Install Docker Engine / Docker Compose v2, then rerun deploy.sh."
+        exit 1
+    fi
+
+    local docker_error
+    if docker_error="$(docker info 2>&1 >/dev/null)"; then
+        DOCKER_ACCESS_CHECKED=1
+        return 0
+    fi
+
+    if printf '%s' "$docker_error" | grep -qi "permission denied while trying to connect to the Docker daemon socket"; then
+        if docker_group_active_in_shell; then
+            log_error "Current shell still cannot access the Docker daemon."
+            log_info "Check that the Docker service is healthy and /var/run/docker.sock permissions are correct."
+        elif docker_group_configured_for_user; then
+            log_error "Docker group membership exists, but this shell has not picked it up yet."
+            log_info "Open a new SSH session or run 'newgrp docker', then rerun deploy.sh."
+        else
+            log_error "Current user cannot access the Docker daemon socket."
+            log_info "Run: sudo usermod -aG docker $(id -un)"
+            log_info "Then open a new SSH session and rerun deploy.sh."
+        fi
+        exit 1
+    fi
+
+    if printf '%s' "$docker_error" | grep -qi "Cannot connect to the Docker daemon"; then
+        log_error "Docker daemon is not reachable."
+        log_info "Start Docker first, then rerun deploy.sh."
+        exit 1
+    fi
+
+    log_error "Docker is unavailable: ${docker_error}"
+    exit 1
+}
 
 check_env() {
     if [ ! -f "$ENV_FILE" ]; then
@@ -102,6 +160,8 @@ volume_name_for() {
 }
 
 ensure_named_volumes() {
+    require_docker_access
+
     local compose_project
     compose_project="$(compose_project_name)"
 
@@ -122,6 +182,8 @@ ensure_named_volumes() {
 }
 
 check_container_conflicts() {
+    require_docker_access
+
     local compose_project
     compose_project="$(compose_project_name)"
     local has_conflict=0
@@ -238,6 +300,7 @@ build_frontend() {
 }
 
 dc() {
+    require_docker_access
     docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"
 }
 

@@ -139,6 +139,32 @@
 
 同时，`deploy/docker-compose.yml` 与 `deploy/docker-compose.prod.yml` 删除顶层 `version` 字段。当前 Docker Compose v2 已按 Compose Specification 解析配置，保留 `version` 只会持续打印 `the attribute 'version' is obsolete` 告警，不再提供任何兼容收益。
 
+脚本侧也同步收口：
+
+- `deploy.sh` 在真正执行 `docker` / `docker compose` 前先做一次 Docker 可达性检查
+- 如果是 Docker socket 权限不足，直接给出“加入 `docker` 组”或“重新登录 shell”提示
+- 如果是 Docker daemon 未启动，则直接提示先恢复 Docker 服务，而不是把底层长报错原样抛给值班人员
+
+### 4.8 远端源码树备份与回滚基线
+
+共享宿主机已经把旧的“非 git 同步源码树”切换成正式仓库 checkout，但回滚时仍需要一份固定、可预测的源码基线：
+
+- 当前受管目录：`/home/shg/codeRepo/firefly-iot`
+- 旧非 git 源码树备份目录：`/home/shg/backups/firefly-iot-non-git-<timestamp>`
+- 固定最新软链：`/home/shg/backups/firefly-iot-non-git-latest`
+
+这样后续出现两类回退场景时都有明确入口：
+
+- 代码版本回退：直接在正式 git checkout 中 `git checkout` / `git reset --hard <commit>` 后重建容器
+- 源码树整体回退：把 `firefly-iot-non-git-latest` 指向的备份目录恢复回 `/home/shg/codeRepo/firefly-iot`
+
+运行态配置继续单独保留在部署目录下：
+
+- `deploy/.env`
+- `deploy/runtime/zlmediakit/config.ini`
+
+源码树切换时只复制这两类运行文件，不把运行态状态重新散回 Git 仓库。
+
 ## 5. 风险与约束
 
 - 历史数据卷迁移前，不能直接删除旧容器和旧卷，否则会造成数据丢失。

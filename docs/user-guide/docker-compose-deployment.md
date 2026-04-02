@@ -63,6 +63,15 @@
 默认值已经写入 `.env.example`。如果宿主机要接管历史卷数据，先迁移旧卷，再保持这些变量不变继续运行。
 执行 `bash deploy.sh infra` 或 `bash deploy.sh up` 时，脚本会自动补齐缺失的稳定卷。
 
+## 4.1 远端目录基线
+
+共享宿主机当前固定使用：
+
+- 代码目录：`/home/shg/codeRepo/firefly-iot`
+- 旧源码树备份：`/home/shg/backups/firefly-iot-non-git-latest`
+
+日常部署、查看状态、看日志都只在当前代码目录下进行；不要直接在备份目录里执行 `deploy.sh`。
+
 ## 5. 旧环境接管提示
 
 如果执行 `bash deploy.sh infra` 时看到类似下面的提示：

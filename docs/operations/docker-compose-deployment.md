@@ -187,5 +187,38 @@ Kafka 额外要求：
 
 ## 6. 回滚说明
 
-- 如果当前 Compose 刚接管失败，但旧卷仍保留，可停掉新容器后重新恢复旧容器。
+### 6.1 代码版本回滚
+
+当前远端部署目录已经是正式 git checkout：
+
+- 代码目录：`/home/shg/codeRepo/firefly-iot`
+- 默认分支：`master`
+
+如果只是应用版本需要回退，按下面顺序执行：
+
+1. `cd /home/shg/codeRepo/firefly-iot`
+2. `git log --oneline` 确认目标提交
+3. `git checkout <target-commit>` 或切回对应 tag / branch
+4. `cd deploy && bash deploy.sh up`
+5. `bash deploy.sh status` 复验容器状态
+
+### 6.2 源码树整体回滚
+
+如果正式 checkout 本身被误改、误删，或者需要临时恢复切换前的非 git 源码树，使用固定备份基线：
+
+- 最新旧树软链：`/home/shg/backups/firefly-iot-non-git-latest`
+
+推荐顺序：
+
+1. 进入 `/home/shg/codeRepo`
+2. 将当前 `firefly-iot` 目录先改名归档
+3. 把 `firefly-iot-non-git-latest` 指向的目录恢复为新的 `/home/shg/codeRepo/firefly-iot`
+4. 确认以下运行文件仍存在：
+   - `deploy/.env`
+   - `deploy/runtime/zlmediakit/config.ini`
+5. 再进入 `deploy/` 执行 `bash deploy.sh status` / `bash deploy.sh up`
+
+### 6.3 数据与旧卷回退
+
+- 如果当前 Compose 刚接管失败，但旧卷仍保留，可停掉新容器后重新恢复旧容器或旧卷。
 - 如果已经确认新容器数据正确，再安排窗口清理历史卷和旧 Compose 文件。
