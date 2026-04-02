@@ -44,9 +44,10 @@ bash deploy.sh infra
 
 当你：
 
-- 推送代码到 `main`
+- 推送代码到当前默认分支 `master`
+- 推送代码到兼容分支 `main`
 - 推送代码到 `develop`
-- 创建或更新指向 `main`、`develop` 的 PR
+- 创建或更新指向 `master`、`main`、`develop` 的 PR
 
 GitHub 会自动运行 CI 校验，无需手工触发。
 

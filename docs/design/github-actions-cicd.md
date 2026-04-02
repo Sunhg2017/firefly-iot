@@ -38,7 +38,7 @@
 
 ### 3.1 CI 流程
 
-1. `push` / `pull_request` 到 `main`、`develop`
+1. `push` / `pull_request` 到当前默认分支 `master`、兼容分支 `main` 或 `develop`
 2. 执行 Maven `clean verify`
 3. 执行前端 `npm ci`、`tsc --noEmit`、`npm run build`
 
@@ -74,10 +74,10 @@
 
 工作流对业务镜像统一推送以下标签：
 
-- `branch` 标签：例如 `main`、`develop`
+- `branch` 标签：例如 `master`、`main`、`develop`
 - `tag` 标签：例如 `v1.0.0`
 - `sha` 标签：对应提交 SHA
-- `latest`：仅 `main` 分支推送
+- `latest`：仅默认分支推送；当前仓库默认分支是 `master`
 
 部署链路固定使用 GitHub 触发标签本身，例如 `v1.0.0`，保证“发布标签”和“部署镜像标签”一致。
 

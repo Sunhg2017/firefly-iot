@@ -53,7 +53,7 @@
 
 ### 3.3 分支保护
 
-建议在 `Settings -> Branches` 中给 `main` 增加保护规则，至少要求：
+建议在 `Settings -> Branches` 中给当前默认分支 `master` 增加保护规则；如果未来分支改名为 `main`，同步迁移保护规则。至少要求：
 
 - `Backend Build & Test`
 - `Frontend Build & Type Check`
@@ -95,8 +95,8 @@ bash deploy.sh infra
 
 ### 5.1 日常 CI
 
-- 推送到 `main`、`develop`
-- 创建或更新指向 `main`、`develop` 的 Pull Request
+- 推送到当前默认分支 `master`、兼容分支 `main`、`develop`
+- 创建或更新指向 `master`、`main`、`develop` 的 Pull Request
 
 会自动执行：
 
@@ -211,6 +211,6 @@ bash deploy.sh release
 这是当前发布链路的预期行为，因为部署目标是准确切到对应发布标签。后续如果需要更新部署脚本或 `.env`，先切回主分支再操作：
 
 ```bash
-git checkout main
-git pull --ff-only origin main
+git checkout master
+git pull --ff-only origin master
 ```

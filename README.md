@@ -166,7 +166,7 @@ bash deploy.sh up
 
 仓库已补齐 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 与 [`deploy/docker-compose.github.yml`](deploy/docker-compose.github.yml) 的自动发布链路：
 
-- 推送到 `main` / `develop` 或发起 PR 时，自动执行后端 Maven 校验与前端 TypeScript 构建。
+- 推送到当前默认分支 `master`、兼容分支 `main` 或 `develop`，以及发起对应 PR 时，自动执行后端 Maven 校验与前端 TypeScript 构建。
 - 推送 `v*` 标签时，自动构建并推送 `firefly-gateway`、`firefly-system`、`firefly-device`、`firefly-rule`、`firefly-media`、`firefly-data`、`firefly-support`、`firefly-connector`、`firefly-web` 到 GHCR。
 - 标签发布时，工作流会通过 SSH 登录目标服务器，执行 `bash deploy.sh release`，按标签版本拉取 GHCR 镜像并完成部署。
 
