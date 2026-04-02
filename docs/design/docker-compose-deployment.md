@@ -22,6 +22,7 @@
 - 让共享宿主机即使保持 `DEPLOY_ENV=dev`，Gateway 也能在容器网络内正确转发 `/SYSTEM|DEVICE|RULE|DATA|SUPPORT|MEDIA|CONNECTOR` 路由，不再误回环到容器自身的 `127.0.0.1`。
 - 让部署用户 `shg` 直接具备 Docker CLI 执行能力，后续运行 `bash deploy.sh status/up/logs` 不再依赖额外 `sudo` 包裹。
 - 让 Compose 文件对齐当前 Docker Compose v2 规范，删除已经废弃且只会产生告警的 `version` 顶层字段。
+- 让后端服务镜像在 Docker 构建阶段直接完成 Maven 打包，宿主机部署入口不再依赖本地 Maven 安装。
 
 ## 3. 非目标
 
@@ -164,6 +165,30 @@
 - `deploy/runtime/zlmediakit/config.ini`
 
 源码树切换时只复制这两类运行文件，不把运行态状态重新散回 Git 仓库。
+
+### 4.9 后端镜像构建链路收口
+
+之前 `deploy.sh up` 先在宿主机执行 Maven 打包，再让 `deploy/Dockerfile` 把 `target/*.jar` 复制进镜像。这个方案在共享宿主机上已经暴露出明确问题：
+
+- 远端没有 Maven 时，`bash deploy.sh up` 会直接失败
+- 即使代码已同步到远端，部署链路仍依赖宿主机 Java / Maven 工具链
+- 运维入口会退化成“本地先编译再手工传 jar”，无法继续收口成标准 Compose 发布
+
+本次直接改成单一路径：
+
+- `deploy/Dockerfile.web` 继续沿用前端多阶段构建
+- `deploy/Dockerfile` 改成后端多阶段构建，第一阶段用 Maven 镜像在容器内执行 `mvn -pl <module> -am package -DskipTests`
+- `deploy.sh build` 改为直接执行 `docker compose build ...`
+- `deploy.sh up` 不再调用宿主机 Maven，只保留 `docker compose up -d --build ...`
+- 仓库根目录新增 `.dockerignore`，显式排除 `target/`、`node_modules/`、`deploy/.env`、运行时目录和模拟器等无关上下文，避免把本地产物重新打进构建上下文
+
+这样标准部署宿主机只需要：
+
+- Docker Engine
+- Docker Compose v2
+- 访问基础镜像仓库和 Maven/NPM 制品源的网络能力
+
+不再要求宿主机额外安装 Maven 或 Node.js。
 
 ## 5. 风险与约束
 

@@ -5,7 +5,7 @@
 #
 # Commands:
 #   infra    Start infrastructure only
-#   build    Build backend jars and frontend assets
+#   build    Build application images
 #   up       Build and start the full stack
 #   down     Stop all containers
 #   restart  Restart application services
@@ -17,7 +17,6 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.prod.yml"
 ENV_FILE="$SCRIPT_DIR/.env"
 DOCKER_ACCESS_CHECKED=0
@@ -270,33 +269,12 @@ config_path.write_text("\n".join(updated) + "\n")
 PY
 }
 
-find_mvn() {
-    if [ -x "$PROJECT_ROOT/mvnw" ]; then
-        echo "$PROJECT_ROOT/mvnw"
-    elif command -v mvn >/dev/null 2>&1; then
-        echo "mvn"
-    else
-        log_error "Maven not found (mvn or mvnw)"
-        exit 1
-    fi
-}
-
-build_backend() {
-    log_step "Building backend services..."
-    cd "$PROJECT_ROOT"
-    MVN=$(find_mvn)
-    "$MVN" clean package -DskipTests -T 4 \
-        -pl firefly-gateway,firefly-system,firefly-device,firefly-rule,firefly-media,firefly-data,firefly-support,firefly-connector \
-        -am
-    log_info "Backend build completed"
-}
-
-build_frontend() {
-    log_step "Building frontend..."
-    cd "$PROJECT_ROOT/firefly-web"
-    npm ci --registry=https://registry.npmmirror.com
-    npm run build
-    log_info "Frontend build completed"
+build_application_images() {
+    load_env
+    log_info "Using deploy environment '${DEPLOY_ENV}' with Nacos namespace '${NACOS_NAMESPACE}'"
+    log_step "Building application images from source..."
+    dc build gateway system device rule media data support connector web
+    log_info "Application images are ready"
 }
 
 dc() {
@@ -322,9 +300,7 @@ cmd_infra() {
 }
 
 cmd_build() {
-    build_backend
-    build_frontend
-    log_info "Artifacts are ready. Docker images will be built during 'up'."
+    build_application_images
 }
 
 cmd_up() {
@@ -335,18 +311,15 @@ cmd_up() {
     check_container_conflicts postgres redis kafka nacos minio sentinel zlmediakit gateway system device rule media data support connector web
     log_step "=== Firefly IoT full deployment ==="
 
-    log_step "[1/4] Building backend..."
-    build_backend
-
-    log_step "[2/4] Starting infrastructure..."
+    log_step "[1/3] Starting infrastructure..."
     dc up -d --build postgres redis kafka nacos minio sentinel zlmediakit
     log_info "Waiting for infrastructure health checks..."
     sleep 15
 
-    log_step "[3/4] Building and starting application services..."
+    log_step "[2/3] Building and starting application services..."
     dc up -d --build gateway system device rule media data support connector
 
-    log_step "[4/4] Building and starting frontend..."
+    log_step "[3/3] Building and starting frontend..."
     dc up -d --build web
 
     echo ""
@@ -410,7 +383,7 @@ case "${1:-up}" in
         echo "Usage: $0 {infra|build|up|down|restart|logs|status|clean}"
         echo ""
         echo "  infra    Start PostgreSQL, Redis, Kafka, Nacos, MinIO, Sentinel, ZLMediaKit"
-        echo "  build    Build backend jars and frontend assets"
+        echo "  build    Build application images"
         echo "  up       Full deployment (default)"
         echo "  down     Stop all services"
         echo "  restart  Restart application services"

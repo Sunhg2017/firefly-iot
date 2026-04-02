@@ -1,7 +1,41 @@
 # ============================================================
-# 通用 Dockerfile — 适用于所有 firefly-* 微服务
-# 构建时通过 --build-arg MODULE=firefly-xxx 指定模块
+# 通用 Dockerfile — 适用于所有 firefly-* Java 微服务
+# 直接在镜像构建阶段完成 Maven 打包，宿主机无需预先安装 Maven
 # ============================================================
+
+FROM maven:3.9.9-eclipse-temurin-21-alpine AS builder
+
+ARG MODULE
+
+WORKDIR /workspace
+
+COPY pom.xml pom.xml
+COPY firefly-common/pom.xml firefly-common/pom.xml
+COPY firefly-api/pom.xml firefly-api/pom.xml
+COPY firefly-plugin-api/pom.xml firefly-plugin-api/pom.xml
+COPY firefly-system/pom.xml firefly-system/pom.xml
+COPY firefly-device/pom.xml firefly-device/pom.xml
+COPY firefly-rule/pom.xml firefly-rule/pom.xml
+COPY firefly-data/pom.xml firefly-data/pom.xml
+COPY firefly-support/pom.xml firefly-support/pom.xml
+COPY firefly-media/pom.xml firefly-media/pom.xml
+COPY firefly-connector/pom.xml firefly-connector/pom.xml
+COPY firefly-gateway/pom.xml firefly-gateway/pom.xml
+
+COPY firefly-common/src firefly-common/src
+COPY firefly-api/src firefly-api/src
+COPY firefly-plugin-api/src firefly-plugin-api/src
+COPY firefly-system/src firefly-system/src
+COPY firefly-device/src firefly-device/src
+COPY firefly-rule/src firefly-rule/src
+COPY firefly-data/src firefly-data/src
+COPY firefly-support/src firefly-support/src
+COPY firefly-media/src firefly-media/src
+COPY firefly-connector/src firefly-connector/src
+COPY firefly-gateway/src firefly-gateway/src
+
+RUN mvn -pl "${MODULE}" -am package -DskipTests
+
 FROM eclipse-temurin:21-jre-alpine
 
 ARG MODULE
@@ -17,7 +51,7 @@ RUN apk add --no-cache tzdata curl && \
 
 WORKDIR /app
 
-COPY ${MODULE}/target/${MODULE}-*.jar app.jar
+COPY --from=builder /workspace/${MODULE}/target/${MODULE}-*.jar app.jar
 
 ENV JAVA_OPTS="-Xms256m -Xmx512m -Djava.security.egd=file:/dev/./urandom" \
     SPRING_PROFILES_ACTIVE=prod \

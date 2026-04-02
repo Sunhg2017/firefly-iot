@@ -11,6 +11,8 @@
 - 宿主机可用端口：`80`、`8080`、`8848`、`9000`、`9001`、`10000`、`18080`、`1883` 等
 - 持久化卷：PostgreSQL、Redis、Kafka、MinIO、Connector MQTT 数据目录
 
+当前标准部署已经不再要求宿主机预装 Maven 或 Node.js；后端和前端镜像都在 Docker 多阶段构建里完成编译。
+
 ## 3. 标准部署步骤
 
 1. 进入仓库 `deploy/` 目录。
@@ -25,11 +27,16 @@
 6. 启动全量服务：`bash deploy.sh up`
 7. 查看状态：`bash deploy.sh status`
 
+如果只想提前拉依赖并编译镜像，可先执行：
+
+- `bash deploy.sh build`
+
 脚本行为补充：
 
 - `deploy.sh` 会校验 `DEPLOY_ENV` 只能是 `dev` 或 `prod`
 - 如果 `.env` 没写 `NACOS_NAMESPACE`，脚本会自动推导为 `firefly-${DEPLOY_ENV}`
 - `bash deploy.sh infra` / `bash deploy.sh up` 日志会打印当前环境和命名空间，便于值班时快速识别
+- `bash deploy.sh build` / `bash deploy.sh up` 直接从源码构建镜像，不再依赖宿主机 Maven
 - 当前 Compose 会额外给 `firefly-gateway` 注入 `FIREFLY_GATEWAY_*_HOST=firefly-*`，保证 `DEPLOY_ENV=dev` 时容器内静态路由仍转发到 Compose 网络服务名，而不是误连 Gateway 容器自己的 `127.0.0.1`
 - 当前 Compose 文件已经移除废弃的 `version` 顶层字段；如果值班时再次看到 `the attribute 'version' is obsolete`，说明宿主机仍在使用旧版 Compose 文件
 
@@ -96,6 +103,20 @@ Kafka 额外要求：
 3. 重新登录一个新的 shell / SSH 会话后复验 `docker ps`
 
 共享宿主机已经收口为“部署用户直接跑脚本”的口径，不建议再长期依赖 `sudo bash deploy.sh ...` 作为日常入口。
+
+### 5.1.2 `mvn: command not found`
+
+如果当前宿主机还是在执行旧版脚本，可能会看到：
+
+- `mvn: command not found`
+
+这说明宿主机还没切到“后端镜像在 Docker 内部打包”的版本。处理方式：
+
+1. 同步最新仓库
+2. 确认 `deploy/Dockerfile` 已经是多阶段 Maven 构建版本
+3. 重新执行 `bash deploy.sh build` 或 `bash deploy.sh up`
+
+标准版本下，这个报错不应该再出现。
 
 ### 5.2 新容器启动后数据为空
 

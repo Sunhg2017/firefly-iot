@@ -27,6 +27,8 @@
 
 在共享宿主机上，执行这些命令的部署用户需要已经加入 `docker` 组；否则直接运行 `bash deploy.sh status` 或 `docker ps` 会报权限错误。
 
+当前标准部署不再要求宿主机预装 Maven 或 Node.js；`deploy.sh build` / `deploy.sh up` 会直接在 Docker 多阶段构建里完成后端和前端编译。
+
 `KAFKA_ADVERTISED_HOST` 的选择规则：
 
 - 全量 Compose 部署：保持默认值 `kafka`
@@ -42,6 +44,7 @@
 ## 3. 常用命令
 
 - 只启动基础设施：`bash deploy.sh infra`
+- 预构建业务镜像：`bash deploy.sh build`
 - 全量部署：`bash deploy.sh up`
 - 查看状态：`bash deploy.sh status`
 - 查看日志：`bash deploy.sh logs <service>`
@@ -49,6 +52,8 @@
 - 重启业务服务：`bash deploy.sh restart`
 
 如果你发现命令输出里还在提示 `the attribute 'version' is obsolete`，说明当前宿主机还没切到新版 Compose 文件，需要先同步最新仓库再执行部署。
+
+如果你看到 `mvn: command not found`，也说明宿主机还在跑旧版部署链路；同步到当前版本后，这个问题会随着 Docker 内部构建一起消失。
 
 ## 4. 持久化卷配置
 
