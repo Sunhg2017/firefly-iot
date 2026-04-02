@@ -14,6 +14,7 @@
    - `POSTGRES_PASSWORD`
    - `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`
    - `FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY`
+   - `APP_LOG_ROOT`
    - `KAFKA_ADVERTISED_HOST`
    - `ZLM_HOST` / `ZLM_PUBLIC_HOST`
    - `ZLM_SECRET`
@@ -62,7 +63,10 @@
 - 预构建业务镜像：`bash deploy.sh build`
 - 全量部署：`bash deploy.sh up`
 - 查看状态：`bash deploy.sh status`
-- 查看日志：`bash deploy.sh logs <service>`
+- 查看容器日志：`bash deploy.sh logs <service>`
+- 查看失败服务最近日志：`bash deploy.sh logs --failed`
+- 查看宿主机文件日志：`bash deploy.sh logs --file <service>`
+- 列出日志入口与宿主机路径：`bash deploy.sh logs --list`
 - 停止服务：`bash deploy.sh down`
 - 重启业务服务：`bash deploy.sh restart`
 
@@ -90,6 +94,26 @@
 - `http://localhost/`
 
 这三个入口已经被脚本自身等到可访问，不需要再额外手工 `sleep`。
+
+## 3.1 远端日志查看
+
+当前标准部署会把应用日志直接持久化到宿主机：
+
+- Java 服务：`${APP_LOG_ROOT}/<service>/firefly-<service>.log`
+- 前端 Nginx：`${APP_LOG_ROOT}/web/access.log`、`${APP_LOG_ROOT}/web/error.log`
+
+`.env.example` 默认值是：
+
+- `APP_LOG_ROOT=./runtime/logs`
+
+也就是默认落在 `deploy/runtime/logs/` 下。常用方式：
+
+1. 看某个服务的容器实时日志：`bash deploy.sh logs gateway`
+2. 看当前异常服务的最近日志：`bash deploy.sh logs --failed`
+3. 追宿主机文件日志：`bash deploy.sh logs --file system`
+4. 只看最近一段，不持续跟随：`bash deploy.sh logs --snapshot --file system`
+
+如果应用容器刚被重建，优先先看宿主机文件日志；这样不会因为容器替换丢掉前一轮滚动日志。
 
 ## 4. 持久化卷配置
 

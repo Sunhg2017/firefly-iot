@@ -33,7 +33,11 @@ NC='\033[0m'
 
 export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
 
+INFRA_SERVICES=(postgres redis kafka nacos minio sentinel zlmediakit)
 BACKEND_BUILD_SERVICES=(gateway system device rule media data support connector)
+APPLICATION_SERVICES=(gateway system device rule media data support connector web)
+MANAGED_SERVICES=("${INFRA_SERVICES[@]}" "${APPLICATION_SERVICES[@]}")
+HOST_LOG_SERVICES=(gateway system device rule media data support connector web)
 BACKEND_FINGERPRINT_PATHS=(
     .dockerignore
     deploy/Dockerfile
@@ -608,6 +612,206 @@ service_container_name() {
     echo "firefly-$1"
 }
 
+log_root_dir() {
+    local configured_root="${APP_LOG_ROOT:-$SCRIPT_DIR/runtime/logs}"
+
+    case "$configured_root" in
+        /*) echo "$configured_root" ;;
+        ./*) echo "$SCRIPT_DIR/${configured_root#./}" ;;
+        *) echo "$SCRIPT_DIR/$configured_root" ;;
+    esac
+}
+
+service_supports_host_logs() {
+    local service="$1"
+    local candidate
+
+    for candidate in "${HOST_LOG_SERVICES[@]}"; do
+        if [ "$candidate" = "$service" ]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+service_host_log_dir() {
+    echo "$(log_root_dir)/$1"
+}
+
+default_host_log_files_for_service() {
+    local service="$1"
+    local base_dir
+    base_dir="$(service_host_log_dir "$service")"
+
+    case "$service" in
+        web)
+            printf '%s\n' "$base_dir/access.log" "$base_dir/error.log"
+            ;;
+        *)
+            printf '%s\n' "$base_dir/firefly-$service.log"
+            ;;
+    esac
+}
+
+ensure_runtime_log_dirs() {
+    local root_dir
+    root_dir="$(log_root_dir)"
+
+    mkdir -p "$root_dir"
+
+    local service
+    for service in "${HOST_LOG_SERVICES[@]}"; do
+        mkdir -p "$root_dir/$service"
+    done
+}
+
+is_known_service() {
+    local requested="$1"
+    local service
+
+    for service in "${MANAGED_SERVICES[@]}"; do
+        if [ "$service" = "$requested" ]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+validate_service_names() {
+    local service
+
+    for service in "$@"; do
+        if ! is_known_service "$service"; then
+            log_error "Unknown service: ${service}"
+            log_info "Use 'bash deploy.sh logs --list' to see supported services."
+            exit 1
+        fi
+    done
+}
+
+print_logs_usage() {
+    cat <<EOF
+Usage: bash deploy.sh logs [options] [service...]
+
+Options:
+  --file, --host-file  Tail host-mounted log files instead of container stdout
+  --failed             Show recent logs for unhealthy/exited services
+  --snapshot           Print recent logs and exit (no follow)
+  --tail N             Number of lines to show (default: 100)
+  --since DURATION     Container log time range, for example 10m or 2h
+  --list               Show supported services and host log locations
+  -h, --help           Show this help
+
+Examples:
+  bash deploy.sh logs gateway
+  bash deploy.sh logs --snapshot system
+  bash deploy.sh logs --failed
+  bash deploy.sh logs --file system
+  bash deploy.sh logs --file --snapshot web
+EOF
+}
+
+print_logs_targets() {
+    load_env
+    ensure_runtime_log_dirs
+
+    local root_dir
+    root_dir="$(log_root_dir)"
+
+    echo "Managed services:"
+    local service
+    for service in "${MANAGED_SERVICES[@]}"; do
+        if service_supports_host_logs "$service"; then
+            echo "  ${service}: container stdout + host files under $(service_host_log_dir "$service")"
+        else
+            echo "  ${service}: container stdout only"
+        fi
+    done
+
+    echo ""
+    echo "Host log root: ${root_dir}"
+}
+
+collect_unhealthy_services() {
+    require_docker_access
+
+    local -a selected_services=()
+    if [ "$#" -gt 0 ]; then
+        selected_services=("$@")
+    else
+        selected_services=("${MANAGED_SERVICES[@]}")
+    fi
+
+    local service
+    for service in "${selected_services[@]}"; do
+        local container_name runtime_state health_state
+        container_name="$(service_container_name "$service")"
+        runtime_state="$(docker inspect -f '{{.State.Status}}' "$container_name" 2>/dev/null || true)"
+
+        if [ -z "$runtime_state" ]; then
+            continue
+        fi
+
+        health_state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_name" 2>/dev/null || true)"
+
+        if [ "$runtime_state" != "running" ]; then
+            printf '%s\n' "$service"
+            continue
+        fi
+
+        if [ "$health_state" != "none" ] && [ "$health_state" != "healthy" ]; then
+            printf '%s\n' "$service"
+        fi
+    done
+}
+
+tail_host_logs() {
+    local follow="$1"
+    local tail_lines="$2"
+    shift 2
+
+    ensure_runtime_log_dirs
+
+    local -a selected_services=()
+    if [ "$#" -gt 0 ]; then
+        selected_services=("$@")
+    else
+        selected_services=("${HOST_LOG_SERVICES[@]}")
+    fi
+
+    local -a files=()
+    local service file
+
+    for service in "${selected_services[@]}"; do
+        if ! service_supports_host_logs "$service"; then
+            log_warn "Service ${service} does not expose host-mounted log files; skipping."
+            continue
+        fi
+
+        while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            mkdir -p "$(dirname "$file")"
+            touch "$file"
+            files+=("$file")
+        done < <(default_host_log_files_for_service "$service")
+    done
+
+    if [ "${#files[@]}" -eq 0 ]; then
+        log_error "No host log files are available for the selected services."
+        exit 1
+    fi
+
+    log_info "Using host log files under $(log_root_dir)"
+
+    if [ "$follow" -eq 1 ]; then
+        tail -n "$tail_lines" -F "${files[@]}"
+    else
+        tail -n "$tail_lines" "${files[@]}"
+    fi
+}
+
 wait_for_service_healthy() {
     require_docker_access
 
@@ -762,6 +966,7 @@ cmd_up() {
     load_env
     log_info "Using deploy environment '${DEPLOY_ENV}' with Nacos namespace '${NACOS_NAMESPACE}'"
     ensure_named_volumes
+    ensure_runtime_log_dirs
     prepare_zlm_config
     check_container_conflicts postgres redis kafka nacos minio sentinel zlmediakit gateway system device rule media data support connector web
     log_step "=== Firefly IoT full deployment ==="
@@ -803,6 +1008,7 @@ cmd_release() {
     log_info "Using deploy environment '${DEPLOY_ENV}' with Nacos namespace '${NACOS_NAMESPACE}'"
     log_info "Using application images ${APP_IMAGE_REGISTRY}/${APP_IMAGE_NAMESPACE}: ${APP_IMAGE_TAG}"
     ensure_named_volumes
+    ensure_runtime_log_dirs
     prepare_zlm_config
     check_container_conflicts postgres redis kafka nacos minio sentinel zlmediakit gateway system device rule media data support connector web
     log_step "=== Firefly IoT GitHub release deployment ==="
@@ -851,7 +1057,115 @@ cmd_restart() {
 }
 
 cmd_logs() {
-    dc logs -f --tail=100 "$@"
+    load_env
+
+    local follow=1
+    local tail_lines=100
+    local since=""
+    local failed_only=0
+    local file_mode=0
+    local list_mode=0
+    local -a services=()
+
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --file|--host-file)
+                file_mode=1
+                ;;
+            --failed)
+                failed_only=1
+                follow=0
+                ;;
+            --snapshot|--no-follow)
+                follow=0
+                ;;
+            --tail)
+                shift
+                if [ "$#" -eq 0 ]; then
+                    log_error "--tail requires a numeric value."
+                    exit 1
+                fi
+                tail_lines="$1"
+                ;;
+            --since)
+                shift
+                if [ "$#" -eq 0 ]; then
+                    log_error "--since requires a duration value."
+                    exit 1
+                fi
+                since="$1"
+                ;;
+            --list)
+                list_mode=1
+                follow=0
+                ;;
+            -h|--help)
+                print_logs_usage
+                return 0
+                ;;
+            --)
+                shift
+                while [ "$#" -gt 0 ]; do
+                    services+=("$1")
+                    shift
+                done
+                break
+                ;;
+            -*)
+                log_error "Unknown logs option: $1"
+                print_logs_usage
+                exit 1
+                ;;
+            *)
+                services+=("$1")
+                ;;
+        esac
+        shift
+    done
+
+    if [ "$list_mode" -eq 1 ]; then
+        print_logs_targets
+        return 0
+    fi
+
+    validate_service_names "${services[@]}"
+
+    if [ "$failed_only" -eq 1 ]; then
+        local failed_services_raw
+        failed_services_raw="$(collect_unhealthy_services "${services[@]}")"
+
+        services=()
+        while IFS= read -r service; do
+            [ -n "$service" ] || continue
+            services+=("$service")
+        done <<< "$failed_services_raw"
+
+        if [ "${#services[@]}" -eq 0 ]; then
+            log_info "All selected services are running and healthy."
+            return 0
+        fi
+
+        log_info "Showing recent logs for unhealthy services: ${services[*]}"
+    fi
+
+    if [ "$file_mode" -eq 1 ]; then
+        if [ -n "$since" ]; then
+            log_error "--since is only supported for container stdout logs."
+            exit 1
+        fi
+        tail_host_logs "$follow" "$tail_lines" "${services[@]}"
+        return 0
+    fi
+
+    local -a log_args=(logs "--tail=$tail_lines")
+    if [ "$follow" -eq 1 ]; then
+        log_args+=(-f)
+    fi
+    if [ -n "$since" ]; then
+        log_args+=("--since=$since")
+    fi
+
+    dc "${log_args[@]}" "${services[@]}"
 }
 
 cmd_status() {
@@ -891,7 +1205,7 @@ case "${1:-up}" in
         echo "  release  Pull GHCR application images and deploy the full stack"
         echo "  down     Stop all services"
         echo "  restart  Restart application services"
-        echo "  logs     Tail logs, optionally pass service names"
+        echo "  logs     Tail container logs or host-mounted log files"
         echo "  status   Show container status"
         echo "  clean    Remove containers and volumes"
         exit 1

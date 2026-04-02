@@ -24,6 +24,7 @@
    - `DEPLOY_ENV=prod`
    - `NACOS_NAMESPACE=firefly-prod`
    - `FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY=<独立生成的 32 字节原文或可解码为 32 字节的 Base64 密钥>`
+   - `APP_LOG_ROOT=<宿主机日志目录，默认 ./runtime/logs>`
 5. 启动基础设施：`bash deploy.sh infra`
 6. 启动全量服务：`bash deploy.sh up`
 7. 查看状态：`bash deploy.sh status`
@@ -44,6 +45,7 @@
 - 如果本轮必须忽略源码指纹缓存，执行 `FIREFLY_FORCE_BUILD=1 bash deploy.sh build` 或 `FIREFLY_FORCE_BUILD=1 bash deploy.sh up`
 - 当前 Compose 会额外给 `firefly-gateway` 注入 `FIREFLY_GATEWAY_*_HOST=firefly-*`，保证 `DEPLOY_ENV=dev` 时容器内静态路由仍转发到 Compose 网络服务名，而不是误连 Gateway 容器自己的 `127.0.0.1`
 - 当前 Compose 会把 `FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY` 与 `FIREFLY_OPENAPI_APPKEY_SIGNATURE_WINDOW_SECONDS` 透传给 Java 服务；正式生产部署缺少前者时，`firefly-system` 会在健康检查阶段直接失败
+- 当前 Compose 会把 Java 服务日志与 Nginx 日志持久化到 `${APP_LOG_ROOT}`，默认落在 `deploy/runtime/logs/`，容器重建后历史文件仍保留在宿主机
 - 当前 Compose 文件已经移除废弃的 `version` 顶层字段；如果值班时再次看到 `the attribute 'version' is obsolete`，说明宿主机仍在使用旧版 Compose 文件
 
 Kafka 额外要求：
@@ -220,6 +222,24 @@ Kafka 额外要求：
 2. 看日志里是否打印了 `source fingerprint changed`、`build fingerprint not found`、`image ... is missing` 或 `FIREFLY_FORCE_BUILD is enabled`
 3. 用 `docker images | grep '^firefly-iot-'` 确认目标镜像是否还在
 4. 如果本轮确实要彻底重建，直接显式执行 `FIREFLY_FORCE_BUILD=1 bash deploy.sh up`
+
+### 5.1.10 远端排障时日志不好看
+
+当前推荐顺序：
+
+1. `bash deploy.sh logs --failed`
+2. `bash deploy.sh logs <service>`
+3. `bash deploy.sh logs --file <service>`
+4. `bash deploy.sh logs --list`
+
+说明：
+
+- `--failed` 会自动筛出 `exited`、`dead` 或健康检查未通过的服务，适合部署失败后的第一眼排查
+- `--file` 直接读取宿主机持久化日志，适合看容器重建前后的连续日志
+- Java 服务默认落在 `deploy/runtime/logs/<service>/firefly-<service>.log`
+- Web 默认落在 `deploy/runtime/logs/web/access.log` 与 `deploy/runtime/logs/web/error.log`
+
+如果宿主机把 `APP_LOG_ROOT` 改成了绝对路径，`bash deploy.sh logs --list` 会打印当前生效目录，值班时不要再凭经验去猜日志位置
 
 ### 5.2 新容器启动后数据为空
 

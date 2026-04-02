@@ -145,6 +145,7 @@ bash deploy.sh up
 - `deploy.sh build` / `deploy.sh up` 现在会把后端与前端源码指纹记录到 `deploy/runtime/build-state/`；当源码未变化且目标镜像仍存在时，会直接跳过后端 / 前端重建。
 - 如需强制重建全部业务镜像，可在执行前追加 `FIREFLY_FORCE_BUILD=1`。
 - `bash deploy.sh up` 现在会等待基础设施健康检查、Java 服务容器健康状态以及 `Gateway / Rule / Web` 的宿主机入口可访问后再返回，避免刚重建完成就被外部探活打到连接重置。
+- Java 服务与 Nginx 日志现在会直接落到宿主机 `${APP_LOG_ROOT:-./runtime/logs}`；远端值班可用 `bash deploy.sh logs --failed`、`bash deploy.sh logs <service>`、`bash deploy.sh logs --file <service>` 快速排障。
 - `bash deploy.sh infra` / `bash deploy.sh up` 不会再在每次执行时重编译 ZLMediaKit；只有镜像首次缺失时才会按 Compose 默认行为自动构建。
 - PostgreSQL / Redis / Kafka / MinIO / MQTT 持久化卷现在统一按“脚本预创建 + Compose external volume”管理，重复部署不再打印旧卷归属告警；`bash deploy.sh clean` 会显式删除这些稳定卷。
 - 持久化卷名称通过 `POSTGRES_VOLUME_NAME`、`REDIS_VOLUME_NAME`、`KAFKA_VOLUME_NAME`、`MINIO_VOLUME_NAME`、`CONNECTOR_MQTT_VOLUME_NAME` 固定下来，默认不会再跟 Compose 工程名绑定。

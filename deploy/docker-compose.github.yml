@@ -198,6 +198,8 @@ services:
     container_name: firefly-gateway
     ports:
       - "8080:8080"
+    volumes:
+      - ${APP_LOG_ROOT:-./runtime/logs}/gateway:/app/logs
     environment:
       <<: *java-env
       SPRING_CLOUD_SENTINEL_TRANSPORT_DASHBOARD: ${SENTINEL_DASHBOARD:-sentinel:8858}
@@ -223,6 +225,8 @@ services:
     container_name: firefly-system
     ports:
       - "8081:8081"
+    volumes:
+      - ${APP_LOG_ROOT:-./runtime/logs}/system:/app/logs
 
   device:
     <<: *java-service
@@ -230,6 +234,8 @@ services:
     container_name: firefly-device
     ports:
       - "9020:9020"
+    volumes:
+      - ${APP_LOG_ROOT:-./runtime/logs}/device:/app/logs
 
   rule:
     <<: *java-service
@@ -237,6 +243,8 @@ services:
     container_name: firefly-rule
     ports:
       - "9030:9030"
+    volumes:
+      - ${APP_LOG_ROOT:-./runtime/logs}/rule:/app/logs
 
   media:
     <<: *java-service
@@ -245,6 +253,8 @@ services:
     ports:
       - "9040:9040"
       - "5060:5060/udp"
+    volumes:
+      - ${APP_LOG_ROOT:-./runtime/logs}/media:/app/logs
     environment:
       <<: *java-env
       ZLMEDIAKIT_HOST: ${ZLM_HOST:-localhost}
@@ -276,6 +286,8 @@ services:
     container_name: firefly-data
     ports:
       - "9050:9050"
+    volumes:
+      - ${APP_LOG_ROOT:-./runtime/logs}/data:/app/logs
 
   support:
     <<: *java-service
@@ -283,6 +295,8 @@ services:
     container_name: firefly-support
     ports:
       - "9060:9060"
+    volumes:
+      - ${APP_LOG_ROOT:-./runtime/logs}/support:/app/logs
     environment:
       <<: *java-env
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
@@ -329,6 +343,7 @@ services:
       FIREFLY_MQTT_DOWNSTREAM_QOS: ${FIREFLY_MQTT_DOWNSTREAM_QOS:-1}
       FIREFLY_MQTT_RELAY_CHANNEL_PREFIX: ${FIREFLY_MQTT_RELAY_CHANNEL_PREFIX:-connector:mqtt:downstream:}
     volumes:
+      - ${APP_LOG_ROOT:-./runtime/logs}/connector:/app/logs
       - connector_mqtt_data:/app/data/mqtt
     depends_on:
       redis:
@@ -346,6 +361,8 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+    volumes:
+      - ${APP_LOG_ROOT:-./runtime/logs}/web:/var/log/nginx
     depends_on:
       - gateway
     networks:

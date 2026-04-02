@@ -25,6 +25,7 @@
 - 让后端服务镜像在 Docker 构建阶段直接完成 Maven 打包，宿主机部署入口不再依赖本地 Maven 安装。
 - 让弱网宿主机上的首次源码构建不再被多服务并发重复下载 Maven 依赖拖垮，保证标准 `deploy.sh build/up` 链路可预测。
 - 让正式生产部署所需的 OpenAPI AppKey 密钥能够通过 Compose 明确注入，避免 `firefly-system` 在健康检查阶段因缺少密钥直接失败。
+- 让远端值班时可以直接从宿主机查看连续日志，不再因为容器重建或滚动文件都留在容器内而被迫进容器排查。
 
 ## 3. 非目标
 
@@ -224,6 +225,41 @@
 - 同时把 `FIREFLY_OPENAPI_APPKEY_SIGNATURE_WINDOW_SECONDS` 也纳入公共 Java 环境，保证网关与系统服务在需要调整签名窗口时能保持一致
 
 这样无论是源码构建部署还是 GHCR 预构建镜像部署，只要正式生产宿主机按 `.env` 补齐密钥，`firefly-system` 就能在首次冷启动时完成健康检查，不会再出现“镜像已构建完成但系统服务因缺失密钥卡死”的部署假成功。
+
+### 4.11 远端日志查看收口
+
+当前 Java 微服务的 Logback 已经同时输出：
+
+- 控制台日志
+- `logs/<app>.log` 滚动文件日志
+
+但原部署链路只有：
+
+- `bash deploy.sh logs <service>` -> `docker compose logs`
+
+这会留下两个实际问题：
+
+- 容器被 `up -d` 重建后，上一轮容器 stdout 不方便继续追
+- 文件日志虽然存在，但目录只在容器内，值班时必须额外 `docker exec` 进容器才能看到
+
+本次收口方案：
+
+- 在 `.env.example` 中新增 `APP_LOG_ROOT`，默认值 `./runtime/logs`
+- `deploy/docker-compose.prod.yml` 与 `deploy/docker-compose.github.yml` 为各 Java 服务挂载 `${APP_LOG_ROOT}/<service>:/app/logs`
+- `web` 额外挂载 `${APP_LOG_ROOT}/web:/var/log/nginx`
+- `deploy.sh up` / `deploy.sh release` 启动前自动补齐宿主机日志目录
+- `deploy.sh logs` 新增：
+  - `--failed`：快速查看异常服务最近日志
+  - `--file`：直接 tail 宿主机持久化日志
+  - `--snapshot`：只打印最近日志不持续跟随
+  - `--list`：打印服务与当前生效日志目录
+
+这样远端排障时默认就有两条路径：
+
+- 快速看容器当前 stdout
+- 直接看宿主机上的连续滚动文件
+
+不再需要把“进入容器找日志目录”当成标准操作。
 
 ## 5. 风险与约束
 
