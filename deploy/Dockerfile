@@ -13,7 +13,7 @@ ARG MAVEN_MIRROR_URL=https://repo.huaweicloud.com/repository/maven/
 WORKDIR /workspace
 
 # 远端已确认 Maven Central 在当前宿主机极慢，这里直接收口到稳定镜像源。
-RUN mkdir -p /root/.m2 && cat > /root/.m2/settings.xml <<EOF
+RUN cat > /tmp/maven-settings.xml <<EOF
 <settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
@@ -55,7 +55,7 @@ COPY firefly-gateway/src firefly-gateway/src
 
 # 各服务镜像共用同一份 Maven 缓存，顺序构建时后续服务可直接复用首个服务下载的依赖。
 RUN --mount=type=cache,id=firefly-maven-repo,target=/root/.m2,sharing=locked \
-    mvn -pl "${MODULE}" -am package -DskipTests
+    mvn -s /tmp/maven-settings.xml -pl "${MODULE}" -am package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 
