@@ -275,14 +275,16 @@ PY
 }
 
 list_buildkit_executor_processes() {
-    ps -eo pid=,user=,cmd= | awk -v pattern="$BUILDKIT_EXECUTOR_PATTERN" '
+    ps -eo pid=,user=,args= | awk -v pattern="$BUILDKIT_EXECUTOR_PATTERN" '
         index($0, pattern) > 0 {
             pid = $1
             user = $2
             $1 = ""
             $2 = ""
             sub(/^  */, "", $0)
-            printf "%s\t%s\t%s\n", pid, user, $0
+            if ($0 ~ /^runc( |$)/ || $0 ~ /^\/usr\/bin\/containerd-shim-runc-v2( |$)/) {
+                printf "%s\t%s\t%s\n", pid, user, $0
+            }
         }
     '
 }
