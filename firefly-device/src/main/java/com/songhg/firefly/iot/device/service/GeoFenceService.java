@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
-import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.device.dto.geo.GeoFenceQueryDTO;
@@ -35,9 +34,7 @@ public class GeoFenceService {
     }
 
     public GeoFence getFence(Long id) {
-        GeoFence fence = fenceMapper.selectById(id);
-        if (fence == null) throw new BizException(ResultCode.PARAM_ERROR, "围栏不存在");
-        return fence;
+        return requireOwnedFence(AppContextHolder.getTenantId(), id);
     }
 
     public IPage<GeoFence> listFences(GeoFenceQueryDTO query) {
@@ -58,8 +55,7 @@ public class GeoFenceService {
         return fenceMapper.selectPage(page, wrapper);
     }
 
-    public List<GeoFence> listEnabled() {
-        Long tenantId = AppContextHolder.getTenantId();
+    public List<GeoFence> listEnabled(Long tenantId) {
         return fenceMapper.selectList(new LambdaQueryWrapper<GeoFence>()
                 .eq(GeoFence::getTenantId, tenantId)
                 .eq(GeoFence::getEnabled, true));
@@ -82,7 +78,8 @@ public class GeoFenceService {
 
     @Transactional
     public void deleteFence(Long id) {
-        fenceMapper.deleteById(id);
+        GeoFence fence = getFence(id);
+        fenceMapper.deleteById(fence.getId());
         log.info("GeoFence deleted: id={}", id);
     }
 
@@ -152,5 +149,16 @@ public class GeoFenceService {
                         Math.sin(dLng / 2) * Math.sin(dLng / 2);
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return R * c;
+    }
+
+    private GeoFence requireOwnedFence(Long tenantId, Long id) {
+        GeoFence fence = fenceMapper.selectOne(new LambdaQueryWrapper<GeoFence>()
+                .eq(GeoFence::getId, id)
+                .eq(GeoFence::getTenantId, tenantId)
+                .last("LIMIT 1"));
+        if (fence == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "围栏不存在");
+        }
+        return fence;
     }
 }

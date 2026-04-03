@@ -104,7 +104,7 @@ const GeoFencePage: React.FC = () => {
     <div>
       <PageHeader
         title="地理围栏"
-        description={`共 ${total} 个围栏`}
+        description={`共 ${total} 个围栏。设备上报 longitude/latitude 或 lng/lat 后，系统会自动记录位置并按进出状态生成围栏事件。`}
         extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => handleEdit(null)}>新建围栏</Button>}
       />
 

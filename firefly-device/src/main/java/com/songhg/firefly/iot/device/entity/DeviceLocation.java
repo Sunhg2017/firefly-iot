@@ -16,6 +16,7 @@ public class DeviceLocation implements Serializable {
 
     @TableId(type = IdType.AUTO)
     private Long id;
+    private Long tenantId;
     private Long deviceId;
     private Double lng;
     private Double lat;

@@ -22,6 +22,7 @@ public class MessageRouterService {
     private final DeviceShadowService shadowService;
     private final DeviceDataService deviceDataService;
     private final DeviceService deviceService;
+    private final DeviceLocationService deviceLocationService;
     private final DeviceMessageProducer messageProducer;
 
     /**
@@ -63,6 +64,12 @@ public class MessageRouterService {
                 log.debug("Shadow reported updated for device {}", message.getDeviceId());
             } catch (Exception ex) {
                 log.error("Failed to update shadow for property report device {}: {}",
+                        message.getDeviceId(), ex.getMessage());
+            }
+            try {
+                deviceLocationService.syncLocationFromPropertyReport(normalizedMessage);
+            } catch (Exception ex) {
+                log.error("Failed to sync device location for property report device {}: {}",
                         message.getDeviceId(), ex.getMessage());
             }
         }

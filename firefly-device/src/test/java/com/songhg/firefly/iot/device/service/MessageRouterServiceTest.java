@@ -22,9 +22,10 @@ class MessageRouterServiceTest {
     private final DeviceShadowService shadowService = mock(DeviceShadowService.class);
     private final DeviceDataService deviceDataService = mock(DeviceDataService.class);
     private final DeviceService deviceService = mock(DeviceService.class);
+    private final DeviceLocationService deviceLocationService = mock(DeviceLocationService.class);
     private final DeviceMessageProducer messageProducer = mock(DeviceMessageProducer.class);
     private final MessageRouterService routerService =
-            new MessageRouterService(shadowService, deviceDataService, deviceService, messageProducer);
+            new MessageRouterService(shadowService, deviceDataService, deviceService, deviceLocationService, messageProducer);
 
     @Test
     void shouldForwardEventReportToRuleEngineTopic() {
@@ -69,6 +70,7 @@ class MessageRouterServiceTest {
 
         verify(deviceDataService).writeTelemetryFromMessage(message);
         verify(shadowService).updateReported(eq(3L), eq(message.getPayload()));
+        verify(deviceLocationService).syncLocationFromPropertyReport(message);
         verify(messageProducer).publishToTopic(
                 eq(KafkaTopics.RULE_ENGINE_INPUT),
                 argThat(ruleMessage -> "/sys/pk/dev-001/thing/property/post".equals(ruleMessage.getTopic()))
@@ -96,6 +98,9 @@ class MessageRouterServiceTest {
                 actual != null && params.equals(actual.getPayload())
         ));
         verify(shadowService).updateReported(eq(3L), eq(params));
+        verify(deviceLocationService).syncLocationFromPropertyReport(argThat(actual ->
+                actual != null && params.equals(actual.getPayload())
+        ));
         verify(messageProducer).publishToTopic(
                 eq(KafkaTopics.RULE_ENGINE_INPUT),
                 argThat(ruleMessage -> ruleMessage != null && params.equals(ruleMessage.getPayload()))
@@ -120,10 +125,30 @@ class MessageRouterServiceTest {
         routerService.routeUpstream(message);
 
         verify(shadowService).updateReported(eq(3L), eq(message.getPayload()));
+        verify(deviceLocationService).syncLocationFromPropertyReport(message);
         verify(messageProducer).publishToTopic(
                 eq(KafkaTopics.RULE_ENGINE_INPUT),
                 argThat(ruleMessage -> "/sys/pk/dev-001/thing/property/post".equals(ruleMessage.getTopic()))
         );
+    }
+
+    @Test
+    void shouldNotSyncLocationWhenPropertyPayloadIsEmpty() {
+        DeviceMessage message = DeviceMessage.builder()
+                .messageId("msg-empty")
+                .tenantId(1L)
+                .productId(2L)
+                .deviceId(3L)
+                .deviceName("dev-001")
+                .type(DeviceMessage.MessageType.PROPERTY_REPORT)
+                .topic("/sys/pk/dev-001/thing/property/post")
+                .payload(Map.of())
+                .timestamp(123456789L)
+                .build();
+
+        routerService.routeUpstream(message);
+
+        verify(deviceLocationService, never()).syncLocationFromPropertyReport(any(DeviceMessage.class));
     }
 
     @Test
