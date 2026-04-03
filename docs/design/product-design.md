@@ -377,12 +377,12 @@ Platform (Super Admin)
 | `/api/v1/share-policies` | POST | 创建共享策略 | 数据所有者 |
 | `/api/v1/share-policies/{id}` | GET/PUT/DELETE | 管理共享策略 | 数据所有者 |
 | `/api/v1/share-policies/{id}/approve` | POST | 审批共享申请 | 数据所有者 |
+| `/api/v1/share-policies/{id}/reject` | POST | 驳回共享申请 | 数据所有者 |
 | `/api/v1/share-policies/{id}/revoke` | POST | 撤销共享 | 数据所有者 |
-| `/api/v1/shared/devices` | GET | 查询被共享的设备列表 | 数据消费者 |
-| `/api/v1/shared/devices/{id}/properties` | GET | 查询共享设备属性 | 数据消费者 |
-| `/api/v1/shared/devices/{id}/telemetry` | GET | 查询共享设备时序数据 | 数据消费者 |
-| `/api/v1/shared/subscribe` | POST | 创建实时数据订阅 | 数据消费者 |
-| `/api/v1/share-audit-logs` | GET | 查询共享审计日志 | 双方 |
+| `/api/v1/shared/devices` | GET | 按已批准策略查询共享设备列表 | 数据消费者 |
+| `/api/v1/shared/devices/{id}/properties` | GET | 按策略查询共享设备最新属性 | 数据消费者 |
+| `/api/v1/shared/devices/{id}/telemetry` | GET | 按策略查询共享设备时序数据 | 数据消费者 |
+| `/api/v1/share-policies/audit-logs/list` | POST | 查询共享审计日志 | 双方 |
 
 ---
 

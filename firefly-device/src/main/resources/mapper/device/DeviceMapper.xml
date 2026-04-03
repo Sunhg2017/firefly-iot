@@ -24,6 +24,7 @@
                d.device_name AS deviceName,
                d.nickname,
                d.product_id AS productId,
+               p.product_key AS productKey,
                p.name AS productName,
                d.tenant_id AS tenantId,
                d.project_id AS projectId,
@@ -41,6 +42,7 @@
                d.device_name AS deviceName,
                d.nickname,
                d.product_id AS productId,
+               p.product_key AS productKey,
                p.name AS productName,
                d.tenant_id AS tenantId,
                d.project_id AS projectId,
@@ -61,6 +63,36 @@
         FROM devices
         WHERE product_id = #{productId}
           AND deleted_at IS NULL
+    </select>
+
+    <select id="selectSharedBasicsIgnoreTenant" resultType="com.songhg.firefly.iot.api.dto.DeviceBasicVO">
+        SELECT d.id,
+               d.device_name AS deviceName,
+               d.nickname,
+               d.product_id AS productId,
+               p.product_key AS productKey,
+               p.name AS productName,
+               d.tenant_id AS tenantId,
+               d.project_id AS projectId,
+               d.status,
+               d.online_status AS onlineStatus
+        FROM devices d
+        LEFT JOIN products p ON p.id = d.product_id
+        WHERE d.deleted_at IS NULL
+          AND d.tenant_id = #{ownerTenantId}
+        <if test="productIds != null and productIds.size() &gt; 0">
+          AND d.product_id IN
+          <foreach collection="productIds" item="productId" open="(" separator="," close=")">
+            #{productId}
+          </foreach>
+        </if>
+        <if test="deviceNames != null and deviceNames.size() &gt; 0">
+          AND d.device_name IN
+          <foreach collection="deviceNames" item="deviceName" open="(" separator="," close=")">
+            #{deviceName}
+          </foreach>
+        </if>
+        ORDER BY d.id
     </select>
 
 </mapper>

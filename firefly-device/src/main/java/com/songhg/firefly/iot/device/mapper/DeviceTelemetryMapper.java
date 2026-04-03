@@ -1,5 +1,8 @@
 package com.songhg.firefly.iot.device.mapper;
 
+import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
+import com.songhg.firefly.iot.api.dto.DeviceTelemetryPointDTO;
+import com.songhg.firefly.iot.api.dto.DeviceTelemetrySnapshotDTO;
 import com.songhg.firefly.iot.device.dto.devicedata.TelemetryAggregateVO;
 import com.songhg.firefly.iot.device.dto.devicedata.TelemetryDataVO;
 import com.songhg.firefly.iot.device.dto.devicedata.TelemetryLatestVO;
@@ -30,4 +33,16 @@ public interface DeviceTelemetryMapper {
 
     List<TelemetryLatestVO> queryLatest(@Param("tenantId") Long tenantId,
                                          @Param("deviceId") Long deviceId);
+
+    @InterceptorIgnore(tenantLine = "true")
+    List<DeviceTelemetryPointDTO> queryTelemetryIgnoreTenant(@Param("tenantId") Long tenantId,
+                                                             @Param("deviceId") Long deviceId,
+                                                             @Param("property") String property,
+                                                             @Param("startTime") String startTime,
+                                                             @Param("endTime") String endTime,
+                                                             @Param("limit") Integer limit);
+
+    @InterceptorIgnore(tenantLine = "true")
+    List<DeviceTelemetrySnapshotDTO> queryLatestIgnoreTenant(@Param("tenantId") Long tenantId,
+                                                             @Param("deviceId") Long deviceId);
 }

@@ -84,7 +84,7 @@ public class ShareController {
 
     @Operation(summary = "撤销共享策略")
     @PostMapping("/{id}/revoke")
-    @RequiresPermission("share:update")
+    @RequiresPermission("share:revoke")
     public R<SharePolicyVO> revoke(@Parameter(description = "策略编号", required = true) @PathVariable Long id) {
         return R.ok(sharePolicyService.revoke(id));
     }

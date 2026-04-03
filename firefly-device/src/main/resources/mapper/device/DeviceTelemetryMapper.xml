@@ -126,4 +126,50 @@
         ORDER BY latest.property ASC
     </select>
 
+    <select id="queryTelemetryIgnoreTenant" resultType="com.songhg.firefly.iot.api.dto.DeviceTelemetryPointDTO">
+        SELECT ts,
+               device_id AS deviceId,
+               property,
+               value_number AS valueNumber,
+               value_string AS valueString,
+               value_bool AS valueBool
+        FROM device_telemetry
+        WHERE tenant_id = #{tenantId}
+          AND device_id = #{deviceId}
+        <if test="property != null and property != ''">
+          AND property = #{property}
+        </if>
+        <if test="startTime != null and startTime != ''">
+          AND ts &gt;= CAST(#{startTime, jdbcType=VARCHAR} AS TIMESTAMPTZ)
+        </if>
+        <if test="endTime != null and endTime != ''">
+          AND ts &lt;= CAST(#{endTime, jdbcType=VARCHAR} AS TIMESTAMPTZ)
+        </if>
+        ORDER BY ts DESC, property ASC
+        <if test="limit != null and limit &gt; 0">
+          LIMIT #{limit}
+        </if>
+    </select>
+
+    <select id="queryLatestIgnoreTenant" resultType="com.songhg.firefly.iot.api.dto.DeviceTelemetrySnapshotDTO">
+        SELECT latest.property,
+               latest.value_number AS valueNumber,
+               latest.value_string AS valueString,
+               latest.value_bool AS valueBool,
+               latest.ts
+        FROM (
+            SELECT DISTINCT ON (property)
+                   property,
+                   value_number,
+                   value_string,
+                   value_bool,
+                   ts
+            FROM device_telemetry
+            WHERE tenant_id = #{tenantId}
+              AND device_id = #{deviceId}
+            ORDER BY property, ts DESC
+        ) latest
+        ORDER BY latest.property ASC
+    </select>
+
 </mapper>

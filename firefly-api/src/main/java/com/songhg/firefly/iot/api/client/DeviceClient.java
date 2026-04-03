@@ -2,6 +2,7 @@ package com.songhg.firefly.iot.api.client;
 
 import com.songhg.firefly.iot.api.dto.DeviceBasicVO;
 import com.songhg.firefly.iot.api.dto.InternalDeviceCreateDTO;
+import com.songhg.firefly.iot.api.dto.SharedDeviceResolveRequestDTO;
 import com.songhg.firefly.iot.common.result.R;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,4 +30,7 @@ public interface DeviceClient {
 
     @GetMapping("/count")
     R<Long> countByProductId(@RequestParam("productId") Long productId);
+
+    @PostMapping("/shared/resolve")
+    R<List<DeviceBasicVO>> resolveSharedDevices(@RequestBody SharedDeviceResolveRequestDTO dto);
 }

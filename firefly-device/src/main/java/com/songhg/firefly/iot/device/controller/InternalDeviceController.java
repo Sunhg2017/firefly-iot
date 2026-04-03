@@ -2,8 +2,10 @@ package com.songhg.firefly.iot.device.controller;
 
 import com.songhg.firefly.iot.api.dto.DeviceBasicVO;
 import com.songhg.firefly.iot.api.dto.InternalDeviceCreateDTO;
+import com.songhg.firefly.iot.api.dto.SharedDeviceResolveRequestDTO;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.device.service.DeviceService;
+import com.songhg.firefly.iot.device.service.SharedDeviceReadService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -28,6 +30,7 @@ import java.util.List;
 public class InternalDeviceController {
 
     private final DeviceService deviceService;
+    private final SharedDeviceReadService sharedDeviceReadService;
 
     @PostMapping
     @Operation(summary = "内部创建设备")
@@ -51,5 +54,11 @@ public class InternalDeviceController {
     @Operation(summary = "统计产品下设备数量")
     public R<Long> countByProductId(@RequestParam("productId") Long productId) {
         return R.ok(deviceService.countByProductId(productId));
+    }
+
+    @PostMapping("/shared/resolve")
+    @Operation(summary = "根据共享范围解析设备")
+    public R<List<DeviceBasicVO>> resolveSharedDevices(@RequestBody SharedDeviceResolveRequestDTO dto) {
+        return R.ok(sharedDeviceReadService.resolveSharedDevices(dto));
     }
 }

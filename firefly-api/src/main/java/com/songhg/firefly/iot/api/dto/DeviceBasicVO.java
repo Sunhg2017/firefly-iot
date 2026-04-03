@@ -18,6 +18,7 @@ public class DeviceBasicVO implements Serializable {
     private String deviceName;
     private String nickname;
     private Long productId;
+    private String productKey;
     private String productName;
     private Long tenantId;
     private Long projectId;

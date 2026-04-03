@@ -27,4 +27,9 @@ public interface DeviceMapper extends BaseMapper<Device> {
 
     @InterceptorIgnore(tenantLine = "true")
     Long countByProductIdIgnoreTenant(@Param("productId") Long productId);
+
+    @InterceptorIgnore(tenantLine = "true")
+    List<DeviceBasicVO> selectSharedBasicsIgnoreTenant(@Param("ownerTenantId") Long ownerTenantId,
+                                                       @Param("productIds") List<Long> productIds,
+                                                       @Param("deviceNames") List<String> deviceNames);
 }
