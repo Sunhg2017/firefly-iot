@@ -75,8 +75,6 @@ auth:
     expire-seconds: 2592000
 
 firefly:
-  audit:
-    enabled: false
   openapi:
     appkey:
       signature-window-seconds: 300
@@ -113,5 +111,4 @@ management:
   otlp:
     tracing:
       endpoint: ${FIREFLY_OTLP_TRACING_ENDPOINT:http://127.0.0.1:4318/v1/traces}
-
 

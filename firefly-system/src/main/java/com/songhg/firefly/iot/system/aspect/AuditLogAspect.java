@@ -3,7 +3,6 @@ package com.songhg.firefly.iot.system.aspect;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.audit.Auditable;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
-import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.system.entity.AuditLog;
 import com.songhg.firefly.iot.system.service.AuditLogService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -13,7 +12,6 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -25,7 +23,6 @@ import java.time.LocalDateTime;
 @Aspect
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "firefly.audit", name = "enabled", havingValue = "true", matchIfMissing = false)
 public class AuditLogAspect {
 
     private final AuditLogService auditLogService;

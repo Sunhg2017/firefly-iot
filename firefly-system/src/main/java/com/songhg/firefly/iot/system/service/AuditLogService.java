@@ -13,7 +13,6 @@ import com.songhg.firefly.iot.system.entity.AuditLog;
 import com.songhg.firefly.iot.system.mapper.AuditLogMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -22,7 +21,6 @@ import java.time.LocalDateTime;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "firefly.audit", name = "enabled", havingValue = "true", matchIfMissing = false)
 public class AuditLogService {
 
     private final AuditLogMapper auditLogMapper;

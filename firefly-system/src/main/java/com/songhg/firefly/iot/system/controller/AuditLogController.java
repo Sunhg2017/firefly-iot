@@ -10,14 +10,12 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "审计日志", description = "查询系统审计日志")
 @RestController
 @RequestMapping("/api/v1/audit-logs")
 @RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "firefly.audit", name = "enabled", havingValue = "true", matchIfMissing = false)
 public class AuditLogController {
 
     private final AuditLogService auditLogService;
