@@ -3,15 +3,25 @@ import { useNavigate } from 'react-router-dom';
 import { Button, Form, Input, Space, Tabs, Typography, message } from 'antd';
 import {
   DeploymentUnitOutlined,
+  MessageOutlined,
   LockOutlined,
   MobileOutlined,
   SafetyCertificateOutlined,
   UserOutlined,
+  WechatOutlined,
 } from '@ant-design/icons';
 import useAuthStore from '../../store/useAuthStore';
 import { getUserHomePath } from '../../config/workspaceRoutes';
+import { authApi } from '../../services/api';
 
 const { Text, Title } = Typography;
+
+interface OauthLoginProvider {
+  provider: string;
+  displayName: string;
+  enabled: boolean;
+  webAuthorizeSupported: boolean;
+}
 
 const loginInputStyle: React.CSSProperties = {
   height: 46,
@@ -24,12 +34,39 @@ const LoginPage: React.FC = () => {
   const { login, isAuthenticated, user } = useAuthStore();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('password');
+  const [oauthLoadingProvider, setOauthLoadingProvider] = useState<string | null>(null);
+  const [oauthProviders, setOauthProviders] = useState<OauthLoginProvider[]>([]);
 
   useEffect(() => {
     if (isAuthenticated) {
       navigate(getUserHomePath(user), { replace: true });
     }
   }, [isAuthenticated, navigate, user]);
+
+  useEffect(() => {
+    const loadOauthProviders = async () => {
+      try {
+        const res = await authApi.listOauthProviders();
+        const providers = Array.isArray(res.data?.data) ? res.data.data : [];
+        setOauthProviders(
+          providers.filter((item: unknown): item is OauthLoginProvider => {
+            if (!item || typeof item !== 'object') {
+              return false;
+            }
+            const candidate = item as Partial<OauthLoginProvider>;
+            return Boolean(candidate.enabled)
+              && Boolean(candidate.webAuthorizeSupported)
+              && typeof candidate.provider === 'string'
+              && typeof candidate.displayName === 'string';
+          }),
+        );
+      } catch {
+        setOauthProviders([]);
+      }
+    };
+
+    void loadOauthProviders();
+  }, []);
 
   const handlePasswordLogin = async (values: { username: string; password: string }) => {
     setLoading(true);
@@ -118,6 +155,33 @@ const LoginPage: React.FC = () => {
     },
   ];
 
+  const startOauthLogin = async (provider: string) => {
+    setOauthLoadingProvider(provider);
+    try {
+      const redirectUri = `${window.location.origin}/login/oauth/callback?provider=${encodeURIComponent(provider)}`;
+      const res = await authApi.buildOauthAuthorizeUrl({
+        provider,
+        action: 'LOGIN',
+        redirectUri,
+      });
+      const authorizeUrl = res.data?.data?.authorizeUrl;
+      if (typeof authorizeUrl !== 'string' || !authorizeUrl) {
+        throw new Error('未获取到授权地址');
+      }
+      window.location.href = authorizeUrl;
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '拉起第三方登录失败');
+      setOauthLoadingProvider(null);
+    }
+  };
+
+  const oauthButtons = oauthProviders.map((provider) => ({
+    ...provider,
+    icon: provider.provider === 'WECHAT'
+      ? <WechatOutlined />
+      : <MessageOutlined />,
+  }));
+
   return (
     <div
       className="login-page"
@@ -197,6 +261,24 @@ const LoginPage: React.FC = () => {
                 </div>
 
                 <Tabs className="login-page-tabs" activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
+
+                {oauthButtons.length > 0 ? (
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    <Text style={{ color: '#64748b' }}>其他登录方式</Text>
+                    {oauthButtons.map((provider) => (
+                      <Button
+                        key={provider.provider}
+                        block
+                        icon={provider.icon}
+                        loading={oauthLoadingProvider === provider.provider}
+                        onClick={() => void startOauthLogin(provider.provider)}
+                        style={{ height: 44, borderRadius: 12 }}
+                      >
+                        {provider.displayName}
+                      </Button>
+                    ))}
+                  </Space>
+                ) : null}
               </Space>
             </div>
           </div>

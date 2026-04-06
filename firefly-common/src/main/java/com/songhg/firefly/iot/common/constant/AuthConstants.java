@@ -34,6 +34,7 @@ public final class AuthConstants {
     public static final String REDIS_SMS_RATE = "sms:rate:";
     public static final String REDIS_SMS_DAILY = "sms:daily:";
     public static final String REDIS_QRCODE = "qrcode:";
+    public static final String REDIS_OAUTH_STATE = "oauth:state:";
     public static final String REDIS_PERM_USER = "perm:user:";
     public static final String REDIS_PERM_ROLE = "perm:role:";
     public static final String REDIS_OPEN_API_NONCE = "openapi:nonce:";
@@ -85,4 +86,5 @@ public final class AuthConstants {
     public static final int SMS_RATE_LIMIT_SECONDS = 60;
     public static final int SMS_DAILY_LIMIT = 10;
     public static final int SMS_VERIFY_MAX_ATTEMPTS = 5;
+    public static final int OAUTH_STATE_EXPIRE_SECONDS = 600;
 }

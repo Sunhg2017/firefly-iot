@@ -1,6 +1,9 @@
 package com.songhg.firefly.iot.system.controller;
 
 import com.songhg.firefly.iot.system.dto.OauthBindingVO;
+import com.songhg.firefly.iot.system.dto.OauthAuthorizeUrlRequest;
+import com.songhg.firefly.iot.system.dto.OauthAuthorizeUrlResponse;
+import com.songhg.firefly.iot.system.dto.OauthBindRequest;
 import com.songhg.firefly.iot.system.dto.PushTokenUpdateDTO;
 import com.songhg.firefly.iot.system.dto.UserSessionVO;
 import com.songhg.firefly.iot.system.service.AuthService;
@@ -8,6 +11,7 @@ import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.Platform;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresLogin;
+import com.songhg.firefly.iot.system.service.OauthIntegrationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,6 +29,7 @@ import java.util.List;
 public class SessionController {
 
     private final AuthService authService;
+    private final OauthIntegrationService oauthIntegrationService;
 
     // ==================== Sessions ====================
 
@@ -61,6 +66,20 @@ public class SessionController {
     public R<List<OauthBindingVO>> listOauthBindings() {
         Long userId = AppContextHolder.getUserId();
         return R.ok(authService.getUserOauthBindings(userId));
+    }
+
+    @Operation(summary = "生成绑定第三方账号的授权地址")
+    @PostMapping("/oauth-bindings/authorize-url")
+    public R<OauthAuthorizeUrlResponse> buildOauthBindAuthorizeUrl(@Valid @RequestBody OauthAuthorizeUrlRequest req) {
+        Long userId = AppContextHolder.getUserId();
+        return R.ok(oauthIntegrationService.buildAuthorizeUrl(req, userId));
+    }
+
+    @Operation(summary = "绑定 OAuth 账号")
+    @PostMapping("/oauth-bindings")
+    public R<OauthBindingVO> bindOauthAccount(@Valid @RequestBody OauthBindRequest req) {
+        Long userId = AppContextHolder.getUserId();
+        return R.ok(oauthIntegrationService.bindCurrentUser(userId, req));
     }
 
     @Operation(summary = "解绑 OAuth 账号")

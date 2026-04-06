@@ -6,6 +6,7 @@ import PrivateRoute from './components/PrivateRoute';
 import LoginPage from './pages/login';
 import useAuthStore from './store/useAuthStore';
 import { getUserHomePath } from './config/workspaceRoutes';
+const OauthCallbackPage = React.lazy(() => import('./pages/login/OauthCallbackPage'));
 
 const Dashboard = React.lazy(() => import('./pages/dashboard/DashboardPage'));
 const TenantList = React.lazy(() => import('./pages/tenant/TenantList'));
@@ -72,6 +73,8 @@ const App: React.FC = () => {
     <Suspense fallback={<Loading />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/login/oauth/callback" element={<OauthCallbackPage mode="login" />} />
+        <Route path="/oauth/bind/callback" element={<OauthCallbackPage mode="bind" />} />
         <Route path="/" element={<PrivateRoute />}>
           <Route element={<BasicLayout />}>
             <Route index element={<HomeRedirect />} />

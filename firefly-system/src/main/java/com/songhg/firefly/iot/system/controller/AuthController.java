@@ -6,10 +6,15 @@ import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresLogin;
 import com.songhg.firefly.iot.system.dto.LoginRequest;
 import com.songhg.firefly.iot.system.dto.LoginResponse;
+import com.songhg.firefly.iot.system.dto.OauthAuthorizeUrlRequest;
+import com.songhg.firefly.iot.system.dto.OauthAuthorizeUrlResponse;
+import com.songhg.firefly.iot.system.dto.OauthLoginRequest;
+import com.songhg.firefly.iot.system.dto.OauthProviderOptionVO;
 import com.songhg.firefly.iot.system.dto.RefreshTokenRequest;
 import com.songhg.firefly.iot.system.dto.SmsSendRequest;
 import com.songhg.firefly.iot.system.service.AuthService;
 import com.songhg.firefly.iot.system.service.JwtService;
+import com.songhg.firefly.iot.system.service.OauthIntegrationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -35,6 +40,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final JwtService jwtService;
+    private final OauthIntegrationService oauthIntegrationService;
 
     @Operation(summary = "用户登录", description = "支持密码登录和短信验证码登录")
     @PostMapping("/login")
@@ -55,6 +61,48 @@ public class AuthController {
         String purpose = req.getPurpose() != null ? req.getPurpose() : "LOGIN";
         authService.sendSmsCode(req.getPhone(), purpose, resolveClientIp(httpReq));
         return R.ok();
+    }
+
+    @Operation(summary = "查询可用第三方登录提供商")
+    @GetMapping("/oauth/providers")
+    public R<List<OauthProviderOptionVO>> listOauthProviders() {
+        return R.ok(oauthIntegrationService.listProviderOptions());
+    }
+
+    @Operation(summary = "生成第三方登录授权地址")
+    @PostMapping("/oauth/authorize-url")
+    public R<OauthAuthorizeUrlResponse> buildOauthAuthorizeUrl(@Valid @RequestBody OauthAuthorizeUrlRequest req) {
+        return R.ok(oauthIntegrationService.buildAuthorizeUrl(req, null));
+    }
+
+    @Operation(summary = "微信登录")
+    @PostMapping("/wechat")
+    public R<LoginResponse> wechatLogin(@Valid @RequestBody OauthLoginRequest req, HttpServletRequest httpReq) {
+        return R.ok(oauthIntegrationService.loginWithWechat(req, resolveClientIp(httpReq), resolveUserAgent(httpReq)));
+    }
+
+    @Operation(summary = "微信小程序登录")
+    @PostMapping("/wechat-mini")
+    public R<LoginResponse> wechatMiniLogin(@Valid @RequestBody OauthLoginRequest req, HttpServletRequest httpReq) {
+        return R.ok(oauthIntegrationService.loginWithWechatMini(req, resolveClientIp(httpReq), resolveUserAgent(httpReq)));
+    }
+
+    @Operation(summary = "支付宝登录")
+    @PostMapping("/alipay")
+    public R<LoginResponse> alipayLogin(@Valid @RequestBody OauthLoginRequest req, HttpServletRequest httpReq) {
+        return R.ok(oauthIntegrationService.loginWithAlipay(req, resolveClientIp(httpReq), resolveUserAgent(httpReq)));
+    }
+
+    @Operation(summary = "Apple 登录")
+    @PostMapping("/apple")
+    public R<LoginResponse> appleLogin(@Valid @RequestBody OauthLoginRequest req, HttpServletRequest httpReq) {
+        return R.ok(oauthIntegrationService.loginWithApple(req, resolveClientIp(httpReq), resolveUserAgent(httpReq)));
+    }
+
+    @Operation(summary = "钉钉登录")
+    @PostMapping("/dingtalk")
+    public R<LoginResponse> dingTalkLogin(@Valid @RequestBody OauthLoginRequest req, HttpServletRequest httpReq) {
+        return R.ok(oauthIntegrationService.loginWithDingTalk(req, resolveClientIp(httpReq), resolveUserAgent(httpReq)));
     }
 
     @Operation(summary = "刷新访问令牌")

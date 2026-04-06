@@ -946,6 +946,13 @@ export const projectApi = {
 export const authApi = {
   login: (data: Record<string, unknown>) => request.post('/auth/login', data),
   sendSms: (phone: string, purpose: string) => request.post('/auth/sms/send', { phone, purpose }),
+  listOauthProviders: () => request.get('/auth/oauth/providers'),
+  buildOauthAuthorizeUrl: (data: Record<string, unknown>) => request.post('/auth/oauth/authorize-url', data),
+  wechatLogin: (data: Record<string, unknown>) => request.post('/auth/wechat', data),
+  wechatMiniLogin: (data: Record<string, unknown>) => request.post('/auth/wechat-mini', data),
+  alipayLogin: (data: Record<string, unknown>) => request.post('/auth/alipay', data),
+  appleLogin: (data: Record<string, unknown>) => request.post('/auth/apple', data),
+  dingtalkLogin: (data: Record<string, unknown>) => request.post('/auth/dingtalk', data),
   refresh: (refreshToken: string) => request.post('/auth/refresh', { refreshToken }),
   logout: () => request.post('/auth/logout'),
   logoutAll: () => request.post('/auth/logout-all'),
@@ -958,6 +965,8 @@ export const sessionApi = {
   updatePushToken: (pushToken: string, pushChannel?: string) =>
     request.put('/user/push-token', { pushToken, pushChannel }),
   listOauthBindings: () => request.get('/user/oauth-bindings'),
+  buildOauthAuthorizeUrl: (data: Record<string, unknown>) => request.post('/user/oauth-bindings/authorize-url', data),
+  createOauthBinding: (data: Record<string, unknown>) => request.post('/user/oauth-bindings', data),
   deleteOauthBinding: (id: number) => request.delete(`/user/oauth-bindings/${id}`),
 };
 

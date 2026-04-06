@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Button, Input, Popconfirm, Select, Space, Table, Tabs, Tag, message } from 'antd';
 import { DeleteOutlined, LogoutOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
-import { adminSessionApi, loginLogApi, sessionApi } from '../../services/api';
+import { adminSessionApi, authApi, loginLogApi, sessionApi } from '../../services/api';
 
 interface LoginLogItem {
   id: number;
@@ -50,6 +51,24 @@ interface AdminSessionQueryState {
   adminType?: string;
 }
 
+interface OauthBindingItem {
+  id: number;
+  provider?: string | null;
+  nickname?: string | null;
+  avatarUrl?: string | null;
+  createdAt?: string | null;
+}
+
+interface OauthProviderItem {
+  provider: string;
+  displayName: string;
+  enabled: boolean;
+  webAuthorizeSupported: boolean;
+  webBindSupported: boolean;
+  apiLoginSupported: boolean;
+  usageHint?: string | null;
+}
+
 const renderPlatform = (value?: string | null) => <Tag color="blue">{value || '-'}</Tag>;
 
 const renderLoginMethod = (value?: string | null) => <Tag>{value || 'PASSWORD'}</Tag>;
@@ -63,6 +82,10 @@ const renderAdminType = (value?: string | null) => {
   }
   return <Tag>{value || '-'}</Tag>;
 };
+
+const renderOauthBindingStatus = (bound: boolean) => (
+  <Tag color={bound ? 'success' : 'default'}>{bound ? '已绑定' : '未绑定'}</Tag>
+);
 
 const LoginLogTab: React.FC = () => {
   const [data, setData] = useState<LoginLogItem[]>([]);
@@ -535,16 +558,169 @@ const AdminSessionTab: React.FC = () => {
   );
 };
 
+const OauthBindingTab: React.FC = () => {
+  const [loading, setLoading] = useState(false);
+  const [bindingProvider, setBindingProvider] = useState<string | null>(null);
+  const [providers, setProviders] = useState<OauthProviderItem[]>([]);
+  const [bindings, setBindings] = useState<OauthBindingItem[]>([]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [providerRes, bindingRes] = await Promise.all([
+        authApi.listOauthProviders(),
+        sessionApi.listOauthBindings(),
+      ]);
+      setProviders(Array.isArray(providerRes.data?.data) ? providerRes.data.data : []);
+      setBindings(Array.isArray(bindingRes.data?.data) ? bindingRes.data.data : []);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '加载第三方绑定失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchData();
+  }, []);
+
+  const startBinding = async (provider: string) => {
+    setBindingProvider(provider);
+    try {
+      const redirectUri = `${window.location.origin}/oauth/bind/callback?provider=${encodeURIComponent(provider)}`;
+      const res = await sessionApi.buildOauthAuthorizeUrl({
+        provider,
+        action: 'BIND',
+        redirectUri,
+      });
+      const authorizeUrl = res.data?.data?.authorizeUrl;
+      if (typeof authorizeUrl !== 'string' || !authorizeUrl) {
+        throw new Error('未获取到绑定授权地址');
+      }
+      window.location.href = authorizeUrl;
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '拉起绑定失败');
+      setBindingProvider(null);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await sessionApi.deleteOauthBinding(id);
+      message.success('第三方账号已解绑');
+      await fetchData();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '解绑失败');
+    }
+  };
+
+  const bindingMap = new Map(bindings.map((binding) => [binding.provider || '', binding]));
+
+  const dataSource = providers
+    .filter((provider) => provider.enabled)
+    .map((provider) => ({
+      ...provider,
+      binding: bindingMap.get(provider.provider),
+    }));
+
+  const columns: ColumnsType<OauthProviderItem & { binding?: OauthBindingItem }> = [
+    {
+      title: '提供商',
+      dataIndex: 'displayName',
+      width: 160,
+      render: (_value, record) => (
+        <div>
+          <div>{record.displayName}</div>
+          <div style={{ color: '#8c8c8c', fontSize: 12 }}>{record.provider}</div>
+        </div>
+      ),
+    },
+    {
+      title: '绑定状态',
+      width: 120,
+      render: (_value, record) => renderOauthBindingStatus(Boolean(record.binding)),
+    },
+    {
+      title: '绑定账号',
+      width: 220,
+      render: (_value, record) => record.binding?.nickname || '-',
+    },
+    {
+      title: '可用方式',
+      width: 260,
+      render: (_value, record) => record.usageHint || '-',
+    },
+    {
+      title: '绑定时间',
+      width: 180,
+      render: (_value, record) => record.binding?.createdAt || '-',
+    },
+    {
+      title: '操作',
+      width: 180,
+      fixed: 'right',
+      render: (_value, record) => {
+        if (record.binding?.id) {
+          return (
+            <Popconfirm title="确认解绑这个第三方账号吗？" onConfirm={() => void handleDelete(record.binding!.id)}>
+              <Button type="link" danger size="small">
+                解绑
+              </Button>
+            </Popconfirm>
+          );
+        }
+
+        if (record.webBindSupported) {
+          return (
+            <Button
+              type="link"
+              size="small"
+              loading={bindingProvider === record.provider}
+              onClick={() => void startBinding(record.provider)}
+            >
+              去绑定
+            </Button>
+          );
+        }
+
+        return <span style={{ color: '#8c8c8c' }}>客户端绑定</span>;
+      },
+    },
+  ];
+
+  return (
+    <div>
+      <Button icon={<ReloadOutlined />} onClick={() => void fetchData()} style={{ marginBottom: 16 }}>
+        刷新
+      </Button>
+      <Table
+        rowKey="provider"
+        columns={columns}
+        dataSource={dataSource}
+        loading={loading}
+        size="small"
+        scroll={{ x: 1120 }}
+        pagination={false}
+      />
+    </div>
+  );
+};
+
 const SecurityPage: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeKey = searchParams.get('tab') || 'login-log';
+
   return (
     <div>
       <PageHeader title="安全管理" />
       <Tabs
-        defaultActiveKey="login-log"
+        activeKey={activeKey}
+        onChange={(key) => setSearchParams({ tab: key })}
         items={[
           { key: 'login-log', label: '登录日志', children: <LoginLogTab /> },
           { key: 'my-session', label: '我的会话', children: <MySessionTab /> },
           { key: 'admin-session', label: '管理员会话', children: <AdminSessionTab /> },
+          { key: 'oauth-binding', label: '第三方绑定', children: <OauthBindingTab /> },
         ]}
       />
     </div>

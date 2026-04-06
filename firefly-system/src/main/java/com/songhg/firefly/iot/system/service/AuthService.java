@@ -120,6 +120,28 @@ public class AuthService {
         });
     }
 
+    @Transactional
+    public LoginResponse oauthLogin(User user,
+                                    LoginMethod loginMethod,
+                                    Platform platform,
+                                    String fingerprint,
+                                    String remoteIp,
+                                    String userAgent) {
+        if (user == null || user.getId() == null) {
+            throw new BizException(ResultCode.AUTH_OAUTH_FAILED, "oauth login user is missing");
+        }
+        Tenant tenant = requireLoginTenant(user.getTenantId());
+        return withTenantContext(tenant.getId(), () -> {
+            LoginRequest req = new LoginRequest();
+            req.setLoginMethod(loginMethod);
+            req.setPlatform(platform);
+            req.setFingerprint(fingerprint);
+            req.setUsername(user.getUsername());
+            assertUserCanLogin(user, req, tenant.getId(), remoteIp, userAgent);
+            return onLoginSuccess(user, tenant, req, remoteIp, userAgent);
+        });
+    }
+
     public void sendSmsCode(String phone, String purpose, String remoteIp) {
         String rateKey = AuthConstants.REDIS_SMS_RATE + phone;
         if (Boolean.TRUE.equals(redisTemplate.hasKey(rateKey))) {
@@ -342,6 +364,14 @@ public class AuthService {
         UserOauthBinding binding = oauthBindingMapper.selectById(bindingId);
         if (binding == null || !binding.getUserId().equals(userId)) {
             throw new BizException(ResultCode.PARAM_ERROR, "oauth binding not found");
+        }
+        User user = userMapper.selectById(userId);
+        long bindingCount = oauthBindingMapper.selectCount(new LambdaQueryWrapper<UserOauthBinding>()
+                .eq(UserOauthBinding::getUserId, userId));
+        boolean hasPasswordLogin = user != null && StringUtils.hasText(user.getPasswordHash());
+        boolean hasSmsLogin = user != null && StringUtils.hasText(user.getPhone());
+        if (!hasPasswordLogin && !hasSmsLogin && bindingCount <= 1) {
+            throw new BizException(ResultCode.PARAM_ERROR, "请至少保留一种可用登录方式");
         }
         oauthBindingMapper.deleteById(bindingId);
     }

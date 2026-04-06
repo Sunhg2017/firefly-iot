@@ -52,6 +52,11 @@ const parseJson = (value: string) => {
   return JSON.stringify(parsed, null, 2);
 };
 
+const shouldUseMultilineEditor = (item: ConfigItem): boolean => {
+  const key = item.configKey.toLowerCase();
+  return key.includes('pem') || key.includes('private_key') || key.includes('public_key');
+};
+
 const SystemSettingsPage: React.FC = () => {
   const [groups, setGroups] = useState<Record<string, ConfigItem[]>>({});
   const [loading, setLoading] = useState(false);
@@ -163,6 +168,17 @@ const SystemSettingsPage: React.FC = () => {
             );
           }
 
+          if (shouldUseMultilineEditor(record)) {
+            return (
+              <TextArea
+                value={editingValue}
+                onChange={(event) => setEditingValue(event.target.value)}
+                autoSize={{ minRows: 5, maxRows: 10 }}
+                style={{ fontFamily: 'Consolas, Monaco, monospace' }}
+              />
+            );
+          }
+
           return (
             <Input
               value={editingValue}
@@ -182,6 +198,17 @@ const SystemSettingsPage: React.FC = () => {
               copyable={{ text: record.configValue || '{}' }}
             >
               {prettyJson(record.configValue) || '{}'}
+            </Typography.Paragraph>
+          );
+        }
+
+        if (shouldUseMultilineEditor(record)) {
+          return (
+            <Typography.Paragraph
+              style={{ marginBottom: 0, whiteSpace: 'pre-wrap', fontFamily: 'Consolas, Monaco, monospace' }}
+              copyable={{ text: record.configValue || '' }}
+            >
+              {record.configValue || '-'}
             </Typography.Paragraph>
           );
         }
