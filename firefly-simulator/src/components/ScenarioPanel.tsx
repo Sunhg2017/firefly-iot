@@ -9,13 +9,17 @@ import {
 } from '@ant-design/icons';
 import { useSimStore, generatePayload } from '../store';
 import { connectSimDevice, disconnectSimDevice } from '../utils/runtime';
+import { interpolateMqttTopicTemplate } from '../utils/mqtt';
 
 const { Text } = Typography;
 
 type ScenarioStep = { type: 'connect' | 'disconnect' | 'send' | 'wait'; waitMs?: number; templateId?: string; topic?: string };
 
+// 场景编排里的通用发送步骤只覆盖共享属性/事件上报链路的协议。
+const SCENARIO_REPORT_PROTOCOLS = new Set(['HTTP', 'MQTT', 'CoAP']);
+
 export default function ScenarioPanel() {
-  const { devices, addLog, updateDevice, templates } = useSimStore();
+  const { devices, addLog, templates, adjustDeviceStats } = useSimStore();
   const [open, setOpen] = useState(false);
   const [running, setRunning] = useState(false);
   const [steps, setSteps] = useState<ScenarioStep[]>([
@@ -94,22 +98,32 @@ export default function ScenarioPanel() {
           const tpl = templates.find((t) => t.id === step.templateId);
           if (!tpl) continue;
           const onlineDevs = getTargetDevices().filter((device) => device.status === 'online');
-          const promises = onlineDevs.map(async (dev) => {
+          const reportableDevs = onlineDevs.filter((dev) => SCENARIO_REPORT_PROTOCOLS.has(dev.protocol));
+          const skippedCount = onlineDevs.length - reportableDevs.length;
+          if (skippedCount > 0) {
+            addLog('system', '场景编排', 'warn', `[轮${loop + 1}] 已跳过 ${skippedCount} 台不支持通用发送步骤的在线设备`);
+          }
+          const promises = reportableDevs.map(async (dev) => {
             const payload = generatePayload(tpl.fields);
             try {
               if (dev.protocol === 'MQTT') {
-                const topic = (step.topic || '').replace('{productKey}', dev.mqttUsername || 'product').replace('{deviceName}', dev.mqttClientId);
+                const topic = interpolateMqttTopicTemplate(
+                  dev,
+                  step.topic || '/sys/{productKey}/{deviceName}/thing/property/post',
+                );
                 await window.electronAPI.mqttPublish(dev.id, topic, JSON.stringify(payload), 1);
               } else if (dev.protocol === 'CoAP') {
                 tpl.type === 'event' ? await window.electronAPI.coapReportEvent(dev.coapBaseUrl, dev.token, payload) : await window.electronAPI.coapReportProperty(dev.coapBaseUrl, dev.token, payload);
               } else {
                 tpl.type === 'event' ? await window.electronAPI.httpReportEvent(dev.httpBaseUrl, dev.token, payload) : await window.electronAPI.httpReportProperty(dev.httpBaseUrl, dev.token, payload);
               }
-              updateDevice(dev.id, { sentCount: dev.sentCount + 1 });
-            } catch { updateDevice(dev.id, { errorCount: dev.errorCount + 1 }); }
+              adjustDeviceStats(dev.id, { sentCount: 1 });
+            } catch {
+              adjustDeviceStats(dev.id, { errorCount: 1 });
+            }
           });
           await Promise.all(promises);
-          addLog('system', '场景编排', 'info', `[轮${loop + 1}] 发送完成 (${onlineDevs.length} 设备)`);
+          addLog('system', '场景编排', 'info', `[轮${loop + 1}] 发送完成 (${reportableDevs.length} 台设备参与发送)`);
 
         } else if (step.type === 'wait') {
           await new Promise((r) => setTimeout(r, step.waitMs || 1000));

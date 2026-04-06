@@ -13,7 +13,7 @@ interface Props {
 }
 
 export default function SnmpControlPanel({ device }: Props) {
-  const { addLog, updateDevice } = useSimStore();
+  const { addLog, adjustDeviceStats } = useSimStore();
   const [snmpOids, setSnmpOids] = useState('1.3.6.1.2.1.1.1.0');
   const [snmpGetResult, setSnmpGetResult] = useState<Record<string, string> | null>(null);
   const [snmpGetLoading, setSnmpGetLoading] = useState(false);
@@ -41,10 +41,10 @@ export default function SnmpControlPanel({ device }: Props) {
             if (res.success && res.data?.data) {
               setSnmpSysInfo(res.data.data);
               addLog(device.id, device.name, 'success', `系统信息: ${JSON.stringify(res.data.data).slice(0, 120)}`);
-              updateDevice(device.id, { sentCount: device.sentCount + 1 });
+              adjustDeviceStats(device.id, { sentCount: 1 });
             } else {
               addLog(device.id, device.name, 'error', `获取系统信息失败: ${res.data?.message || res.message || '未知错误'}`);
-              updateDevice(device.id, { errorCount: device.errorCount + 1 });
+              adjustDeviceStats(device.id, { errorCount: 1 });
             }
             setSnmpSysLoading(false);
           }}>获取系统信息</Button>
@@ -76,10 +76,10 @@ export default function SnmpControlPanel({ device }: Props) {
               if (res.success && res.data?.data) {
                 setSnmpGetResult(res.data.data);
                 addLog(device.id, device.name, 'success', `GET ${oids.length} OIDs: ${JSON.stringify(res.data.data).slice(0, 120)}`);
-                updateDevice(device.id, { sentCount: device.sentCount + 1 });
+                adjustDeviceStats(device.id, { sentCount: 1 });
               } else {
                 addLog(device.id, device.name, 'error', `GET 失败: ${res.data?.message || res.message || '未知错误'}`);
-                updateDevice(device.id, { errorCount: device.errorCount + 1 });
+                adjustDeviceStats(device.id, { errorCount: 1 });
               }
               setSnmpGetLoading(false);
             }}>GET</Button>
@@ -113,10 +113,10 @@ export default function SnmpControlPanel({ device }: Props) {
                 setSnmpWalkResult(res.data.data);
                 const count = Object.keys(res.data.data).length;
                 addLog(device.id, device.name, 'success', `WALK ${snmpWalkOid}: ${count} 条结果`);
-                updateDevice(device.id, { sentCount: device.sentCount + 1 });
+                adjustDeviceStats(device.id, { sentCount: 1 });
               } else {
                 addLog(device.id, device.name, 'error', `WALK 失败: ${res.data?.message || res.message || '未知错误'}`);
-                updateDevice(device.id, { errorCount: device.errorCount + 1 });
+                adjustDeviceStats(device.id, { errorCount: 1 });
               }
               setSnmpWalkLoading(false);
             }}>WALK</Button>

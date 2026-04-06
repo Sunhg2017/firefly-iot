@@ -99,6 +99,17 @@ export function buildMqttPublishTopic(device: DeviceIdentitySource, type: 'prope
   return productKey && deviceName ? `/sys/${productKey}/${deviceName}/thing/${type}/post` : '';
 }
 
+export function interpolateMqttTopicTemplate(device: DeviceIdentitySource, topicTemplate: string): string {
+  const template = trim(topicTemplate);
+  if (!template) {
+    return '';
+  }
+  const { productKey, deviceName } = resolveMqttIdentity(device);
+  return template
+    .replace(/\{productKey\}/g, productKey)
+    .replace(/\{deviceName\}/g, deviceName);
+}
+
 export function buildMqttPropertySetTopic(device: DeviceIdentitySource): string {
   const { productKey, deviceName } = resolveMqttIdentity(device);
   return productKey && deviceName ? `/sys/${productKey}/${deviceName}/thing/property/set` : '';

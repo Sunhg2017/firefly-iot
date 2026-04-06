@@ -44,7 +44,7 @@ import {
   unregisterDynamicDevice,
 } from '../utils/mqtt';
 import { getDeviceAccessMissingFields } from '../utils/deviceAccess';
-import { connectSimDevice, disconnectSimDevice } from '../utils/runtime';
+import { connectSimDevice, disconnectSimDevice, isRestorableProtocol } from '../utils/runtime';
 import { normalizeVideoStreamMode } from '../utils/video';
 
 const { Search } = Input;
@@ -276,6 +276,11 @@ export default function DeviceListPanel() {
       offline: devices.filter((item) => item.status === 'offline').length,
       error: devices.filter((item) => item.status === 'error').length,
     }),
+    [devices],
+  );
+
+  const batchConnectableDevices = useMemo(
+    () => devices.filter((device) => device.status === 'offline' && device.protocol !== 'Video' && isRestorableProtocol(device.protocol)),
     [devices],
   );
 
@@ -522,19 +527,9 @@ export default function DeviceListPanel() {
   };
 
   const handleBatchConnect = async () => {
-    const connectable = devices.filter(
-      (device) =>
-        device.status === 'offline' &&
-        device.protocol !== 'Video' &&
-        device.protocol !== 'SNMP' &&
-        device.protocol !== 'Modbus' &&
-        device.protocol !== 'WebSocket' &&
-        device.protocol !== 'TCP' &&
-        device.protocol !== 'UDP' &&
-        device.protocol !== 'LoRaWAN',
-    );
+    const connectable = batchConnectableDevices;
     if (connectable.length === 0) {
-      message.info('当前没有可批量连接的离线 HTTP / CoAP / MQTT 设备');
+      message.info('当前没有可批量连接的离线非视频设备');
       return;
     }
 
@@ -905,7 +900,7 @@ export default function DeviceListPanel() {
                   icon={<ApiOutlined />}
                   onClick={handleBatchConnect}
                   loading={batchConnecting}
-                  disabled={stats.offline === 0 || batchConnecting}
+                  disabled={batchConnectableDevices.length === 0 || batchConnecting}
                 >
                   批量连接
                 </Button>

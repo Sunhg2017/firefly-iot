@@ -9,8 +9,12 @@ import {
   ExperimentOutlined, DashboardOutlined, DownloadOutlined,
 } from '@ant-design/icons';
 import { useSimStore, generatePayload } from '../store';
+import { interpolateMqttTopicTemplate } from '../utils/mqtt';
 
 const { Text } = Typography;
+
+// 压测只覆盖当前共享发送实现，协议专属联调仍走各自面板。
+const STRESS_REPORT_PROTOCOLS = new Set(['HTTP', 'MQTT', 'CoAP']);
 
 interface StressStats {
   total: number;
@@ -26,7 +30,7 @@ interface StressStats {
 const emptyStats = (): StressStats => ({ total: 0, sent: 0, success: 0, failed: 0, startTime: 0, endTime: 0, latencies: [], byProtocol: {} });
 
 export default function StressTestPanel() {
-  const { devices, addLog, updateDevice, templates, addDevice } = useSimStore();
+  const { devices, addLog, templates, addDevice, adjustDeviceStats } = useSimStore();
   const [open, setOpen] = useState(false);
   const [running, setRunning] = useState(false);
   const [stats, setStats] = useState<StressStats>(emptyStats());
@@ -44,10 +48,11 @@ export default function StressTestPanel() {
   const abortRef = useRef(false);
 
   const onlineDevices = devices.filter((d) => d.status === 'online');
+  const stressReadyDevices = onlineDevices.filter((device) => STRESS_REPORT_PROTOCOLS.has(device.protocol));
 
   const runStressTest = async () => {
-    if (onlineDevices.length === 0) {
-      message.warning('没有在线设备，请先连接设备');
+    if (stressReadyDevices.length === 0) {
+      message.warning('没有在线的 HTTP / MQTT / CoAP 设备，请先连接设备');
       return;
     }
 
@@ -59,14 +64,14 @@ export default function StressTestPanel() {
 
     setRunning(true);
     abortRef.current = false;
-    const total = Math.min(onlineDevices.length, config.count) * config.rounds;
+    const total = Math.min(stressReadyDevices.length, config.count) * config.rounds;
     const newStats: StressStats = emptyStats();
     newStats.total = total;
     newStats.startTime = Date.now();
     setStats(newStats);
-    addLog('system', '压力测试', 'info', `开始压测: ${Math.min(onlineDevices.length, config.count)} 设备 × ${config.rounds} 轮 = ${total} 请求`);
+    addLog('system', '压力测试', 'info', `开始压测: ${Math.min(stressReadyDevices.length, config.count)} 设备 × ${config.rounds} 轮 = ${total} 请求`);
 
-    const targetDevices = onlineDevices.slice(0, config.count);
+    const targetDevices = stressReadyDevices.slice(0, config.count);
 
     for (let round = 0; round < config.rounds; round++) {
       if (abortRef.current) break;
@@ -78,9 +83,7 @@ export default function StressTestPanel() {
         try {
           let res: any;
           if (dev.protocol === 'MQTT') {
-            const topic = config.mqttTopic
-              .replace('{productKey}', dev.mqttUsername || 'product')
-              .replace('{deviceName}', dev.mqttClientId);
+            const topic = interpolateMqttTopicTemplate(dev, config.mqttTopic);
             res = await window.electronAPI.mqttPublish(dev.id, topic, JSON.stringify(payload), 1);
           } else if (dev.protocol === 'CoAP') {
             res = tpl.type === 'event'
@@ -104,7 +107,7 @@ export default function StressTestPanel() {
             n.byProtocol = { ...n.byProtocol, [proto]: pp };
             return n;
           });
-          updateDevice(dev.id, { sentCount: dev.sentCount + 1 });
+          adjustDeviceStats(dev.id, { sentCount: 1 });
         } catch {
           const lat = Date.now() - t0;
           setStats((prev) => {
@@ -116,7 +119,7 @@ export default function StressTestPanel() {
             n.byProtocol = { ...n.byProtocol, [proto]: pp };
             return n;
           });
-          updateDevice(dev.id, { errorCount: dev.errorCount + 1 });
+          adjustDeviceStats(dev.id, { errorCount: 1 });
         }
       });
 
@@ -180,7 +183,7 @@ export default function StressTestPanel() {
               <Space>
                 <Text style={{ fontSize: 13, width: 80, display: 'inline-block' }}>并发设备数:</Text>
                 <InputNumber min={1} max={100} value={config.count} onChange={(v) => setConfig((c) => ({ ...c, count: v || 10 }))} disabled={running} style={{ width: 100 }} />
-                <Text type="secondary" style={{ fontSize: 12 }}>(在线 {onlineDevices.length} 台: HTTP {onlineDevices.filter(d=>d.protocol==='HTTP').length} / MQTT {onlineDevices.filter(d=>d.protocol==='MQTT').length} / CoAP {onlineDevices.filter(d=>d.protocol==='CoAP').length}{onlineDevices.filter(d=>d.protocol==='Modbus').length > 0 ? ` / Modbus ${onlineDevices.filter(d=>d.protocol==='Modbus').length}` : ''}{onlineDevices.filter(d=>d.protocol==='WebSocket').length > 0 ? ` / WS ${onlineDevices.filter(d=>d.protocol==='WebSocket').length}` : ''}{onlineDevices.filter(d=>d.protocol==='TCP').length > 0 ? ` / TCP ${onlineDevices.filter(d=>d.protocol==='TCP').length}` : ''}{onlineDevices.filter(d=>d.protocol==='UDP').length > 0 ? ` / UDP ${onlineDevices.filter(d=>d.protocol==='UDP').length}` : ''}{onlineDevices.filter(d=>d.protocol==='LoRaWAN').length > 0 ? ` / LoRa ${onlineDevices.filter(d=>d.protocol==='LoRaWAN').length}` : ''})</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>(可压测 {stressReadyDevices.length} 台: HTTP {stressReadyDevices.filter(d=>d.protocol==='HTTP').length} / MQTT {stressReadyDevices.filter(d=>d.protocol==='MQTT').length} / CoAP {stressReadyDevices.filter(d=>d.protocol==='CoAP').length})</Text>
               </Space>
               <Space>
                 <Text style={{ fontSize: 13, width: 80, display: 'inline-block' }}>发送轮次:</Text>
@@ -212,6 +215,7 @@ export default function StressTestPanel() {
                 />
               </Space>
               <Text type="secondary" style={{ fontSize: 11 }}>MQTT Topic 支持 {'{productKey}'} 和 {'{deviceName}'} 占位符，自动替换为设备参数</Text>
+              <Text type="secondary" style={{ fontSize: 11 }}>压测当前只覆盖 HTTP / MQTT / CoAP 的通用上报链路，其他协议请在专属面板联调。</Text>
             </Space>
           </Card>
 
@@ -269,7 +273,7 @@ export default function StressTestPanel() {
 
           <Space wrap>
             {!running ? (
-              <Button type="primary" icon={<ThunderboltOutlined />} onClick={runStressTest} disabled={onlineDevices.length === 0}>
+              <Button type="primary" icon={<ThunderboltOutlined />} onClick={runStressTest} disabled={stressReadyDevices.length === 0}>
                 开始压测
               </Button>
             ) : (

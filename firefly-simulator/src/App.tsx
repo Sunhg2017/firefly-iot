@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Card, Space, Typography } from 'antd';
 import { useSimStore } from './store';
-import { buildMqttInboundLogMessage } from './utils/mqtt';
 import { restorePersistedConnections } from './utils/runtime';
 import {
   DeviceListPanel,
@@ -112,36 +111,6 @@ export default function App() {
       restore();
     });
     return unsubscribe;
-  }, [activeSession?.accessToken]);
-
-  useEffect(() => {
-    if (!activeSession?.accessToken || !window.electronAPI) {
-      return undefined;
-    }
-    const unsubMsg = window.electronAPI.onMqttMessage((id: string, topic: string, payload: string) => {
-      const { addLog, devices: latestDevices } = useSimStore.getState();
-      const device = latestDevices.find((item) => item.id === id);
-      addLog(id, device?.name || id, 'info', buildMqttInboundLogMessage(topic, payload));
-    });
-
-    const unsubDisconnect = window.electronAPI.onMqttDisconnected((id: string) => {
-      const { addLog, updateDevice, devices: latestDevices } = useSimStore.getState();
-      const device = latestDevices.find((item) => item.id === id);
-      updateDevice(id, { status: 'offline' });
-      addLog(id, device?.name || id, 'warn', 'MQTT 连接已断开');
-    });
-
-    const unsubError = window.electronAPI.onMqttError((id: string, error: string) => {
-      const { addLog, devices: latestDevices } = useSimStore.getState();
-      const device = latestDevices.find((item) => item.id === id);
-      addLog(id, device?.name || id, 'error', `MQTT 错误: ${error}`);
-    });
-
-    return () => {
-      unsubMsg();
-      unsubDisconnect();
-      unsubError();
-    };
   }, [activeSession?.accessToken]);
 
   if (!activeSession?.accessToken) {

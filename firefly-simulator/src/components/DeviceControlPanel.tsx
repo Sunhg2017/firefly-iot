@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -49,6 +49,7 @@ import {
 } from './protocol';
 import type { HttpHistoryEntry, LoRaMsg, MqttMsg, SipMsg, TcpUdpMsg, WsMsg } from './protocol';
 import {
+  buildMqttInboundLogMessage,
   buildDefaultMqttSubscriptions,
   buildMqttPublishTopic,
   dynamicRegisterDevice,
@@ -198,7 +199,7 @@ function resolveVideoConnectionMetric(device: SimDevice) {
 }
 
 export default function DeviceControlPanel() {
-  const { devices, selectedDeviceId, updateDevice, addLog } = useSimStore();
+  const { devices, selectedDeviceId, updateDevice, addLog, adjustDeviceStats } = useSimStore();
   const environments = useSimWorkspaceStore((state) => state.environments);
   const activeEnvironmentId = useSimWorkspaceStore((state) => state.activeEnvironmentId);
   const sessions = useSimWorkspaceStore((state) => state.sessions);
@@ -474,7 +475,12 @@ export default function DeviceControlPanel() {
 
   useEffect(() => {
     if (!window.electronAPI) return undefined;
+    // MQTT 运行时事件统一在这里处理，避免全局日志和当前设备详情各自重复订阅。
     const unsubMsg = window.electronAPI.onMqttMessage((id, topic, payload) => {
+      const current = useSimStore.getState().devices.find((item) => item.id === id);
+      if (current) {
+        useSimStore.getState().addLog(id, current.name, 'info', buildMqttInboundLogMessage(topic, payload));
+      }
       if (id === selectedDeviceId) {
         setMqttMessages((prev) => [...prev.slice(-199), { dir: 'sub', topic, payload, qos: 0, ts: Date.now() }]);
       }
@@ -490,6 +496,8 @@ export default function DeviceControlPanel() {
     const unsubErr = window.electronAPI.onMqttError((id, errorText) => {
       const current = useSimStore.getState().devices.find((item) => item.id === id);
       if (!current) return;
+      stopAutoReportForDevice(id, { silent: true });
+      stopHeartbeatForDevice(id, { silent: true });
       useSimStore.getState().updateDevice(id, { status: 'error' });
       useSimStore.getState().addLog(id, current.name, 'error', `MQTT 异常：${errorText}`);
     });
@@ -1326,17 +1334,15 @@ export default function DeviceControlPanel() {
         preferSelectedMqttTopic: true,
       });
 
-      const current = useSimStore.getState().devices.find((item) => item.id === device.id) || latestDevice;
       if (result.success) {
-        updateDevice(device.id, { sentCount: current.sentCount + 1 });
+        adjustDeviceStats(device.id, { sentCount: 1 });
         addLog(device.id, device.name, 'success', `[${reportType === 'property' ? '属性' : reportType === 'event' ? '事件' : 'OTA'}] 已发送：${JSON.stringify(payload).slice(0, 120)}`);
       } else {
-        updateDevice(device.id, { errorCount: current.errorCount + 1 });
+        adjustDeviceStats(device.id, { errorCount: 1 });
         addLog(device.id, device.name, 'error', `发送失败：${result.message || JSON.stringify(result)}`);
       }
     } catch (error: any) {
-      const current = useSimStore.getState().devices.find((item) => item.id === device.id) || device;
-      updateDevice(device.id, { errorCount: current.errorCount + 1 });
+      adjustDeviceStats(device.id, { errorCount: 1 });
       addLog(device.id, device.name, 'error', `发送异常：${error?.message || '未知错误'}`);
     } finally {
       setSending(false);

@@ -403,6 +403,7 @@ interface SimulatorState {
   addDevice: (device: Partial<SimDevice>) => void;
   removeDevice: (id: string) => void;
   updateDevice: (id: string, patch: Partial<SimDevice>) => void;
+  adjustDeviceStats: (id: string, delta: { sentCount?: number; errorCount?: number }) => void;
   selectDevice: (id: string | null) => void;
 
   addLog: (deviceId: string, deviceName: string, level: LogEntry['level'], message: string) => void;
@@ -526,6 +527,20 @@ export const useSimStore = create<SimulatorState>()(
   updateDevice: (id, patch) =>
     set((s) => ({
       devices: s.devices.map((d) => (d.id === id ? { ...d, ...patch } : d)),
+    })),
+
+  adjustDeviceStats: (id, delta) =>
+    set((s) => ({
+      devices: s.devices.map((d) => {
+        if (d.id !== id) {
+          return d;
+        }
+        return {
+          ...d,
+          sentCount: Math.max(0, d.sentCount + (delta.sentCount ?? 0)),
+          errorCount: Math.max(0, d.errorCount + (delta.errorCount ?? 0)),
+        };
+      }),
     })),
 
   selectDevice: (id) => set({ selectedDeviceId: id }),
