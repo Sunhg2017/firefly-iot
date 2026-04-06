@@ -9,9 +9,6 @@ import com.songhg.firefly.iot.system.dto.openapi.TenantOpenApiSubscriptionVO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantCreateDTO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantAdminPasswordResetDTO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantOverviewVO;
-import com.songhg.firefly.iot.system.dto.tenant.TenantPlanUpdateDTO;
-import com.songhg.firefly.iot.system.dto.tenant.TenantQuotaUpdateDTO;
-import com.songhg.firefly.iot.system.dto.tenant.TenantQuotaVO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantQueryDTO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantSpaceMenuAssignDTO;
 import com.songhg.firefly.iot.system.dto.tenant.TenantSpaceMenuAuthorizationVO;
@@ -90,32 +87,6 @@ public class TenantController {
         userDomainService.assertCurrentUserIsSystemOps();
         tenantService.updateTenantStatus(id, status, reason);
         return R.ok();
-    }
-
-    @PutMapping("/{id}/plan")
-    @RequiresPermission("tenant:manage")
-    @Operation(summary = "Update tenant plan")
-    public R<TenantVO> updatePlan(@Parameter(description = "Tenant ID", required = true) @PathVariable Long id,
-                                  @Valid @RequestBody TenantPlanUpdateDTO dto) {
-        userDomainService.assertCurrentUserIsSystemOps();
-        return R.ok(tenantService.updatePlan(id, dto.getPlan()));
-    }
-
-    @GetMapping("/{id}/quota")
-    @RequiresPermission("tenant:read")
-    @Operation(summary = "Get tenant quota")
-    public R<TenantQuotaVO> getQuota(@Parameter(description = "Tenant ID", required = true) @PathVariable Long id) {
-        userDomainService.assertCurrentUserIsSystemOps();
-        return R.ok(tenantService.getQuota(id));
-    }
-
-    @PutMapping("/{id}/quota")
-    @RequiresPermission("tenant:manage")
-    @Operation(summary = "Update tenant quota")
-    public R<TenantQuotaVO> updateQuota(@Parameter(description = "Tenant ID", required = true) @PathVariable Long id,
-                                        @Valid @RequestBody TenantQuotaUpdateDTO dto) {
-        userDomainService.assertCurrentUserIsSystemOps();
-        return R.ok(tenantService.updateQuota(id, dto));
     }
 
     @GetMapping("/{id}/open-api-subscriptions")

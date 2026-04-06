@@ -38,8 +38,6 @@ public final class AuthConstants {
     public static final String REDIS_PERM_ROLE = "perm:role:";
     public static final String REDIS_OPEN_API_NONCE = "openapi:nonce:";
     public static final String REDIS_TENANT_CTX = "tenant:ctx:";
-    public static final String REDIS_TENANT_QUOTA = "tenant:quota:";
-    public static final String REDIS_QUOTA_PREFIX = "quota:tenant:";
 
     // JWT claim keys
     public static final String JWT_CLAIM_TENANT_ID = "tid";

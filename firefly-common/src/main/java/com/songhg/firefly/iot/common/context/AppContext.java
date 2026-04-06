@@ -1,7 +1,6 @@
 package com.songhg.firefly.iot.common.context;
 
 import com.songhg.firefly.iot.common.enums.IsolationLevel;
-import com.songhg.firefly.iot.common.enums.TenantPlan;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -21,7 +20,6 @@ public class AppContext implements Serializable {
     // ==================== 租户信息 ====================
     private Long tenantId;
     private String tenantCode;
-    private TenantPlan plan;
     private IsolationLevel isolationLevel;
 
     // ==================== 用户信息 ====================

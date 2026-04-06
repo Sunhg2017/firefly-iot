@@ -1,7 +1,6 @@
 package com.songhg.firefly.iot.common.context;
 
 import com.songhg.firefly.iot.common.enums.IsolationLevel;
-import com.songhg.firefly.iot.common.enums.TenantPlan;
 
 import java.util.Set;
 
@@ -80,11 +79,6 @@ public final class AppContextHolder {
     public static String getTenantCode() {
         AppContext ctx = CONTEXT.get();
         return ctx != null ? ctx.getTenantCode() : null;
-    }
-
-    public static TenantPlan getPlan() {
-        AppContext ctx = CONTEXT.get();
-        return ctx != null ? ctx.getPlan() : null;
     }
 
     public static IsolationLevel getIsolationLevel() {

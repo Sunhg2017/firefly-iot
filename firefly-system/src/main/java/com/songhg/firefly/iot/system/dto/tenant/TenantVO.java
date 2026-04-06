@@ -1,7 +1,6 @@
 package com.songhg.firefly.iot.system.dto.tenant;
 
 import com.songhg.firefly.iot.common.enums.IsolationLevel;
-import com.songhg.firefly.iot.common.enums.TenantPlan;
 import com.songhg.firefly.iot.common.enums.TenantStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -41,9 +40,6 @@ public class TenantVO {
 
     @Schema(description = "联系邮箱")
     private String contactEmail;
-
-    @Schema(description = "订阅方案")
-    private TenantPlan plan;
 
     @Schema(description = "状态")
     private TenantStatus status;

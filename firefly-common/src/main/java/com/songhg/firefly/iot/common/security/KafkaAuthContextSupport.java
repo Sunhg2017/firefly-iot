@@ -50,7 +50,6 @@ final class KafkaAuthContextSupport {
         AppContext copy = new AppContext();
         copy.setTenantId(source.getTenantId());
         copy.setTenantCode(source.getTenantCode());
-        copy.setPlan(source.getPlan());
         copy.setIsolationLevel(source.getIsolationLevel());
         copy.setUserId(source.getUserId());
         copy.setUsername(source.getUsername());

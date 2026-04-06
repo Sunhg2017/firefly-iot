@@ -5,6 +5,9 @@
 > **状态**: Draft  
 > **关联**: [产品设计文档](./product-design.md) §4 多租户体系设计、§5 跨租户设备数据共享、§15.1 租户管理
 
+> **2026-04-06 更新**
+> 当前实现已移除租户套餐、租户配额表及相关接口，本文中涉及套餐/配额的章节属于历史草稿，现网行为请以 [tenant-plan-quota-removal.md](./tenant-plan-quota-removal.md) 为准。
+
 ---
 
 ## 目录
@@ -29,7 +32,7 @@
 
 ### 1.1 模块定位
 
-租户管理模块是 Firefly-IoT 平台 **多租户架构的核心基座**，负责租户的全生命周期管理、资源隔离、配额计量，以及租户上下文在全链路中的传播。所有业务模块均依赖租户管理模块提供的租户上下文进行数据隔离和权限控制。
+租户管理模块是 Firefly-IoT 平台 **多租户架构的核心基座**，负责租户的全生命周期管理、数据隔离、用量统计，以及租户上下文在全链路中的传播。所有业务模块均依赖租户管理模块提供的租户上下文进行数据隔离和权限控制。
 
 ### 1.2 核心能力
 
@@ -38,9 +41,7 @@
 | **租户 CRUD** | 创建、查看、修改、注销租户 |
 | **生命周期管理** | 创建 → 初始化 → 活跃 → 暂停 → 恢复 → 注销 全流程管理 |
 | **数据隔离** | 支持共享库 RLS / Schema 隔离 / 独立库三种隔离模式 |
-| **配额管理** | 设备数、消息速率、规则数、存储空间等多维度配额 |
 | **计量统计** | 实时资源使用计量、用量趋势分析 |
-| **版本/套餐** | 免费版 / 标准版 / 企业版 多版本配额策略 |
 | **项目管理** | 租户内可选的逻辑分组 (Project) |
 | **租户 Webhook 维护** | 在租户列表中为当前租户维护 Webhook 渠道 |
 | **租户上下文传播** | 请求链路全程携带 tenantId，确保隔离 |
@@ -946,9 +947,6 @@ tenant.initializing 事件
 | `/api/v1/platform/tenants/{id}` | GET | 租户详情 | `PLATFORM_ADMIN` |
 | `/api/v1/platform/tenants/{id}` | PUT | 修改租户信息 | `PLATFORM_ADMIN` |
 | `/api/v1/platform/tenants/{id}/status` | PUT | 变更租户状态 | `PLATFORM_ADMIN` |
-| `/api/v1/platform/tenants/{id}/plan` | PUT | 升级/降级套餐 | `PLATFORM_ADMIN` |
-| `/api/v1/platform/tenants/{id}/quota` | GET | 查看配额 | `PLATFORM_ADMIN` |
-| `/api/v1/platform/tenants/{id}/quota` | PUT | 修改配额 | `PLATFORM_ADMIN` |
 | `/api/v1/platform/tenants/{id}/usage` | GET | 查看用量统计 | `PLATFORM_ADMIN` |
 | `/api/v1/platform/tenants/{id}/usage/daily` | GET | 每日用量趋势 | `PLATFORM_ADMIN` |
 | `/api/v1/platform/tenants/{id}/deactivate` | POST | 注销租户 | `PLATFORM_ADMIN` |
@@ -960,7 +958,6 @@ tenant.initializing 事件
 |------|------|------|---------|
 | `/api/v1/tenant` | GET | 当前租户信息 | `tenant:read` |
 | `/api/v1/tenant` | PUT | 修改租户信息 | `tenant:manage` |
-| `/api/v1/tenant/quota` | GET | 查看配额与用量 | `tenant:read` |
 | `/api/v1/tenant/usage` | GET | 用量统计 | `tenant:read` |
 | `/api/v1/tenant/usage/daily` | GET | 每日用量趋势 | `tenant:read` |
 
@@ -987,7 +984,6 @@ Authorization: Bearer {platform_admin_token}
   "code": "acme_corp",
   "name": "ACME 物联科技有限公司",
   "displayName": "ACME IoT",
-  "plan": "STANDARD",
   "isolationLevel": "SHARED_RLS",
   "contactName": "李经理",
   "contactPhone": "13800138000",
@@ -1010,7 +1006,6 @@ Authorization: Bearer {platform_admin_token}
     "code": "acme_corp",
     "name": "ACME 物联科技有限公司",
     "displayName": "ACME IoT",
-    "plan": "STANDARD",
     "status": "INITIALIZING",
     "isolationLevel": "SHARED_RLS",
     "contactName": "李经理",
@@ -1024,10 +1019,10 @@ Authorization: Bearer {platform_admin_token}
 }
 ```
 
-#### 查看配额与用量
+#### 查看当前用量
 
 ```http
-GET /api/v1/tenant/quota
+GET /api/v1/tenant/usage
 Authorization: Bearer {tenant_admin_token}
 ```
 
@@ -1037,42 +1032,17 @@ Authorization: Bearer {tenant_admin_token}
 {
   "code": 0,
   "data": {
-    "plan": "STANDARD",
-    "quotas": {
-      "maxDevices": 10000,
-      "maxMsgPerSec": 10000,
-      "maxRules": 100,
-      "dataRetentionDays": 90,
-      "maxOtaStorageGb": 50,
-      "maxApiCallsDay": 1000000,
-      "maxUsers": 50,
-      "maxProjects": 10,
-      "maxVideoChannels": 100,
-      "maxVideoStorageGb": 500
-    },
-    "usage": {
-      "deviceCount": 3256,
-      "deviceOnlineCount": 2890,
-      "currentMsgRate": 1200,
-      "ruleCount": 23,
-      "apiCallsToday": 45678,
-      "otaStorageGb": 12.5,
-      "userCount": 18,
-      "projectCount": 3,
-      "videoChannelActive": 45,
-      "videoStorageGb": 120.8
-    },
-    "percentages": {
-      "devices": 32.56,
-      "msgRate": 12.00,
-      "rules": 23.00,
-      "apiCalls": 4.57,
-      "otaStorage": 25.00,
-      "users": 36.00,
-      "projects": 30.00,
-      "videoChannels": 45.00,
-      "videoStorage": 24.16
-    }
+    "deviceCount": 3256,
+    "deviceOnlineCount": 2890,
+    "currentMsgRate": 1200,
+    "ruleCount": 23,
+    "apiCallsToday": 45678,
+    "otaStorageBytes": 13421772800,
+    "userCount": 18,
+    "projectCount": 3,
+    "videoChannelActive": 45,
+    "videoStorageBytes": 129708012339,
+    "updatedAt": "2026-02-25T10:00:00Z"
   }
 }
 ```
@@ -1085,7 +1055,7 @@ Content-Type: application/json
 
 {
   "status": "SUSPENDED",
-  "reason": "超额使用未升级套餐"
+  "reason": "运营维护暂停"
 }
 ```
 

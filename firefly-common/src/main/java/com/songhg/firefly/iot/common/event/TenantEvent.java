@@ -5,21 +5,19 @@ import lombok.EqualsAndHashCode;
 
 /**
  * 租户领域事件。
- * 场景: 租户创建、状态变更 (启用/暂停/删除)、套餐变更、配额调整。
+ * 场景: 租户创建、状态变更和删除。
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class TenantEvent extends DomainEvent {
 
-    public enum Action { CREATED, UPDATED, STATUS_CHANGED, PLAN_CHANGED, QUOTA_CHANGED, DELETED }
+    public enum Action { CREATED, UPDATED, STATUS_CHANGED, DELETED }
 
     private Action action;
     private Long targetTenantId;
     private String tenantCode;
     private String oldStatus;
     private String newStatus;
-    private String oldPlan;
-    private String newPlan;
 
     public TenantEvent() {
         super();

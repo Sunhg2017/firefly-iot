@@ -1,7 +1,6 @@
 import request, { deviceRequest, ruleRequest, dataRequest, supportRequest, mediaRequest, connectorRequest } from '../utils/request';
 // authRequest removed: auth merged into system; notification/template moved to support
 
-type TenantPlan = 'FREE' | 'STANDARD' | 'ENTERPRISE';
 type TenantStatus = 'PENDING' | 'INITIALIZING' | 'ACTIVE' | 'SUSPENDED' | 'MAINTENANCE' | 'DEACTIVATING' | 'DELETED';
 type IsolationLevel = 'SHARED_RLS' | 'SCHEMA' | 'DATABASE';
 
@@ -9,7 +8,6 @@ interface TenantListParams {
   pageNum?: number;
   pageSize?: number;
   keyword?: string;
-  plan?: TenantPlan;
   status?: TenantStatus;
 }
 
@@ -29,7 +27,6 @@ interface TenantCreatePayload {
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
-  plan?: TenantPlan;
   isolationLevel?: IsolationLevel;
   adminUser: TenantAdminUserPayload;
 }
@@ -42,20 +39,6 @@ interface TenantUpdatePayload {
   contactPhone?: string;
   contactEmail?: string;
   logoUrl?: string;
-}
-
-interface TenantQuotaPayload {
-  maxDevices?: number;
-  maxMsgPerSec?: number;
-  maxRules?: number;
-  dataRetentionDays?: number;
-  maxOtaStorageGb?: number;
-  maxApiCallsDay?: number;
-  maxUsers?: number;
-  maxProjects?: number;
-  maxVideoChannels?: number;
-  maxVideoStorageGb?: number;
-  maxSharePolicies?: number;
 }
 
 interface TenantSpaceMenuPayload {
@@ -73,7 +56,6 @@ interface TenantOpenApiSubscriptionSavePayload {
   items: TenantOpenApiSubscriptionItemPayload[];
 }
 
-const TENANT_PLAN_VALUES = new Set<TenantPlan>(['FREE', 'STANDARD', 'ENTERPRISE']);
 const TENANT_STATUS_VALUES = new Set<TenantStatus>([
   'PENDING',
   'INITIALIZING',
@@ -93,22 +75,6 @@ const TENANT_UPDATE_KEYS = new Set<keyof TenantUpdatePayload>([
   'contactEmail',
   'logoUrl',
 ]);
-const TENANT_QUOTA_FIELDS = [
-  'maxDevices',
-  'maxMsgPerSec',
-  'maxRules',
-  'dataRetentionDays',
-  'maxOtaStorageGb',
-  'maxApiCallsDay',
-  'maxUsers',
-  'maxProjects',
-  'maxVideoChannels',
-  'maxVideoStorageGb',
-  'maxSharePolicies',
-] as const;
-
-type TenantQuotaField = (typeof TENANT_QUOTA_FIELDS)[number];
-
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -238,12 +204,6 @@ const normalizeTenantListParams = (params: TenantListParams = {}): TenantListPar
     pageSize: Math.min(200, Math.max(1, pageSize)),
     keyword: trimOptionalString(params.keyword),
   };
-  if (params.plan) {
-    if (!TENANT_PLAN_VALUES.has(params.plan)) {
-      throw new Error('invalid tenant plan');
-    }
-    normalized.plan = params.plan;
-  }
   if (params.status) {
     if (!TENANT_STATUS_VALUES.has(params.status)) {
       throw new Error('invalid tenant status');
@@ -279,9 +239,6 @@ const normalizeTenantCreatePayload = (payload: TenantCreatePayload): TenantCreat
   }
   if (!adminPassword) {
     throw new Error('tenant admin password is required');
-  }
-  if (payload.plan && !TENANT_PLAN_VALUES.has(payload.plan)) {
-    throw new Error('invalid tenant plan');
   }
   if (isolationLevel && !TENANT_ISOLATION_VALUES.has(isolationLevel)) {
     throw new Error('invalid tenant isolation level');
@@ -356,38 +313,6 @@ const normalizeTenantUpdatePayload = (payload: Record<string, unknown>): TenantU
   return normalized;
 };
 
-const normalizeTenantQuotaPayload = (payload: Record<string, unknown>): TenantQuotaPayload => {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    throw new Error('tenant quota payload is required');
-  }
-
-  const unsupportedKey = Object.keys(payload).find(
-    (key) => !TENANT_QUOTA_FIELDS.includes(key as TenantQuotaField),
-  );
-  if (unsupportedKey) {
-    throw new Error(`unsupported tenant quota field: ${unsupportedKey}`);
-  }
-
-  const normalized: TenantQuotaPayload = {};
-  TENANT_QUOTA_FIELDS.forEach((field) => {
-    const rawValue = payload[field];
-    if (rawValue === undefined || rawValue === null || rawValue === '') {
-      return;
-    }
-    const numericValue = typeof rawValue === 'number' ? rawValue : Number(rawValue);
-    if (!Number.isInteger(numericValue) || numericValue < -1) {
-      throw new Error(`invalid ${field}`);
-    }
-    normalized[field] = numericValue;
-  });
-
-  if (Object.keys(normalized).length === 0) {
-    throw new Error('tenant quota payload is empty');
-  }
-
-  return normalized;
-};
-
 // ==================== Tenant API ====================
 export const tenantApi = {
   list: (data: TenantListParams = {}) => request.post('/platform/tenants/list', normalizeTenantListParams(data)),
@@ -403,15 +328,6 @@ export const tenantApi = {
       params: { status, reason: trimOptionalString(reason) },
     });
   },
-  updatePlan: (id: number, plan: TenantPlan) => {
-    if (!TENANT_PLAN_VALUES.has(plan)) {
-      throw new Error('invalid tenant plan');
-    }
-    return request.put(`/platform/tenants/${normalizeTenantId(id)}/plan`, { plan });
-  },
-  getQuota: (id: number) => request.get(`/platform/tenants/${normalizeTenantId(id)}/quota`),
-  updateQuota: (id: number, data: Record<string, unknown>) =>
-    request.put(`/platform/tenants/${normalizeTenantId(id)}/quota`, normalizeTenantQuotaPayload(data)),
   getOpenApiSubscriptions: (id: number) => request.get(`/platform/tenants/${normalizeTenantId(id)}/open-api-subscriptions`),
   updateOpenApiSubscriptions: (id: number, payload: TenantOpenApiSubscriptionSavePayload) =>
     request.put(
@@ -436,7 +352,6 @@ export const tenantApi = {
 export const tenantSelfApi = {
   get: () => request.get('/tenant'),
   update: (data: Record<string, unknown>) => request.put('/tenant', normalizeTenantUpdatePayload(data)),
-  getQuotaUsage: () => request.get('/tenant/quota'),
   getUsage: () => request.get('/tenant/usage'),
   getUsageDaily: (startDate?: string, endDate?: string) =>
     request.get('/tenant/usage/daily', {

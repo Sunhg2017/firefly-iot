@@ -203,8 +203,6 @@ Platform Admin (超级管理员)  ── 平台级，管理所有租户
 | | `apikey:delete` | 删除/吊销 API Key |
 | **租户管理** | `tenant:read` | 查看租户信息 |
 | | `tenant:manage` | 管理租户设置 |
-| | `tenant:quota` | 配额管理 |
-| | `tenant:billing` | 计费管理 |
 | **跨租户共享** | `share:create` | 创建共享策略 |
 | | `share:read` | 查看共享策略 |
 | | `share:update` | 编辑共享策略 |
@@ -493,7 +491,7 @@ INSERT INTO permission_groups (code, name, permissions, sort_order) VALUES
 ('OTA',      'OTA升级',  '["ota:read","ota:upload","ota:deploy","ota:rollback"]', 5),
 ('VIDEO',    '视频监控', '["video:live","video:playback","video:ptz","video:record","video:snapshot"]', 6),
 ('USER',     '用户权限', '["user:create","user:read","user:update","user:delete","user:role:assign","role:create","role:read","role:update","role:delete","apikey:create","apikey:read","apikey:delete"]', 7),
-('TENANT',   '租户管理', '["tenant:read","tenant:manage","tenant:quota","tenant:billing"]', 8),
+('TENANT',   '租户管理', '["tenant:read","tenant:manage"]', 8),
 ('SHARE',    '跨租户共享', '["share:create","share:read","share:update","share:delete","share:approve","share:revoke"]', 9),
 ('ANALYTICS','数据分析', '["analytics:read","analytics:export"]', 10),
 ('AUDIT',    '审计日志', '["audit:read","audit:export"]', 11),

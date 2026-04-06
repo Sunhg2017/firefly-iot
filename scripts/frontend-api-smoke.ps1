@@ -216,7 +216,6 @@ $tests = @(
   @{ Name='users.me'; Method='GET'; Path='/SYSTEM/api/v1/users/me' },
   @{ Name='users.me.permissions'; Method='GET'; Path='/SYSTEM/api/v1/users/me/permissions' },
   @{ Name='tenant.self.get'; Method='GET'; Path='/SYSTEM/api/v1/tenant' },
-  @{ Name='tenant.self.quota'; Method='GET'; Path='/SYSTEM/api/v1/tenant/quota' },
   @{ Name='tenant.self.usage'; Method='GET'; Path='/SYSTEM/api/v1/tenant/usage' },
   @{ Name='tenant.list'; Method='POST'; Path='/SYSTEM/api/v1/platform/tenants/list'; Body=@{} },
   @{ Name='tenant.overview'; Method='GET'; Path='/SYSTEM/api/v1/platform/tenants/overview' },

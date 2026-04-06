@@ -11,7 +11,6 @@ import com.songhg.firefly.iot.system.entity.UserRole;
 import com.songhg.firefly.iot.system.mapper.RoleMapper;
 import com.songhg.firefly.iot.system.mapper.RolePermissionMapper;
 import com.songhg.firefly.iot.system.mapper.TenantMapper;
-import com.songhg.firefly.iot.system.mapper.TenantQuotaMapper;
 import com.songhg.firefly.iot.system.mapper.TenantUsageDailyMapper;
 import com.songhg.firefly.iot.system.mapper.TenantUsageRealtimeMapper;
 import com.songhg.firefly.iot.system.mapper.UserMapper;
@@ -42,8 +41,6 @@ class TenantServiceTest {
 
     @Mock
     private TenantMapper tenantMapper;
-    @Mock
-    private TenantQuotaMapper tenantQuotaMapper;
     @Mock
     private TenantUsageRealtimeMapper usageRealtimeMapper;
     @Mock

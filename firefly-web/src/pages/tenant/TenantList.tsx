@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Suspense } from 'react';
 import {
   ApiOutlined,
@@ -10,9 +10,7 @@ import {
   MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
-  SettingOutlined,
   StopOutlined,
-  SwapOutlined,
 } from '@ant-design/icons';
 import {
   Button,
@@ -24,7 +22,6 @@ import {
   Empty,
   Form,
   Input,
-  InputNumber,
   Modal,
   Popconfirm,
   Row,
@@ -51,7 +48,6 @@ import { generateRandomPassword } from '../../utils/password';
 const { RangePicker } = DatePicker;
 const TenantTrendChart = React.lazy(() => import('./TenantTrendChart'));
 
-type TenantPlan = 'FREE' | 'STANDARD' | 'ENTERPRISE';
 type TenantStatus = 'PENDING' | 'INITIALIZING' | 'ACTIVE' | 'SUSPENDED' | 'MAINTENANCE' | 'DEACTIVATING' | 'DELETED';
 type IsolationLevel = 'SHARED_RLS' | 'SCHEMA' | 'DATABASE';
 
@@ -65,7 +61,6 @@ interface TenantItem {
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
-  plan?: TenantPlan;
   status?: TenantStatus;
   isolationLevel?: IsolationLevel;
   createdAt?: string;
@@ -75,23 +70,6 @@ interface TenantOverview {
   totalTenants?: number;
   activeTenants?: number;
   suspendedTenants?: number;
-  freeTenants?: number;
-  standardTenants?: number;
-  enterpriseTenants?: number;
-}
-
-interface TenantQuotaFormValues {
-  maxDevices?: number;
-  maxMsgPerSec?: number;
-  maxRules?: number;
-  dataRetentionDays?: number;
-  maxOtaStorageGb?: number;
-  maxApiCallsDay?: number;
-  maxUsers?: number;
-  maxProjects?: number;
-  maxVideoChannels?: number;
-  maxVideoStorageGb?: number;
-  maxSharePolicies?: number;
 }
 
 interface TenantFormValues {
@@ -103,7 +81,6 @@ interface TenantFormValues {
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
-  plan?: TenantPlan;
   isolationLevel?: IsolationLevel;
   adminUser?: {
     username?: string;
@@ -116,7 +93,6 @@ interface TenantFormValues {
 
 interface TenantQueryValues {
   keyword?: string;
-  plan?: TenantPlan;
   status?: TenantStatus;
 }
 
@@ -176,12 +152,6 @@ type TrendMetricKey =
   | 'videoChannelCount'
   | 'videoStorageBytes';
 
-const planLabels: Record<TenantPlan, string> = {
-  FREE: '免费版',
-  STANDARD: '标准版',
-  ENTERPRISE: '企业版',
-};
-
 const statusLabels: Record<TenantStatus, string> = {
   PENDING: '待处理',
   INITIALIZING: '初始化中',
@@ -207,20 +177,6 @@ const isolationLabels: Record<IsolationLevel, string> = {
   SCHEMA: '独立 Schema',
   DATABASE: '独立数据库',
 };
-
-const quotaFields: Array<{ name: keyof TenantQuotaFormValues; label: string }> = [
-  { name: 'maxDevices', label: '最大设备数' },
-  { name: 'maxMsgPerSec', label: '每秒最大消息数' },
-  { name: 'maxRules', label: '最大规则数' },
-  { name: 'dataRetentionDays', label: '数据保留天数' },
-  { name: 'maxOtaStorageGb', label: 'OTA 存储上限(GB)' },
-  { name: 'maxApiCallsDay', label: '每日 API 调用上限' },
-  { name: 'maxUsers', label: '最大用户数' },
-  { name: 'maxProjects', label: '最大项目数' },
-  { name: 'maxVideoChannels', label: '最大视频通道数' },
-  { name: 'maxVideoStorageGb', label: '视频存储上限(GB)' },
-  { name: 'maxSharePolicies', label: '最大共享策略数' },
-];
 
 const trendMetricOptions: Array<{ value: TrendMetricKey; label: string; isByte?: boolean }> = [
   { value: 'deviceCount', label: '设备数' },
@@ -297,14 +253,10 @@ const isSystemOpsTenant = (tenant?: TenantItem | null): boolean => tenant?.code 
 const TenantList: React.FC = () => {
   const [queryForm] = Form.useForm<TenantQueryValues>();
   const [editForm] = Form.useForm<TenantFormValues>();
-  const [planForm] = Form.useForm<{ plan: TenantPlan }>();
-  const [quotaForm] = Form.useForm<TenantQuotaFormValues>();
 
   const [loading, setLoading] = useState(false);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [quotaSubmitting, setQuotaSubmitting] = useState(false);
-  const [planSubmitting, setPlanSubmitting] = useState(false);
   const [usageLoading, setUsageLoading] = useState(false);
   const [spaceLoading, setSpaceLoading] = useState(false);
   const [spaceSubmitting, setSpaceSubmitting] = useState(false);
@@ -318,8 +270,6 @@ const TenantList: React.FC = () => {
 
   const [editingTenant, setEditingTenant] = useState<TenantItem | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [quotaOpen, setQuotaOpen] = useState(false);
-  const [planOpen, setPlanOpen] = useState(false);
   const [spaceOpen, setSpaceOpen] = useState(false);
   const [openApiOpen, setOpenApiOpen] = useState(false);
   const [webhookOpen, setWebhookOpen] = useState(false);
@@ -417,7 +367,7 @@ const TenantList: React.FC = () => {
   const openCreateModal = () => {
     setEditingTenant(null);
     editForm.resetFields();
-    editForm.setFieldsValue({ plan: 'FREE', isolationLevel: 'SHARED_RLS' });
+    editForm.setFieldsValue({ isolationLevel: 'SHARED_RLS' });
     setEditOpen(true);
   };
 
@@ -459,7 +409,6 @@ const TenantList: React.FC = () => {
           contactName: values.contactName,
           contactPhone: values.contactPhone,
           contactEmail: values.contactEmail,
-          plan: values.plan,
           isolationLevel: values.isolationLevel,
           adminUser: {
             username: values.adminUser?.username ?? '',
@@ -497,28 +446,6 @@ const TenantList: React.FC = () => {
       await refreshAll();
     } catch (error) {
       message.error(getErrorMessage(error, '注销租户失败'));
-    }
-  };
-
-  const openPlanModal = (record: TenantItem) => {
-    setCurrentTenant(record);
-    planForm.setFieldsValue({ plan: record.plan ?? 'FREE' });
-    setPlanOpen(true);
-  };
-
-  const handleSavePlan = async () => {
-    if (!currentTenant) return;
-    try {
-      const values = await planForm.validateFields();
-      setPlanSubmitting(true);
-      await tenantApi.updatePlan(currentTenant.id, values.plan);
-      message.success('租户套餐已更新');
-      setPlanOpen(false);
-      await refreshAll();
-    } catch (error) {
-      message.error(getErrorMessage(error, '更新套餐失败'));
-    } finally {
-      setPlanSubmitting(false);
     }
   };
 
@@ -566,33 +493,6 @@ const TenantList: React.FC = () => {
         }
       },
     });
-  };
-
-  const openQuotaModal = async (record: TenantItem) => {
-    setCurrentTenant(record);
-    try {
-      const res = await tenantApi.getQuota(record.id);
-      quotaForm.setFieldsValue((res.data?.data ?? {}) as TenantQuotaFormValues);
-      setQuotaOpen(true);
-    } catch (error) {
-      message.error(getErrorMessage(error, '加载租户配额失败'));
-    }
-  };
-
-  const handleSaveQuota = async () => {
-    if (!currentTenant) return;
-    try {
-      const values = await quotaForm.validateFields();
-      setQuotaSubmitting(true);
-      await tenantApi.updateQuota(currentTenant.id, values as Record<string, unknown>);
-      message.success('租户配额已更新');
-      setQuotaOpen(false);
-      await refreshAll();
-    } catch (error) {
-      message.error(getErrorMessage(error, '更新配额失败'));
-    } finally {
-      setQuotaSubmitting(false);
-    }
   };
 
   const openSpaceModal = async (record: TenantItem) => {
@@ -643,7 +543,7 @@ const TenantList: React.FC = () => {
   const handleSearch = async () => {
     const values = await queryForm.validateFields();
     setPageNum(1);
-    setFilters({ keyword: values.keyword?.trim() || undefined, plan: values.plan, status: values.status });
+    setFilters({ keyword: values.keyword?.trim() || undefined, status: values.status });
   };
 
   const handleReset = () => {
@@ -654,18 +554,6 @@ const TenantList: React.FC = () => {
 
   const buildMoreActionItems = (record: TenantItem): MenuProps['items'] => {
     const items: MenuProps['items'] = [
-      {
-        key: 'plan',
-        icon: <SwapOutlined />,
-        label: '调整套餐',
-        onClick: () => openPlanModal(record),
-      },
-      {
-        key: 'quota',
-        icon: <SettingOutlined />,
-        label: '调整配额',
-        onClick: () => void openQuotaModal(record),
-      },
       {
         key: 'reset-admin-password',
         icon: <KeyOutlined />,
@@ -726,7 +614,6 @@ const TenantList: React.FC = () => {
       { title: '编码', dataIndex: 'code', width: 160 },
       { title: '名称', dataIndex: 'name', width: 180 },
       { title: '展示名', dataIndex: 'displayName', width: 180, render: (value?: string) => value || '-' },
-      { title: '套餐', dataIndex: 'plan', width: 110, render: (value?: TenantPlan) => (value ? planLabels[value] : '-') },
       {
         title: '状态',
         dataIndex: 'status',
@@ -801,18 +688,14 @@ const TenantList: React.FC = () => {
       />
 
       <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={4}><Card loading={overviewLoading}><Statistic title="租户总数" value={overview.totalTenants ?? 0} /></Card></Col>
-        <Col span={4}><Card loading={overviewLoading}><Statistic title="启用租户" value={overview.activeTenants ?? 0} /></Card></Col>
-        <Col span={4}><Card loading={overviewLoading}><Statistic title="暂停租户" value={overview.suspendedTenants ?? 0} /></Card></Col>
-        <Col span={4}><Card loading={overviewLoading}><Statistic title="免费版" value={overview.freeTenants ?? 0} /></Card></Col>
-        <Col span={4}><Card loading={overviewLoading}><Statistic title="标准版" value={overview.standardTenants ?? 0} /></Card></Col>
-        <Col span={4}><Card loading={overviewLoading}><Statistic title="企业版" value={overview.enterpriseTenants ?? 0} /></Card></Col>
+        <Col xs={24} md={8}><Card loading={overviewLoading}><Statistic title="租户总数" value={overview.totalTenants ?? 0} /></Card></Col>
+        <Col xs={24} md={8}><Card loading={overviewLoading}><Statistic title="启用租户" value={overview.activeTenants ?? 0} /></Card></Col>
+        <Col xs={24} md={8}><Card loading={overviewLoading}><Statistic title="暂停租户" value={overview.suspendedTenants ?? 0} /></Card></Col>
       </Row>
 
       <Card>
         <Form form={queryForm} layout="inline" onFinish={() => void handleSearch()}>
           <Form.Item name="keyword" label="关键字"><Input allowClear placeholder="租户编码/名称" style={{ width: 220 }} /></Form.Item>
-          <Form.Item name="plan" label="套餐"><Select allowClear placeholder="全部套餐" style={{ width: 160 }} options={Object.entries(planLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
           <Form.Item name="status" label="状态"><Select allowClear placeholder="全部状态" style={{ width: 160 }} options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
           <Form.Item><Space><Button type="primary" htmlType="submit">查询</Button><Button onClick={handleReset}>重置</Button></Space></Form.Item>
         </Form>
@@ -823,7 +706,7 @@ const TenantList: React.FC = () => {
           loading={loading}
           dataSource={items}
           columns={columns}
-          scroll={{ x: 1880 }}
+          scroll={{ x: 1760 }}
           pagination={{ current: pageNum, pageSize, total, showSizeChanger: true, onChange: (nextPage, nextPageSize) => { setPageNum(nextPage); setPageSize(nextPageSize); } }}
         />
       </Card>
@@ -865,7 +748,6 @@ const TenantList: React.FC = () => {
               <Space size={12} wrap>
                 <Typography.Text strong>{usageTenant.name}</Typography.Text>
                 <Tag>{usageTenant.code}</Tag>
-                {usageTenant.plan && <Tag color="blue">{planLabels[usageTenant.plan]}</Tag>}
                 {usageTenant.status && <Tag color={statusColors[usageTenant.status]}>{statusLabels[usageTenant.status]}</Tag>}
               </Space>
               <Typography.Text type="secondary">最近更新时间：{usage?.updatedAt || '-'}</Typography.Text>
@@ -929,7 +811,6 @@ const TenantList: React.FC = () => {
                     <Input placeholder="例如 Acme-Prod_01" />
                   </Form.Item>
                 </Col>
-                <Col span={12}><Form.Item name="plan" label="套餐" rules={[{ required: true, message: '请选择租户套餐' }]}><Select options={Object.entries(planLabels).map(([value, label]) => ({ value, label }))} /></Form.Item></Col>
                 <Col span={12}><Form.Item name="isolationLevel" label="隔离级别" rules={[{ required: true, message: '请选择隔离级别' }]}><Select options={Object.entries(isolationLabels).map(([value, label]) => ({ value, label }))} /></Form.Item></Col>
               </>
             )}
@@ -1014,54 +895,6 @@ const TenantList: React.FC = () => {
             </Card>
           </Space>
         )}
-      </Drawer>
-
-      <Modal destroyOnClose title={`调整套餐${currentTenant ? ` - ${currentTenant.name}` : ''}`} open={planOpen} confirmLoading={planSubmitting} onOk={() => void handleSavePlan()} onCancel={() => setPlanOpen(false)}>
-        <Form form={planForm} layout="vertical">
-          <Form.Item name="plan" label="套餐" rules={[{ required: true, message: '请选择套餐' }]}>
-            <Select options={Object.entries(planLabels).map(([value, label]) => ({ value, label }))} />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <Drawer
-        destroyOnClose
-        title={`调整配额${currentTenant ? ` - ${currentTenant.name}` : ''}`}
-        open={quotaOpen}
-        onClose={() => setQuotaOpen(false)}
-        width={860}
-        styles={{ body: { paddingBottom: 24 } }}
-        footer={
-          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button onClick={() => setQuotaOpen(false)}>取消</Button>
-            <Button type="primary" loading={quotaSubmitting} onClick={() => void handleSaveQuota()}>
-              保存配额
-            </Button>
-          </Space>
-        }
-      >
-        <Form form={quotaForm} layout="vertical">
-          <Row gutter={16}>
-            {quotaFields.map((field) => (
-              <Col span={12} key={field.name}>
-                <Form.Item
-                  name={field.name}
-                  label={field.label}
-                  rules={[
-                    {
-                      validator: async (_rule, value: number | undefined) => {
-                        if (value === undefined || value === null) return;
-                        if (!Number.isInteger(value) || value < -1) throw new Error('请输入大于等于 -1 的整数');
-                      },
-                    },
-                  ]}
-                >
-                  <InputNumber style={{ width: '100%' }} precision={0} min={-1} placeholder="-1 表示不限" />
-                </Form.Item>
-              </Col>
-            ))}
-          </Row>
-        </Form>
       </Drawer>
 
       <TenantWebhookDrawer

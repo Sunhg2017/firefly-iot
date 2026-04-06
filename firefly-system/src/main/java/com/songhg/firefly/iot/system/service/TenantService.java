@@ -13,7 +13,6 @@ import com.songhg.firefly.iot.common.enums.DataScopeType;
 import com.songhg.firefly.iot.common.enums.IsolationLevel;
 import com.songhg.firefly.iot.common.enums.RoleStatus;
 import com.songhg.firefly.iot.common.enums.RoleType;
-import com.songhg.firefly.iot.common.enums.TenantPlan;
 import com.songhg.firefly.iot.common.enums.TenantStatus;
 import com.songhg.firefly.iot.common.enums.UserStatus;
 import com.songhg.firefly.iot.common.enums.UserType;
@@ -23,7 +22,6 @@ import com.songhg.firefly.iot.system.dto.openapi.TenantOpenApiSubscriptionSaveDT
 import com.songhg.firefly.iot.system.dto.openapi.TenantOpenApiSubscriptionVO;
 import com.songhg.firefly.iot.system.dto.tenant.*;
 import com.songhg.firefly.iot.system.entity.Tenant;
-import com.songhg.firefly.iot.system.entity.TenantQuota;
 import com.songhg.firefly.iot.system.entity.TenantUsageDaily;
 import com.songhg.firefly.iot.system.entity.TenantUsageRealtime;
 import com.songhg.firefly.iot.system.entity.Role;
@@ -35,14 +33,12 @@ import com.songhg.firefly.iot.system.dto.tenant.TenantSpaceMenuAuthorizationVO;
 import com.songhg.firefly.iot.system.mapper.RoleMapper;
 import com.songhg.firefly.iot.system.mapper.RolePermissionMapper;
 import com.songhg.firefly.iot.system.mapper.TenantMapper;
-import com.songhg.firefly.iot.system.mapper.TenantQuotaMapper;
 import com.songhg.firefly.iot.system.mapper.TenantUsageDailyMapper;
 import com.songhg.firefly.iot.system.mapper.TenantUsageRealtimeMapper;
 import com.songhg.firefly.iot.system.mapper.UserMapper;
 import com.songhg.firefly.iot.system.mapper.UserRoleMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -66,7 +62,6 @@ import java.util.stream.Collectors;
 public class TenantService {
 
     private final TenantMapper tenantMapper;
-    private final TenantQuotaMapper tenantQuotaMapper;
     private final TenantUsageRealtimeMapper usageRealtimeMapper;
     private final TenantUsageDailyMapper usageDailyMapper;
     private final UserMapper userMapper;
@@ -97,9 +92,6 @@ public class TenantService {
 
         // Create tenant
         Tenant tenant = TenantConvert.INSTANCE.toEntity(dto);
-        if (tenant.getPlan() == null) {
-            tenant.setPlan(TenantPlan.FREE);
-        }
         tenant.setStatus(TenantStatus.INITIALIZING);
         if (tenant.getIsolationLevel() == null) {
             tenant.setIsolationLevel(IsolationLevel.SHARED_RLS);
@@ -109,14 +101,12 @@ public class TenantService {
 
         Long operatorId = AppContextHolder.getUserId();
         Long adminUserId = withTenantContext(tenant.getId(), () -> {
-            TenantQuota quota = createQuotaForPlan(tenant.getId(), tenant.getPlan());
-            tenantQuotaMapper.insert(quota);
             // Tenant workspace menus are now granted only by explicit system-ops authorization.
             return createTenantAdmin(tenant, dto.getAdminUser(), operatorId);
         });
         tenant.setAdminUserId(adminUserId);
 
-        log.info("Tenant created: id={}, code={}, plan={}", tenant.getId(), tenant.getCode(), tenant.getPlan());
+        log.info("Tenant created: id={}, code={}", tenant.getId(), tenant.getCode());
 
         // Set to ACTIVE (will be async via Kafka in production)
         tenant.setStatus(TenantStatus.ACTIVE);
@@ -155,9 +145,6 @@ public class TenantService {
         if (query.getKeyword() != null && !query.getKeyword().isBlank()) {
             wrapper.and(w -> w.like(Tenant::getName, query.getKeyword())
                     .or().like(Tenant::getCode, query.getKeyword()));
-        }
-        if (query.getPlan() != null) {
-            wrapper.eq(Tenant::getPlan, query.getPlan());
         }
         if (query.getStatus() != null) {
             wrapper.eq(Tenant::getStatus, query.getStatus());
@@ -228,7 +215,6 @@ public class TenantService {
         AppContext ctx = new AppContext();
         ctx.setTenantId(tenant.getId());
         ctx.setTenantCode(tenant.getCode());
-        ctx.setPlan(tenant.getPlan());
         ctx.setIsolationLevel(tenant.getIsolationLevel());
 
         // Cache to Redis
@@ -239,161 +225,6 @@ public class TenantService {
 
     private void evictTenantCache(Long tenantId) {
         redisTemplate.delete(AuthConstants.REDIS_TENANT_CTX + tenantId);
-    }
-
-    private TenantQuota createQuotaForPlan(Long tenantId, TenantPlan plan) {
-        TenantQuota quota = new TenantQuota();
-        quota.setTenantId(tenantId);
-        switch (plan) {
-            case STANDARD -> {
-                quota.setMaxDevices(10000);
-                quota.setMaxMsgPerSec(10000);
-                quota.setMaxRules(100);
-                quota.setDataRetentionDays(90);
-                quota.setMaxOtaStorageGb(50);
-                quota.setMaxApiCallsDay(1000000);
-                quota.setMaxUsers(50);
-                quota.setMaxProjects(10);
-                quota.setMaxVideoChannels(100);
-                quota.setMaxVideoStorageGb(500);
-                quota.setMaxSharePolicies(5);
-            }
-            case ENTERPRISE -> {
-                quota.setMaxDevices(-1);
-                quota.setMaxMsgPerSec(-1);
-                quota.setMaxRules(-1);
-                quota.setDataRetentionDays(-1);
-                quota.setMaxOtaStorageGb(-1);
-                quota.setMaxApiCallsDay(-1);
-                quota.setMaxUsers(-1);
-                quota.setMaxProjects(-1);
-                quota.setMaxVideoChannels(-1);
-                quota.setMaxVideoStorageGb(-1);
-                quota.setMaxSharePolicies(-1);
-            }
-            default -> { // FREE
-                quota.setMaxDevices(100);
-                quota.setMaxMsgPerSec(100);
-                quota.setMaxRules(10);
-                quota.setDataRetentionDays(7);
-                quota.setMaxOtaStorageGb(1);
-                quota.setMaxApiCallsDay(10000);
-                quota.setMaxUsers(5);
-                quota.setMaxProjects(1);
-                quota.setMaxVideoChannels(5);
-                quota.setMaxVideoStorageGb(10);
-                quota.setMaxSharePolicies(0);
-            }
-        }
-        quota.setCustomConfig("{}");
-        quota.setUpdatedAt(LocalDateTime.now());
-        return quota;
-    }
-
-    // ==================== Plan Management ====================
-
-    @Transactional
-    public TenantVO updatePlan(Long tenantId, TenantPlan newPlan) {
-        assertSystemOpsOperator();
-        Tenant tenant = tenantMapper.selectById(tenantId);
-        if (tenant == null) {
-            throw new BizException(ResultCode.TENANT_NOT_FOUND);
-        }
-        TenantPlan oldPlan = tenant.getPlan();
-        tenant.setPlan(newPlan);
-        tenantMapper.updateById(tenant);
-
-        withTenantContext(tenantId, () -> {
-            TenantQuota quota = tenantQuotaMapper.selectOne(
-                    new LambdaQueryWrapper<TenantQuota>().eq(TenantQuota::getTenantId, tenantId));
-            if (quota != null) {
-                TenantQuota newQuota = createQuotaForPlan(tenantId, newPlan);
-                newQuota.setId(quota.getId());
-                tenantQuotaMapper.updateById(newQuota);
-            }
-            return null;
-        });
-
-        evictTenantCache(tenantId);
-        log.info("Tenant plan updated: id={}, {} -> {}", tenantId, oldPlan, newPlan);
-
-        Long operatorId = AppContextHolder.getUserId();
-        eventPublisher.publish(EventTopics.TENANT_EVENTS,
-                TenantEvent.statusChanged(tenantId, tenant.getCode(),
-                        oldPlan != null ? oldPlan.name() : null, newPlan.name(), operatorId));
-
-        return TenantConvert.INSTANCE.toVO(tenant);
-    }
-
-    // ==================== Quota Management ====================
-
-    public TenantQuotaVO getQuota(Long tenantId) {
-        return withTenantContext(tenantId, () -> {
-            TenantQuota quota = ensureTenantQuota(tenantId);
-            TenantQuotaVO vo = new TenantQuotaVO();
-            vo.setTenantId(quota.getTenantId());
-            vo.setMaxDevices(quota.getMaxDevices());
-            vo.setMaxMsgPerSec(quota.getMaxMsgPerSec());
-            vo.setMaxRules(quota.getMaxRules());
-            vo.setDataRetentionDays(quota.getDataRetentionDays());
-            vo.setMaxOtaStorageGb(quota.getMaxOtaStorageGb());
-            vo.setMaxApiCallsDay(quota.getMaxApiCallsDay());
-            vo.setMaxUsers(quota.getMaxUsers());
-            vo.setMaxProjects(quota.getMaxProjects());
-            vo.setMaxVideoChannels(quota.getMaxVideoChannels());
-            vo.setMaxVideoStorageGb(quota.getMaxVideoStorageGb());
-            vo.setMaxSharePolicies(quota.getMaxSharePolicies());
-            return vo;
-        });
-    }
-
-    @Transactional
-    public TenantQuotaVO updateQuota(Long tenantId, TenantQuotaUpdateDTO dto) {
-        return withTenantContext(tenantId, () -> {
-            TenantQuota quota = ensureTenantQuota(tenantId);
-            if (dto.getMaxDevices() != null) quota.setMaxDevices(dto.getMaxDevices());
-            if (dto.getMaxMsgPerSec() != null) quota.setMaxMsgPerSec(dto.getMaxMsgPerSec());
-            if (dto.getMaxRules() != null) quota.setMaxRules(dto.getMaxRules());
-            if (dto.getDataRetentionDays() != null) quota.setDataRetentionDays(dto.getDataRetentionDays());
-            if (dto.getMaxOtaStorageGb() != null) quota.setMaxOtaStorageGb(dto.getMaxOtaStorageGb());
-            if (dto.getMaxApiCallsDay() != null) quota.setMaxApiCallsDay(dto.getMaxApiCallsDay());
-            if (dto.getMaxUsers() != null) quota.setMaxUsers(dto.getMaxUsers());
-            if (dto.getMaxProjects() != null) quota.setMaxProjects(dto.getMaxProjects());
-            if (dto.getMaxVideoChannels() != null) quota.setMaxVideoChannels(dto.getMaxVideoChannels());
-            if (dto.getMaxVideoStorageGb() != null) quota.setMaxVideoStorageGb(dto.getMaxVideoStorageGb());
-            if (dto.getMaxSharePolicies() != null) quota.setMaxSharePolicies(dto.getMaxSharePolicies());
-            quota.setUpdatedAt(LocalDateTime.now());
-            tenantQuotaMapper.updateById(quota);
-            log.info("Tenant quota updated: tenantId={}", tenantId);
-            return getQuota(tenantId);
-        });
-    }
-
-    private TenantQuota ensureTenantQuota(Long tenantId) {
-        TenantQuota quota = tenantQuotaMapper.selectOne(
-                new LambdaQueryWrapper<TenantQuota>().eq(TenantQuota::getTenantId, tenantId));
-        if (quota != null) {
-            return quota;
-        }
-
-        Tenant tenant = tenantMapper.selectById(tenantId);
-        if (tenant == null || tenant.getDeletedAt() != null) {
-            throw new BizException(ResultCode.TENANT_NOT_FOUND);
-        }
-
-        TenantQuota created = createQuotaForPlan(tenantId, tenant.getPlan() != null ? tenant.getPlan() : TenantPlan.FREE);
-        try {
-            tenantQuotaMapper.insert(created);
-            return created;
-        } catch (DuplicateKeyException ex) {
-            // Another request may create quota concurrently.
-            TenantQuota existing = tenantQuotaMapper.selectOne(
-                    new LambdaQueryWrapper<TenantQuota>().eq(TenantQuota::getTenantId, tenantId));
-            if (existing != null) {
-                return existing;
-            }
-            throw ex;
-        }
     }
 
     // ==================== Usage ====================
@@ -447,18 +278,6 @@ public class TenantService {
                 return vo;
             }).collect(Collectors.toList());
         });
-    }
-
-    public TenantQuotaUsageVO getQuotaAndUsage(Long tenantId) {
-        Tenant tenant = tenantMapper.selectById(tenantId);
-        if (tenant == null) {
-            throw new BizException(ResultCode.TENANT_NOT_FOUND);
-        }
-        TenantQuotaUsageVO vo = new TenantQuotaUsageVO();
-        vo.setPlan(tenant.getPlan());
-        vo.setQuotas(getQuota(tenantId));
-        vo.setUsage(getUsage(tenantId));
-        return vo;
     }
 
     // ==================== Deactivate ====================
@@ -521,12 +340,6 @@ public class TenantService {
                 new LambdaQueryWrapper<Tenant>().eq(Tenant::getStatus, TenantStatus.ACTIVE).isNull(Tenant::getDeletedAt)));
         vo.setSuspendedTenants(tenantMapper.selectCount(
                 new LambdaQueryWrapper<Tenant>().eq(Tenant::getStatus, TenantStatus.SUSPENDED).isNull(Tenant::getDeletedAt)));
-        vo.setFreeTenants(tenantMapper.selectCount(
-                new LambdaQueryWrapper<Tenant>().eq(Tenant::getPlan, TenantPlan.FREE).isNull(Tenant::getDeletedAt)));
-        vo.setStandardTenants(tenantMapper.selectCount(
-                new LambdaQueryWrapper<Tenant>().eq(Tenant::getPlan, TenantPlan.STANDARD).isNull(Tenant::getDeletedAt)));
-        vo.setEnterpriseTenants(tenantMapper.selectCount(
-                new LambdaQueryWrapper<Tenant>().eq(Tenant::getPlan, TenantPlan.ENTERPRISE).isNull(Tenant::getDeletedAt)));
         return vo;
     }
 

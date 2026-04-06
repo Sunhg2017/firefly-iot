@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.songhg.firefly.iot.common.base.BaseEntity;
 import com.songhg.firefly.iot.common.enums.IsolationLevel;
-import com.songhg.firefly.iot.common.enums.TenantPlan;
 import com.songhg.firefly.iot.common.enums.TenantStatus;
 import com.songhg.firefly.iot.common.mybatis.JsonbStringTypeHandler;
 import lombok.Data;
@@ -27,7 +26,6 @@ public class Tenant extends BaseEntity {
     private String contactName;
     private String contactPhone;
     private String contactEmail;
-    private TenantPlan plan;
     private TenantStatus status;
     private IsolationLevel isolationLevel;
     @TableField(typeHandler = JsonbStringTypeHandler.class, jdbcType = JdbcType.OTHER)

@@ -1,7 +1,6 @@
 package com.songhg.firefly.iot.system.dto.tenant;
 
 import com.songhg.firefly.iot.common.enums.IsolationLevel;
-import com.songhg.firefly.iot.common.enums.TenantPlan;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -43,9 +42,6 @@ public class TenantCreateDTO {
 
     @Schema(description = "联系邮箱")
     private String contactEmail;
-
-    @Schema(description = "订阅方案")
-    private TenantPlan plan;
 
     @Schema(description = "数据隔离级别")
     private IsolationLevel isolationLevel;

@@ -292,5 +292,5 @@ firefly-common/src/main/java/.../common/enums/
 | **查询性能** | 分页查询 P99 < 200ms（10万设备规模） |
 | **在线状态更新** | 通过 `firefly-connector` 内置 MQTT 生命周期事件异步更新，不在管理 API 中处理 |
 | **标签搜索** | PostgreSQL GIN 索引，支持 JSONB 包含查询 |
-| **配额限制** | 每租户设备数上限由 `tenant_quotas.max_devices` 控制 |
+| **资源限制** | 当前版本未启用设备数套餐/配额强制控制，仅保留租户用量统计能力 |
 | **逻辑删除** | 删除后 30 天定时任务物理清理 |

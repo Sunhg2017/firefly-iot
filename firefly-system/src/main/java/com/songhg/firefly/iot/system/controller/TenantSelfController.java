@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 import java.util.List;
 
-@Tag(name = "当前租户", description = "当前租户自助查看信息、配额、用量")
+@Tag(name = "当前租户", description = "当前租户自助查看信息和用量")
 @RestController
 @RequestMapping("/api/v1/tenant")
 @RequiredArgsConstructor
@@ -39,14 +39,6 @@ public class TenantSelfController {
     public R<TenantVO> updateCurrentTenant(@Valid @RequestBody TenantUpdateDTO dto) {
         Long tenantId = AppContextHolder.getTenantId();
         return R.ok(tenantService.updateTenant(tenantId, dto));
-    }
-
-    @RequiresLogin
-    @GetMapping("/quota")
-    @Operation(summary = "获取配额与用量")
-    public R<TenantQuotaUsageVO> getQuotaAndUsage() {
-        Long tenantId = AppContextHolder.getTenantId();
-        return R.ok(tenantService.getQuotaAndUsage(tenantId));
     }
 
     @RequiresLogin

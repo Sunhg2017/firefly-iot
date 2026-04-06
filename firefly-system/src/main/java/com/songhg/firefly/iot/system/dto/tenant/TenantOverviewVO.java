@@ -18,13 +18,4 @@ public class TenantOverviewVO {
 
     @Schema(description = "Suspended tenants")
     private Long suspendedTenants;
-
-    @Schema(description = "Free plan tenants")
-    private Long freeTenants;
-
-    @Schema(description = "Standard plan tenants")
-    private Long standardTenants;
-
-    @Schema(description = "Enterprise plan tenants")
-    private Long enterpriseTenants;
 }
