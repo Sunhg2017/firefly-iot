@@ -15,8 +15,20 @@ public class DeviceLogVO {
     @Schema(description = "Log ID")
     private Long id;
 
+    @Schema(description = "Device name")
+    private String deviceName;
+
+    @Schema(description = "Device nickname")
+    private String nickname;
+
     @Schema(description = "Device ID")
     private Long deviceId;
+
+    @Schema(description = "Product key")
+    private String productKey;
+
+    @Schema(description = "Product name")
+    private String productName;
 
     @Schema(description = "Product ID")
     private Long productId;

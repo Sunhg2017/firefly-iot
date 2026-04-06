@@ -31,15 +31,8 @@ public class DeviceLogController {
     @PostMapping
     @Operation(summary = "记录设备日志")
     public R<DeviceLogVO> record(@Valid @RequestBody DeviceLogCreateDTO dto) {
-        DeviceLog deviceLog = new DeviceLog();
+        DeviceLog deviceLog = DeviceLogConvert.INSTANCE.toEntity(dto);
         deviceLog.setTenantId(AppContextHolder.getTenantId());
-        deviceLog.setDeviceId(dto.getDeviceId());
-        deviceLog.setProductId(dto.getProductId());
-        deviceLog.setLevel(dto.getLevel());
-        deviceLog.setModule(dto.getModule());
-        deviceLog.setContent(dto.getContent());
-        deviceLog.setTraceId(dto.getTraceId());
-        deviceLog.setIp(dto.getIp());
         return R.ok(DeviceLogConvert.INSTANCE.toVO(deviceLogService.record(deviceLog)));
     }
 
@@ -47,9 +40,8 @@ public class DeviceLogController {
     @RequiresPermission("device-log:read")
     @Operation(summary = "分页查询设备日志")
     public R<IPage<DeviceLogVO>> listLogs(
-            @RequestBody DeviceLogQueryParam query) {
-        return R.ok(deviceLogService.listLogs(query)
-                .convert(DeviceLogConvert.INSTANCE::toVO));
+            @Valid @RequestBody DeviceLogQueryParam query) {
+        return R.ok(deviceLogService.listLogs(query));
     }
 
     @GetMapping("/{deviceId}/recent")
@@ -58,7 +50,7 @@ public class DeviceLogController {
     public R<List<DeviceLogVO>> getRecentLogs(
             @Parameter(description = "设备编号", required = true) @PathVariable Long deviceId,
             @Parameter(description = "最大记录数") @RequestParam(defaultValue = "100") int limit) {
-        return R.ok(deviceLogService.getRecentLogs(deviceId, limit).stream().map(DeviceLogConvert.INSTANCE::toVO).toList());
+        return R.ok(deviceLogService.getRecentLogs(deviceId, limit));
     }
 
     @Operation(summary = "按级别统计设备日志")

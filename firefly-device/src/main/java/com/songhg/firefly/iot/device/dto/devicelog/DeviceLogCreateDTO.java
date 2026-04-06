@@ -1,6 +1,7 @@
 package com.songhg.firefly.iot.device.dto.devicelog;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -22,7 +23,7 @@ public class DeviceLogCreateDTO {
     private Long productId;
 
     @Schema(description = "日志级别", example = "INFO")
-    @Size(max = 20)
+    @Size(max = 10)
     private String level;
 
     @Schema(description = "模块名称", example = "connectivity")
@@ -30,12 +31,15 @@ public class DeviceLogCreateDTO {
     private String module;
 
     @Schema(description = "日志内容")
+    @NotBlank(message = "日志内容不能为空")
     private String content;
 
     @Schema(description = "追踪编号")
+    @Size(max = 64)
     private String traceId;
 
     @Schema(description = "设备网络地址", example = "192.168.1.100")
+    @Size(max = 50)
     private String ip;
 
     @Schema(description = "设备上报时间")
