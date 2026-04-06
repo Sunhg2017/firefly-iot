@@ -76,14 +76,14 @@ public class CoapProtocolAdapter implements ProtocolAdapter {
     /**
      * 处理 CoAP 属性上报
      */
-    public void handlePropertyReport(String token, byte[] payload) {
+    public DeviceAuthResult handlePropertyReport(String token, byte[] payload) {
         DeviceAuthResult auth = authService.authenticateByToken(token);
         if (!auth.isSuccess()) {
             log.warn("CoAP property report: unauthorized token");
-            return;
+            return auth;
         }
         if (handleByCustomParser("/coap/thing/property/post", payload, auth, DeviceMessage.MessageType.PROPERTY_REPORT)) {
-            return;
+            return auth;
         }
         DeviceMessage message = messageCodec.decodeJson(
                 "/coap/thing/property/post", payload,
@@ -93,19 +93,20 @@ public class CoapProtocolAdapter implements ProtocolAdapter {
             messageProducer.publishUpstream(message);
             log.debug("CoAP property report: deviceId={}", auth.getDeviceId());
         }
+        return auth;
     }
 
     /**
      * 处理 CoAP 事件上报
      */
-    public void handleEventReport(String token, byte[] payload) {
+    public DeviceAuthResult handleEventReport(String token, byte[] payload) {
         DeviceAuthResult auth = authService.authenticateByToken(token);
         if (!auth.isSuccess()) {
             log.warn("CoAP event report: unauthorized token");
-            return;
+            return auth;
         }
         if (handleByCustomParser("/coap/thing/event/post", payload, auth, DeviceMessage.MessageType.EVENT_REPORT)) {
-            return;
+            return auth;
         }
         DeviceMessage message = messageCodec.decodeJson(
                 "/coap/thing/event/post", payload,
@@ -115,19 +116,20 @@ public class CoapProtocolAdapter implements ProtocolAdapter {
             messageProducer.publishUpstream(message);
             log.debug("CoAP event report: deviceId={}", auth.getDeviceId());
         }
+        return auth;
     }
 
     /**
      * 处理 CoAP OTA 进度上报
      */
-    public void handleOtaProgress(String token, byte[] payload) {
+    public DeviceAuthResult handleOtaProgress(String token, byte[] payload) {
         DeviceAuthResult auth = authService.authenticateByToken(token);
         if (!auth.isSuccess()) {
             log.warn("CoAP OTA progress: unauthorized token");
-            return;
+            return auth;
         }
         if (handleByCustomParser("/coap/ota/progress", payload, auth, DeviceMessage.MessageType.OTA_PROGRESS)) {
-            return;
+            return auth;
         }
         DeviceMessage message = messageCodec.decodeJson(
                 "/coap/ota/progress", payload,
@@ -136,6 +138,7 @@ public class CoapProtocolAdapter implements ProtocolAdapter {
             message.setType(DeviceMessage.MessageType.OTA_PROGRESS);
             messageProducer.publishUpstream(message);
         }
+        return auth;
     }
 
     @Override

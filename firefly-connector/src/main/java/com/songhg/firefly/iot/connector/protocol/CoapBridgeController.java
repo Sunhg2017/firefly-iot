@@ -47,6 +47,11 @@ public class CoapBridgeController {
         }
         // CoAP 设备 token 有效期较长（低功耗设备不频繁认证）
         String token = authService.issueToken(result.getDeviceId(), result.getTenantId(), result.getProductId(), Duration.ofDays(7));
+        if (token == null || token.isBlank()) {
+            log.error("CoAP device token issue failed: deviceId={}, tenantId={}, productId={}",
+                    result.getDeviceId(), result.getTenantId(), result.getProductId());
+            return R.fail(500, "TOKEN_ISSUE_FAILED");
+        }
         return R.ok(Map.of("token", token, "deviceId", result.getDeviceId(), "expireIn", 604800));
     }
 
@@ -60,7 +65,10 @@ public class CoapBridgeController {
     public R<Void> reportProperty(
             @Parameter(description = "设备认证令牌", required = true) @RequestParam String token,
             @RequestBody byte[] payload) {
-        coapAdapter.handlePropertyReport(token, payload);
+        DeviceAuthResult auth = coapAdapter.handlePropertyReport(token, payload);
+        if (!auth.isSuccess()) {
+            return R.fail(401, "UNAUTHORIZED");
+        }
         return R.ok();
     }
 
@@ -74,7 +82,10 @@ public class CoapBridgeController {
     public R<Void> reportEvent(
             @Parameter(description = "设备认证令牌", required = true) @RequestParam String token,
             @RequestBody byte[] payload) {
-        coapAdapter.handleEventReport(token, payload);
+        DeviceAuthResult auth = coapAdapter.handleEventReport(token, payload);
+        if (!auth.isSuccess()) {
+            return R.fail(401, "UNAUTHORIZED");
+        }
         return R.ok();
     }
 
@@ -88,7 +99,10 @@ public class CoapBridgeController {
     public R<Void> reportOtaProgress(
             @Parameter(description = "设备认证令牌", required = true) @RequestParam String token,
             @RequestBody byte[] payload) {
-        coapAdapter.handleOtaProgress(token, payload);
+        DeviceAuthResult auth = coapAdapter.handleOtaProgress(token, payload);
+        if (!auth.isSuccess()) {
+            return R.fail(401, "UNAUTHORIZED");
+        }
         return R.ok();
     }
 

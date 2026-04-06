@@ -64,23 +64,17 @@ public class MqttWebhookController {
     @PostMapping("/acl")
     public R<Map<String, Object>> checkAcl(
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                    description = "ACL check: clientid/client_id, topic, action (publish/subscribe)"
+                    description = "ACL check: clientid/client_id, username, topic, action (publish/subscribe)"
             ) @RequestBody Map<String, String> body) {
         String clientId = body.getOrDefault("clientid", body.get("client_id"));
+        String username = body.get("username");
         String topic = body.get("topic");
         String action = body.getOrDefault("action", body.getOrDefault("access", "subscribe"));
 
         log.debug("MQTT ACL check: clientId={}, topic={}, action={}", clientId, topic, action);
 
-        // Baseline ACL rules:
-        // - devices should stay within /sys/{productKey}/{deviceName}/# style topics
-        // - system topics remain readable for runtime coordination when needed
         Map<String, Object> data = new HashMap<>();
-        if (topic != null && (topic.startsWith("/sys/") || topic.startsWith("$SYS/"))) {
-            data.put("result", "allow");
-        } else {
-            data.put("result", "allow");
-        }
+        data.put("result", isAclAllowed(clientId, username, topic, action) ? "allow" : "deny");
         return R.ok(data);
     }
 
@@ -142,5 +136,28 @@ public class MqttWebhookController {
             log.warn("MQTT disconnect without deviceId: clientId={}", clientId);
         }
         return R.ok();
+    }
+
+    private boolean isAclAllowed(String clientId, String username, String topic, String action) {
+        if (topic == null || topic.isBlank()) {
+            return false;
+        }
+        if (topic.startsWith("$SYS/")) {
+            return isReadAction(action);
+        }
+        if (!topic.startsWith("/sys/")) {
+            return false;
+        }
+        return mqttAdapter.isOwnTopic(clientId, username, topic);
+    }
+
+    private boolean isReadAction(String action) {
+        if (action == null || action.isBlank()) {
+            return true;
+        }
+        return switch (action.toLowerCase()) {
+            case "subscribe", "sub", "read", "1" -> true;
+            default -> false;
+        };
     }
 }

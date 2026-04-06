@@ -54,6 +54,11 @@ public class HttpProtocolAdapter {
         }
 
         String token = authService.issueToken(result.getDeviceId(), result.getTenantId(), result.getProductId(), Duration.ofHours(24));
+        if (token == null || token.isBlank()) {
+            log.error("HTTP device token issue failed: deviceId={}, tenantId={}, productId={}",
+                    result.getDeviceId(), result.getTenantId(), result.getProductId());
+            return R.fail(500, "TOKEN_ISSUE_FAILED");
+        }
         return R.ok(Map.of("token", token, "deviceId", result.getDeviceId(), "expireIn", 86400));
     }
 

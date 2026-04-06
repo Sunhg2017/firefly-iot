@@ -12,6 +12,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -148,6 +149,23 @@ class HttpProtocolAdapterTest {
                         && "alarm".equals(message.getPayload().get("identifier"))
                         && "high".equals(message.getPayload().get("level"))
         ));
+    }
+
+    @Test
+    void shouldFailAuthenticationWhenTokenIssueFails() {
+        DeviceAuthResult auth = successAuth();
+        when(authService.authenticate("pk", "dev-1", "secret")).thenReturn(auth);
+        when(authService.issueToken(3L, 1L, 2L, java.time.Duration.ofHours(24))).thenReturn(null);
+
+        R<Map<String, Object>> response = adapter.authenticate(Map.of(
+                "productKey", "pk",
+                "deviceName", "dev-1",
+                "deviceSecret", "secret"
+        ), null, null, null);
+
+        assertEquals(500, response.getCode());
+        assertEquals("TOKEN_ISSUE_FAILED", response.getMessage());
+        verify(messageProducer, never()).publishUpstream(argThat(message -> true));
     }
 
     private DeviceAuthResult successAuth() {

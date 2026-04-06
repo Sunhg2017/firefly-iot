@@ -80,9 +80,9 @@ public class MqttProtocolAdapter implements ProtocolAdapter {
         String productKey = identity[0];
         String deviceName = identity[1];
 
-        Long deviceId = headers != null && headers.containsKey("deviceId") ? Long.parseLong(headers.get("deviceId")) : null;
-        Long tenantId = headers != null && headers.containsKey("tenantId") ? Long.parseLong(headers.get("tenantId")) : null;
-        Long productId = headers != null && headers.containsKey("productId") ? Long.parseLong(headers.get("productId")) : null;
+        Long deviceId = parseHeaderLong(headers, "deviceId");
+        Long tenantId = parseHeaderLong(headers, "tenantId");
+        Long productId = parseHeaderLong(headers, "productId");
 
         if (deviceId == null) {
             DeviceAuthResult session = authService.resolveSession(productKey, deviceName);
@@ -113,9 +113,9 @@ public class MqttProtocolAdapter implements ProtocolAdapter {
         if (identity != null) {
             String productKey = identity[0];
             String deviceName = identity[1];
-            Long deviceId = headers != null && headers.containsKey("deviceId") ? Long.parseLong(headers.get("deviceId")) : null;
-            Long tenantId = headers != null && headers.containsKey("tenantId") ? Long.parseLong(headers.get("tenantId")) : null;
-            Long productId = headers != null && headers.containsKey("productId") ? Long.parseLong(headers.get("productId")) : null;
+            Long deviceId = parseHeaderLong(headers, "deviceId");
+            Long tenantId = parseHeaderLong(headers, "tenantId");
+            Long productId = parseHeaderLong(headers, "productId");
             if (deviceId == null) {
                 DeviceAuthResult session = authService.resolveSession(productKey, deviceName);
                 if (session.isSuccess()) {
@@ -259,5 +259,21 @@ public class MqttProtocolAdapter implements ProtocolAdapter {
                 .tenantId(authResult.getTenantId())
                 .productId(authResult.getProductId())
                 .build();
+    }
+
+    private Long parseHeaderLong(Map<String, String> headers, String key) {
+        if (headers == null || !headers.containsKey(key)) {
+            return null;
+        }
+        String value = headers.get(key);
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException ex) {
+            log.warn("Ignore invalid MQTT header value: key={}, value={}", key, value);
+            return null;
+        }
     }
 }
