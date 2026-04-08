@@ -81,6 +81,13 @@
 - `POST /api/v1/user/oauth-bindings/authorize-url`
 - `POST /api/v1/user/oauth-bindings`
 
+网关匿名放行：
+
+- `/SYSTEM/api/v1/auth/oauth/providers`
+- `/SYSTEM/api/v1/auth/oauth/authorize-url`
+
+这两个接口用于登录页加载可用提供商和拉起 Web 授权，必须保持匿名放行，否则登录页会在未登录状态下被网关直接返回 401。
+
 ### 4.4 登录解析规则
 
 解析顺序固定为：

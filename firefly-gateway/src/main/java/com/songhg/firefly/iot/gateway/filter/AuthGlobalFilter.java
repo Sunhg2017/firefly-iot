@@ -57,6 +57,8 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             "/SYSTEM/api/v1/auth/sms/send",
             "/SYSTEM/api/v1/auth/sms/login",
             "/SYSTEM/api/v1/auth/refresh",
+            "/SYSTEM/api/v1/auth/oauth/providers",
+            "/SYSTEM/api/v1/auth/oauth/authorize-url",
             "/SYSTEM/api/v1/auth/wechat-mini",
             "/SYSTEM/api/v1/auth/wechat",
             "/SYSTEM/api/v1/auth/alipay",

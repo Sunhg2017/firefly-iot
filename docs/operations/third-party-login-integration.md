@@ -96,7 +96,17 @@ npm run build
 - 必填 `app_id/client_id`、密钥是否已保存
 - 登录页请求 `/api/v1/auth/oauth/providers` 是否返回启用状态
 
-### 6.2 第三方回调后提示 state 无效
+### 6.2 登录页请求 oauth/providers 直接返回 401
+
+检查：
+
+- 网关 [AuthGlobalFilter.java](/Users/shg/codeRepo/firefly-iot/firefly-gateway/src/main/java/com/songhg/firefly/iot/gateway/filter/AuthGlobalFilter.java) 是否已包含：
+  - `/SYSTEM/api/v1/auth/oauth/providers`
+  - `/SYSTEM/api/v1/auth/oauth/authorize-url`
+- 当前部署节点是否已经发布包含上述白名单的新版本网关
+- 浏览器是否仍命中旧网关实例或旧前端缓存
+
+### 6.3 第三方回调后提示 state 无效
 
 检查：
 
@@ -104,7 +114,7 @@ npm run build
 - Redis 是否可用
 - 浏览器是否在长时间停留后才继续授权
 
-### 6.3 第三方授权成功但仍提示未绑定
+### 6.4 第三方授权成功但仍提示未绑定
 
 检查：
 
@@ -112,7 +122,7 @@ npm run build
 - 第三方返回的邮箱或手机号是否能唯一匹配本地用户
 - 是否误以为系统会自动创建租户用户
 
-### 6.4 支付宝登录失败
+### 6.5 支付宝登录失败
 
 检查：
 
@@ -120,7 +130,7 @@ npm run build
 - `security.oauth.alipay.gateway` 是否指向正确网关
 - 支付宝应用是否已开通用户信息接口权限
 
-### 6.5 Apple 登录失败
+### 6.6 Apple 登录失败
 
 检查：
 
