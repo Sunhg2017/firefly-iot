@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.system.mapper.SystemConfigMapper">
+
+    <select id="selectByTenantIdAndConfigKey" resultType="com.songhg.firefly.iot.system.entity.SystemConfig">
+        SELECT id,
+               tenant_id,
+               config_group,
+               config_key,
+               config_value,
+               value_type,
+               description,
+               updated_by,
+               created_at,
+               updated_at
+        FROM system_configs
+        WHERE tenant_id = #{tenantId}
+          AND config_key = #{configKey}
+        LIMIT 1
+    </select>
+
+</mapper>

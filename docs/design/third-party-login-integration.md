@@ -54,6 +54,8 @@
 - `security.oauth.apple.enabled`
 - `security.oauth.apple.client_id`
 
+这些配置统一存放在 `system_configs.tenant_id = 0`。由于登录页在未登录状态下就会调用 `GET /api/v1/auth/oauth/providers`，服务端读取这些键时必须走显式 `tenant_id = 0` 查询，不能依赖当前请求里的租户上下文。
+
 ### 4.2 服务收口
 
 新增 `OauthIntegrationService`，统一处理：

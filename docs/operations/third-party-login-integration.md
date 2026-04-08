@@ -106,7 +106,19 @@ npm run build
 - 当前部署节点是否已经发布包含上述白名单的新版本网关
 - 浏览器是否仍命中旧网关实例或旧前端缓存
 
-### 6.3 第三方回调后提示 state 无效
+### 6.3 登录页请求 oauth/providers 返回 500
+
+检查：
+
+- `firefly-system` 是否已发布包含 `SystemConfigMapper.selectByTenantIdAndConfigKey(...)` 的版本
+- 服务日志里是否出现 `Tenant context not set`
+- `system_configs` 表中第三方登录配置是否仍保存在 `tenant_id = 0`
+
+原因：
+
+- `oauth/providers` 是匿名接口，读取第三方登录配置时不能依赖租户拦截器自动注入租户上下文，否则会在登录前直接抛出异常。
+
+### 6.4 第三方回调后提示 state 无效
 
 检查：
 
@@ -114,7 +126,7 @@ npm run build
 - Redis 是否可用
 - 浏览器是否在长时间停留后才继续授权
 
-### 6.4 第三方授权成功但仍提示未绑定
+### 6.5 第三方授权成功但仍提示未绑定
 
 检查：
 
@@ -122,7 +134,7 @@ npm run build
 - 第三方返回的邮箱或手机号是否能唯一匹配本地用户
 - 是否误以为系统会自动创建租户用户
 
-### 6.5 支付宝登录失败
+### 6.6 支付宝登录失败
 
 检查：
 
@@ -130,7 +142,7 @@ npm run build
 - `security.oauth.alipay.gateway` 是否指向正确网关
 - 支付宝应用是否已开通用户信息接口权限
 
-### 6.6 Apple 登录失败
+### 6.7 Apple 登录失败
 
 检查：
 

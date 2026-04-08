@@ -2,7 +2,6 @@ package com.songhg.firefly.iot.system.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
-import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.system.convert.SystemSettingsConvert;
 import com.songhg.firefly.iot.system.dto.system.SystemConfigUpdateDTO;
 import com.songhg.firefly.iot.system.dto.system.SystemConfigVO;
@@ -55,10 +54,9 @@ public class SystemConfigService {
      */
     @Cacheable(value = "system_config", key = "#tenantId + ':' + #key")
     public String getValue(Long tenantId, String key) {
-        LambdaQueryWrapper<SystemConfig> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(SystemConfig::getTenantId, tenantId)
-                .eq(SystemConfig::getConfigKey, key);
-        SystemConfig config = systemConfigMapper.selectOne(wrapper);
+        // 登录页会在匿名状态下读取 tenant_id=0 的全局 OAuth 配置，
+        // 这里必须按显式 tenantId 查询，不能再依赖当前线程里的租户上下文。
+        SystemConfig config = systemConfigMapper.selectByTenantIdAndConfigKey(tenantId, key);
         return config != null ? config.getConfigValue() : null;
     }
 
