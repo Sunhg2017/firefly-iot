@@ -2,9 +2,13 @@ package com.songhg.firefly.iot.device.mapper;
 
 import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.songhg.firefly.iot.api.dto.SharedDeviceEventDTO;
 import com.songhg.firefly.iot.device.entity.DeviceEvent;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+
+import java.time.LocalDateTime;
+import java.util.List;
 
 @Mapper
 public interface DeviceEventMapper extends BaseMapper<DeviceEvent> {
@@ -21,4 +25,15 @@ public interface DeviceEventMapper extends BaseMapper<DeviceEvent> {
      */
     @InterceptorIgnore(tenantLine = "true")
     int deleteExpiredBatch(@Param("retentionDays") int retentionDays, @Param("batchSize") int batchSize);
+
+    /**
+     * 跨租户共享事件查询：调用方已通过共享策略校验所有方租户，因此跳过租户行级隔离。
+     * SQL 见 {@code DeviceEventMapper.xml}。
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    List<SharedDeviceEventDTO> selectSharedEvents(@Param("ownerTenantId") Long ownerTenantId,
+                                                  @Param("deviceId") Long deviceId,
+                                                  @Param("startTime") LocalDateTime startTime,
+                                                  @Param("endTime") LocalDateTime endTime,
+                                                  @Param("limit") int limit);
 }

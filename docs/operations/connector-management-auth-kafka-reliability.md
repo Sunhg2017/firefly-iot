@@ -274,3 +274,9 @@ docker compose -f docker-compose.prod.yml --env-file .env --profile kafka-init c
 - HA overlay 的 3 broker 选举、broker 故障演练未在真实 Docker 环境执行（本机无 Docker daemon），只做了 `docker compose config` 渲染校验。
 - 镜像 tag 的可拉取性需在目标环境确认（尤其 MinIO，见第 5 节）。
 - `docs/operations/telemetry-governance-operations.md` 与 `docs/design/detailed-design-telemetry-governance.md` 仍引用 `timescaledb:latest-pg16` 的旧描述，属于其它文档的后续同步项。
+
+## 2026-11-15 更新：SNMPv3 与 Modbus 状态排障
+
+- SNMPv3 失败优先核对设备侧 USM 用户、认证/加密协议与口令（口令 ≥ 8 位）。
+- Modbus 采集状态保存在连接器进程内，重启后清空；连续失败次数与最近错误可在任务列表查看。
+- 详见 [共享数据与连接器能力补齐运维说明](shared-data-and-connector-remediation.md)。

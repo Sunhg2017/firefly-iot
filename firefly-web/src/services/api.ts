@@ -591,6 +591,7 @@ export const modbusApi = {
   unregisterCollector: (taskId: string) => connectorRequest.delete(`/modbus/collectors/${taskId}`),
   listCollectors: () => connectorRequest.get('/modbus/collectors'),
   collectorStatus: (taskId: string) => connectorRequest.get(`/modbus/collectors/${taskId}/status`),
+  collectorRuntime: () => connectorRequest.get('/modbus/collectors/runtime'),
 };
 
 interface DeviceLocatorPayload {

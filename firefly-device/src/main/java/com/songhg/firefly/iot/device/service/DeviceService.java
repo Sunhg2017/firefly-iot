@@ -976,22 +976,52 @@ public class DeviceService {
         if (query.getDeviceIds() != null && !query.getDeviceIds().isEmpty()) {
             wrapper.in(Device::getId, query.getDeviceIds());
         } else {
-            if (query.getKeyword() != null && !query.getKeyword().isBlank()) {
-                wrapper.and(w -> w.like(Device::getDeviceName, query.getKeyword())
-                        .or().like(Device::getNickname, query.getKeyword()));
-            }
-            if (query.getProductId() != null) {
-                wrapper.eq(Device::getProductId, query.getProductId());
-            }
-            if (query.getStatus() != null) {
-                wrapper.eq(Device::getStatus, query.getStatus());
-            }
-            if (query.getOnlineStatus() != null) {
-                wrapper.eq(Device::getOnlineStatus, query.getOnlineStatus());
-            }
+            applyExportScopeFilters(query, tenantId, wrapper);
         }
         wrapper.orderByDesc(Device::getCreatedAt);
         return wrapper;
+    }
+
+    /**
+     * 导出范围必须与设备列表筛选保持同一口径：关键字、产品、分组、状态、在线状态、
+     * 是否排除视频设备。否则用户按分组筛选后导出会拿到全量设备（含设备密钥）。
+     */
+    private void applyExportScopeFilters(DeviceTripleExportDTO query,
+                                         Long tenantId,
+                                         LambdaQueryWrapper<Device> wrapper) {
+        if (query.getKeyword() != null && !query.getKeyword().isBlank()) {
+            wrapper.and(w -> w.like(Device::getDeviceName, query.getKeyword())
+                    .or().like(Device::getNickname, query.getKeyword()));
+        }
+        if (query.getProductId() != null) {
+            wrapper.eq(Device::getProductId, query.getProductId());
+        }
+        if (query.getGroupId() != null) {
+            List<Long> deviceIds = deviceGroupService.listDeviceIdsByGroup(query.getGroupId());
+            if (deviceIds.isEmpty()) {
+                wrapper.isNull(Device::getId);
+            } else {
+                wrapper.in(Device::getId, deviceIds);
+            }
+        }
+        if (query.getStatus() != null) {
+            wrapper.eq(Device::getStatus, query.getStatus());
+        }
+        if (query.getOnlineStatus() != null) {
+            wrapper.eq(Device::getOnlineStatus, query.getOnlineStatus());
+        }
+        if (Boolean.TRUE.equals(query.getExcludeVideo())) {
+            List<Long> videoDeviceIds = deviceVideoProfileMapper.selectList(
+                            new LambdaQueryWrapper<com.songhg.firefly.iot.device.entity.DeviceVideoProfile>()
+                                    .eq(com.songhg.firefly.iot.device.entity.DeviceVideoProfile::getTenantId, tenantId))
+                    .stream()
+                    .map(com.songhg.firefly.iot.device.entity.DeviceVideoProfile::getDeviceId)
+                    .filter(Objects::nonNull)
+                    .toList();
+            if (!videoDeviceIds.isEmpty()) {
+                wrapper.notIn(Device::getId, videoDeviceIds);
+            }
+        }
     }
 
     private DeviceCredentialVO toCredentialVO(Device device, Product product) {

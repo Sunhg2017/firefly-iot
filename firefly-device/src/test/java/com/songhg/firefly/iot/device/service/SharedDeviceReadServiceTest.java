@@ -8,6 +8,8 @@ import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.device.entity.Device;
 import com.songhg.firefly.iot.device.entity.Product;
+import com.songhg.firefly.iot.api.dto.SharedDeviceEventDTO;
+import com.songhg.firefly.iot.device.mapper.DeviceEventMapper;
 import com.songhg.firefly.iot.device.mapper.DeviceMapper;
 import com.songhg.firefly.iot.device.mapper.DeviceTelemetryMapper;
 import com.songhg.firefly.iot.device.mapper.ProductMapper;
@@ -35,12 +37,16 @@ class SharedDeviceReadServiceTest {
     @Mock
     private DeviceTelemetryMapper deviceTelemetryMapper;
 
+    @Mock
+    private DeviceEventMapper deviceEventMapper;
+
     @Test
     void shouldResolveSharedDevicesWithinOwnerTenantScope() {
         SharedDeviceReadService service = new SharedDeviceReadService(
                 deviceMapper,
                 productMapper,
                 deviceTelemetryMapper,
+                deviceEventMapper,
                 new ObjectMapper()
         );
         Product product = new Product();
@@ -73,11 +79,37 @@ class SharedDeviceReadServiceTest {
     }
 
     @Test
+    void shouldQuerySharedEventsForOwnedDevice() {
+        SharedDeviceReadService service = new SharedDeviceReadService(
+                deviceMapper,
+                productMapper,
+                deviceTelemetryMapper,
+                deviceEventMapper,
+                new ObjectMapper()
+        );
+        Device device = new Device();
+        device.setId(41L);
+        device.setTenantId(1001L);
+
+        SharedDeviceEventDTO event = new SharedDeviceEventDTO();
+        event.setEventType("alarm");
+
+        when(deviceMapper.selectByIdIgnoreTenant(41L)).thenReturn(device);
+        when(deviceEventMapper.selectSharedEvents(1001L, 41L, null, null, 100)).thenReturn(List.of(event));
+
+        List<SharedDeviceEventDTO> result = service.querySharedEvents(1001L, 41L, null, null, null);
+
+        assertEquals(1, result.size());
+        assertEquals("alarm", result.getFirst().getEventType());
+    }
+
+    @Test
     void shouldRejectSharedLatestQueryWhenDeviceBelongsToDifferentOwnerTenant() {
         SharedDeviceReadService service = new SharedDeviceReadService(
                 deviceMapper,
                 productMapper,
                 deviceTelemetryMapper,
+                deviceEventMapper,
                 new ObjectMapper()
         );
         Device device = new Device();
@@ -97,6 +129,7 @@ class SharedDeviceReadServiceTest {
                 deviceMapper,
                 productMapper,
                 deviceTelemetryMapper,
+                deviceEventMapper,
                 new ObjectMapper()
         );
         Device device = new Device();

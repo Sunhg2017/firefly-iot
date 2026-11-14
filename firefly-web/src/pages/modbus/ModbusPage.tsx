@@ -104,7 +104,10 @@ interface CollectorFormValues {
 
 interface CollectorRuntimeStatus {
   running: boolean;
-  checkedAt: number;
+  lastCollectAt?: string | null;
+  lastAttemptAt?: string | null;
+  lastError?: string | null;
+  consecutiveFailures?: number;
 }
 
 const cardStyle: React.CSSProperties = {
@@ -248,7 +251,7 @@ const ModbusPage: React.FC = () => {
   const [statusTaskId, setStatusTaskId] = useState<string | null>(null);
   const [statusInfo, setStatusInfo] = useState<{
     task: CollectorTask;
-    running: boolean;
+    status: CollectorRuntimeStatus;
     checkedAt: number;
   } | null>(null);
 
@@ -303,6 +306,16 @@ const ModbusPage: React.FC = () => {
     } catch (error) {
       // 保留上一次的采集任务列表，错误由 Alert 明确暴露。
       setCollectorsError(getErrorMessage(error, '加载采集任务失败'));
+    }
+
+    // 运行状态是独立接口：失败不影响任务配置列表展示，但用户仍能看到“状态暂不可用”。
+    try {
+      const runtimeRes = await modbusApi.collectorRuntime();
+      if (runtimeRes.data?.data && typeof runtimeRes.data.data === 'object') {
+        setRuntimeStatus(runtimeRes.data.data as Record<string, CollectorRuntimeStatus>);
+      }
+    } catch {
+      // 状态接口失败时保留上一次状态，避免把已有状态清空成“未查询”。
     }
   }, []);
 
@@ -616,13 +629,13 @@ const ModbusPage: React.FC = () => {
     setStatusTaskId(task.taskId);
     try {
       const res = await modbusApi.collectorStatus(task.taskId);
-      const running = Boolean(res.data?.data);
+      const status = (res.data?.data ?? { running: false }) as CollectorRuntimeStatus;
       const checkedAt = Date.now();
       setRuntimeStatus((previous) => ({
         ...previous,
-        [task.taskId]: { running, checkedAt },
+        [task.taskId]: status,
       }));
-      setStatusInfo({ task, running, checkedAt });
+      setStatusInfo({ task, status, checkedAt });
     } catch (error) {
       message.error(`${getErrorMessage(error, '查询采集任务状态失败')}（任务 ${task.taskId}）`);
     } finally {
@@ -766,18 +779,52 @@ const ModbusPage: React.FC = () => {
     },
     {
       title: '运行状态',
-      width: 130,
+      width: 120,
       render: (_value, record) => {
         const status = runtimeStatus[record.taskId];
         if (!status) {
-          return <Typography.Text type="secondary">未查询</Typography.Text>;
+          return <Typography.Text type="secondary">状态加载中</Typography.Text>;
+        }
+        if (status.running) {
+          return <Tag color="success">运行中</Tag>;
+        }
+        return <Tag color="default">未运行</Tag>;
+      },
+    },
+    {
+      title: '最近采集',
+      width: 170,
+      render: (_value, record) => {
+        const status = runtimeStatus[record.taskId];
+        if (!status?.lastCollectAt) {
+          return <Typography.Text type="secondary">尚未采集成功</Typography.Text>;
         }
         return (
-          <Tooltip title={`查询于 ${formatDateTime(status.checkedAt)}`}>
-            {status.running
-              ? <Tag color="success">运行中</Tag>
-              : <Tag color="default">未运行</Tag>}
+          <Tooltip title={`最近尝试：${status.lastAttemptAt ? formatDateTime(status.lastAttemptAt) : '-'}`}>
+            <Typography.Text>{formatDateTime(status.lastCollectAt)}</Typography.Text>
           </Tooltip>
+        );
+      },
+    },
+    {
+      title: '最近错误',
+      width: 220,
+      render: (_value, record) => {
+        const status = runtimeStatus[record.taskId];
+        if (!status?.lastError) {
+          return <Typography.Text type="secondary">-</Typography.Text>;
+        }
+        return (
+          <Space direction="vertical" size={2} style={{ maxWidth: 220 }}>
+            <Typography.Text type="danger" ellipsis={{ tooltip: status.lastError }}>
+              {status.lastError}
+            </Typography.Text>
+            {status.consecutiveFailures ? (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                连续失败 {status.consecutiveFailures} 次
+              </Typography.Text>
+            ) : null}
+          </Space>
         );
       },
     },
@@ -786,7 +833,7 @@ const ModbusPage: React.FC = () => {
       width: 190,
       render: (_value, record) => (
         <Space size={4} wrap>
-          <Tooltip title="后端仅返回任务是否在运行，不包含最近采集时间">
+          <Tooltip title="重新查询任务的运行状态与最近采集时间">
             <Button
               type="link"
               size="small"
@@ -795,7 +842,7 @@ const ModbusPage: React.FC = () => {
               disabled={Boolean(statusTaskId) && statusTaskId !== record.taskId}
               onClick={() => void handleCheckCollectorStatus(record)}
             >
-              查看状态
+              刷新状态
             </Button>
           </Tooltip>
           <Popconfirm
@@ -1229,15 +1276,24 @@ const ModbusPage: React.FC = () => {
               {statusInfo.task.target.host}:{statusInfo.task.target.port}（Slave {statusInfo.task.target.slaveId} / {statusInfo.task.target.mode}）
             </Descriptions.Item>
             <Descriptions.Item label="运行状态">
-              {statusInfo.running
+              {statusInfo.status.running
                 ? <Tag color="success">运行中</Tag>
                 : <Tag color="default">未运行</Tag>}
             </Descriptions.Item>
+            <Descriptions.Item label="最近成功采集">
+              {statusInfo.status.lastCollectAt ? formatDateTime(statusInfo.status.lastCollectAt) : '尚未采集成功'}
+            </Descriptions.Item>
+            <Descriptions.Item label="最近采集尝试">
+              {statusInfo.status.lastAttemptAt ? formatDateTime(statusInfo.status.lastAttemptAt) : '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="连续失败次数">
+              {statusInfo.status.consecutiveFailures ?? 0}
+            </Descriptions.Item>
+            <Descriptions.Item label="最近错误">
+              {statusInfo.status.lastError ? <CopyText text={statusInfo.status.lastError} /> : '-'}
+            </Descriptions.Item>
             <Descriptions.Item label="查询时间">
               {formatDateTime(statusInfo.checkedAt)}
-            </Descriptions.Item>
-            <Descriptions.Item label="说明">
-              后端状态接口只返回任务是否在调度器中运行，不包含最近采集时间。
             </Descriptions.Item>
           </Descriptions>
         ) : null}

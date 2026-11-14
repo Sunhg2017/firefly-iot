@@ -2,6 +2,7 @@ package com.songhg.firefly.iot.connector.protocol;
 
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresLogin;
+import com.songhg.firefly.iot.connector.protocol.dto.ModbusCollectorStatus;
 import com.songhg.firefly.iot.connector.protocol.dto.ModbusCollectorTask;
 import com.songhg.firefly.iot.connector.protocol.dto.ModbusRegisterDef;
 import com.songhg.firefly.iot.connector.protocol.dto.ModbusTarget;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Modbus 操作接口 — 提供 Modbus TCP 连接测试、寄存器读写、采集任务管理
@@ -126,11 +128,17 @@ public class ModbusController {
         return R.ok(collectorService.listTasks());
     }
 
-    @Operation(summary = "检查采集任务是否运行中")
+    @Operation(summary = "查询采集任务运行状态")
     @GetMapping("/collectors/{taskId}/status")
-    public R<Boolean> collectorStatus(
+    public R<ModbusCollectorStatus> collectorStatus(
             @Parameter(description = "待检查采集任务编号", required = true) @PathVariable String taskId) {
-        return R.ok(collectorService.isRunning(taskId));
+        return R.ok(collectorService.getStatus(taskId));
+    }
+
+    @Operation(summary = "批量查询采集任务运行状态")
+    @GetMapping("/collectors/runtime")
+    public R<Map<String, ModbusCollectorStatus>> collectorRuntimeStatuses() {
+        return R.ok(collectorService.getStatuses());
     }
 
     // ==================== Helpers ====================

@@ -130,3 +130,11 @@
 
 - 旧库中若存在 `scope` 为空、`scope` 非法 JSON、或数据权限缺失的共享策略，需要运维清理或重建。
 - 当前交付只覆盖共享设备列表、最新属性、历史遥测查询；实时订阅链路不在本次实现范围内，不再把未落地接口继续视为已完成能力。
+
+## 2026-11-15 更新：权限/限流/有效期执行
+
+- `dataPermissions.events` 已生效，并新增共享事件读取接口 `GET /api/v1/shared/devices/{deviceId}/events`。
+- `rateLimit`（qps / dailyLimit）通过 Redis 原子计数执行，超限返回 `14001`；Redis 故障 fail-open 并告警。
+- `validity`（startTime / endTime）在所有按策略读取的入口校验，未生效/过期返回 `14002`。
+- 共享事件的 payload 按 `maskingRules` 脱敏，审计动作 `QUERY_EVENTS`。
+- 详细设计见 [共享数据与连接器能力补齐设计说明](shared-data-and-connector-remediation.md)。

@@ -140,3 +140,10 @@ order by action;
    - `role_permissions`
 
 默认不建议回滚权限数据，避免再次出现控制器权限与系统台账不一致。
+
+## 2026-11-15 更新：限流/有效期运维
+
+- 限流依赖 Redis key `firefly:share:rate:{policyId}:qps:{epochSecond}` 与 `...:daily:{yyyyMMdd}`；Redis 不可用时 fail-open，需监控 `Share rate limit check failed` 日志。
+- 策略有效期按服务端本地时间判断；未生效/过期返回 `14002`。
+- 共享事件读取新增内部接口链路，排查时依次检查 rule → device 内部接口 → `device_events`。
+- 详见 [共享数据与连接器能力补齐运维说明](shared-data-and-connector-remediation.md)。

@@ -2,6 +2,7 @@ package com.songhg.firefly.iot.api.client;
 
 import com.songhg.firefly.iot.api.dto.DeviceTelemetryPointDTO;
 import com.songhg.firefly.iot.api.dto.DeviceTelemetrySnapshotDTO;
+import com.songhg.firefly.iot.api.dto.SharedDeviceEventDTO;
 import com.songhg.firefly.iot.api.dto.SharedDeviceTelemetryQueryDTO;
 import com.songhg.firefly.iot.common.result.R;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -22,4 +23,11 @@ public interface DeviceDataClient {
 
     @PostMapping("/shared/query")
     R<List<DeviceTelemetryPointDTO>> querySharedTelemetry(@RequestBody SharedDeviceTelemetryQueryDTO dto);
+
+    @GetMapping("/shared/{deviceId}/events")
+    R<List<SharedDeviceEventDTO>> querySharedEvents(@PathVariable("deviceId") Long deviceId,
+                                                     @RequestParam("ownerTenantId") Long ownerTenantId,
+                                                     @RequestParam(value = "startTime", required = false) String startTime,
+                                                     @RequestParam(value = "endTime", required = false) String endTime,
+                                                     @RequestParam(value = "limit", required = false) Integer limit);
 }

@@ -5,12 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.api.dto.DeviceBasicVO;
 import com.songhg.firefly.iot.api.dto.DeviceTelemetryPointDTO;
 import com.songhg.firefly.iot.api.dto.DeviceTelemetrySnapshotDTO;
+import com.songhg.firefly.iot.api.dto.SharedDeviceEventDTO;
 import com.songhg.firefly.iot.api.dto.SharedDeviceResolveRequestDTO;
 import com.songhg.firefly.iot.api.dto.SharedDeviceTelemetryQueryDTO;
 import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.device.entity.Device;
 import com.songhg.firefly.iot.device.entity.Product;
+import com.songhg.firefly.iot.device.mapper.DeviceEventMapper;
 import com.songhg.firefly.iot.device.mapper.DeviceMapper;
 import com.songhg.firefly.iot.device.mapper.DeviceTelemetryMapper;
 import com.songhg.firefly.iot.device.mapper.ProductMapper;
@@ -18,6 +20,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -31,6 +36,7 @@ public class SharedDeviceReadService {
     private final DeviceMapper deviceMapper;
     private final ProductMapper productMapper;
     private final DeviceTelemetryMapper deviceTelemetryMapper;
+    private final DeviceEventMapper deviceEventMapper;
     private final ObjectMapper objectMapper;
 
     public List<DeviceBasicVO> resolveSharedDevices(SharedDeviceResolveRequestDTO dto) {
@@ -66,6 +72,41 @@ public class SharedDeviceReadService {
                 dto.getEndTime(),
                 dto.getLimit()
         );
+    }
+
+    /**
+     * 共享设备事件查询。调用方必须先通过共享策略校验，这里只做所有方租户与设备归属校验。
+     */
+    public List<SharedDeviceEventDTO> querySharedEvents(Long ownerTenantId,
+                                                        Long deviceId,
+                                                        String startTime,
+                                                        String endTime,
+                                                        Integer limit) {
+        requireOwnerTenantId(ownerTenantId);
+        requireOwnedDevice(ownerTenantId, deviceId);
+        int normalizedLimit = limit == null || limit <= 0 ? 100 : Math.min(limit, 1000);
+        return deviceEventMapper.selectSharedEvents(
+                ownerTenantId,
+                deviceId,
+                parseEventTime(startTime, "startTime"),
+                parseEventTime(endTime, "endTime"),
+                normalizedLimit
+        );
+    }
+
+    private LocalDateTime parseEventTime(String rawValue, String fieldName) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(rawValue).toLocalDateTime();
+        } catch (DateTimeParseException ignored) {
+            try {
+                return LocalDateTime.parse(rawValue);
+            } catch (DateTimeParseException ex) {
+                throw new BizException(ResultCode.PARAM_ERROR, fieldName + "必须是合法的 ISO 日期时间");
+            }
+        }
     }
 
     private Long requireOwnerTenantId(Long ownerTenantId) {

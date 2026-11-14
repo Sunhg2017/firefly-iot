@@ -2,6 +2,7 @@ package com.songhg.firefly.iot.device.controller;
 
 import com.songhg.firefly.iot.api.dto.DeviceTelemetryPointDTO;
 import com.songhg.firefly.iot.api.dto.DeviceTelemetrySnapshotDTO;
+import com.songhg.firefly.iot.api.dto.SharedDeviceEventDTO;
 import com.songhg.firefly.iot.api.dto.SharedDeviceTelemetryQueryDTO;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.device.service.SharedDeviceReadService;
@@ -37,5 +38,16 @@ public class InternalDeviceDataController {
     @Operation(summary = "查询共享设备历史遥测")
     public R<List<DeviceTelemetryPointDTO>> querySharedTelemetry(@RequestBody SharedDeviceTelemetryQueryDTO dto) {
         return R.ok(sharedDeviceReadService.querySharedTelemetry(dto));
+    }
+
+    @GetMapping("/shared/{deviceId}/events")
+    @Operation(summary = "查询共享设备事件")
+    public R<List<SharedDeviceEventDTO>> querySharedEvents(
+            @PathVariable Long deviceId,
+            @RequestParam Long ownerTenantId,
+            @RequestParam(required = false) String startTime,
+            @RequestParam(required = false) String endTime,
+            @RequestParam(required = false) Integer limit) {
+        return R.ok(sharedDeviceReadService.querySharedEvents(ownerTenantId, deviceId, startTime, endTime, limit));
     }
 }

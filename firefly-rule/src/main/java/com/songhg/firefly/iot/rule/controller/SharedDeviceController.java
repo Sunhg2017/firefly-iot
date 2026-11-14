@@ -2,6 +2,7 @@ package com.songhg.firefly.iot.rule.controller;
 
 import com.songhg.firefly.iot.api.dto.DeviceTelemetryPointDTO;
 import com.songhg.firefly.iot.api.dto.DeviceTelemetrySnapshotDTO;
+import com.songhg.firefly.iot.api.dto.SharedDeviceEventDTO;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.common.security.RequiresPermission;
 import com.songhg.firefly.iot.rule.dto.share.SharedDeviceVO;
@@ -60,6 +61,26 @@ public class SharedDeviceController {
                 policyId,
                 deviceId,
                 property,
+                startTime,
+                endTime,
+                limit,
+                resolveClientIp(request)
+        ));
+    }
+
+    @GetMapping("/devices/{deviceId}/events")
+    @RequiresPermission("share:read")
+    @Operation(summary = "查询共享设备事件")
+    public R<List<SharedDeviceEventDTO>> querySharedEvents(
+            @Parameter(description = "设备编号", required = true) @PathVariable Long deviceId,
+            @Parameter(description = "共享策略编号", required = true) @RequestParam Long policyId,
+            @RequestParam(required = false) String startTime,
+            @RequestParam(required = false) String endTime,
+            @RequestParam(required = false) Integer limit,
+            HttpServletRequest request) {
+        return R.ok(sharedDeviceService.querySharedEvents(
+                policyId,
+                deviceId,
                 startTime,
                 endTime,
                 limit,

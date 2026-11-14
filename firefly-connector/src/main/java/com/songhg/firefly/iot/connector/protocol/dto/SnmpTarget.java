@@ -20,8 +20,9 @@ public class SnmpTarget {
     private int version = 2; // 1, 2 (v2c), 3
     @Builder.Default
     private String community = "public";
-    // v3 fields (future)
+    // v3 fields
     private String securityName;
+    private String securityLevel;
     private String authProtocol;
     private String authPassphrase;
     private String privProtocol;

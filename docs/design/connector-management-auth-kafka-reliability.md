@@ -69,3 +69,9 @@
 
 - [运维说明](../operations/connector-management-auth-kafka-reliability.md)
 - [使用说明](../user-guide/connector-management-auth-kafka-reliability.md)
+
+## 2026-11-15 更新：SNMPv3 与 Modbus 采集状态
+
+- SNMPv3 使用 `UserTarget + USM`，支持 MD5/SHA/SHA-2 认证与 DES/AES/3DES 加密，安全级别可按口令推断。
+- Modbus 采集任务新增运行状态对象：`running / lastCollectAt / lastAttemptAt / lastError / consecutiveFailures`，并提供 `/collectors/runtime` 批量查询。
+- 详见 [共享数据与连接器能力补齐设计说明](shared-data-and-connector-remediation.md)。

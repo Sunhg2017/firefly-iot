@@ -59,7 +59,12 @@ public class AuditLogAspect {
             auditLog.setRequestUrl(request.getRequestURI());
             auditLog.setClientIp(getClientIp(request));
             auditLog.setUserAgent(request.getHeader("User-Agent"));
-            auditLog.setUsername(request.getHeader("X-User-Name"));
+            String usernameHeader = request.getHeader("X-User-Name");
+            // 网关注入的请求头可能缺失（内部调用、直连服务），必须回退到登录上下文，
+            // 否则审计详情只能显示“未记录用户名”。
+            auditLog.setUsername(usernameHeader != null && !usernameHeader.isBlank()
+                    ? usernameHeader.trim()
+                    : AppContextHolder.getUsername());
 
             String queryString = request.getQueryString();
             if (queryString != null && queryString.length() <= 2000) {

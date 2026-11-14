@@ -19,4 +19,23 @@
         )
     </delete>
 
+    <!--
+      跨租户共享事件查询：由共享策略解析出的所有方租户 + 设备编号 + 可选时间窗口组成。
+      方法通过 @InterceptorIgnore(tenantLine = "true") 跳过租户隔离，避免消费方租户上下文误过滤。
+    -->
+    <select id="selectSharedEvents" resultType="com.songhg.firefly.iot.api.dto.SharedDeviceEventDTO">
+        SELECT event_type, event_name, level, payload, occurred_at
+        FROM device_events
+        WHERE tenant_id = #{ownerTenantId}
+          AND device_id = #{deviceId}
+        <if test="startTime != null">
+          AND occurred_at &gt;= #{startTime}
+        </if>
+        <if test="endTime != null">
+          AND occurred_at &lt;= #{endTime}
+        </if>
+        ORDER BY occurred_at DESC
+        LIMIT #{limit}
+    </select>
+
 </mapper>

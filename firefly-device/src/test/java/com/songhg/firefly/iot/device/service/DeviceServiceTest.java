@@ -15,9 +15,11 @@ import com.songhg.firefly.iot.common.mybatis.DataScopeResolver;
 import com.songhg.firefly.iot.device.dto.device.DeviceBatchCreateDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceBatchCreateItemDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceCreateDTO;
+import com.songhg.firefly.iot.device.dto.device.DeviceTripleExportDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceTopologyQueryDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceTopologyVO;
 import com.songhg.firefly.iot.device.entity.Device;
+import com.songhg.firefly.iot.device.entity.DeviceVideoProfile;
 import com.songhg.firefly.iot.device.entity.Product;
 import com.songhg.firefly.iot.device.mapper.DeviceMapper;
 import com.songhg.firefly.iot.device.mapper.DeviceVideoChannelMapper;
@@ -33,6 +35,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -67,6 +70,26 @@ class DeviceServiceTest {
     @AfterEach
     void tearDown() {
         AppContextHolder.clear();
+    }
+
+    @Test
+    void exportDeviceTriplesShouldApplyGroupAndVideoFilters() {
+        AppContextHolder.setTenantId(1L);
+        DeviceTripleExportDTO dto = new DeviceTripleExportDTO();
+        dto.setGroupId(5L);
+        dto.setExcludeVideo(true);
+
+        DeviceVideoProfile videoProfile = new DeviceVideoProfile();
+        videoProfile.setDeviceId(9L);
+
+        when(deviceGroupService.listDeviceIdsByGroup(5L)).thenReturn(List.of(7L, 8L));
+        when(deviceVideoProfileMapper.selectList(any())).thenReturn(List.of(videoProfile));
+        when(deviceMapper.selectList(any())).thenReturn(List.of());
+
+        assertTrue(service.exportDeviceTriples(dto).isEmpty());
+        verify(deviceGroupService).listDeviceIdsByGroup(5L);
+        verify(deviceVideoProfileMapper).selectList(any());
+        verify(deviceMapper).selectList(any());
     }
 
     @Test

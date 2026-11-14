@@ -95,7 +95,11 @@ public enum ResultCode {
 
     // 数据流转错误 13xxx
     DATA_FORWARD_RULE_NOT_FOUND(13001, "数据流转规则不存在"),
-    EVENT_SUBSCRIPTION_NOT_FOUND(13002, "事件订阅不存在");
+    EVENT_SUBSCRIPTION_NOT_FOUND(13002, "事件订阅不存在"),
+
+    // 跨租户共享错误 14xxx
+    SHARE_RATE_LIMITED(14001, "共享策略调用频率超限"),
+    SHARE_POLICY_NOT_EFFECTIVE(14002, "共享策略尚未生效或已过期");
 
     private final int code;
     private final String message;

@@ -42,3 +42,10 @@
 - `docs/design/detailed-design-device-management.md`
 - `docs/operations/device-management-operations.md`
 - `docs/user-guide/device-management-guide.md`
+
+## 2026-11-15 更新：三元组导出范围
+
+- 导出任务支持 `groupId` 与 `excludeVideo`，与设备列表筛选同口径。
+- 显式传入设备 ID 时按设备 ID 精确导出；单次最多 1000 台。
+- 导出文件包含设备密钥，需控制下载与留存。
+- 详见 [共享数据与连接器能力补齐运维说明](shared-data-and-connector-remediation.md)。

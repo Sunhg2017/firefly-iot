@@ -542,13 +542,9 @@ const DeviceList: React.FC = () => {
       message.warning('单次最多导出 1000 台设备，请减少勾选数量');
       return;
     }
-    if (selectedDeviceIds.length === 0) {
-      if (total === 0) { message.warning('暂无可导出的设备'); return; }
-      // 导出接口按设备 ID 精确导出；分组筛选无法直接下发到后端，因此必须先勾选设备，避免导出范围与列表不一致。
-      if (filters.groupId != null) {
-        message.warning('当前按分组筛选，导出前请先勾选要导出的设备');
-        return;
-      }
+    if (selectedDeviceIds.length === 0 && total === 0) {
+      message.warning('暂无可导出的设备');
+      return;
     }
     try {
       setExporting(true);

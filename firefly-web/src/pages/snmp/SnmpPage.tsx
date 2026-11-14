@@ -18,7 +18,6 @@ import {
   Table,
   Tabs,
   Tag,
-  Tooltip,
   Typography,
   message,
 } from 'antd';
@@ -27,7 +26,6 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   DeleteOutlined,
-  InfoCircleOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -56,6 +54,12 @@ interface SnmpTarget {
   port: number;
   version: number;
   community: string;
+  securityName?: string;
+  securityLevel?: string;
+  authProtocol?: string;
+  authPassphrase?: string;
+  privProtocol?: string;
+  privPassphrase?: string;
   [key: string]: unknown;
 }
 
@@ -80,6 +84,12 @@ interface TargetFormValues {
   port?: number;
   version?: number;
   community?: string;
+  securityName?: string;
+  securityLevel?: string;
+  authProtocol?: string;
+  authPassphrase?: string;
+  privProtocol?: string;
+  privPassphrase?: string;
 }
 
 interface CollectorFormValues {
@@ -88,6 +98,12 @@ interface CollectorFormValues {
   port?: number;
   version?: number;
   community?: string;
+  securityName?: string;
+  securityLevel?: string;
+  authProtocol?: string;
+  authPassphrase?: string;
+  privProtocol?: string;
+  privPassphrase?: string;
   intervalMs?: number;
   oids: OidRow[];
   productId?: number;
@@ -112,9 +128,28 @@ const OID_PATTERN = /^\.?\d+(\.\d+)+$/;
 const SNMP_VERSION_OPTIONS = [
   { value: 1, label: 'v1' },
   { value: 2, label: 'v2c' },
-  // 后端 SnmpController 虽然接收 v3 字段，但 SnmpService 仍用 CommunityTarget 且未注册 USM 用户，
-  // 选中 v3 会必然失败；在服务端补齐 v3 认证实现前禁用该选项。
-  { value: 3, label: 'v3（当前后端未开放）', disabled: true },
+  { value: 3, label: 'v3（USM）' },
+];
+
+const SNMP_SECURITY_LEVEL_OPTIONS = [
+  { value: 'NOAUTH_NOPRIV', label: 'noAuthNoPriv' },
+  { value: 'AUTH_NOPRIV', label: 'authNoPriv' },
+  { value: 'AUTH_PRIV', label: 'authPriv' },
+];
+
+const SNMP_AUTH_PROTOCOL_OPTIONS = [
+  { value: 'MD5', label: 'MD5' },
+  { value: 'SHA', label: 'SHA-1' },
+  { value: 'SHA256', label: 'SHA-256' },
+  { value: 'SHA384', label: 'SHA-384' },
+  { value: 'SHA512', label: 'SHA-512' },
+];
+
+const SNMP_PRIV_PROTOCOL_OPTIONS = [
+  { value: 'DES', label: 'DES' },
+  { value: 'AES128', label: 'AES-128' },
+  { value: 'AES192', label: 'AES-192' },
+  { value: 'AES256', label: 'AES-256' },
 ];
 
 const formatClock = (value: Date | null) => (value ? dayjs(value).format('HH:mm:ss') : '--:--:--');
@@ -145,6 +180,8 @@ const SnmpPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState('tools');
   const [targetForm] = Form.useForm<TargetFormValues>();
   const [collectorForm] = Form.useForm<CollectorFormValues>();
+  const targetVersion = Form.useWatch('version', targetForm) ?? 2;
+  const collectorVersion = Form.useWatch('version', collectorForm) ?? 2;
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<boolean | null>(null);
@@ -289,15 +326,35 @@ const SnmpPage: React.FC = () => {
     };
   }, [activeTab, refreshCollectors]);
 
-  const getTarget = (): SnmpTarget => {
-    const values = targetForm.getFieldsValue();
+  /**
+   * 统一构造 SNMP 目标：v3 按填写的口令推断安全级别，避免用户选 AUTH_PRIV 却没有加密口令。
+   */
+  const buildSnmpTarget = (values: Partial<TargetFormValues & CollectorFormValues>): SnmpTarget => {
+    const version = values.version || 2;
+    const host = values.host?.trim() || '';
+    const port = values.port || 161;
+    if (version !== 3) {
+      return { host, port, version, community: values.community?.trim() || 'public' };
+    }
+    const authPassphrase = values.authPassphrase?.trim() || undefined;
+    const privPassphrase = values.privPassphrase?.trim() || undefined;
+    const securityLevel = values.securityLevel
+      || (authPassphrase ? (privPassphrase ? 'AUTH_PRIV' : 'AUTH_NOPRIV') : 'NOAUTH_NOPRIV');
     return {
-      host: values.host?.trim() || '',
-      port: values.port || 161,
-      version: values.version || 2,
-      community: values.community?.trim() || 'public',
+      host,
+      port,
+      version,
+      community: '',
+      securityName: values.securityName?.trim(),
+      securityLevel,
+      authProtocol: authPassphrase ? (values.authProtocol || 'SHA') : undefined,
+      authPassphrase,
+      privProtocol: privPassphrase ? (values.privProtocol || 'AES128') : undefined,
+      privPassphrase,
     };
   };
+
+  const getTarget = (): SnmpTarget => buildSnmpTarget(targetForm.getFieldsValue());
 
   const clearTargetResults = () => {
     // 目标字段一变化就作废上一次测试/读取（包括在途请求），避免旧目标的结果回填。
@@ -513,12 +570,7 @@ const SnmpPage: React.FC = () => {
     try {
       await snmpApi.registerCollector({
         taskId: values.taskId,
-        target: {
-          host: values.host,
-          port: values.port || 161,
-          version: values.version || 2,
-          community: values.community || 'public',
-        },
+        target: buildSnmpTarget(values),
         oids,
         oidAliases: Object.keys(oidAliases).length > 0 ? oidAliases : null,
         intervalMs: values.intervalMs || 60000,
@@ -744,22 +796,35 @@ const SnmpPage: React.FC = () => {
                     <Form.Item label="端口" name="port">
                       <InputNumber min={1} max={65535} style={{ width: 100 }} />
                     </Form.Item>
-                    <Form.Item
-                      label={(
-                        <Space size={4}>
-                          版本
-                          <Tooltip title="当前后端未开放 v3（缺少 USM 认证实现），请使用 v1/v2c">
-                            <InfoCircleOutlined style={{ color: '#94a3b8' }} />
-                          </Tooltip>
-                        </Space>
-                      )}
-                      name="version"
-                    >
+                    <Form.Item label="版本" name="version">
                       <Select style={{ width: 150 }} options={SNMP_VERSION_OPTIONS} />
                     </Form.Item>
-                    <Form.Item label="Community" name="community" rules={[{ required: true, message: '请输入 Community' }]}>
-                      <Input placeholder="public" style={{ width: 140 }} />
-                    </Form.Item>
+                    {targetVersion === 3 ? (
+                      <>
+                        <Form.Item label="安全名称" name="securityName" rules={[{ required: true, message: '请输入安全名称' }]}>
+                          <Input placeholder="snmpuser" style={{ width: 140 }} />
+                        </Form.Item>
+                        <Form.Item label="安全级别" name="securityLevel">
+                          <Select allowClear placeholder="按口令推断" style={{ width: 150 }} options={SNMP_SECURITY_LEVEL_OPTIONS} />
+                        </Form.Item>
+                        <Form.Item label="认证协议" name="authProtocol">
+                          <Select style={{ width: 120 }} options={SNMP_AUTH_PROTOCOL_OPTIONS} />
+                        </Form.Item>
+                        <Form.Item label="认证口令" name="authPassphrase">
+                          <Input.Password placeholder="至少 8 位" style={{ width: 160 }} />
+                        </Form.Item>
+                        <Form.Item label="加密协议" name="privProtocol">
+                          <Select style={{ width: 120 }} options={SNMP_PRIV_PROTOCOL_OPTIONS} />
+                        </Form.Item>
+                        <Form.Item label="加密口令" name="privPassphrase">
+                          <Input.Password placeholder="至少 8 位" style={{ width: 160 }} />
+                        </Form.Item>
+                      </>
+                    ) : (
+                      <Form.Item label="Community" name="community" rules={[{ required: true, message: '请输入 Community' }]}>
+                        <Input placeholder="public" style={{ width: 140 }} />
+                      </Form.Item>
+                    )}
                     <Form.Item>
                       <Space>
                         <Button icon={<CheckCircleOutlined />} loading={testing} onClick={() => void handleTest()}>
@@ -1000,34 +1065,65 @@ const SnmpPage: React.FC = () => {
               </Form.Item>
             </Col>
             <Col span={6}>
-              <Form.Item
-                name="version"
-                label={(
-                  <Space size={4}>
-                    SNMP 版本
-                    <Tooltip title="当前后端未开放 v3（缺少 USM 认证实现），请使用 v1/v2c">
-                      <InfoCircleOutlined style={{ color: '#94a3b8' }} />
-                    </Tooltip>
-                  </Space>
-                )}
-              >
+              <Form.Item name="version" label="SNMP 版本">
                 <Select options={SNMP_VERSION_OPTIONS} />
               </Form.Item>
             </Col>
           </Row>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="community" label="Community" rules={[{ required: true, message: '请输入 Community' }]}>
-                <Input placeholder="public" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="intervalMs" label="采集周期 (ms)">
-                <InputNumber min={5000} step={5000} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-          </Row>
+          {collectorVersion === 3 ? (
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item name="securityName" label="安全名称" rules={[{ required: true, message: '请输入安全名称' }]}>
+                  <Input placeholder="snmpuser" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="securityLevel" label="安全级别" extra="留空时按认证/加密口令自动推断">
+                  <Select allowClear placeholder="按口令推断" options={SNMP_SECURITY_LEVEL_OPTIONS} />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="authProtocol" label="认证协议">
+                  <Select options={SNMP_AUTH_PROTOCOL_OPTIONS} />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="authPassphrase" label="认证口令" extra="至少 8 位；留空表示 noAuthNoPriv">
+                  <Input.Password placeholder="至少 8 位" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="privProtocol" label="加密协议">
+                  <Select options={SNMP_PRIV_PROTOCOL_OPTIONS} />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="privPassphrase" label="加密口令" extra="填写后按 authPriv 加密">
+                  <Input.Password placeholder="至少 8 位" />
+                </Form.Item>
+              </Col>
+            </Row>
+          ) : (
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item name="community" label="Community" rules={[{ required: true, message: '请输入 Community' }]}>
+                  <Input placeholder="public" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="intervalMs" label="采集周期 (ms)">
+                  <InputNumber min={5000} step={5000} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+            </Row>
+          )}
+
+          {collectorVersion === 3 ? (
+            <Form.Item name="intervalMs" label="采集周期 (ms)">
+              <InputNumber min={5000} step={5000} style={{ width: '100%' }} />
+            </Form.Item>
+          ) : null}
 
           <Form.List
             name="oids"

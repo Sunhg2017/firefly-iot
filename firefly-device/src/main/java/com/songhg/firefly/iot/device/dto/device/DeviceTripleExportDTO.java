@@ -22,6 +22,12 @@ public class DeviceTripleExportDTO {
     @Schema(description = "产品ID")
     private Long productId;
 
+    @Schema(description = "设备分组ID")
+    private Long groupId;
+
+    @Schema(description = "是否排除视频设备")
+    private Boolean excludeVideo;
+
     @Schema(description = "设备状态")
     private DeviceStatus status;
 

@@ -5,6 +5,7 @@ import com.songhg.firefly.iot.api.client.DeviceClient;
 import com.songhg.firefly.iot.api.client.DeviceDataClient;
 import com.songhg.firefly.iot.api.dto.DeviceBasicVO;
 import com.songhg.firefly.iot.api.dto.DeviceTelemetrySnapshotDTO;
+import com.songhg.firefly.iot.api.dto.SharedDeviceEventDTO;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.ShareStatus;
 import com.songhg.firefly.iot.common.exception.BizException;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -45,6 +47,9 @@ class SharedDeviceServiceTest {
     @Mock
     private DeviceDataClient deviceDataClient;
 
+    @Mock
+    private ShareRateLimiter rateLimiter;
+
     private SharedDeviceService sharedDeviceService;
 
     @BeforeEach
@@ -55,6 +60,7 @@ class SharedDeviceServiceTest {
                 policyMapper,
                 auditLogMapper,
                 new SharePolicyRuleSupport(new ObjectMapper()),
+                rateLimiter,
                 deviceClient,
                 deviceDataClient
         );
@@ -113,6 +119,50 @@ class SharedDeviceServiceTest {
 
         assertEquals(1, result.size());
         assertEquals("123****345", result.getFirst().getValueString());
+    }
+
+    @Test
+    void shouldRejectQueryWhenPolicyValidityExpired() {
+        SharePolicy policy = buildApprovedPolicy();
+        policy.setValidity("{\"endTime\":\"" + LocalDateTime.now().minusDays(1) + "\"}");
+        when(policyMapper.selectById(7L)).thenReturn(policy);
+
+        BizException ex = assertThrows(BizException.class, () -> sharedDeviceService.querySharedLatest(7L, 31L, "10.0.0.8"));
+
+        assertEquals(ResultCode.SHARE_POLICY_NOT_EFFECTIVE.getCode(), ex.getCode());
+    }
+
+    @Test
+    void shouldRejectEventsWhenPermissionMissing() {
+        SharePolicy policy = buildApprovedPolicy();
+        policy.setDataPermissions("{\"properties\":true,\"telemetry\":true,\"events\":false}");
+        when(policyMapper.selectById(7L)).thenReturn(policy);
+
+        BizException ex = assertThrows(BizException.class,
+                () -> sharedDeviceService.querySharedEvents(7L, 31L, null, null, 10, "10.0.0.8"));
+
+        assertEquals(ResultCode.PERMISSION_DENIED.getCode(), ex.getCode());
+    }
+
+    @Test
+    void shouldReturnSharedEventsWhenPermissionGranted() {
+        SharePolicy policy = buildApprovedPolicy();
+        policy.setDataPermissions("{\"properties\":true,\"telemetry\":true,\"events\":true}");
+        DeviceBasicVO device = buildDevice();
+        SharedDeviceEventDTO event = new SharedDeviceEventDTO();
+        event.setEventType("alarm");
+        event.setEventName("high-temperature");
+        event.setOccurredAt(LocalDateTime.now());
+
+        when(policyMapper.selectById(7L)).thenReturn(policy);
+        when(deviceClient.getDeviceBasic(31L)).thenReturn(R.ok(device));
+        when(deviceDataClient.querySharedEvents(31L, 1001L, null, null, 10)).thenReturn(R.ok(List.of(event)));
+
+        List<SharedDeviceEventDTO> result = sharedDeviceService.querySharedEvents(7L, 31L, null, null, 10, "10.0.0.8");
+
+        assertEquals(1, result.size());
+        assertEquals("alarm", result.getFirst().getEventType());
+        verify(rateLimiter).check(7L, SharePolicyRuleSupport.RateLimitConfig.none());
     }
 
     private SharePolicy buildApprovedPolicy() {

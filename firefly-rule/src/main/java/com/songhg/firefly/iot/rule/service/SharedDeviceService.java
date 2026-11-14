@@ -6,6 +6,7 @@ import com.songhg.firefly.iot.api.client.DeviceDataClient;
 import com.songhg.firefly.iot.api.dto.DeviceBasicVO;
 import com.songhg.firefly.iot.api.dto.DeviceTelemetryPointDTO;
 import com.songhg.firefly.iot.api.dto.DeviceTelemetrySnapshotDTO;
+import com.songhg.firefly.iot.api.dto.SharedDeviceEventDTO;
 import com.songhg.firefly.iot.api.dto.SharedDeviceResolveRequestDTO;
 import com.songhg.firefly.iot.api.dto.SharedDeviceTelemetryQueryDTO;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
@@ -38,12 +39,14 @@ public class SharedDeviceService {
     private final SharePolicyMapper policyMapper;
     private final ShareAuditLogMapper auditLogMapper;
     private final SharePolicyRuleSupport ruleSupport;
+    private final ShareRateLimiter rateLimiter;
     private final DeviceClient deviceClient;
     private final DeviceDataClient deviceDataClient;
 
     public List<SharedDeviceVO> listSharedDevices(Long policyId, String ipAddress) {
         if (policyId != null) {
             SharePolicy policy = getApprovedConsumedPolicyOrThrow(policyId);
+            enforceRateLimit(policy);
             return resolvePolicyDevices(policy, true, ipAddress);
         }
 
@@ -56,6 +59,11 @@ public class SharedDeviceService {
         List<SharedDeviceVO> result = new ArrayList<>();
         for (SharePolicy policy : policies) {
             try {
+                SharePolicyRuleSupport.ValidityWindow validity = ruleSupport.parseValidity(policy.getValidity());
+                if (!validity.isEffectiveAt(LocalDateTime.now())) {
+                    log.info("Skip shared policy outside validity window: policyId={}", policy.getId());
+                    continue;
+                }
                 result.addAll(resolvePolicyDevices(policy, false, ipAddress));
             } catch (BizException ex) {
                 log.warn("Skip invalid shared policy when resolving device list: policyId={}, message={}",
@@ -67,6 +75,7 @@ public class SharedDeviceService {
 
     public List<DeviceTelemetrySnapshotDTO> querySharedLatest(Long policyId, Long deviceId, String ipAddress) {
         SharePolicy policy = getApprovedConsumedPolicyOrThrow(policyId);
+        enforceRateLimit(policy);
         SharePolicyRuleSupport.PermissionConfig permissionConfig = ruleSupport.parsePermissions(policy.getDataPermissions());
         if (!permissionConfig.allowProperties()) {
             throw new BizException(ResultCode.PERMISSION_DENIED, "共享策略未授权读取设备最新属性");
@@ -90,6 +99,7 @@ public class SharedDeviceService {
                                                               Integer limit,
                                                               String ipAddress) {
         SharePolicy policy = getApprovedConsumedPolicyOrThrow(policyId);
+        enforceRateLimit(policy);
         SharePolicyRuleSupport.PermissionConfig permissionConfig = ruleSupport.parsePermissions(policy.getDataPermissions());
         if (!permissionConfig.allowTelemetry()) {
             throw new BizException(ResultCode.PERMISSION_DENIED, "共享策略未授权读取设备历史遥测");
@@ -123,6 +133,58 @@ public class SharedDeviceService {
         detail.put("limit", query.getLimit());
         recordAudit(policy, "QUERY_TELEMETRY", buildQueryDetail(policyId, device, detail), points.size(), ipAddress);
         return points;
+    }
+
+    /**
+     * 查询共享设备事件。仅当策略的 dataPermissions.events 为真时允许，并受有效期与频率限制约束。
+     */
+    public List<SharedDeviceEventDTO> querySharedEvents(Long policyId,
+                                                        Long deviceId,
+                                                        String startTime,
+                                                        String endTime,
+                                                        Integer limit,
+                                                        String ipAddress) {
+        SharePolicy policy = getApprovedConsumedPolicyOrThrow(policyId);
+        enforceRateLimit(policy);
+        SharePolicyRuleSupport.PermissionConfig permissionConfig = ruleSupport.parsePermissions(policy.getDataPermissions());
+        if (!permissionConfig.allowEvents()) {
+            throw new BizException(ResultCode.PERMISSION_DENIED, "共享策略未授权读取设备事件");
+        }
+
+        DeviceBasicVO device = requirePolicyDevice(policy, deviceId);
+        int normalizedLimit = limit == null || limit <= 0 ? 100 : Math.min(limit, 1000);
+        List<SharedDeviceEventDTO> events = unwrapList(
+                deviceDataClient.querySharedEvents(
+                        deviceId,
+                        policy.getOwnerTenantId(),
+                        normalizeEventTime(startTime, "startTime"),
+                        normalizeEventTime(endTime, "endTime"),
+                        normalizedLimit
+                ),
+                "读取共享设备事件失败"
+        );
+
+        applyEventMasking(policy, events);
+
+        Map<String, Object> detail = new LinkedHashMap<>();
+        if (startTime != null && !startTime.isBlank()) {
+            detail.put("startTime", startTime);
+        }
+        if (endTime != null && !endTime.isBlank()) {
+            detail.put("endTime", endTime);
+        }
+        detail.put("limit", normalizedLimit);
+        recordAudit(policy, "QUERY_EVENTS", buildQueryDetail(policyId, device, detail), events.size(), ipAddress);
+        return events;
+    }
+
+    private String normalizeEventTime(String rawValue, String fieldName) {
+        ruleSupport.parseDateTime(rawValue, fieldName);
+        return rawValue;
+    }
+
+    private void enforceRateLimit(SharePolicy policy) {
+        rateLimiter.check(policy.getId(), ruleSupport.parseRateLimit(policy.getRateLimit()));
     }
 
     private List<SharedDeviceVO> resolvePolicyDevices(SharePolicy policy, boolean failOnInvalidPolicy, String ipAddress) {
@@ -186,6 +248,10 @@ public class SharedDeviceService {
         if (!tenantId.equals(policy.getConsumerTenantId()) || policy.getStatus() != ShareStatus.APPROVED) {
             throw new BizException(ResultCode.NOT_FOUND, "共享策略不存在");
         }
+        SharePolicyRuleSupport.ValidityWindow validity = ruleSupport.parseValidity(policy.getValidity());
+        if (!validity.isEffectiveAt(LocalDateTime.now())) {
+            throw new BizException(ResultCode.SHARE_POLICY_NOT_EFFECTIVE, "共享策略尚未生效或已过期");
+        }
         return policy;
     }
 
@@ -208,6 +274,16 @@ public class SharedDeviceService {
             return ruleSupport.formatDateTime(earliestAllowed);
         }
         return startTime;
+    }
+
+    private void applyEventMasking(SharePolicy policy, List<SharedDeviceEventDTO> events) {
+        Map<String, String> rules = ruleSupport.parseMaskingRules(policy.getMaskingRules());
+        if (rules.isEmpty() || events == null || events.isEmpty()) {
+            return;
+        }
+        for (SharedDeviceEventDTO event : events) {
+            event.setPayload(ruleSupport.applyMaskingToPayload(event.getPayload(), rules));
+        }
     }
 
     private void applyMasking(SharePolicy policy, List<? extends Object> payload) {

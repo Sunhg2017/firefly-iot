@@ -106,6 +106,76 @@ interface SharePolicyFormValues {
   advancedValidity?: string;
 }
 
+function parseJsonObject(raw?: string | null): Record<string, unknown> | null {
+  if (!raw || !raw.trim()) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 把策略有效期转成“生效中 / 未生效 / 已过期 + 区间”，与后端执行口径保持一致。 */
+function describeValidity(raw?: string | null): { text: string; color: string } {
+  const config = parseJsonObject(raw);
+  if (!config) {
+    return { text: '长期有效', color: 'default' };
+  }
+  const startRaw = typeof config.startTime === 'string' ? config.startTime : null;
+  const endRaw = typeof config.endTime === 'string' ? config.endTime : null;
+  const now = dayjs();
+  const start = startRaw ? dayjs(startRaw) : null;
+  const end = endRaw ? dayjs(endRaw) : null;
+  if (!start && !end) {
+    return { text: '长期有效', color: 'default' };
+  }
+  const range = `${start ? formatDateTime(startRaw) : '不限'} ~ ${end ? formatDateTime(endRaw) : '不限'}`;
+  if (end && end.isBefore(now)) {
+    return { text: `已过期（${range}）`, color: 'error' };
+  }
+  if (start && start.isAfter(now)) {
+    return { text: `未生效（${range}）`, color: 'warning' };
+  }
+  return { text: `生效中（${range}）`, color: 'success' };
+}
+
+function describeRateLimit(raw?: string | null): string {
+  const config = parseJsonObject(raw);
+  if (!config) {
+    return '不限';
+  }
+  const qps = typeof config.qps === 'number' ? config.qps : null;
+  const dailyLimit = typeof config.dailyLimit === 'number' ? config.dailyLimit : null;
+  const parts: string[] = [];
+  if (qps) parts.push(`${qps} QPS`);
+  if (dailyLimit) parts.push(`${dailyLimit} 次/日`);
+  return parts.length > 0 ? parts.join(' · ') : '不限';
+}
+
+function describePermissions(raw?: string | null): string {
+  const config = parseJsonObject(raw);
+  if (!config) {
+    return '-';
+  }
+  const granted: string[] = [];
+  if (config.properties === true) granted.push('最新属性');
+  if (config.telemetry === true) granted.push('历史遥测');
+  if (config.events === true) granted.push('设备事件');
+  const history = config.telemetryHistory;
+  if (history && typeof history === 'object' && !Array.isArray(history)) {
+    const maxDays = (history as Record<string, unknown>).maxDays;
+    if (typeof maxDays === 'number' && maxDays > 0) {
+      granted.push(`遥测回溯 ${maxDays} 天`);
+    }
+  }
+  return granted.length > 0 ? granted.join('、') : '未授权';
+}
+
 const statusLabels: Record<string, string> = {
   PENDING: '待审批', APPROVED: '已批准', REJECTED: '已驳回', REVOKED: '已撤销', EXPIRED: '已过期',
 };
@@ -687,6 +757,29 @@ const OwnedTab: React.FC = () => {
       render: (value: string) => <Tag color={statusColors[value]}>{statusLabels[value] || value}</Tag>,
     },
     {
+      title: '数据权限',
+      width: 200,
+      ellipsis: true,
+      render: (_: unknown, record: PolicyItem) => (
+        <Tooltip title={describePermissions(record.dataPermissions)}>
+          <span>{describePermissions(record.dataPermissions)}</span>
+        </Tooltip>
+      ),
+    },
+    {
+      title: '有效期',
+      width: 220,
+      render: (_: unknown, record: PolicyItem) => {
+        const validity = describeValidity(record.validity);
+        return <Tag color={validity.color}>{validity.text}</Tag>;
+      },
+    },
+    {
+      title: '限流',
+      width: 150,
+      render: (_: unknown, record: PolicyItem) => describeRateLimit(record.rateLimit),
+    },
+    {
       title: '审计',
       dataIndex: 'auditEnabled',
       width: 80,
@@ -1006,10 +1099,16 @@ const OwnedTab: React.FC = () => {
             <Descriptions.Item label="所有方租户">{getTenantDisplay(detailRecord.ownerTenantId)}</Descriptions.Item>
             <Descriptions.Item label="消费方租户">{getTenantDisplay(detailRecord.consumerTenantId)}</Descriptions.Item>
             <Descriptions.Item label="共享范围" span={2}><JsonBlock value={detailRecord.scope} /></Descriptions.Item>
-            <Descriptions.Item label="数据权限" span={2}><JsonBlock value={detailRecord.dataPermissions} /></Descriptions.Item>
+            <Descriptions.Item label="数据权限" span={2}>
+              {describePermissions(detailRecord.dataPermissions)}
+            </Descriptions.Item>
             <Descriptions.Item label="脱敏规则" span={2}><JsonBlock value={detailRecord.maskingRules} /></Descriptions.Item>
-            <Descriptions.Item label="频率限制" span={2}><JsonBlock value={detailRecord.rateLimit} /></Descriptions.Item>
-            <Descriptions.Item label="有效期" span={2}><JsonBlock value={detailRecord.validity} /></Descriptions.Item>
+            <Descriptions.Item label="频率限制" span={2}>{describeRateLimit(detailRecord.rateLimit)}</Descriptions.Item>
+            <Descriptions.Item label="有效期" span={2}>
+              <Tag color={describeValidity(detailRecord.validity).color}>
+                {describeValidity(detailRecord.validity).text}
+              </Tag>
+            </Descriptions.Item>
             <Descriptions.Item label="创建时间">{formatDateTime(detailRecord.createdAt)}</Descriptions.Item>
             <Descriptions.Item label="更新时间">{formatDateTime(detailRecord.updatedAt)}</Descriptions.Item>
           </Descriptions>
@@ -1052,6 +1151,29 @@ const ConsumedTab: React.FC = () => {
     { title: '策略名称', dataIndex: 'name', width: 200, ellipsis: true },
     { title: '所有方租户', width: 180, render: (_: unknown, record: PolicyItem) => getTenantDisplay(record.ownerTenantId) },
     { title: '状态', dataIndex: 'status', width: 100, render: (value: string) => <Tag color={statusColors[value]}>{statusLabels[value] || value}</Tag> },
+    {
+      title: '数据权限',
+      width: 200,
+      ellipsis: true,
+      render: (_: unknown, record: PolicyItem) => (
+        <Tooltip title={describePermissions(record.dataPermissions)}>
+          <span>{describePermissions(record.dataPermissions)}</span>
+        </Tooltip>
+      ),
+    },
+    {
+      title: '有效期',
+      width: 220,
+      render: (_: unknown, record: PolicyItem) => {
+        const validity = describeValidity(record.validity);
+        return <Tag color={validity.color}>{validity.text}</Tag>;
+      },
+    },
+    {
+      title: '限流',
+      width: 150,
+      render: (_: unknown, record: PolicyItem) => describeRateLimit(record.rateLimit),
+    },
     {
       title: '共享范围',
       dataIndex: 'scope',

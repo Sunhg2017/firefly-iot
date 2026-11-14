@@ -53,3 +53,9 @@ X-Webhook-Token: <FIREFLY_MQTT_WEBHOOK_TOKEN 或 FIREFLY_LORAWAN_WEBHOOK_TOKEN>
 
 - [设计方案](../design/connector-management-auth-kafka-reliability.md)
 - [运维说明](../operations/connector-management-auth-kafka-reliability.md)
+
+## 2026-11-15 更新
+
+- SNMP 调试与采集支持 v3（USM），需填写安全名称与认证/加密协议、口令。
+- Modbus 采集任务列表可查看最近采集时间与最近错误，并支持刷新状态。
+- 详见 [共享数据与连接器能力使用说明](shared-data-and-connector-usage.md)。

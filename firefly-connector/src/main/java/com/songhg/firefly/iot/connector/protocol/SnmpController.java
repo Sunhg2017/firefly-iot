@@ -110,6 +110,7 @@ public class SnmpController {
                 .version(dto.getVersion() > 0 ? dto.getVersion() : 2)
                 .community(dto.getCommunity() != null ? dto.getCommunity() : "public")
                 .securityName(dto.getSecurityName())
+                .securityLevel(dto.getSecurityLevel())
                 .authProtocol(dto.getAuthProtocol())
                 .authPassphrase(dto.getAuthPassphrase())
                 .privProtocol(dto.getPrivProtocol())
@@ -139,6 +140,10 @@ public class SnmpController {
         /** SNMPv3 security name (username) */
         @Schema(description = "安全名称")
         private String securityName;
+
+        /** SNMPv3 security level: NOAUTH_NOPRIV, AUTH_NOPRIV, AUTH_PRIV */
+        @Schema(description = "安全级别", example = "AUTH_PRIV")
+        private String securityLevel;
 
         /** SNMPv3 authentication protocol: MD5, SHA */
         @Schema(description = "认证协议")
