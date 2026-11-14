@@ -2,8 +2,11 @@ package com.songhg.firefly.iot.device.service;
 
 import com.songhg.firefly.iot.common.enums.EventLevel;
 import com.songhg.firefly.iot.common.enums.OnlineStatus;
+import com.songhg.firefly.iot.common.enums.PlatformEventType;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
 import com.songhg.firefly.iot.common.message.KafkaTopics;
+import com.songhg.firefly.iot.common.message.PlatformEvent;
+import com.songhg.firefly.iot.common.message.PlatformEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,6 +27,7 @@ public class MessageRouterService {
     private final DeviceService deviceService;
     private final DeviceLocationService deviceLocationService;
     private final DeviceMessageProducer messageProducer;
+    private final PlatformEventPublisher platformEventPublisher;
 
     /**
      * Routes upstream device messages to the correct persistence and runtime flows.
@@ -90,6 +94,7 @@ public class MessageRouterService {
         updateConnectionState(message, OnlineStatus.ONLINE);
         persistOperationalEvent(message, "DEVICE_ONLINE", "Device Online", EventLevel.INFO);
         forwardToRuleEngine(message);
+        publishPlatformEvent(PlatformEventType.DEVICE_ONLINE, message);
         log.info("Device online: deviceId={}", message.getDeviceId());
     }
 
@@ -97,6 +102,7 @@ public class MessageRouterService {
         updateConnectionState(message, OnlineStatus.OFFLINE);
         persistOperationalEvent(message, "DEVICE_OFFLINE", "Device Offline", EventLevel.WARNING);
         forwardToRuleEngine(message);
+        publishPlatformEvent(PlatformEventType.DEVICE_OFFLINE, message);
         log.info("Device offline: deviceId={}", message.getDeviceId());
     }
 
@@ -129,6 +135,7 @@ public class MessageRouterService {
     private void handleOtaProgress(DeviceMessage message) {
         persistOperationalEvent(message, "OTA_PROGRESS", "OTA Progress", EventLevel.INFO);
         forwardToRuleEngine(message);
+        publishPlatformEvent(PlatformEventType.OTA_PROGRESS, message);
         log.debug("OTA progress: deviceId={}, payload={}", message.getDeviceId(), message.getPayload());
     }
 
@@ -174,6 +181,25 @@ public class MessageRouterService {
         } catch (Exception ex) {
             log.error("Failed to persist operational event: deviceId={}, eventType={}, error={}",
                     message.getDeviceId(), fallbackEventType, ex.getMessage());
+        }
+    }
+
+    /**
+     * 发布平台事件到 platform.event（尽力语义），供事件订阅运行时消费。
+     */
+    private void publishPlatformEvent(PlatformEventType eventType, DeviceMessage message) {
+        try {
+            platformEventPublisher.publish(PlatformEvent.builder()
+                    .eventType(eventType)
+                    .tenantId(message.getTenantId())
+                    .productId(message.getProductId())
+                    .deviceId(message.getDeviceId())
+                    .deviceName(message.getDeviceName())
+                    .payload(message.getPayload())
+                    .timestamp(message.getTimestamp())
+                    .build());
+        } catch (Exception ex) {
+            log.warn("Failed to publish platform event: type={}, deviceId={}", eventType, message.getDeviceId(), ex);
         }
     }
 

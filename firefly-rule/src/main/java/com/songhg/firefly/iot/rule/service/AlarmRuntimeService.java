@@ -9,7 +9,10 @@ import com.songhg.firefly.iot.api.dto.DeviceBasicVO;
 import com.songhg.firefly.iot.api.dto.NotificationRequestDTO;
 import com.songhg.firefly.iot.common.enums.AlarmLevel;
 import com.songhg.firefly.iot.common.enums.AlarmStatus;
+import com.songhg.firefly.iot.common.enums.PlatformEventType;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
+import com.songhg.firefly.iot.common.message.PlatformEvent;
+import com.songhg.firefly.iot.common.message.PlatformEventPublisher;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.rule.dto.alarmruntime.AlarmChannelOption;
 import com.songhg.firefly.iot.rule.dto.alarmruntime.AlarmMetricAggregate;
@@ -83,6 +86,7 @@ public class AlarmRuntimeService {
     private final DeviceClient deviceClient;
     private final NotificationClient notificationClient;
     private final ObjectMapper objectMapper;
+    private final PlatformEventPublisher platformEventPublisher;
 
     private final ExpressionParser spelParser = new SpelExpressionParser();
 
@@ -461,7 +465,32 @@ public class AlarmRuntimeService {
         alarmRecordMapper.insert(record);
         log.info("Alarm triggered: ruleId={}, recordId={}, deviceId={}, level={}",
                 rule.getId(), record.getId(), message.getDeviceId(), match.level());
+        publishAlertTriggered(record);
         return record;
+    }
+
+    /**
+     * 发布 ALERT_TRIGGERED 平台事件（尽力语义），供事件订阅运行时消费。
+     */
+    private void publishAlertTriggered(AlarmRecord record) {
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("alarmRecordId", record.getId());
+            payload.put("alarmRuleId", record.getAlarmRuleId());
+            payload.put("level", record.getLevel() == null ? null : record.getLevel().getValue());
+            payload.put("title", record.getTitle());
+            payload.put("content", record.getContent());
+            payload.put("triggerValue", record.getTriggerValue());
+            platformEventPublisher.publish(PlatformEvent.builder()
+                    .eventType(PlatformEventType.ALERT_TRIGGERED)
+                    .tenantId(record.getTenantId())
+                    .productId(record.getProductId())
+                    .deviceId(record.getDeviceId())
+                    .payload(payload)
+                    .build());
+        } catch (Exception ex) {
+            log.warn("Failed to publish ALERT_TRIGGERED event: recordId={}", record.getId(), ex);
+        }
     }
 
     private void closeRecord(AlarmRecord record, String remark) {

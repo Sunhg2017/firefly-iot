@@ -56,6 +56,9 @@ class AlarmRuntimeServiceTest {
     @Mock
     private NotificationClient notificationClient;
 
+    @Mock
+    private com.songhg.firefly.iot.common.message.PlatformEventPublisher platformEventPublisher;
+
     private AlarmRuntimeService alarmRuntimeService;
 
     @BeforeEach
@@ -66,7 +69,8 @@ class AlarmRuntimeServiceTest {
                 alarmRuntimeMapper,
                 deviceClient,
                 notificationClient,
-                new ObjectMapper()
+                new ObjectMapper(),
+                platformEventPublisher
         );
         lenient().when(notificationClient.send(any(NotificationRequestDTO.class))).thenReturn(R.ok());
         lenient().doAnswer(invocation -> {

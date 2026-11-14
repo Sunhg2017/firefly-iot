@@ -14,4 +14,5 @@ public final class KafkaTopics {
     public static final String RULE_ENGINE_INPUT = "rule.engine.input";
     public static final String ALARM_TRIGGER = "alarm.trigger";
     public static final String SHARE_DATA_FORWARD = "share.data.forward";
+    public static final String PLATFORM_EVENT = "platform.event";
 }

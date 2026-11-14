@@ -228,6 +228,16 @@ const routeConfigs: RouteEntry[] = [
     ],
   },
   {
+    key: 'tenant-data-forward',
+    label: '数据流转',
+    icon: <SendOutlined />,
+    workspace: 'tenant',
+    children: [
+      { path: '/data-forward', label: '数据流转规则', icon: <SendOutlined />, permission: 'data-forward:read', workspace: 'tenant' },
+      { path: '/event-subscription', label: '事件订阅', icon: <BellOutlined />, permission: 'event-subscription:read', workspace: 'tenant' },
+    ],
+  },
+  {
     key: 'tenant-ops-tools',
     label: '运维工具',
     icon: <ToolOutlined />,

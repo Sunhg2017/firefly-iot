@@ -29,6 +29,8 @@ const SystemMenuPermissionPage = React.lazy(() => import('./pages/system-menu-pe
 const WorkspaceMenuCustomizationPage = React.lazy(() => import('./pages/menu-customization/WorkspaceMenuCustomizationPage'));
 const DictPage = React.lazy(() => import('./pages/dict/DictPage'));
 const RuleEngineList = React.lazy(() => import('./pages/rule-engine/RuleEngineList'));
+const DataForwardRulePage = React.lazy(() => import('./pages/data-forward/DataForwardRulePage'));
+const EventSubscriptionPage = React.lazy(() => import('./pages/event-subscription/EventSubscriptionPage'));
 const AlarmRulePage = React.lazy(() => import('./pages/alarm/AlarmRulePage'));
 const AlarmRecordPage = React.lazy(() => import('./pages/alarm/AlarmRecordPage'));
 const AlarmRecipientGroupPage = React.lazy(() => import('./pages/alarm/AlarmRecipientGroupPage'));
@@ -99,6 +101,8 @@ const App: React.FC = () => {
             <Route path="menu-customization" element={<WorkspaceMenuCustomizationPage />} />
             <Route path="dict" element={<DictPage />} />
             <Route path="rule-engine" element={<RuleEngineList />} />
+            <Route path="data-forward" element={<DataForwardRulePage />} />
+            <Route path="event-subscription" element={<EventSubscriptionPage />} />
             <Route path="alarm-rules" element={<AlarmRulePage />} />
             <Route path="alarm-records" element={<AlarmRecordPage />} />
             <Route path="alarm-recipient-groups" element={<AlarmRecipientGroupPage />} />

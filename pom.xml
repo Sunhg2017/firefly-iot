@@ -56,6 +56,10 @@
         <redisson.version>3.37.0</redisson.version>
         <springdoc.version>2.6.0</springdoc.version>
 
+        <!-- Data forwarding integration clients -->
+        <paho-mqtt.version>1.2.5</paho-mqtt.version>
+        <rabbitmq-client.version>5.21.0</rabbitmq-client.version>
+
         <!-- Tracing -->
         <micrometer-tracing.version>1.3.6</micrometer-tracing.version>
         <opentelemetry.version>1.43.0</opentelemetry.version>
@@ -216,6 +220,18 @@
                 <version>${opentelemetry.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!-- Data forwarding integration clients -->
+            <dependency>
+                <groupId>org.eclipse.paho</groupId>
+                <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
+                <version>${paho-mqtt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.rabbitmq</groupId>
+                <artifactId>amqp-client</artifactId>
+                <version>${rabbitmq-client.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

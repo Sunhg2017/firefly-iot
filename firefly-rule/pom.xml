@@ -101,6 +101,18 @@
             <artifactId>spring-kafka</artifactId>
         </dependency>
 
+        <!-- Data forwarding: MQTT bridge (Paho) -->
+        <dependency>
+            <groupId>org.eclipse.paho</groupId>
+            <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
+        </dependency>
+
+        <!-- Data forwarding: RabbitMQ (AMQP 0-9-1) -->
+        <dependency>
+            <groupId>com.rabbitmq</groupId>
+            <artifactId>amqp-client</artifactId>
+        </dependency>
+
         <!-- Actuator -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

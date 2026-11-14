@@ -846,6 +846,27 @@ export const ruleApi = {
   delete: (id: number) => ruleRequest.delete(`/rules/${id}`),
 };
 
+// ==================== Data Forward Center API ====================
+export const dataForwardRuleApi = {
+  list: (data: Record<string, unknown> = {}) => ruleRequest.post('/data-forward-rules/list', data),
+  get: (id: number) => ruleRequest.get(`/data-forward-rules/${id}`),
+  create: (data: Record<string, unknown>) => ruleRequest.post('/data-forward-rules', data),
+  update: (id: number, data: Record<string, unknown>) => ruleRequest.put(`/data-forward-rules/${id}`, data),
+  enable: (id: number) => ruleRequest.put(`/data-forward-rules/${id}/enable`),
+  disable: (id: number) => ruleRequest.put(`/data-forward-rules/${id}/disable`),
+  delete: (id: number) => ruleRequest.delete(`/data-forward-rules/${id}`),
+};
+
+export const eventSubscriptionApi = {
+  list: (data: Record<string, unknown> = {}) => ruleRequest.post('/event-subscriptions/list', data),
+  get: (id: number) => ruleRequest.get(`/event-subscriptions/${id}`),
+  create: (data: Record<string, unknown>) => ruleRequest.post('/event-subscriptions', data),
+  update: (id: number, data: Record<string, unknown>) => ruleRequest.put(`/event-subscriptions/${id}`, data),
+  enable: (id: number) => ruleRequest.put(`/event-subscriptions/${id}/enable`),
+  disable: (id: number) => ruleRequest.put(`/event-subscriptions/${id}/disable`),
+  delete: (id: number) => ruleRequest.delete(`/event-subscriptions/${id}`),
+};
+
 // ==================== Device API ====================
 export const deviceApi = {
   list: (data: Record<string, unknown> = {}) => deviceRequest.post('/devices/list', data),

@@ -11,7 +11,7 @@
 | `firefly-gateway` | Boot | 8080 | API 网关、动态路由、认证透传 |
 | `firefly-system` | Boot | 8081 | 租户、用户、角色、权限、会话、菜单配置 |
 | `firefly-device` | Boot | 9020 | 产品、设备、物模型、影子、下行消息、认证服务 |
-| `firefly-rule` | Boot | 9030 | 规则引擎、告警 |
+| `firefly-rule` | Boot | 9030 | 规则引擎、告警、数据流转、事件订阅 |
 | `firefly-media` | Boot | 9040 | 视频监控、GB28181、ZLMediaKit 集成 |
 | `firefly-data` | Boot | 9050 | 监控、分析、看板 |
 | `firefly-support` | Boot | 9060 | 文件、通知、导出 |

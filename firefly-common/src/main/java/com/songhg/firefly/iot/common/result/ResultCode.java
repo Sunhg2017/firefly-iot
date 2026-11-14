@@ -91,7 +91,11 @@ public enum ResultCode {
     VIDEO_CHANNEL_NOT_FOUND(12003, "视频通道不存在"),
     STREAM_START_FAILED(12004, "视频流启动失败"),
     STREAM_NOT_FOUND(12005, "视频流会话不存在"),
-    VIDEO_DEVICE_EXISTS(12006, "视频设备已存在");
+    VIDEO_DEVICE_EXISTS(12006, "视频设备已存在"),
+
+    // 数据流转错误 13xxx
+    DATA_FORWARD_RULE_NOT_FOUND(13001, "数据流转规则不存在"),
+    EVENT_SUBSCRIPTION_NOT_FOUND(13002, "事件订阅不存在");
 
     private final int code;
     private final String message;

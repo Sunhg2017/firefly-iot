@@ -6,6 +6,7 @@ import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DeviceStatus;
 import com.songhg.firefly.iot.common.enums.NodeType;
 import com.songhg.firefly.iot.common.enums.OnlineStatus;
+import com.songhg.firefly.iot.common.message.PlatformEventPublisher;
 import com.songhg.firefly.iot.device.dto.device.DeviceBatchCreateDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceBatchCreateItemDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceCreateDTO;
@@ -42,6 +43,7 @@ class DeviceServiceTest {
     private final DeviceGroupService deviceGroupService = mock(DeviceGroupService.class);
     private final DeviceVideoProfileMapper deviceVideoProfileMapper = mock(DeviceVideoProfileMapper.class);
     private final DeviceVideoChannelMapper deviceVideoChannelMapper = mock(DeviceVideoChannelMapper.class);
+    private final PlatformEventPublisher platformEventPublisher = mock(PlatformEventPublisher.class);
     private final DeviceService service =
             new DeviceService(
                     deviceMapper,
@@ -50,7 +52,8 @@ class DeviceServiceTest {
                     deviceTagService,
                     deviceGroupService,
                     deviceVideoProfileMapper,
-                    deviceVideoChannelMapper
+                    deviceVideoChannelMapper,
+                    platformEventPublisher
             );
 
     @AfterEach

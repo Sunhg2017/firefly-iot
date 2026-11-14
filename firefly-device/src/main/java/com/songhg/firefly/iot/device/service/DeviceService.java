@@ -11,7 +11,10 @@ import com.songhg.firefly.iot.common.enums.DeviceAuthType;
 import com.songhg.firefly.iot.common.enums.DeviceStatus;
 import com.songhg.firefly.iot.common.enums.NodeType;
 import com.songhg.firefly.iot.common.enums.OnlineStatus;
+import com.songhg.firefly.iot.common.enums.PlatformEventType;
 import com.songhg.firefly.iot.common.exception.BizException;
+import com.songhg.firefly.iot.common.message.PlatformEvent;
+import com.songhg.firefly.iot.common.message.PlatformEventPublisher;
 import com.songhg.firefly.iot.common.mybatis.DataScope;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.device.convert.DeviceConvert;
@@ -75,6 +78,7 @@ public class DeviceService {
     private final DeviceGroupService deviceGroupService;
     private final DeviceVideoProfileMapper deviceVideoProfileMapper;
     private final DeviceVideoChannelMapper deviceVideoChannelMapper;
+    private final PlatformEventPublisher platformEventPublisher;
 
     @Transactional
     public DeviceCredentialVO createDevice(DeviceCreateDTO dto) {
@@ -99,6 +103,7 @@ public class DeviceService {
         bindDeviceLocators(device.getId(), dto.getLocators());
         deviceGroupService.rebuildDynamicGroupsForDevice(device.getId());
         increaseProductDeviceCount(product, 1);
+        publishDeviceCreated(device);
 
         log.info("Device created: id={}, deviceName={}, productId={}", device.getId(), device.getDeviceName(), dto.getProductId());
         return toCredentialVO(device, product);
@@ -128,6 +133,7 @@ public class DeviceService {
         deviceGroupService.syncDeviceGroups(device.getId(), staticGroupIds);
         deviceGroupService.rebuildDynamicGroupsForDevice(device.getId());
         increaseProductDeviceCount(product, 1);
+        publishDeviceCreated(device);
 
         log.info("Internal device created: id={}, deviceName={}, productId={}", device.getId(), device.getDeviceName(), dto.getProductId());
         return deviceMapper.selectBasicByIdIgnoreTenant(device.getId());
@@ -167,6 +173,7 @@ public class DeviceService {
             deviceGroupService.syncDeviceGroups(device.getId(), dto.getGroupIds());
             bindDeviceLocators(device.getId(), item.getLocators());
             deviceGroupService.rebuildDynamicGroupsForDevice(device.getId());
+            publishDeviceCreated(device);
             result.add(toCredentialVO(device, product));
         }
 
@@ -835,6 +842,27 @@ public class DeviceService {
         device.setOnlineStatus(OnlineStatus.UNKNOWN);
         device.setCreatedBy(userId);
         return device;
+    }
+
+    /**
+     * 发布 DEVICE_CREATED 平台事件（尽力语义，失败不阻塞设备创建）。
+     */
+    private void publishDeviceCreated(Device device) {
+        try {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("deviceName", device.getDeviceName());
+            payload.put("nickname", device.getNickname());
+            platformEventPublisher.publish(PlatformEvent.builder()
+                    .eventType(PlatformEventType.DEVICE_CREATED)
+                    .tenantId(device.getTenantId())
+                    .productId(device.getProductId())
+                    .deviceId(device.getId())
+                    .deviceName(device.getDeviceName())
+                    .payload(payload)
+                    .build());
+        } catch (Exception ex) {
+            log.warn("Failed to publish DEVICE_CREATED event: deviceId={}", device.getId(), ex);
+        }
     }
 
     private void validateUniqueDeviceNames(Long productId, Collection<String> rawDeviceNames) {
