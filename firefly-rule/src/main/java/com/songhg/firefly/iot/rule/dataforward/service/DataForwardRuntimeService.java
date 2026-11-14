@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.enums.DataForwardTargetType;
 import com.songhg.firefly.iot.common.enums.ForwardStatus;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
+import com.songhg.firefly.iot.common.metrics.Metrics;
 import com.songhg.firefly.iot.rule.dataforward.entity.DataForwardRule;
 import com.songhg.firefly.iot.rule.dataforward.mapper.DataForwardRuleMapper;
 import com.songhg.firefly.iot.rule.dataforward.support.ForwardTemplateRenderer;
@@ -73,8 +74,10 @@ public class DataForwardRuntimeService {
                 }
                 executor.execute(rule, message, variables);
                 ruleMapper.recordExecutionSuccess(rule.getId(), triggeredAt);
+                Metrics.increment("firefly.dataforward.execution.success", "target", String.valueOf(rule.getTargetType()));
             } catch (Exception ex) {
                 ruleMapper.recordExecutionFailure(rule.getId(), triggeredAt);
+                Metrics.increment("firefly.dataforward.execution.failed", "target", String.valueOf(rule.getTargetType()));
                 log.error("Data forward rule execution failed: ruleId={}, messageId={}", rule.getId(), message.getMessageId(), ex);
             }
         }

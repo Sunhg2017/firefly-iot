@@ -1,0 +1,56 @@
+PASS AUD-001 rejects missing key
+PASS AUD-001 rejects invalid key
+PASS AUD-005 revoke=absent forwards=1
+PASS AUD-002 cleaned forged headers marker=absent
+PASS AUD-005 revoke=50 forwards=1
+PASS AUD-002 cleaned forged headers marker=50
+PASS AUD-005 revoke=200 forwards=0
+PASS AUD-005 revoked returns 401
+PASS AUD-001 malformed/expired/wrong-signature rejected
+PASS AUD-001 malformed/expired/wrong-signature rejected
+PASS AUD-001 malformed/expired/wrong-signature rejected
+PASS AUD-002 whitelist strips internal headers
+PASS AUD-004 gateway rejects internal path
+PASS AUD-003 no checker or redis denied
+PASS AUD-003 empty redis denied
+PASS AUD-003 populated redis allows permission
+FAIL AUD-003 authorized user works after permission invalidation and system reread
+PASS AUD-004 internal token missing
+PASS AUD-004 internal token wrong
+PASS AUD-004 internal token valid
+PASS AUD-004 owned device token issued
+PASS AUD-004 cross tenant token denied
+PASS AUD-004 mismatched product token denied
+PASS AUD-004 excessive token ttl denied
+PASS AUD-006 normal expression RuleRuntimeService
+PASS AUD-006 forbidden expression RuleRuntimeService T(java.lang.System).getProperty('java.version')
+PASS AUD-006 forbidden expression RuleRuntimeService new java.lang.String('probe')
+PASS AUD-006 forbidden expression RuleRuntimeService payload.getClass()
+PASS AUD-006 normal expression AlarmRuntimeService
+PASS AUD-006 forbidden expression AlarmRuntimeService T(java.lang.System).getProperty('java.version')
+PASS AUD-006 forbidden expression AlarmRuntimeService new java.lang.String('probe')
+PASS AUD-006 forbidden expression AlarmRuntimeService payload.getClass()
+PASS AUD-006 normal expression ForwardTemplateRenderer
+PASS AUD-006 forbidden expression ForwardTemplateRenderer T(java.lang.System).getProperty('java.version')
+PASS AUD-006 forbidden expression ForwardTemplateRenderer new java.lang.String('probe')
+PASS AUD-006 forbidden expression ForwardTemplateRenderer payload.getClass()
+PASS AUD-008 mqtt tenant isolation
+PASS AUD-008 mqtt credential isolation
+PASS AUD-008 amqp tenant isolation
+PASS AUD-008 amqp credential isolation
+PASS AUD-010 group does not grant parent project or product
+OBSERVATION project=[100] product=[200] device=[10]
+OBSERVATION scopedSql=SELECT * FROM devices WHERE (status = 'ACTIVE' OR status = 'INACTIVE') AND (project_id IN (100) OR id IN (10))
+PASS AUD-009 scope IN and OR parenthesized
+FAIL AUD-011 other project same product secret denied
+PASS AUD-011 other project other product secret denied
+PASS AUD-012 registration queues without parsing
+PASS AUD-012 executes on worker with user and tenant
+FAIL AUD-012 worker stops when task progress update is rejected
+PASS AUD-013 listener propagates router failure
+FAIL AUD-013 downstream broker failure reaches listener container
+FAIL AUD-013 telemetry dedup key distinguishes devices
+OBSERVATION telemetry records=2 distinctDevices=true sameSqlUniqueKey=true
+FAIL AUD-014 parameter import does not perform file I/O on request thread
+OBSERVATION parameterImport callerThread=true taskRegistrations=0
+SUMMARY passed=45 failed=6

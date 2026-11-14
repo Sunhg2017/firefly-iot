@@ -35,4 +35,13 @@ public class FirmwareCreateDTO {
 
     @Schema(description = "文件校验值")
     private String md5Checksum;
+
+    @Schema(description = "MinIO 对象键")
+    private String fileKey;
+
+    @Schema(description = "SHA-256 摘要")
+    private String sha256Checksum;
+
+    @Schema(description = "摘要的 RSA-SHA256 签名（Base64）")
+    private String signature;
 }

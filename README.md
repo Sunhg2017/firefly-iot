@@ -173,6 +173,9 @@ bash deploy.sh up
 - Connector HTTP: 经网关访问 [http://localhost:8080/CONNECTOR/api/v1/protocol/http/...](http://localhost:8080)（9070 仅内网）
 - MQTT: `mqtt://localhost:1883`
 - CoAP: `coap://localhost:5683`
+- Grafana: [http://localhost:3000](http://localhost:3000)
+- Prometheus: [http://localhost:9090](http://localhost:9090)
+- Alertmanager: [http://localhost:9093](http://localhost:9093)
 - Nacos: [http://localhost:8848/nacos](http://localhost:8848/nacos)
 - MinIO: [http://localhost:9001](http://localhost:9001)
 - Sentinel: [http://localhost:8858](http://localhost:8858)
@@ -245,3 +248,9 @@ GitHub 仓库和服务器的具体配置步骤请查看：
 - [Connector 管理面鉴权与 Kafka 重试/死信设计](docs/design/connector-management-auth-kafka-reliability.md)
 - [Connector 管理面鉴权与 Kafka 重试/死信运维说明](docs/operations/connector-management-auth-kafka-reliability.md)
 - [Connector 管理面鉴权与 Kafka 重试/死信使用说明](docs/user-guide/connector-management-auth-kafka-reliability.md)
+- [可观测性设计](docs/design/observability.md)
+- [可观测性运维说明](docs/operations/observability.md)
+- [可观测性使用说明](docs/user-guide/observability.md)
+- [OTA 升级设计](docs/design/ota-upgrade.md)
+- [OTA 升级运维说明](docs/operations/ota-upgrade.md)
+- [OTA 升级使用说明](docs/user-guide/ota-upgrade.md)

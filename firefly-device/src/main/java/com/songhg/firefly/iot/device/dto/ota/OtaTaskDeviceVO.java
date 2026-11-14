@@ -22,6 +22,12 @@ public class OtaTaskDeviceVO {
     @Schema(description = "Device ID")
     private Long deviceId;
 
+    @Schema(description = "Device name")
+    private String deviceName;
+
+    @Schema(description = "Downlink message id")
+    private String messageId;
+
     @Schema(description = "Device upgrade status")
     private OtaDeviceStatus status;
 

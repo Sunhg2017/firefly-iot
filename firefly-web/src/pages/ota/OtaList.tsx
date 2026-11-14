@@ -34,7 +34,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadFile, UploadProps } from 'antd/es/upload/interface';
 import PageHeader from '../../components/PageHeader';
-import { deviceFirmwareApi, fileApi, firmwareApi, otaTaskApi, productApi } from '../../services/api';
+import { deviceApi, deviceFirmwareApi, fileApi, firmwareApi, otaTaskApi, productApi } from '../../services/api';
 
 interface ProductOption {
   id: number;
@@ -87,6 +87,20 @@ interface OtaTaskRecord {
   failureCount: number;
   grayRatio?: number;
   createdAt: string;
+  devices?: OtaTaskDeviceRecord[];
+}
+
+interface OtaTaskDeviceRecord {
+  id: number;
+  deviceId: number;
+  deviceName?: string;
+  status: string;
+  progress: number;
+  messageId?: string;
+  errorMessage?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  updatedAt?: string;
 }
 
 interface SummaryCardItem {
@@ -118,8 +132,10 @@ interface DeviceBindingsTabProps extends ProductScopedProps {
 
 const fwStatusLabels: Record<string, string> = { DRAFT: '草稿', VERIFIED: '已验证', RELEASED: '已发布' };
 const fwStatusColors: Record<string, string> = { DRAFT: 'default', VERIFIED: 'processing', RELEASED: 'success' };
-const taskStatusLabels: Record<string, string> = { PENDING: '待执行', IN_PROGRESS: '执行中', COMPLETED: '已完成', CANCELLED: '已取消' };
-const taskStatusColors: Record<string, string> = { PENDING: 'default', IN_PROGRESS: 'processing', COMPLETED: 'success', CANCELLED: 'warning' };
+const deviceStatusLabels: Record<string, string> = { PENDING: '待下载', DOWNLOADING: '下载中', UPGRADING: '升级中', SUCCESS: '成功', FAILURE: '失败', CANCELLED: '已取消' };
+const deviceStatusColors: Record<string, string> = { PENDING: 'default', DOWNLOADING: 'processing', UPGRADING: 'processing', SUCCESS: 'success', FAILURE: 'error', CANCELLED: 'warning' };
+const taskStatusLabels: Record<string, string> = { PENDING: '待执行', IN_PROGRESS: '执行中', COMPLETED: '已完成', FAILED: '失败', CANCELLED: '已取消' };
+const taskStatusColors: Record<string, string> = { PENDING: 'default', IN_PROGRESS: 'processing', COMPLETED: 'success', FAILED: 'error', CANCELLED: 'warning' };
 const taskTypeLabels: Record<string, string> = { FULL: '全量', GRAY: '灰度' };
 const onlineStatusLabels: Record<string, string> = { ONLINE: '在线', OFFLINE: '离线', UNKNOWN: '未知' };
 const onlineStatusColors: Record<string, string> = { ONLINE: 'success', OFFLINE: 'default', UNKNOWN: 'warning' };
@@ -560,6 +576,7 @@ const FirmwareLibraryTab: React.FC<FirmwareLibraryTabProps> = ({ productOptions,
           </Form.Item>
         </Form>
       </Drawer>
+
     </>
   );
 };
@@ -791,7 +808,7 @@ const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productOptions, p
     },
     {
       title: '操作',
-      width: 110,
+      width: 160,
       fixed: 'right',
       render: (_value, record) => (
         <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openBindDrawer(record)}>
@@ -943,6 +960,11 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
   const [draftFilters, setDraftFilters] = useState<{ keyword: string; productId?: number; status?: string }>({ keyword: '' });
   const [filters, setFilters] = useState<{ keyword: string; productId?: number; status?: string }>({ keyword: '' });
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [deviceOptions, setDeviceOptions] = useState<Array<{ value: number; label: string }>>([]);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailTask, setDetailTask] = useState<OtaTaskRecord | null>(null);
+  const [detailDevices, setDetailDevices] = useState<OtaTaskDeviceRecord[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<number | undefined>();
   const [firmwareOptions, setFirmwareOptions] = useState<FirmwareRecord[]>([]);
   const [createForm] = Form.useForm();
@@ -1018,6 +1040,7 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
     createForm.resetFields();
     setSelectedProductId(undefined);
     setFirmwareOptions([]);
+    setDeviceOptions([]);
     setDrawerOpen(true);
   };
 
@@ -1028,10 +1051,29 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
     createForm.resetFields();
   };
 
+  const loadDevicesForProduct = useCallback(async (productId?: number) => {
+    if (!productId) {
+      setDeviceOptions([]);
+      return;
+    }
+    try {
+      const res = await deviceApi.list({ pageNum: 1, pageSize: 500, productId });
+      const records = res.data.data?.records || [];
+      setDeviceOptions(records.map((item: { id: number; deviceName: string; nickname?: string }) => ({
+        value: item.id,
+        label: item.nickname ? `${item.nickname} (${item.deviceName})` : item.deviceName,
+      })));
+    } catch {
+      setDeviceOptions([]);
+    }
+  }, []);
+
   const handleProductChange = (productId?: number) => {
     setSelectedProductId(productId);
     createForm.setFieldValue('firmwareId', undefined);
+    createForm.setFieldValue('deviceIds', undefined);
     void loadReleasedFirmwares(productId);
+    void loadDevicesForProduct(productId);
   };
 
   const handleCreate = async (values: Record<string, unknown>) => {
@@ -1050,6 +1092,7 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
         srcVersion: normalizeText(values.srcVersion),
         destVersion: selectedFirmware.version,
         grayRatio: values.taskType === 'GRAY' ? values.grayRatio : undefined,
+        deviceIds: Array.isArray(values.deviceIds) && values.deviceIds.length > 0 ? values.deviceIds : undefined,
       });
       message.success('升级任务已创建');
       closeCreateDrawer();
@@ -1058,6 +1101,21 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
       message.error('创建失败');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const openDetail = async (record: OtaTaskRecord) => {
+    setDetailTask(record);
+    setDetailOpen(true);
+    setDetailLoading(true);
+    try {
+      const res = await otaTaskApi.get(record.id);
+      setDetailDevices(((res.data.data?.devices || []) as OtaTaskDeviceRecord[]));
+    } catch {
+      setDetailDevices([]);
+      message.error('加载任务进度失败');
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -1127,14 +1185,17 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
     { title: '创建时间', dataIndex: 'createdAt', width: 180 },
     {
       title: '操作',
-      width: 110,
+      width: 160,
       fixed: 'right',
       render: (_value, record) => (
-        (record.status === 'PENDING' || record.status === 'IN_PROGRESS') ? (
-          <Button type="link" size="small" danger icon={<StopOutlined />} onClick={() => handleCancel(record)}>
-            取消
-          </Button>
-        ) : null
+        <Space size="small">
+          <Button type="link" size="small" onClick={() => void openDetail(record)}>详情</Button>
+          {(record.status === 'PENDING' || record.status === 'IN_PROGRESS') ? (
+            <Button type="link" size="small" danger icon={<StopOutlined />} onClick={() => handleCancel(record)}>
+              取消
+            </Button>
+          ) : null}
+        </Space>
       ),
     },
   ];
@@ -1253,12 +1314,54 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
           <Form.Item name="srcVersion" label="源版本">
             <Input placeholder="可选，如 1.1.0" />
           </Form.Item>
+          <Form.Item name="deviceIds" label="指定设备">
+            <Select
+              mode="multiple"
+              allowClear
+              optionFilterProp="label"
+              placeholder="留空则按产品与源版本筛选；选择后仅升级指定设备"
+              options={deviceOptions}
+            />
+          </Form.Item>
           {selectedTaskType === 'GRAY' ? (
             <Form.Item name="grayRatio" label="灰度比例(%)" rules={[{ required: true, message: '请输入灰度比例' }]}>
               <InputNumber min={1} max={100} style={{ width: '100%' }} placeholder="如：10" />
             </Form.Item>
           ) : null}
         </Form>
+      </Drawer>
+
+      <Drawer
+        title={`任务进度${detailTask ? ` · ${detailTask.name}` : ''}`}
+        open={detailOpen}
+        width={760}
+        destroyOnClose
+        onClose={() => setDetailOpen(false)}
+      >
+        <Table
+          rowKey="id"
+          size="small"
+          loading={detailLoading}
+          dataSource={detailDevices}
+          pagination={{ pageSize: 10 }}
+          columns={[
+            { title: '设备', dataIndex: 'deviceName', render: (value?: string) => value || '-' },
+            {
+              title: '状态',
+              dataIndex: 'status',
+              width: 100,
+              render: (value: string) => <Tag color={deviceStatusColors[value]}>{deviceStatusLabels[value] || value}</Tag>,
+            },
+            {
+              title: '进度',
+              dataIndex: 'progress',
+              width: 160,
+              render: (value: number) => <Progress percent={value || 0} size="small" />,
+            },
+            { title: '错误', dataIndex: 'errorMessage', ellipsis: true, render: (value?: string) => value || '-' },
+            { title: '更新时间', dataIndex: 'updatedAt', width: 180, render: (value?: string) => value || '-' },
+          ]}
+        />
       </Drawer>
     </>
   );

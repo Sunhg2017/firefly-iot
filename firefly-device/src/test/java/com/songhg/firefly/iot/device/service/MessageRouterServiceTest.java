@@ -29,9 +29,10 @@ class MessageRouterServiceTest {
     private final DeviceMessageProducer messageProducer = mock(DeviceMessageProducer.class);
     private final PlatformEventPublisher platformEventPublisher = mock(PlatformEventPublisher.class);
     private final RemoteConfigAssignmentMapper remoteConfigAssignmentMapper = mock(RemoteConfigAssignmentMapper.class);
+    private final OtaProgressService otaProgressService = mock(OtaProgressService.class);
     private final MessageRouterService routerService =
             new MessageRouterService(shadowService, deviceDataService, deviceService, deviceLocationService, messageProducer,
-                    platformEventPublisher, remoteConfigAssignmentMapper);
+                    platformEventPublisher, remoteConfigAssignmentMapper, otaProgressService);
 
     @Test
     void shouldForwardEventReportToRuleEngineTopic() {

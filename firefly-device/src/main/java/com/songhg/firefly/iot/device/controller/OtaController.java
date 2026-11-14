@@ -110,6 +110,14 @@ public class OtaController {
         return R.ok(otaService.getOtaTaskById(id));
     }
 
+    @GetMapping("/ota-tasks/{id}/devices")
+    @RequiresPermission("ota:read")
+    @Operation(summary = "查询 OTA 任务逐设备进度")
+    public R<java.util.List<com.songhg.firefly.iot.device.dto.ota.OtaTaskDeviceVO>> listOtaTaskDevices(
+            @Parameter(description = "升级任务编号", required = true) @PathVariable Long id) {
+        return R.ok(otaService.listTaskDevices(id));
+    }
+
     @PutMapping("/ota-tasks/{id}/cancel")
     @RequiresPermission("ota:deploy")
     @Operation(summary = "取消 OTA 任务")

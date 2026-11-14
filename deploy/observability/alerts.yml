@@ -1,0 +1,73 @@
+groups:
+  - name: firefly-service
+    rules:
+      - alert: FireflyServiceDown
+        expr: up{job=~"firefly-.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Firefly 服务不可用: {{ $labels.service }}"
+          description: "服务 {{ $labels.service }} 已超过 2 分钟未被 Prometheus 抓取到。"
+
+      - alert: FireflyHighHttp5xx
+        expr: |
+          sum by (service) (rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+            /
+          sum by (service) (rate(http_server_requests_seconds_count[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Firefly 5xx 比例过高: {{ $labels.service }}"
+          description: "最近 5 分钟 {{ $labels.service }} 的 5xx 比例超过 5%。"
+
+      - alert: FireflyJvmHeapHigh
+        expr: |
+          sum by (service) (jvm_memory_used_bytes{area="heap"})
+            /
+          sum by (service) (jvm_memory_max_bytes{area="heap"}) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Firefly JVM 堆内存过高: {{ $labels.service }}"
+          description: "{{ $labels.service }} 堆内存使用率超过 90% 已持续 10 分钟。"
+
+  - name: firefly-business
+    rules:
+      - alert: FireflyDeviceMessageFailures
+        expr: sum by (source) (rate(firefly_device_message_failed_total[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "设备消息消费失败: {{ $labels.source }}"
+          description: "最近 5 分钟设备消息消费失败速率超过 1/s，检查死信 topic 与服务日志。"
+
+      - alert: FireflyRuleExecutionFailures
+        expr: rate(firefly_rule_execution_failed_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "规则执行失败速率过高"
+          description: "最近 5 分钟规则执行失败速率超过 0.5/s。"
+
+      - alert: FireflyDataForwardFailures
+        expr: sum by (target) (rate(firefly_dataforward_execution_failed_total[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "数据流转失败: {{ $labels.target }}"
+          description: "最近 5 分钟数据流转目标 {{ $labels.target }} 失败速率超过 0.5/s。"
+
+      - alert: FireflyNoDeviceOnline
+        expr: firefly_device_online == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "当前无在线设备"
+          description: "平台在线设备数为 0 已持续 10 分钟，检查 Connector 与设备接入链路。"

@@ -93,6 +93,7 @@ public class MessageCodec {
         String action = switch (type) {
             case PROPERTY_SET -> "thing/property/set";
             case SERVICE_INVOKE -> "thing/service/invoke";
+            case OTA_UPGRADE -> "thing/ota/upgrade";
             default -> "thing/downstream";
         };
         return "/sys/" + productKey + "/" + deviceName + "/" + action;
@@ -122,6 +123,7 @@ public class MessageCodec {
         return switch (type) {
             case PROPERTY_SET -> "thing.property.set";
             case SERVICE_INVOKE -> "thing.service.invoke";
+            case OTA_UPGRADE -> "thing.ota.upgrade";
             default -> "thing.downstream";
         };
     }

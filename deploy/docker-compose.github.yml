@@ -361,6 +361,60 @@ services:
     networks:
       - firefly-net
 
+  # ======================== Observability ========================
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: firefly-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      - alertmanager
+    networks:
+      - firefly-net
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: firefly-alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    networks:
+      - firefly-net
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: firefly-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - firefly-net
+
+
 volumes:
   postgres_data:
     external: true
@@ -377,6 +431,12 @@ volumes:
   connector_mqtt_data:
     external: true
     name: ${CONNECTOR_MQTT_VOLUME_NAME:-firefly-connector-mqtt-data}
+  prometheus_data:
+    name: ${PROMETHEUS_VOLUME_NAME:-firefly-prometheus-data}
+  alertmanager_data:
+    name: ${ALERTMANAGER_VOLUME_NAME:-firefly-alertmanager-data}
+  grafana_data:
+    name: ${GRAFANA_VOLUME_NAME:-firefly-grafana-data}
 
 networks:
   firefly-net:

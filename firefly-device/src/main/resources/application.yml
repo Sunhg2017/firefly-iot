@@ -107,3 +107,7 @@ firefly:
     global-max-retention-days: ${FIREFLY_TELEMETRY_GLOBAL_MAX_RETENTION_DAYS:365}
     # 过期数据清理任务执行时间（默认每日 03:10）
     retention-cleanup-cron: "${FIREFLY_TELEMETRY_RETENTION_CLEANUP_CRON:0 10 3 * * ?}"
+  # OTA 固件签名校验：配置后固件可携带 RSA-SHA256 签名
+  ota:
+    signature-public-key: ${FIREFLY_OTA_SIGNATURE_PUBLIC_KEY:}
+    signature-algorithm: ${FIREFLY_OTA_SIGNATURE_ALGORITHM:SHA256withRSA}

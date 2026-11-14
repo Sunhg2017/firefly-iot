@@ -18,6 +18,7 @@ public class OtaTaskDevice {
     private Long deviceId;
     private OtaDeviceStatus status;
     private Integer progress;
+    private String messageId;
     private String errorMessage;
     private LocalDateTime startedAt;
     private LocalDateTime finishedAt;

@@ -10,6 +10,7 @@ import com.songhg.firefly.iot.api.dto.NotificationRequestDTO;
 import com.songhg.firefly.iot.common.enums.RuleActionType;
 import com.songhg.firefly.iot.common.enums.RuleEngineStatus;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
+import com.songhg.firefly.iot.common.metrics.Metrics;
 import com.songhg.firefly.iot.common.message.KafkaTopics;
 import com.songhg.firefly.iot.common.result.R;
 import com.songhg.firefly.iot.rule.entity.RuleAction;
@@ -88,7 +89,9 @@ public class RuleRuntimeService {
         for (RuleDefinition definition : rules) {
             try {
                 executeRule(definition, message, deviceBasicRef);
+                Metrics.increment("firefly.rule.execution.success");
             } catch (Exception ex) {
+                Metrics.increment("firefly.rule.execution.failed");
                 log.error("Rule runtime failed unexpectedly: ruleId={}, messageId={}", definition.rule().getId(), message.getMessageId(), ex);
             }
         }

@@ -3,6 +3,7 @@ package com.songhg.firefly.iot.device.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
 import com.songhg.firefly.iot.common.message.KafkaTopics;
+import com.songhg.firefly.iot.common.metrics.Metrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -58,7 +59,9 @@ public class DeviceMessageConsumer {
                 source, message.getDeviceId(), message.getType(), message.getMessageId());
         try {
             routerService.routeUpstream(message);
+            Metrics.increment("firefly.device.message.consumed", "source", source);
         } catch (Exception ex) {
+            Metrics.increment("firefly.device.message.failed", "source", source);
             log.error("Failed to process message from {}: messageId={}", source, message.getMessageId(), ex);
             throw new IllegalStateException(
                     "Device message processing failed: source=" + source + ", messageId=" + message.getMessageId(), ex);

@@ -1,0 +1,70 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: firefly-iot
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['firefly-alertmanager:9093']
+
+scrape_configs:
+  - job_name: firefly-gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['firefly-gateway:8080']
+        labels:
+          service: gateway
+
+  - job_name: firefly-system
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['firefly-system:8081']
+        labels:
+          service: system
+
+  - job_name: firefly-device
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['firefly-device:9020']
+        labels:
+          service: device
+
+  - job_name: firefly-rule
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['firefly-rule:9030']
+        labels:
+          service: rule
+
+  - job_name: firefly-media
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['firefly-media:9040']
+        labels:
+          service: media
+
+  - job_name: firefly-data
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['firefly-data:9050']
+        labels:
+          service: data
+
+  - job_name: firefly-support
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['firefly-support:9060']
+        labels:
+          service: support
+
+  - job_name: firefly-connector
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['firefly-connector:9070']
+        labels:
+          service: connector

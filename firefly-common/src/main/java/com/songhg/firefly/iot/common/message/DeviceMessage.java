@@ -33,6 +33,7 @@ public class DeviceMessage implements Serializable {
         SERVICE_REPLY,
         PROPERTY_SET,
         PROPERTY_SET_REPLY,
+        OTA_UPGRADE,
         DEVICE_ONLINE,
         DEVICE_OFFLINE,
         OTA_PROGRESS,

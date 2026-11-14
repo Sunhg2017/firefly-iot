@@ -3,6 +3,7 @@ package com.songhg.firefly.iot.device.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
 import com.songhg.firefly.iot.common.message.KafkaTopics;
+import com.songhg.firefly.iot.common.metrics.Metrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -55,6 +56,8 @@ public class DeviceMessageProducer {
             message.setMessageId(UUID.randomUUID().toString());
         }
         message.setTimestamp(System.currentTimeMillis());
+        Metrics.increment("firefly.device.message.downstream",
+                "type", message.getType() == null ? "UNKNOWN" : message.getType().name());
         send(KafkaTopics.DEVICE_MESSAGE_DOWN, String.valueOf(message.getDeviceId()), message);
     }
 

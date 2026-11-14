@@ -110,6 +110,11 @@
         </dependency>
 
         <!-- Micrometer Tracing + OpenTelemetry Bridge -->
+        <!-- Prometheus 指标注册表：随 common 传递到所有服务，/actuator/prometheus 才真正可用 -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-tracing</artifactId>

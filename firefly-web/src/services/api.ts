@@ -809,6 +809,7 @@ export const firmwareApi = {
 export const otaTaskApi = {
   list: (data: Record<string, unknown> = {}) => deviceRequest.post('/ota-tasks/list', data),
   get: (id: number) => deviceRequest.get(`/ota-tasks/${id}`),
+  devices: (id: number) => deviceRequest.get(`/ota-tasks/${id}/devices`),
   create: (data: Record<string, unknown>) => deviceRequest.post('/ota-tasks', data),
   cancel: (id: number) => deviceRequest.put(`/ota-tasks/${id}/cancel`),
 };

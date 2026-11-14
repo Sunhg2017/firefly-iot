@@ -18,6 +18,9 @@ public class Firmware extends TenantEntity {
     private String fileUrl;
     private Long fileSize;
     private String md5Checksum;
+    private String fileKey;
+    private String sha256Checksum;
+    private String signature;
     private FirmwareStatus status;
     private Long createdBy;
 }

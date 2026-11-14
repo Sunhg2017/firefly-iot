@@ -37,6 +37,12 @@ public class FirmwareVO {
     @Schema(description = "MD5 checksum")
     private String md5Checksum;
 
+    private String fileKey;
+
+    private String sha256Checksum;
+
+    private String signature;
+
     @Schema(description = "Firmware status")
     private FirmwareStatus status;
 

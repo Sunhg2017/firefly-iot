@@ -65,6 +65,13 @@
           AND deleted_at IS NULL
     </select>
 
+    <select id="countOnlineIgnoreTenant" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM devices
+        WHERE deleted_at IS NULL
+          AND online_status = 'ONLINE'
+    </select>
+
     <select id="selectSharedBasicsIgnoreTenant" resultType="com.songhg.firefly.iot.api.dto.DeviceBasicVO">
         SELECT d.id,
                d.device_name AS deviceName,

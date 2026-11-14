@@ -28,6 +28,12 @@ public interface DeviceMapper extends BaseMapper<Device> {
     @InterceptorIgnore(tenantLine = "true")
     Long countByProductIdIgnoreTenant(@Param("productId") Long productId);
 
+    /**
+     * 全租户在线设备数，供 Prometheus Gauge 实时读取。
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    Long countOnlineIgnoreTenant();
+
     @InterceptorIgnore(tenantLine = "true")
     List<DeviceBasicVO> selectSharedBasicsIgnoreTenant(@Param("ownerTenantId") Long ownerTenantId,
                                                        @Param("productIds") List<Long> productIds,

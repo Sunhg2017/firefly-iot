@@ -41,4 +41,7 @@ public class OtaTaskCreateDTO {
 
     @Schema(description = "灰度比例", example = "10")
     private Integer grayRatio;
+
+    @Schema(description = "指定设备编号列表；为空时按产品与源版本筛选")
+    private java.util.List<Long> deviceIds;
 }

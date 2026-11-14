@@ -7,6 +7,7 @@ import com.songhg.firefly.iot.common.message.DeviceMessage;
 import com.songhg.firefly.iot.common.message.KafkaTopics;
 import com.songhg.firefly.iot.common.message.PlatformEvent;
 import com.songhg.firefly.iot.common.message.PlatformEventPublisher;
+import com.songhg.firefly.iot.common.metrics.Metrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ public class MessageRouterService {
     private final DeviceMessageProducer messageProducer;
     private final PlatformEventPublisher platformEventPublisher;
     private final com.songhg.firefly.iot.device.mapper.RemoteConfigAssignmentMapper remoteConfigAssignmentMapper;
+    private final OtaProgressService otaProgressService;
 
     /**
      * Routes upstream device messages to the correct persistence and runtime flows.
@@ -125,6 +127,9 @@ public class MessageRouterService {
     }
 
     private void handleOtaProgress(DeviceMessage message) {
+        Metrics.increment("firefly.ota.progress.received");
+        // 先回写任务/设备进度（核心状态），失败时由消费框架重试，避免进度静默丢失。
+        otaProgressService.handleProgress(message);
         persistOperationalEvent(message, "OTA_PROGRESS", "OTA Progress", EventLevel.INFO);
         forwardToRuleEngine(message);
         publishPlatformEvent(PlatformEventType.OTA_PROGRESS, message);
