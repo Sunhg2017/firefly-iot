@@ -31,4 +31,29 @@ public class TelemetryGovernanceProperties {
      * 单次清理最多执行的批次数，防止单次任务运行过久。
      */
     private int cleanupMaxBatches = 200;
+
+    /**
+     * 是否启用连续聚合（CAGG）缺口补刷。
+     */
+    private boolean caggRefreshEnabled = true;
+
+    /**
+     * 是否在应用启动后异步执行一次缺口补刷。
+     */
+    private boolean caggRefreshOnStartup = true;
+
+    /**
+     * 单批补刷小时数，控制单次 refresh_continuous_aggregate 的区间大小。
+     */
+    private int caggRefreshBatchHours = 24;
+
+    /**
+     * 首次运行（无水位）时最多向前回看的天数。
+     */
+    private int caggRefreshMaxLookbackDays = 30;
+
+    /**
+     * 与上次水位的重叠分钟数，覆盖边界数据。
+     */
+    private int caggRefreshOverlapMinutes = 10;
 }

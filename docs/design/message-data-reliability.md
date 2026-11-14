@@ -47,7 +47,7 @@
 - `device_telemetry` 不再逐属性复制 `raw_payload`（新数据该列为空，历史数据保留）。
 - 遥测写入路径增加设备信息本地缓存（60 秒），避免每条消息查询设备。
 - 保留清理改为按 `ctid` 分批删除（单批 500 行、最多 200 批），并加 Redis 分布式锁避免多副本重复执行。
-- CAGG 缺口补刷未在本轮实现，列为后续项。
+- CAGG 缺口补刷已实现：新增 `telemetry_cagg_refresh_state` 水位表，定时任务与启动异步补刷按水位调用 `refresh_continuous_aggregate` 回补停机缺口（详见遥测治理设计）。
 
 ### 2.6 日志保留
 

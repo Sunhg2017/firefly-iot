@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.device.mapper.TelemetryCaggRefreshMapper">
+
+    <select id="selectState" resultType="com.songhg.firefly.iot.device.entity.TelemetryCaggRefreshState">
+        SELECT cagg_name       AS caggName,
+               refreshed_until AS refreshedUntil,
+               updated_at      AS updatedAt
+        FROM telemetry_cagg_refresh_state
+        WHERE cagg_name = #{caggName}
+    </select>
+
+    <insert id="upsertState">
+        INSERT INTO telemetry_cagg_refresh_state (cagg_name, refreshed_until, updated_at)
+        VALUES (#{caggName}, #{refreshedUntil}, now())
+        ON CONFLICT (cagg_name) DO UPDATE
+        SET refreshed_until = EXCLUDED.refreshed_until,
+            updated_at = now()
+    </insert>
+
+    <update id="refreshContinuousAggregate">
+        CALL refresh_continuous_aggregate(
+            CAST(#{caggName} AS regclass),
+            CAST(#{windowStart} AS TIMESTAMPTZ),
+            CAST(#{windowEnd} AS TIMESTAMPTZ)
+        )
+    </update>
+
+</mapper>

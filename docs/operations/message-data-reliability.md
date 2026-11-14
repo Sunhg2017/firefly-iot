@@ -12,6 +12,7 @@
 | firefly-device | `V32__init_device_shadow.sql` | 影子 desired 权威表 |
 | firefly-device | `V33__init_telemetry_payload.sql` | 遥测 payload 单存表 |
 | firefly-device | `V34__add_log_retention_index.sql` | 日志清理索引 |
+| firefly-device | `V35__init_cagg_refresh_state.sql` | CAGG 缺口补刷水位 |
 | firefly-rule | `V9__idempotent_open_alarm.sql` | 历史重复告警合并 + 部分唯一索引 |
 | firefly-system | `V43__add_log_retention_index.sql` | 审计日志清理索引 |
 
@@ -27,6 +28,8 @@
 | 影子 | `FIREFLY_SHADOW_LOCK_TTL_MS` | 3000 | 设备级锁 TTL |
 | 遥测清理 | `FIREFLY_TELEMETRY_CLEANUP_BATCH_SIZE` | 500 | 单批删除行数 |
 | 遥测清理 | `FIREFLY_TELEMETRY_CLEANUP_MAX_BATCHES` | 200 | 单次最多批次 |
+| CAGG 补刷 | `FIREFLY_TELEMETRY_CAGG_REFRESH_ENABLED` | true | 是否启用缺口补刷 |
+| CAGG 补刷 | `FIREFLY_TELEMETRY_CAGG_REFRESH_CRON` | `0 30 3 * * ?` | 定时补刷 cron |
 | 通知重试 | `FIREFLY_NOTIFICATION_MAX_ATTEMPTS` | 3 | 最大尝试次数 |
 | 通知重试 | `FIREFLY_NOTIFICATION_RETRY_BACKOFF_MS` | 200 | 退避基数 |
 

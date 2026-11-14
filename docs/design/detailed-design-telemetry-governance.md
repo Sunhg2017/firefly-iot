@@ -148,3 +148,14 @@ CREATE TABLE tenant_telemetry_retention (
 - 唯一索引由 `(message_id, property, ts)` 调整为 `(tenant_id, device_id, message_id, property, ts)`（迁移 `V31__fix_telemetry_dedup_key.sql`）。
 - 同一设备同一消息重试只保留一条；不同设备/租户使用相同局部消息 ID 时不再冲突。
 - `message_id` 为空的手工写入不参与去重（PostgreSQL 唯一索引对 NULL 不冲突）。
+
+## 连续聚合缺口补刷（CAGG Gap Backfill）
+
+- **问题**：TimescaleDB continuous aggregate policy 只在有限窗口内自动刷新（小时聚合 `start_offset=3 天`、天聚合 `30 天`）。系统停机或长时间无写入超过该窗口后，policy 不会回补缺口，降采样数据永久缺失。
+- **方案**：
+  - 新增 `telemetry_cagg_refresh_state` 表记录每个 CAGG 的补刷水位 `refreshed_until`。
+  - `TelemetryCaggRefreshService` 按水位到现在逐批调用 `refresh_continuous_aggregate`，每批成功后推进水位；失败只重试未完成区间。
+  - 首次运行（无水位）按 `cagg-refresh-max-lookback-days` 回看；与上次水位保留 `cagg-refresh-overlap-minutes` 重叠，覆盖边界。
+  - 定时任务（默认每日 03:30）与启动后台补刷共用 Redis 分布式锁；启动补刷异步执行，不阻塞应用启动。
+- **配置**：`firefly.telemetry.cagg-refresh-*`（enabled / on-startup / cron / batch-hours / max-lookback-days / overlap-minutes）。
+- **边界**：单次最多 500 个窗口；单批区间默认 24 小时；未启用 TimescaleDB 时调用失败只记录日志，不影响主链路。

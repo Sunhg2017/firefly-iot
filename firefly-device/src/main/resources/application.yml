@@ -128,6 +128,13 @@ firefly:
     global-max-retention-days: ${FIREFLY_TELEMETRY_GLOBAL_MAX_RETENTION_DAYS:365}
     # 过期数据清理任务执行时间（默认每日 03:10）
     retention-cleanup-cron: "${FIREFLY_TELEMETRY_RETENTION_CLEANUP_CRON:0 10 3 * * ?}"
+    # 连续聚合（CAGG）缺口补刷：停机超过 policy 窗口后按水位回补降采样缺口
+    cagg-refresh-enabled: ${FIREFLY_TELEMETRY_CAGG_REFRESH_ENABLED:true}
+    cagg-refresh-on-startup: ${FIREFLY_TELEMETRY_CAGG_REFRESH_ON_STARTUP:true}
+    cagg-refresh-cron: "${FIREFLY_TELEMETRY_CAGG_REFRESH_CRON:0 30 3 * * ?}"
+    cagg-refresh-batch-hours: ${FIREFLY_TELEMETRY_CAGG_REFRESH_BATCH_HOURS:24}
+    cagg-refresh-max-lookback-days: ${FIREFLY_TELEMETRY_CAGG_REFRESH_MAX_LOOKBACK_DAYS:30}
+    cagg-refresh-overlap-minutes: ${FIREFLY_TELEMETRY_CAGG_REFRESH_OVERLAP_MINUTES:10}
   # OTA 固件签名校验：配置后固件可携带 RSA-SHA256 签名
   ota:
     signature-public-key: ${FIREFLY_OTA_SIGNATURE_PUBLIC_KEY:}

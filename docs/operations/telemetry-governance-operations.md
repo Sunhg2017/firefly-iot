@@ -77,3 +77,37 @@ CALL refresh_continuous_aggregate('device_telemetry_daily', now() - INTERVAL '73
   - `DROP MATERIALIZED VIEW IF EXISTS device_telemetry_hourly;` / `..._daily;`
   - 超表回退普通表成本较高，一般不建议；如需回退请先备份。
 - `V41` 权限迁移为幂等写入，回滚不要求删除数据。
+
+## 连续聚合（CAGG）缺口补刷
+
+### 迁移
+
+`firefly-device` 迁移 `V35__init_cagg_refresh_state.sql` 创建 `telemetry_cagg_refresh_state`（CAGG 补刷水位）。
+
+### 配置
+
+| 配置 | 环境变量 | 默认 | 说明 |
+| --- | --- | --- | --- |
+| `firefly.telemetry.cagg-refresh-enabled` | `FIREFLY_TELEMETRY_CAGG_REFRESH_ENABLED` | `true` | 是否启用补刷 |
+| `firefly.telemetry.cagg-refresh-on-startup` | `FIREFLY_TELEMETRY_CAGG_REFRESH_ON_STARTUP` | `true` | 启动后异步补刷一次 |
+| `firefly.telemetry.cagg-refresh-cron` | `FIREFLY_TELEMETRY_CAGG_REFRESH_CRON` | `0 30 3 * * ?` | 定时补刷 cron |
+| `firefly.telemetry.cagg-refresh-batch-hours` | `FIREFLY_TELEMETRY_CAGG_REFRESH_BATCH_HOURS` | `24` | 单批刷新区间（小时） |
+| `firefly.telemetry.cagg-refresh-max-lookback-days` | `FIREFLY_TELEMETRY_CAGG_REFRESH_MAX_LOOKBACK_DAYS` | `30` | 无水位时最大回看天数 |
+| `firefly.telemetry.cagg-refresh-overlap-minutes` | `FIREFLY_TELEMETRY_CAGG_REFRESH_OVERLAP_MINUTES` | `10` | 与上次水位重叠分钟数 |
+
+### 验证
+
+```sql
+SELECT cagg_name, refreshed_until, updated_at FROM telemetry_cagg_refresh_state;
+```
+
+- 日志关键字：`CAGG gap refresh finished`、`CAGG gap refresh failed`、`skipped because another instance holds the lock`。
+- 锁 key：`lock:job:telemetry-cagg-refresh`，TTL 10 分钟。
+
+### 故障排查
+
+| 现象 | 排查 |
+| --- | --- |
+| 水位不前进 | 检查 TimescaleDB 是否可用、`refresh_continuous_aggregate` 是否有权限；看 `CAGG gap refresh failed` 日志 |
+| 补刷范围过大 | 调小 `max-lookback-days`/`batch-hours`，或手工设置水位 |
+| 多副本重复执行 | 确认 Redis 可用；锁竞争时只有一个实例执行 |

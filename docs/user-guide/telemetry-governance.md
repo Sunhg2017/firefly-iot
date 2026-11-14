@@ -85,3 +85,9 @@
 - [设计方案](../design/detailed-design-telemetry-governance.md)
 - [运维说明](../operations/telemetry-governance-operations.md)
 - [设备数据详细设计](../design/detailed-design-device-data.md)
+
+## 降采样缺口自动补刷
+
+- 系统停机或长时间无数据超过 TimescaleDB 聚合窗口后，小时/天降采样会出现缺口。
+- 平台会在启动后以及每日 03:30 自动按补刷水位回补缺口，无需人工干预。
+- 运维可通过 `telemetry_cagg_refresh_state.refreshed_until` 查看已补刷到的时间点。
