@@ -175,4 +175,11 @@
         ORDER BY latest.property ASC
     </select>
 
+
+    <insert id="insertPayload">
+        INSERT INTO device_telemetry_payload (tenant_id, device_id, message_id, ts, payload)
+        VALUES (#{tenantId}, #{deviceId}, #{messageId}, #{ts}, CAST(#{payload} AS JSONB))
+        ON CONFLICT (tenant_id, device_id, message_id) DO NOTHING
+    </insert>
+
 </mapper>

@@ -25,6 +25,8 @@ x-java-service: &java-service
     SPRING_DATA_REDIS_PORT: ${REDIS_PORT:-6379}
     SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_SERVERS:-kafka:9092}
+    # 每个 @KafkaListener 的并发消费线程数（application.yml 中消费该变量）
+    KAFKA_LISTENER_CONCURRENCY: ${KAFKA_LISTENER_CONCURRENCY:-2}
     SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: ${NACOS_ADDR:-nacos:8848}
     SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE: ${NACOS_NAMESPACE:-firefly-dev}
     SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: ${NACOS_ADDR:-nacos:8848}
@@ -32,6 +34,25 @@ x-java-service: &java-service
     FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY: ${FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY:-}
     FIREFLY_OPENAPI_APPKEY_SIGNATURE_WINDOW_SECONDS: ${FIREFLY_OPENAPI_APPKEY_SIGNATURE_WINDOW_SECONDS:-300}
     FIREFLY_INTERNAL_TOKEN: ${FIREFLY_INTERNAL_TOKEN:-}
+    # 日志保留与遥测清理
+    FIREFLY_LOGS_DEVICE_LOG_RETENTION_DAYS: ${FIREFLY_LOGS_DEVICE_LOG_RETENTION_DAYS:-30}
+    FIREFLY_LOGS_DEVICE_EVENT_RETENTION_DAYS: ${FIREFLY_LOGS_DEVICE_EVENT_RETENTION_DAYS:-90}
+    FIREFLY_LOGS_OPERATION_LOG_RETENTION_DAYS: ${FIREFLY_LOGS_OPERATION_LOG_RETENTION_DAYS:-90}
+    FIREFLY_LOGS_AUDIT_LOG_RETENTION_DAYS: ${FIREFLY_LOGS_AUDIT_LOG_RETENTION_DAYS:-180}
+    FIREFLY_LOGS_RETENTION_CLEANUP_CRON: ${FIREFLY_LOGS_RETENTION_CLEANUP_CRON:-0 20 3 * * ?}
+    FIREFLY_TELEMETRY_CLEANUP_BATCH_SIZE: ${FIREFLY_TELEMETRY_CLEANUP_BATCH_SIZE:-500}
+    FIREFLY_TELEMETRY_CLEANUP_MAX_BATCHES: ${FIREFLY_TELEMETRY_CLEANUP_MAX_BATCHES:-200}
+    # 设备影子缓存与锁
+    FIREFLY_SHADOW_REDIS_TTL_DAYS: ${FIREFLY_SHADOW_REDIS_TTL_DAYS:-7}
+    FIREFLY_SHADOW_LOCK_TTL_MS: ${FIREFLY_SHADOW_LOCK_TTL_MS:-3000}
+    # 下行待投递队列（connector 使用）
+    FIREFLY_DOWNLINK_PENDING_MAX_PER_DEVICE: ${FIREFLY_DOWNLINK_PENDING_MAX_PER_DEVICE:-100}
+    FIREFLY_DOWNLINK_PENDING_TTL_HOURS: ${FIREFLY_DOWNLINK_PENDING_TTL_HOURS:-24}
+    FIREFLY_DOWNLINK_SEEN_TTL_MINUTES: ${FIREFLY_DOWNLINK_SEEN_TTL_MINUTES:-60}
+    FIREFLY_DOWNLINK_FLUSH_BATCH_SIZE: ${FIREFLY_DOWNLINK_FLUSH_BATCH_SIZE:-50}
+    # 通知渠道投递重试
+    FIREFLY_NOTIFICATION_MAX_ATTEMPTS: ${FIREFLY_NOTIFICATION_MAX_ATTEMPTS:-3}
+    FIREFLY_NOTIFICATION_RETRY_BACKOFF_MS: ${FIREFLY_NOTIFICATION_RETRY_BACKOFF_MS:-200}
     JAVA_OPTS: ${JAVA_OPTS:--Xms256m -Xmx512m}
   networks:
     - firefly-net
@@ -49,7 +70,7 @@ services:
   # ======================== Infrastructure ========================
 
   postgres:
-    image: timescale/timescaledb:latest-pg16
+    image: timescale/timescaledb:2.32.0-pg16
     container_name: firefly-postgres
     restart: unless-stopped
     environment:
@@ -121,6 +142,30 @@ services:
     networks:
       - firefly-net
 
+  # ======================== Kafka topic bootstrap ========================
+  # 预建业务 topic 与 <topic>.dlt，默认不启动；显式启用：
+  #   docker compose -f docker-compose.github.yml --env-file .env --profile kafka-init up -d
+  # 或只跑一次：
+  #   docker compose -f docker-compose.github.yml --env-file .env --profile kafka-init run --rm kafka-init
+  kafka-init:
+    image: apache/kafka:3.7.1
+    container_name: firefly-kafka-init
+    profiles: ["kafka-init"]
+    restart: "no"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_SERVERS:-kafka:9092}
+      KAFKA_TOPIC_PARTITIONS: ${KAFKA_TOPIC_PARTITIONS:-3}
+      KAFKA_TOPIC_REPLICATION_FACTOR: ${KAFKA_TOPIC_REPLICATION_FACTOR:-3}
+      KAFKA_TOPICS_BIN: /opt/kafka/bin/kafka-topics.sh
+    volumes:
+      - ./kafka/init-topics.sh:/opt/firefly/init-topics.sh:ro
+    entrypoint: ["/bin/bash", "/opt/firefly/init-topics.sh"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - firefly-net
+
   nacos:
     image: nacos/nacos-server:v2.3.2
     container_name: firefly-nacos
@@ -143,7 +188,7 @@ services:
       - firefly-net
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: firefly-minio
     restart: unless-stopped
     environment:

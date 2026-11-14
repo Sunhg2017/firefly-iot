@@ -1,0 +1,108 @@
+# ============================================================
+# Firefly IoT Kafka HA overlay（3 broker，KRaft combined 模式）
+#
+# 本文件是 docker-compose.prod.yml 的 overlay，只补充 3 个 HA broker，
+# 不修改原单 broker `kafka` 服务与其他业务服务配置。
+#
+# 前置条件（deploy/.env）：
+#   KAFKA_SERVERS=kafka1:9092,kafka2:9092,kafka3:9092
+#   KAFKA_TOPIC_PARTITIONS=3
+#   KAFKA_TOPIC_REPLICATION_FACTOR=3
+#   KAFKA_LISTENER_CONCURRENCY=2
+#
+# 启用方式（必须显式 --profile kafka-ha，默认不启动）：
+#   cd deploy
+#   # 1) 先启动 3 个 HA broker
+#   docker compose -f docker-compose.prod.yml -f docker-compose.kafka-ha.yml \
+#     --env-file .env --profile kafka-ha up -d kafka1 kafka2 kafka3
+#   # 2) 预建 topic 与 <topic>.dlt（使用 apache/kafka 镜像自带的 kafka-topics.sh）
+#   docker compose -f docker-compose.prod.yml -f docker-compose.kafka-ha.yml \
+#     --env-file .env --profile kafka-init run --rm kafka-init
+#   # 3) 启动/更新其余服务（业务服务通过 KAFKA_SERVERS 连接 HA 集群）
+#   docker compose -f docker-compose.prod.yml -f docker-compose.kafka-ha.yml \
+#     --env-file .env --profile kafka-ha up -d
+#
+# 注意：
+# - 原单 broker `kafka` 服务仍存在于 docker-compose.prod.yml，且被所有 java 服务的
+#   depends_on 引用，因此 HA 模式下它仍会被启动，但数据面不使用它
+#   （业务服务连接地址由 .env 的 KAFKA_SERVERS 决定）。它是独立 KRaft 集群，
+#   与 kafka1/2/3 不属于同一集群，不影响 HA 集群选举。
+# - kafka1/2/3 不向宿主机发布端口，避免与单 broker 的 9092 映射冲突；
+#   如需从宿主机排障，使用 `docker compose exec kafka1 kafka-topics.sh ...`。
+# - 三个 broker 的数据卷为 kafka1_data/kafka2_data/kafka3_data，不受
+#   deploy.sh 的卷管理（POSTGRES/REDIS/KAFKA/MINIO/CONNECTOR_MQTT）覆盖，
+#   备份/清理需单独处理。
+# ============================================================
+
+x-kafka-ha: &kafka-ha
+  image: apache/kafka:3.7.1
+  restart: unless-stopped
+  profiles: ["kafka-ha"]
+  environment: &kafka-ha-env
+    # 同一个 KRaft 集群的所有节点必须使用相同 CLUSTER_ID
+    CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    KAFKA_PROCESS_ROLES: controller,broker
+    KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+    KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+    KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+    KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    # 3 副本集群的默认副本/ISR 配置：offset 与事务 topic 必须 >= 2 副本，
+    # 否则单 broker 故障会导致消费位点或事务状态丢失
+    KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+    KAFKA_MIN_INSYNC_REPLICAS: 2
+    KAFKA_LOG_DIRS: /var/lib/kafka/data
+    KAFKA_CONTROLLER_LOG_FLUSH_INTERVAL_MS: 1000
+  healthcheck:
+    test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+    interval: 15s
+    timeout: 10s
+    retries: 10
+    start_period: 30s
+  networks:
+    - firefly-net
+
+services:
+  kafka1:
+    <<: *kafka-ha
+    container_name: firefly-kafka1
+    environment:
+      <<: *kafka-ha-env
+      KAFKA_NODE_ID: 1
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9092
+    volumes:
+      - kafka1_data:/var/lib/kafka/data
+
+  kafka2:
+    <<: *kafka-ha
+    container_name: firefly-kafka2
+    environment:
+      <<: *kafka-ha-env
+      KAFKA_NODE_ID: 2
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9092
+    volumes:
+      - kafka2_data:/var/lib/kafka/data
+
+  kafka3:
+    <<: *kafka-ha
+    container_name: firefly-kafka3
+    environment:
+      <<: *kafka-ha-env
+      KAFKA_NODE_ID: 3
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9092
+    volumes:
+      - kafka3_data:/var/lib/kafka/data
+
+# 使用固定名称而非 external，首次 `up` 由 compose 自动创建；
+# 这样 HA overlay 不依赖 deploy.sh prepare 的卷创建流程。
+volumes:
+  kafka1_data:
+    name: ${KAFKA1_VOLUME_NAME:-firefly-kafka1-data}
+  kafka2_data:
+    name: ${KAFKA2_VOLUME_NAME:-firefly-kafka2-data}
+  kafka3_data:
+    name: ${KAFKA3_VOLUME_NAME:-firefly-kafka3-data}

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
 import com.songhg.firefly.iot.common.message.KafkaTopics;
 import com.songhg.firefly.iot.connector.config.MqttProperties;
+import com.songhg.firefly.iot.connector.protocol.downstream.DownlinkPendingQueue;
 import com.songhg.firefly.iot.connector.protocol.downstream.NonMqttDownstreamDispatcher;
 import com.songhg.firefly.iot.connector.protocol.dto.MqttSessionRoute;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ public class MqttDownstreamConsumer {
     private final ObjectMapper objectMapper;
     private final MqttProperties mqttProperties;
     private final NonMqttDownstreamDispatcher nonMqttDownstreamDispatcher;
+    private final DownlinkPendingQueue pendingQueue;
     private final Optional<MqttSessionRouteRegistry> routeRegistry;
     private final Optional<EmbeddedMqttBroker> embeddedMqttBroker;
     private final Optional<EmbeddedMqttConnectionManager> connectionManager;
@@ -52,8 +54,12 @@ public class MqttDownstreamConsumer {
             return;
         }
 
-        // 无在线路由时不能静默提交 offset：抛回容器触发重试，最终进入死信以便补偿。
-        throw new IllegalStateException("No online transport route for downstream message: deviceId=" + message.getDeviceId());
+        // 无在线路由：进入设备级待投递队列，设备重连后由 DownlinkPendingFlusher 补发；
+        // 队列有界且带 TTL，避免离线设备造成 DLT 积压或内存无限增长。
+        pendingQueue.enqueue(message);
+        com.songhg.firefly.iot.common.metrics.Metrics.increment("firefly.connector.downlink.deferred");
+        log.info("Downlink deferred because no online transport route: deviceId={}, messageId={}",
+                message.getDeviceId(), message.getMessageId());
     }
 
     private boolean tryDispatchByMqtt(String payload, DeviceMessage message) {

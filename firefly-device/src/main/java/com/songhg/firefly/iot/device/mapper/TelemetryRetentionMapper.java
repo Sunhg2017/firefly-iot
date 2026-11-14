@@ -43,4 +43,14 @@ public interface TelemetryRetentionMapper {
                                                     @Param("property") String property,
                                                     @Param("startTime") String startTime,
                                                     @Param("endTime") String endTime);
+
+    /**
+     * 分批删除（按 ctid 子查询限制单批行数），避免大表长事务与逐行 NOT EXISTS。
+     * 定时任务无租户上下文，必须忽略租户拦截。
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    int deleteExpiredBatchWithOverride(@Param("limit") int limit);
+
+    @InterceptorIgnore(tenantLine = "true")
+    int deleteExpiredBatchDefault(@Param("defaultDays") int defaultDays, @Param("limit") int limit);
 }

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.rule.mapper.AlarmRecordMapper">
+
+    <insert id="insertOpenIfAbsent" useGeneratedKeys="true" keyProperty="record.id" keyColumn="id">
+        INSERT INTO alarm_records (
+            tenant_id, alarm_rule_id, product_id, device_id, project_id,
+            level, status, title, content, trigger_value, created_at, updated_at
+        ) VALUES (
+            #{record.tenantId}, #{record.alarmRuleId}, #{record.productId}, #{record.deviceId}, #{record.projectId},
+            #{record.level}, #{record.status}, #{record.title}, #{record.content}, #{record.triggerValue},
+            #{record.createdAt}, #{record.updatedAt}
+        )
+        ON CONFLICT (tenant_id, alarm_rule_id, device_id)
+            WHERE status IN ('TRIGGERED', 'CONFIRMED')
+        DO NOTHING
+    </insert>
+
+</mapper>

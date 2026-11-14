@@ -9,6 +9,7 @@ import com.songhg.firefly.iot.device.dto.devicedata.TelemetryLatestVO;
 import com.songhg.firefly.iot.device.entity.DeviceTelemetry;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
@@ -45,4 +46,13 @@ public interface DeviceTelemetryMapper {
     @InterceptorIgnore(tenantLine = "true")
     List<DeviceTelemetrySnapshotDTO> queryLatestIgnoreTenant(@Param("tenantId") Long tenantId,
                                                              @Param("deviceId") Long deviceId);
+
+    /**
+     * 原始 payload 按消息只存一份；同一消息重试时忽略冲突。
+     */
+    int insertPayload(@Param("tenantId") Long tenantId,
+                      @Param("deviceId") Long deviceId,
+                      @Param("messageId") String messageId,
+                      @Param("ts") java.time.LocalDateTime ts,
+                      @Param("payload") String payload);
 }

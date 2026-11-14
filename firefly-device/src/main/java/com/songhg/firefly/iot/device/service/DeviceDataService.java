@@ -142,8 +142,9 @@ public class DeviceDataService {
             return;
         }
 
-        Device device = requireOwnedDevice(message.getTenantId(), message.getDeviceId());
+        Device device = resolveDeviceCached(message.getTenantId(), message.getDeviceId());
         LocalDateTime ts = resolveOccurredAt(message.getTimestamp());
+        String payloadJson = serializePayload(message.getPayload());
 
         List<DeviceTelemetry> records = new ArrayList<>();
         for (Map.Entry<String, Object> entry : message.getPayload().entrySet()) {
@@ -164,14 +165,14 @@ public class DeviceDataService {
                 telemetry.setValueString(val.toString());
             }
 
-            try {
-                telemetry.setRawPayload(objectMapper.writeValueAsString(message.getPayload()));
-            } catch (Exception ignored) {
-            }
+            // raw_payload 不再逐属性复制，改由 device_telemetry_payload 按消息单存一份。
             records.add(telemetry);
         }
 
         if (!records.isEmpty()) {
+            if (payloadJson != null) {
+                telemetryMapper.insertPayload(device.getTenantId(), device.getId(), message.getMessageId(), ts, payloadJson);
+            }
             telemetryMapper.batchInsert(records);
             log.debug("Telemetry written from Kafka message: deviceId={}, properties={}", device.getId(), records.size());
         }
@@ -399,5 +400,41 @@ public class DeviceDataService {
             }
         }
         return null;
+    }
+
+    // ==================== 遥测写入辅助 ====================
+
+    private static final long DEVICE_CACHE_TTL_MS = 60_000L;
+    private final java.util.concurrent.ConcurrentHashMap<Long, CachedDevice> deviceCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private record CachedDevice(Device device, long expireAt) {
+    }
+
+    /**
+     * 高频遥测写入路径避免每条消息查一次设备；缓存 60 秒，设备不存在时仍回源校验。
+     */
+    private Device resolveDeviceCached(Long tenantId, Long deviceId) {
+        if (deviceId == null) {
+            throw new BizException(ResultCode.PARAM_ERROR, "deviceId is required");
+        }
+        long now = System.currentTimeMillis();
+        CachedDevice cached = deviceCache.get(deviceId);
+        if (cached != null && cached.expireAt() > now
+                && java.util.Objects.equals(cached.device().getTenantId(), tenantId)) {
+            return cached.device();
+        }
+        Device device = requireOwnedDevice(tenantId, deviceId);
+        deviceCache.put(deviceId, new CachedDevice(device, now + DEVICE_CACHE_TTL_MS));
+        return device;
+    }
+
+    private String serializePayload(Map<String, Object> payload) {
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception ex) {
+            log.warn("Failed to serialize telemetry payload: {}", ex.getMessage());
+            return null;
+        }
     }
 }

@@ -10,6 +10,7 @@ import io.netty.buffer.ByteBufUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -30,6 +31,7 @@ public class EmbeddedMqttConnectionManager {
     private final MqttProtocolAdapter mqttProtocolAdapter;
     private final MqttSessionRouteRegistry routeRegistry;
     private final MqttProperties mqttProperties;
+    private final ApplicationEventPublisher eventPublisher;
 
     private final ConcurrentHashMap<String, MqttConnectionContext> pendingContexts = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, MqttSessionRoute> localRoutesByClientId = new ConcurrentHashMap<>();
@@ -58,6 +60,12 @@ public class EmbeddedMqttConnectionManager {
         }
 
         registerLocalRoute(context);
+        MqttSessionRoute reconnectedRoute = localRoutesByDeviceId.get(context.getDeviceId());
+        if (reconnectedRoute != null) {
+            // 触发离线期间积压下行消息的补发；监听方通过事件解耦，避免 Broker 与连接管理器循环依赖。
+            eventPublisher.publishEvent(new com.songhg.firefly.iot.connector.protocol.downstream.DeviceReconnectedEvent(
+                    reconnectedRoute.getDeviceId(), reconnectedRoute));
+        }
         mqttProtocolAdapter.handleConnected(context);
     }
 

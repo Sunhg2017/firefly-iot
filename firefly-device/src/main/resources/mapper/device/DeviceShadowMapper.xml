@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.device.mapper.DeviceShadowMapper">
+
+    <!--
+      原子合并：数据库内完成 JSONB 合并、null 键剔除与版本自增，
+      避免多实例并发 read-modify-write 丢失更新。
+    -->
+    <select id="mergeDesired" resultType="com.songhg.firefly.iot.device.entity.DeviceShadowRecord">
+        INSERT INTO device_shadow (device_id, tenant_id, desired, version, updated_at)
+        VALUES (#{deviceId}, #{tenantId}, jsonb_strip_nulls(CAST(#{delta} AS JSONB)), 1, now())
+        ON CONFLICT (device_id) DO UPDATE
+        SET tenant_id = EXCLUDED.tenant_id,
+            desired = jsonb_strip_nulls(COALESCE(device_shadow.desired, '{}'::jsonb) || CAST(#{delta} AS JSONB)),
+            version = device_shadow.version + 1,
+            updated_at = now()
+        RETURNING device_id AS deviceId, tenant_id AS tenantId, desired::text AS desired, version, updated_at AS updatedAt
+    </select>
+
+    <select id="replaceDesired" resultType="com.songhg.firefly.iot.device.entity.DeviceShadowRecord">
+        INSERT INTO device_shadow (device_id, tenant_id, desired, version, updated_at)
+        VALUES (#{deviceId}, #{tenantId}, CAST(#{desired} AS JSONB), 1, now())
+        ON CONFLICT (device_id) DO UPDATE
+        SET tenant_id = EXCLUDED.tenant_id,
+            desired = EXCLUDED.desired,
+            version = device_shadow.version + 1,
+            updated_at = now()
+        RETURNING device_id AS deviceId, tenant_id AS tenantId, desired::text AS desired, version, updated_at AS updatedAt
+    </select>
+
+    <select id="selectByDeviceIdIgnoreTenant"
+            resultType="com.songhg.firefly.iot.device.entity.DeviceShadowRecord">
+        SELECT device_id AS deviceId,
+               tenant_id AS tenantId,
+               desired::text AS desired,
+               version,
+               updated_at AS updatedAt
+        FROM device_shadow
+        WHERE device_id = #{deviceId}
+    </select>
+
+    <delete id="deleteByDeviceIdIgnoreTenant">
+        DELETE FROM device_shadow WHERE device_id = #{deviceId}
+    </delete>
+
+</mapper>

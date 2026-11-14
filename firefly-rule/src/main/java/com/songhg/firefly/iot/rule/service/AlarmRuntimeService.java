@@ -195,16 +195,20 @@ public class AlarmRuntimeService {
         }
 
         if (activeRecord == null) {
-            AlarmRecord record = createRecord(rule, message, deviceBasic, match);
-            dispatchNotifications(rule, message, deviceBasic, record);
+            AlarmInsertResult insertResult = createRecord(rule, message, deviceBasic, match);
+            if (insertResult.created() && insertResult.record() != null) {
+                dispatchNotifications(rule, message, deviceBasic, insertResult.record());
+            }
             return;
         }
 
         if (isHigherLevel(match.level(), activeRecord.getLevel())) {
             closeRecord(activeRecord,
                     "系统检测到更高级别告警，自动关闭当前记录并升级为 " + match.level().getDescription() + "。");
-            AlarmRecord record = createRecord(rule, message, deviceBasic, match);
-            dispatchNotifications(rule, message, deviceBasic, record);
+            AlarmInsertResult insertResult = createRecord(rule, message, deviceBasic, match);
+            if (insertResult.created() && insertResult.record() != null) {
+                dispatchNotifications(rule, message, deviceBasic, insertResult.record());
+            }
         }
     }
 
@@ -445,10 +449,14 @@ public class AlarmRuntimeService {
                 .last("LIMIT 1"));
     }
 
-    private AlarmRecord createRecord(AlarmRule rule,
-                                     DeviceMessage message,
-                                     DeviceBasicVO deviceBasic,
-                                     AlarmMatch match) {
+    /**
+     * 创建进行中告警。依赖 (租户, 规则, 设备) 部分唯一索引保证并发/重放幂等：
+     * 冲突时返回已存在记录且 created=false，调用方不得再次派发通知。
+     */
+    private AlarmInsertResult createRecord(AlarmRule rule,
+                                           DeviceMessage message,
+                                           DeviceBasicVO deviceBasic,
+                                           AlarmMatch match) {
         LocalDateTime now = resolveOccurredAt(message.getTimestamp());
         AlarmRecord record = new AlarmRecord();
         record.setTenantId(rule.getTenantId());
@@ -463,11 +471,20 @@ public class AlarmRuntimeService {
         record.setTriggerValue(match.triggerValue());
         record.setCreatedAt(now);
         record.setUpdatedAt(now);
-        alarmRecordMapper.insert(record);
+        int inserted = alarmRecordMapper.insertOpenIfAbsent(record);
+        if (inserted == 0) {
+            AlarmRecord existing = findOpenRecord(rule.getTenantId(), rule.getId(), message.getDeviceId());
+            log.info("Alarm open record already exists, skip duplicate: ruleId={}, deviceId={}, recordId={}",
+                    rule.getId(), message.getDeviceId(), existing != null ? existing.getId() : null);
+            return new AlarmInsertResult(existing, false);
+        }
         log.info("Alarm triggered: ruleId={}, recordId={}, deviceId={}, level={}",
                 rule.getId(), record.getId(), message.getDeviceId(), match.level());
         publishAlertTriggered(record);
-        return record;
+        return new AlarmInsertResult(record, true);
+    }
+
+    private record AlarmInsertResult(AlarmRecord record, boolean created) {
     }
 
     /**

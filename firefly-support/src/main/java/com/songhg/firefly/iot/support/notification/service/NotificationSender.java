@@ -14,6 +14,7 @@ import com.songhg.firefly.iot.support.notification.mapper.NotificationChannelMap
 import com.songhg.firefly.iot.support.notification.mapper.NotificationRecordMapper;
 import com.songhg.firefly.iot.support.service.InAppMessageService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -42,6 +43,12 @@ import java.util.Properties;
 public class NotificationSender {
 
     private static final int MAX_ERROR_MESSAGE_LENGTH = 500;
+
+    @Value("${firefly.notification.max-attempts:3}")
+    private int maxAttempts;
+
+    @Value("${firefly.notification.retry-backoff-ms:200}")
+    private long retryBackoffMs;
     private static final Long PLATFORM_CHANNEL_TENANT_ID = 0L;
     private static final String PLATFORM_TENANT_CODE = "system-ops";
 
@@ -144,7 +151,7 @@ public class NotificationSender {
             record.setContent(content);
 
             // Provider payloads differ by channel, but all branches use the same rendered template.
-            dispatch(channelType, channel, subject, content, template.getCode(), recipient, tenantId, operatorUserId);
+            dispatchWithRetry(channelType, channel, subject, content, template.getCode(), recipient, tenantId, operatorUserId);
             record.setStatus("SUCCESS");
             record.setSentAt(LocalDateTime.now());
         } catch (Exception ex) {
@@ -153,6 +160,43 @@ public class NotificationSender {
             log.error("Notification send failed, tenantId={}, channelId={}, templateCode={}", tenantId, channelId, templateCode, ex);
         }
         saveRecord(record);
+    }
+
+    /**
+     * 渠道投递有界重试：网络抖动/网关限流时最多重试 maxAttempts 次，最终失败写入通知记录。
+     */
+    private void dispatchWithRetry(
+            NotificationChannelType channelType,
+            NotificationChannel channel,
+            String subject,
+            String content,
+            String templateCode,
+            String recipient,
+            Long tenantId,
+            Long operatorUserId
+    ) throws Exception {
+        int attempts = Math.max(1, maxAttempts);
+        Exception lastError = null;
+        for (int attempt = 1; attempt <= attempts; attempt++) {
+            try {
+                dispatch(channelType, channel, subject, content, templateCode, recipient, tenantId, operatorUserId);
+                return;
+            } catch (Exception ex) {
+                lastError = ex;
+                if (attempt >= attempts) {
+                    break;
+                }
+                log.warn("Notification dispatch failed, retrying: channelId={}, type={}, attempt={}/{}, error={}",
+                        channel.getId(), channelType, attempt, attempts, ex.getMessage());
+                try {
+                    Thread.sleep(Math.max(0L, retryBackoffMs) * attempt);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw ex;
+                }
+            }
+        }
+        throw lastError == null ? new IllegalStateException("Notification dispatch failed") : lastError;
     }
 
     private void dispatch(

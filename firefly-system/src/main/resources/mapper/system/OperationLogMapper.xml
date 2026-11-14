@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.system.mapper.OperationLogMapper">
+
+    <!--
+      定时保留清理：按创建时间删除过期操作日志的一批数据。
+      时间基准使用数据库 now()；子查询 + LIMIT 限制单批行数，由 LogRetentionJob 循环调用。
+      该语句用于跨租户全局清理，Mapper 方法通过 @InterceptorIgnore(tenantLine = "true")
+      跳过租户行级隔离，避免调度线程无租户上下文时被拦截器注入条件。
+    -->
+    <delete id="deleteExpiredBatch">
+        DELETE FROM operation_logs
+        WHERE id IN (
+            SELECT id
+            FROM operation_logs
+            WHERE created_at &lt; now() - make_interval(days =&gt; #{retentionDays})
+            ORDER BY created_at
+            LIMIT #{batchSize}
+        )
+    </delete>
+
+</mapper>

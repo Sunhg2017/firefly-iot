@@ -72,10 +72,29 @@ public class TelemetryRetentionService {
      * 使用 @InterceptorIgnore 绕过租户行级隔离，SQL 内显式按 tenant_id 关联。
      */
     public void cleanupExpiredTelemetry() {
-        int overrideRows = retentionMapper.deleteExpiredForTenantsWithOverride();
-        int defaultRows = retentionMapper.deleteExpiredForDefaultTenants(properties.getDefaultRetentionDays());
+        int batchSize = properties.getCleanupBatchSize();
+        int maxBatches = properties.getCleanupMaxBatches();
+        int overrideRows = cleanupBatches(batchSize, maxBatches,
+                limit -> retentionMapper.deleteExpiredBatchWithOverride(limit));
+        int defaultRows = cleanupBatches(batchSize, maxBatches,
+                limit -> retentionMapper.deleteExpiredBatchDefault(properties.getDefaultRetentionDays(), limit));
         log.info("Telemetry retention cleanup finished: overrideRows={}, defaultRows={}, defaultDays={}",
                 overrideRows, defaultRows, properties.getDefaultRetentionDays());
+    }
+
+    /**
+     * 分批删除直到没有更多过期行或达到批次数上限，避免单条 DELETE 长时间持有锁。
+     */
+    private int cleanupBatches(int batchSize, int maxBatches, java.util.function.IntUnaryOperator batchDelete) {
+        int total = 0;
+        for (int batch = 0; batch < maxBatches; batch++) {
+            int deleted = batchDelete.applyAsInt(batchSize);
+            total += deleted;
+            if (deleted < batchSize) {
+                break;
+            }
+        }
+        return total;
     }
 
     private void validateRetentionDays(Integer retentionDays) {

@@ -254,3 +254,8 @@ GitHub 仓库和服务器的具体配置步骤请查看：
 - [OTA 升级设计](docs/design/ota-upgrade.md)
 - [OTA 升级运维说明](docs/operations/ota-upgrade.md)
 - [OTA 升级使用说明](docs/user-guide/ota-upgrade.md)
+- [消息与数据可靠性设计](docs/design/message-data-reliability.md)
+- [消息与数据可靠性运维说明](docs/operations/message-data-reliability.md)
+- [消息与数据可靠性使用说明](docs/user-guide/message-data-reliability.md)
+- [Kafka 可靠性设计](docs/design/kafka-reliability.md)
+- [日志保留设计](docs/design/log-retention.md) / [运维](docs/operations/log-retention.md) / [使用](docs/user-guide/log-retention.md)

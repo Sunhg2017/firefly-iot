@@ -77,7 +77,7 @@ class AlarmRuntimeServiceTest {
             AlarmRecord record = invocation.getArgument(0);
             record.setId(9001L);
             return 1;
-        }).when(alarmRecordMapper).insert(any(AlarmRecord.class));
+        }).when(alarmRecordMapper).insertOpenIfAbsent(any(AlarmRecord.class));
     }
 
     @Test
@@ -109,7 +109,7 @@ class AlarmRuntimeServiceTest {
         alarmRuntimeService.process(message);
 
         ArgumentCaptor<AlarmRecord> recordCaptor = ArgumentCaptor.forClass(AlarmRecord.class);
-        verify(alarmRecordMapper).insert(recordCaptor.capture());
+        verify(alarmRecordMapper).insertOpenIfAbsent(recordCaptor.capture());
         AlarmRecord inserted = recordCaptor.getValue();
         assertEquals(AlarmStatus.TRIGGERED, inserted.getStatus());
         assertEquals(AlarmLevel.WARNING, inserted.getLevel());
@@ -151,7 +151,7 @@ class AlarmRuntimeServiceTest {
         AlarmRecord updated = recordCaptor.getValue();
         assertEquals(AlarmStatus.CLOSED, updated.getStatus());
         assertTrue(updated.getProcessRemark().contains("自动关闭"));
-        verify(alarmRecordMapper, never()).insert(any(AlarmRecord.class));
+        verify(alarmRecordMapper, never()).insertOpenIfAbsent(any(AlarmRecord.class));
         verify(notificationClient, never()).send(any(NotificationRequestDTO.class));
     }
 
@@ -196,7 +196,7 @@ class AlarmRuntimeServiceTest {
         assertTrue(updatedCaptor.getValue().getProcessRemark().contains("更高级别告警"));
 
         ArgumentCaptor<AlarmRecord> insertedCaptor = ArgumentCaptor.forClass(AlarmRecord.class);
-        verify(alarmRecordMapper).insert(insertedCaptor.capture());
+        verify(alarmRecordMapper).insertOpenIfAbsent(insertedCaptor.capture());
         assertEquals(AlarmLevel.CRITICAL, insertedCaptor.getValue().getLevel());
 
         ArgumentCaptor<NotificationRequestDTO> notificationCaptor = ArgumentCaptor.forClass(NotificationRequestDTO.class);
@@ -227,7 +227,7 @@ class AlarmRuntimeServiceTest {
         alarmRuntimeService.process(buildPropertyMessage(120));
 
         ArgumentCaptor<AlarmRecord> insertedCaptor = ArgumentCaptor.forClass(AlarmRecord.class);
-        verify(alarmRecordMapper).insert(insertedCaptor.capture());
+        verify(alarmRecordMapper).insertOpenIfAbsent(insertedCaptor.capture());
         assertEquals(AlarmLevel.INFO, insertedCaptor.getValue().getLevel());
         assertTrue(insertedCaptor.getValue().getContent().contains("变化%=20"));
     }
@@ -250,7 +250,7 @@ class AlarmRuntimeServiceTest {
 
         verify(alarmRuleMapper, never()).selectList(any(LambdaQueryWrapper.class));
         verify(alarmRecordMapper, never()).updateById(any(AlarmRecord.class));
-        verify(alarmRecordMapper, never()).insert(any(AlarmRecord.class));
+        verify(alarmRecordMapper, never()).insertOpenIfAbsent(any(AlarmRecord.class));
     }
 
     private AlarmRule buildRule(Long id, String name, String conditionExpr, String notifyConfig) {

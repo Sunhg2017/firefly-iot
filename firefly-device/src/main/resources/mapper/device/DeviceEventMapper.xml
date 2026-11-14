@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.device.mapper.DeviceEventMapper">
+
+    <!--
+      定时保留清理：按创建时间删除过期设备事件的一批数据。
+      device_events.created_at 为 TIMESTAMPTZ，与数据库 now() 直接比较；
+      子查询 + LIMIT 控制单批行数，Mapper 方法通过 @InterceptorIgnore(tenantLine = "true")
+      跳过租户行级隔离以执行全局清理。
+    -->
+    <delete id="deleteExpiredBatch">
+        DELETE FROM device_events
+        WHERE id IN (
+            SELECT id
+            FROM device_events
+            WHERE created_at &lt; now() - make_interval(days =&gt; #{retentionDays})
+            ORDER BY created_at
+            LIMIT #{batchSize}
+        )
+    </delete>
+
+</mapper>

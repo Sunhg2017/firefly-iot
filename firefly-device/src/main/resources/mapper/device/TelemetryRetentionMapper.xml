@@ -97,4 +97,29 @@
         ORDER BY bucket DESC
     </select>
 
+
+    <delete id="deleteExpiredBatchWithOverride">
+        DELETE FROM device_telemetry dt
+        WHERE dt.ctid IN (
+            SELECT dt2.ctid
+            FROM device_telemetry dt2
+            JOIN tenant_telemetry_retention r2 ON dt2.tenant_id = r2.tenant_id
+            WHERE dt2.ts &lt; now() - make_interval(days => r2.retention_days)
+            LIMIT #{limit}
+        )
+    </delete>
+
+    <delete id="deleteExpiredBatchDefault">
+        DELETE FROM device_telemetry dt
+        WHERE dt.ctid IN (
+            SELECT dt2.ctid
+            FROM device_telemetry dt2
+            WHERE dt2.ts &lt; now() - make_interval(days => #{defaultDays})
+              AND NOT EXISTS (
+                  SELECT 1 FROM tenant_telemetry_retention r WHERE r.tenant_id = dt2.tenant_id
+              )
+            LIMIT #{limit}
+        )
+    </delete>
+
 </mapper>

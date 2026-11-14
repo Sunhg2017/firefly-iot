@@ -35,15 +35,36 @@ spring:
       database: 0
 
   kafka:
-    bootstrap-servers: 192.168.123.102:9092
+    # 优先读取部署环境注入的地址；缺省指向本机单 broker，便于本地开发
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
+      # acks=all 要求 ISR 全部副本落盘确认，避免 broker 故障丢失已确认消息
+      acks: all
+      retries: 10
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        # 幂等生产者：broker 端按 producer id + 序列号去重，配合 acks=all/retries 避免重复写入
+        enable.idempotence: true
+        # 幂等生产者要求 in-flight 请求 <= 5；超过会打破单分区写入顺序
+        max.in.flight.requests.per.connection: 5
+        # 单条消息从 send 到最终失败的总超时，需大于 retries 次重试的累计时间
+        delivery.timeout.ms: 120000
     consumer:
       group-id: firefly-support
       auto-offset-reset: earliest
+      # 单次 poll 最多拉取条数，控制单批处理耗时，避免触发 max.poll.interval.ms 再平衡
+      max-poll-records: 200
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        # 单批处理时间上限（5 分钟）；超时未 poll 会被踢出消费组并触发再平衡
+        max.poll.interval.ms: 300000
+    listener:
+      # 每个 @KafkaListener 的并发消费线程数；可由部署环境按分区数调整
+      concurrency: ${KAFKA_LISTENER_CONCURRENCY:2}
+      # 单条记录处理成功后立即提交 offset，避免批内部分失败时整批重复消费
+      ack-mode: record
 
   flyway:
     connect-retries: ${FLYWAY_CONNECT_RETRIES:30}
@@ -111,3 +132,8 @@ management:
 firefly:
   internal:
     token: ${FIREFLY_INTERNAL_TOKEN:firefly-internal-dev}
+
+  notification:
+    # 渠道投递最大尝试次数与退避基数（毫秒）
+    max-attempts: ${FIREFLY_NOTIFICATION_MAX_ATTEMPTS:3}
+    retry-backoff-ms: ${FIREFLY_NOTIFICATION_RETRY_BACKOFF_MS:200}
