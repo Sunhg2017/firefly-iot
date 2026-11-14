@@ -96,3 +96,12 @@ management:
       endpoint: ${FIREFLY_OTLP_TRACING_ENDPOINT:http://127.0.0.1:4318/v1/traces}
 
 
+
+firefly:
+  telemetry:
+    # 全局默认保留天数，未单独配置的租户使用该值
+    default-retention-days: ${FIREFLY_TELEMETRY_DEFAULT_RETENTION_DAYS:90}
+    # 租户可设置的最大保留天数，需与迁移脚本中的全局 drop_chunks 上限保持一致
+    global-max-retention-days: ${FIREFLY_TELEMETRY_GLOBAL_MAX_RETENTION_DAYS:365}
+    # 过期数据清理任务执行时间（默认每日 03:10）
+    retention-cleanup-cron: "${FIREFLY_TELEMETRY_RETENTION_CLEANUP_CRON:0 10 3 * * ?}"

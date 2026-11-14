@@ -9,10 +9,15 @@ import com.songhg.firefly.iot.device.dto.devicedata.DeviceEventWriteDTO;
 import com.songhg.firefly.iot.device.dto.devicedata.TelemetryAggregateDTO;
 import com.songhg.firefly.iot.device.dto.devicedata.TelemetryAggregateVO;
 import com.songhg.firefly.iot.device.dto.devicedata.TelemetryDataVO;
+import com.songhg.firefly.iot.device.dto.devicedata.TelemetryDownsampleDTO;
+import com.songhg.firefly.iot.device.dto.devicedata.TelemetryDownsampleVO;
 import com.songhg.firefly.iot.device.dto.devicedata.TelemetryLatestVO;
 import com.songhg.firefly.iot.device.dto.devicedata.TelemetryQueryDTO;
+import com.songhg.firefly.iot.device.dto.devicedata.TelemetryRetentionDTO;
+import com.songhg.firefly.iot.device.dto.devicedata.TelemetryRetentionVO;
 import com.songhg.firefly.iot.device.dto.devicedata.TelemetryWriteDTO;
 import com.songhg.firefly.iot.device.service.DeviceDataService;
+import com.songhg.firefly.iot.device.service.TelemetryRetentionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,6 +34,7 @@ import java.util.List;
 public class DeviceDataController {
 
     private final DeviceDataService deviceDataService;
+    private final TelemetryRetentionService retentionService;
 
     // ==================== Telemetry Write ====================
 
@@ -74,6 +80,36 @@ public class DeviceDataController {
     public R<List<TelemetryLatestVO>> queryLatest(
             @Parameter(description = "设备编号", required = true) @PathVariable Long deviceId) {
         return R.ok(deviceDataService.queryLatest(deviceId));
+    }
+
+    @Operation(summary = "降采样查询遥测数据（小时/天）")
+    @PostMapping("/device-data/downsample")
+    @RequiresPermission("data:read")
+    public R<List<TelemetryDownsampleVO>> queryDownsample(@Valid @RequestBody TelemetryDownsampleDTO query) {
+        return R.ok(deviceDataService.queryDownsample(query));
+    }
+
+    // ==================== Telemetry Retention ====================
+
+    @Operation(summary = "查询当前租户时序数据保留策略")
+    @GetMapping("/device-data/retention")
+    @RequiresPermission("data:read")
+    public R<TelemetryRetentionVO> getRetention() {
+        return R.ok(retentionService.getRetention());
+    }
+
+    @Operation(summary = "设置当前租户时序数据保留天数")
+    @PutMapping("/device-data/retention")
+    @RequiresPermission("data:retention")
+    public R<TelemetryRetentionVO> setRetention(@Valid @RequestBody TelemetryRetentionDTO dto) {
+        return R.ok(retentionService.setRetention(dto.getRetentionDays()));
+    }
+
+    @Operation(summary = "重置当前租户时序数据保留策略为全局默认")
+    @DeleteMapping("/device-data/retention")
+    @RequiresPermission("data:retention")
+    public R<TelemetryRetentionVO> resetRetention() {
+        return R.ok(retentionService.resetRetention());
     }
 
     // ==================== Device Events ====================

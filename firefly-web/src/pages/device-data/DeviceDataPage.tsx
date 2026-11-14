@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Table, Button, Tag, Space, Card, message, Form, Input, Select, Tabs } from 'antd';
+import { Table, Button, Tag, Space, Card, message, Form, Input, Select, Tabs, Modal, InputNumber } from 'antd';
 import {
   SearchOutlined,
   BarChartOutlined,
@@ -7,10 +7,12 @@ import {
   FieldTimeOutlined,
   FunctionOutlined,
   AlertOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { deviceApi, deviceDataApi } from '../../services/api';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
+import useAuthStore from '../../store/useAuthStore';
 
 interface DeviceOptionRecord {
   id: number;
@@ -75,6 +77,13 @@ interface EventRecord {
   level: string;
   payload: string;
   occurredAt: string;
+}
+
+interface RetentionInfo {
+  retentionDays: number;
+  defaultRetentionDays: number;
+  globalMaxRetentionDays: number;
+  usingDefault: boolean;
 }
 
 const levelColors: Record<string, string> = { INFO: 'blue', WARNING: 'orange', CRITICAL: 'red' };
@@ -449,6 +458,61 @@ const EventsTab: React.FC<TabSharedProps> = ({ deviceOptions, deviceOptionsLoadi
 const DeviceDataPage: React.FC = () => {
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
   const [deviceOptionsLoading, setDeviceOptionsLoading] = useState(false);
+  const [retentionOpen, setRetentionOpen] = useState(false);
+  const [retentionLoading, setRetentionLoading] = useState(false);
+  const [retentionSaving, setRetentionSaving] = useState(false);
+  const [retentionInfo, setRetentionInfo] = useState<RetentionInfo | null>(null);
+  const [retentionDays, setRetentionDays] = useState<number | null>(null);
+  const hasPermission = useAuthStore((state) => state.hasPermission);
+  const canManageRetention = hasPermission('data:retention');
+
+  const openRetention = async () => {
+    setRetentionOpen(true);
+    setRetentionLoading(true);
+    try {
+      const res = await deviceDataApi.getRetention();
+      const info = res.data.data as RetentionInfo;
+      setRetentionInfo(info);
+      setRetentionDays(info.retentionDays);
+    } catch {
+      message.error('加载数据保留策略失败');
+      setRetentionOpen(false);
+    } finally {
+      setRetentionLoading(false);
+    }
+  };
+
+  const saveRetention = async () => {
+    if (!retentionDays || retentionDays < 1) {
+      message.error('请输入至少 1 天的保留天数');
+      return;
+    }
+    setRetentionSaving(true);
+    try {
+      const res = await deviceDataApi.setRetention(retentionDays);
+      setRetentionInfo(res.data.data as RetentionInfo);
+      message.success('数据保留策略已更新');
+      setRetentionOpen(false);
+    } catch {
+      message.error('设置数据保留策略失败');
+    } finally {
+      setRetentionSaving(false);
+    }
+  };
+
+  const resetRetention = async () => {
+    setRetentionSaving(true);
+    try {
+      const res = await deviceDataApi.resetRetention();
+      setRetentionInfo(res.data.data as RetentionInfo);
+      setRetentionDays((res.data.data as RetentionInfo).retentionDays);
+      message.success('已重置为全局默认保留策略');
+    } catch {
+      message.error('重置数据保留策略失败');
+    } finally {
+      setRetentionSaving(false);
+    }
+  };
 
   const loadDeviceOptions = async (keyword = '') => {
     setDeviceOptionsLoading(true);
@@ -490,7 +554,16 @@ const DeviceDataPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader title="设备数据" />
+      <PageHeader
+        title="设备数据"
+        extra={
+          canManageRetention ? (
+            <Button icon={<SettingOutlined />} onClick={() => void openRetention()}>
+              数据保留
+            </Button>
+          ) : undefined
+        }
+      />
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Tabs
           defaultActiveKey="latest"
@@ -518,6 +591,42 @@ const DeviceDataPage: React.FC = () => {
           ]}
         />
       </Card>
+      <Modal
+        title="时序数据保留策略"
+        open={retentionOpen}
+        onCancel={() => setRetentionOpen(false)}
+        confirmLoading={retentionSaving}
+        onOk={() => void saveRetention()}
+        okText="保存"
+        cancelText="取消"
+        footer={(_, { OkBtn, CancelBtn }) => (
+          <Space>
+            <Button onClick={() => void resetRetention()} loading={retentionSaving} disabled={retentionLoading}>
+              重置为默认
+            </Button>
+            <CancelBtn />
+            <OkBtn />
+          </Space>
+        )}
+      >
+        <p style={{ color: '#8c8c8c', marginBottom: 16 }}>
+          超过保留天数的原始遥测数据会被定时清理；小时/天级聚合数据作为历史归档长期保留。
+        </p>
+        <div style={{ marginBottom: 8 }}>
+          当前全局默认：{retentionInfo?.defaultRetentionDays ?? '-'} 天，可设置上限：
+          {retentionInfo?.globalMaxRetentionDays ?? '-'} 天
+          {retentionInfo?.usingDefault ? '（当前使用默认值）' : '（已单独配置）'}
+        </div>
+        <InputNumber
+          min={1}
+          max={retentionInfo?.globalMaxRetentionDays ?? 365}
+          value={retentionDays ?? undefined}
+          onChange={(value) => setRetentionDays(value ?? null)}
+          addonAfter="天"
+          style={{ width: 220 }}
+          disabled={retentionLoading}
+        />
+      </Modal>
     </div>
   );
 };

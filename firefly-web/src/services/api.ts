@@ -787,8 +787,12 @@ export const deviceDataApi = {
   writeEvent: (deviceId: number, data: Record<string, unknown>) => deviceRequest.post(`/devices/${deviceId}/events`, data),
   query: (data: Record<string, unknown>) => deviceRequest.post('/device-data/query', data),
   aggregate: (data: Record<string, unknown>) => deviceRequest.post('/device-data/aggregate', data),
+  downsample: (data: Record<string, unknown>) => deviceRequest.post('/device-data/downsample', data),
   latest: (deviceId: number) => deviceRequest.get(`/device-data/latest/${deviceId}`),
   listEvents: (data: Record<string, unknown> = {}) => deviceRequest.post('/device-events/list', data),
+  getRetention: () => deviceRequest.get('/device-data/retention'),
+  setRetention: (retentionDays: number) => deviceRequest.put('/device-data/retention', { retentionDays }),
+  resetRetention: () => deviceRequest.delete('/device-data/retention'),
 };
 
 // ==================== OTA API ====================

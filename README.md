@@ -222,3 +222,6 @@ GitHub 仓库和服务器的具体配置步骤请查看：
 - [数据流转中心设计](docs/design/detailed-design-data-forwarding-center.md)
 - [数据流转中心运维说明](docs/operations/data-forwarding-center-operations.md)
 - [数据流转中心使用说明](docs/user-guide/data-forwarding-center.md)
+- [时序数据治理设计](docs/design/detailed-design-telemetry-governance.md)
+- [时序数据治理运维说明](docs/operations/telemetry-governance-operations.md)
+- [时序数据治理使用说明](docs/user-guide/telemetry-governance.md)

@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.device.mapper.TelemetryRetentionMapper">
+
+    <select id="selectByTenantId" resultType="com.songhg.firefly.iot.device.entity.TenantTelemetryRetention">
+        SELECT tenant_id      AS tenantId,
+               retention_days AS retentionDays,
+               updated_by     AS updatedBy,
+               created_at     AS createdAt,
+               updated_at     AS updatedAt
+        FROM tenant_telemetry_retention
+        WHERE tenant_id = #{tenantId}
+    </select>
+
+    <insert id="upsert">
+        INSERT INTO tenant_telemetry_retention (
+            tenant_id,
+            retention_days,
+            updated_by,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            #{tenantId},
+            #{retentionDays},
+            #{updatedBy},
+            now(),
+            now()
+        )
+        ON CONFLICT (tenant_id) DO UPDATE
+        SET retention_days = EXCLUDED.retention_days,
+            updated_by = EXCLUDED.updated_by,
+            updated_at = now()
+    </insert>
+
+    <delete id="deleteByTenantId">
+        DELETE FROM tenant_telemetry_retention
+        WHERE tenant_id = #{tenantId}
+    </delete>
+
+    <delete id="deleteExpiredForTenantsWithOverride">
+        DELETE FROM device_telemetry dt
+        USING tenant_telemetry_retention r
+        WHERE dt.tenant_id = r.tenant_id
+          AND dt.ts &lt; now() - make_interval(days => r.retention_days)
+    </delete>
+
+    <delete id="deleteExpiredForDefaultTenants">
+        DELETE FROM device_telemetry dt
+        WHERE dt.ts &lt; now() - make_interval(days => #{defaultDays})
+          AND NOT EXISTS (
+              SELECT 1
+              FROM tenant_telemetry_retention r
+              WHERE r.tenant_id = dt.tenant_id
+          )
+    </delete>
+
+    <select id="queryHourlyAggregate" resultType="com.songhg.firefly.iot.device.dto.devicedata.TelemetryDownsampleVO">
+        SELECT bucket,
+               avg_value     AS avgValue,
+               max_value     AS maxValue,
+               min_value     AS minValue,
+               sum_value     AS sumValue,
+               sample_count  AS sampleCount,
+               last_value    AS lastValue
+        FROM device_telemetry_hourly
+        WHERE tenant_id = #{tenantId}
+          AND device_id = #{deviceId}
+          AND property = #{property}
+        <if test="startTime != null and startTime != ''">
+          AND bucket &gt;= CAST(#{startTime, jdbcType=VARCHAR} AS TIMESTAMPTZ)
+        </if>
+        <if test="endTime != null and endTime != ''">
+          AND bucket &lt;= CAST(#{endTime, jdbcType=VARCHAR} AS TIMESTAMPTZ)
+        </if>
+        ORDER BY bucket DESC
+    </select>
+
+    <select id="queryDailyAggregate" resultType="com.songhg.firefly.iot.device.dto.devicedata.TelemetryDownsampleVO">
+        SELECT bucket,
+               avg_value     AS avgValue,
+               max_value     AS maxValue,
+               min_value     AS minValue,
+               sum_value     AS sumValue,
+               sample_count  AS sampleCount,
+               last_value    AS lastValue
+        FROM device_telemetry_daily
+        WHERE tenant_id = #{tenantId}
+          AND device_id = #{deviceId}
+          AND property = #{property}
+        <if test="startTime != null and startTime != ''">
+          AND bucket &gt;= CAST(#{startTime, jdbcType=VARCHAR} AS TIMESTAMPTZ)
+        </if>
+        <if test="endTime != null and endTime != ''">
+          AND bucket &lt;= CAST(#{endTime, jdbcType=VARCHAR} AS TIMESTAMPTZ)
+        </if>
+        ORDER BY bucket DESC
+    </select>
+
+</mapper>

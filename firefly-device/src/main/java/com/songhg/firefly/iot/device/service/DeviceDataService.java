@@ -14,6 +14,8 @@ import com.songhg.firefly.iot.device.dto.devicedata.DeviceEventWriteDTO;
 import com.songhg.firefly.iot.device.dto.devicedata.TelemetryAggregateDTO;
 import com.songhg.firefly.iot.device.dto.devicedata.TelemetryAggregateVO;
 import com.songhg.firefly.iot.device.dto.devicedata.TelemetryDataVO;
+import com.songhg.firefly.iot.device.dto.devicedata.TelemetryDownsampleDTO;
+import com.songhg.firefly.iot.device.dto.devicedata.TelemetryDownsampleVO;
 import com.songhg.firefly.iot.device.dto.devicedata.TelemetryLatestVO;
 import com.songhg.firefly.iot.device.dto.devicedata.TelemetryQueryDTO;
 import com.songhg.firefly.iot.device.dto.devicedata.TelemetryWriteDTO;
@@ -23,6 +25,7 @@ import com.songhg.firefly.iot.device.entity.DeviceTelemetry;
 import com.songhg.firefly.iot.device.mapper.DeviceEventMapper;
 import com.songhg.firefly.iot.device.mapper.DeviceMapper;
 import com.songhg.firefly.iot.device.mapper.DeviceTelemetryMapper;
+import com.songhg.firefly.iot.device.mapper.TelemetryRetentionMapper;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +47,7 @@ import java.util.Objects;
 public class DeviceDataService {
 
     private final DeviceTelemetryMapper telemetryMapper;
+    private final TelemetryRetentionMapper retentionMapper;
     private final DeviceEventMapper eventMapper;
     private final DeviceMapper deviceMapper;
     private final ObjectMapper objectMapper;
@@ -103,6 +107,23 @@ public class DeviceDataService {
         Long tenantId = AppContextHolder.getTenantId();
         return telemetryMapper.aggregateTelemetry(tenantId, query.getDeviceId(),
                 query.getProperty(), query.getStartTime(), query.getEndTime(), query.getInterval());
+    }
+
+    /**
+     * 降采样查询：优先走 TimescaleDB 连续聚合（小时/天），用于长周期归档数据查询。
+     * 未启用 TimescaleDB 时聚合视图不存在，调用会失败，属于预期约束。
+     */
+    public List<TelemetryDownsampleVO> queryDownsample(TelemetryDownsampleDTO query) {
+        Long tenantId = AppContextHolder.getTenantId();
+        String granularity = query.getGranularity() == null
+                ? "HOUR"
+                : query.getGranularity().trim().toUpperCase(java.util.Locale.ROOT);
+        if ("DAY".equals(granularity)) {
+            return retentionMapper.queryDailyAggregate(tenantId, query.getDeviceId(),
+                    query.getProperty(), query.getStartTime(), query.getEndTime());
+        }
+        return retentionMapper.queryHourlyAggregate(tenantId, query.getDeviceId(),
+                query.getProperty(), query.getStartTime(), query.getEndTime());
     }
 
     public List<TelemetryLatestVO> queryLatest(Long deviceId) {
