@@ -28,6 +28,7 @@ public class MessageRouterService {
     private final DeviceLocationService deviceLocationService;
     private final DeviceMessageProducer messageProducer;
     private final PlatformEventPublisher platformEventPublisher;
+    private final com.songhg.firefly.iot.device.mapper.RemoteConfigAssignmentMapper remoteConfigAssignmentMapper;
 
     /**
      * Routes upstream device messages to the correct persistence and runtime flows.
@@ -110,6 +111,13 @@ public class MessageRouterService {
         if (payload != null && !payload.isEmpty()) {
             // 影子期望/上报值对齐是核心状态，失败需重试。
             shadowService.applyPropertySetReply(message.getDeviceId(), payload);
+        }
+        // 设备回执后标记最近一条远程配置下发为已确认（best-effort，不影响主链路）。
+        try {
+            remoteConfigAssignmentMapper.markLatestAcked(message.getTenantId(), message.getDeviceId());
+        } catch (Exception ex) {
+            log.warn("Failed to mark remote config assignment acked: deviceId={}, error={}",
+                    message.getDeviceId(), ex.getMessage());
         }
         persistOperationalEvent(message, "PROPERTY_SET_REPLY", "Property Set Reply", EventLevel.INFO);
         forwardToRuleEngine(message);

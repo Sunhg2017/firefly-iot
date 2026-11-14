@@ -66,6 +66,20 @@ public class EmbeddedMqttBroker {
         config.setProperty(IConfig.ENABLE_TELEMETRY_NAME, "false");
         config.setProperty(IConfig.PERSISTENT_QUEUE_TYPE_PROPERTY_NAME, "segmented");
 
+        // 可选 TLS 监听：启用时必须提供 keystore，否则拒绝启动，避免“配置了 HTTPS 却明文监听”的错觉。
+        if (mqttProperties.isSslEnabled()) {
+            if (mqttProperties.getKeyStorePath() == null || mqttProperties.getKeyStorePath().isBlank()) {
+                throw new IllegalStateException("firefly.mqtt.ssl-enabled=true 时必须配置 firefly.mqtt.key-store-path");
+            }
+            config.setProperty(IConfig.SSL_PORT_PROPERTY_NAME, String.valueOf(mqttProperties.getSslPort()));
+            config.setProperty(IConfig.JKS_PATH_PROPERTY_NAME, mqttProperties.getKeyStorePath());
+            config.setProperty(IConfig.KEY_STORE_PASSWORD_PROPERTY_NAME, mqttProperties.getKeyStorePassword());
+            config.setProperty(IConfig.KEY_MANAGER_PASSWORD_PROPERTY_NAME,
+                    mqttProperties.getKeyManagerPassword() == null || mqttProperties.getKeyManagerPassword().isBlank()
+                            ? mqttProperties.getKeyStorePassword()
+                            : mqttProperties.getKeyManagerPassword());
+        }
+
         brokerServer = new Server();
         try {
             brokerServer.startServer(

@@ -47,6 +47,7 @@ const OpenApiPage = React.lazy(() => import('./pages/open-api/OpenApiPage'));
 const ApiKeyPage = React.lazy(() => import('./pages/api-key/ApiKeyPage'));
 const SecurityPage = React.lazy(() => import('./pages/security/SecurityPage'));
 const DeviceShadowPage = React.lazy(() => import('./pages/device-shadow/DeviceShadowPage'));
+const RemoteConfigPage = React.lazy(() => import('./pages/remote-config/RemoteConfigPage'));
 const DeviceMessagePage = React.lazy(() => import('./pages/device-message/DeviceMessagePage'));
 const ScheduledTaskPage = React.lazy(() => import('./pages/scheduled-task/ScheduledTaskPage'));
 const SnmpPage = React.lazy(() => import('./pages/snmp/SnmpPage'));
@@ -119,6 +120,7 @@ const App: React.FC = () => {
             <Route path="app-key" element={<ApiKeyPage />} />
             <Route path="security" element={<SecurityPage />} />
             <Route path="device-shadow" element={<DeviceShadowPage />} />
+            <Route path="remote-config" element={<RemoteConfigPage />} />
             <Route path="device-message" element={<DeviceMessagePage />} />
             <Route path="scheduled-task" element={<ScheduledTaskPage />} />
             <Route path="snmp" element={<SnmpPage />} />

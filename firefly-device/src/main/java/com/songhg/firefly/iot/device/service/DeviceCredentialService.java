@@ -46,13 +46,15 @@ public class DeviceCredentialService {
     private final StringRedisTemplate redisTemplate;
     private final DeviceService deviceService;
     private final DeviceLocatorService deviceLocatorService;
+    private final DeviceCertificateService certificateService;
+    private final SasTokenService sasTokenService;
 
     public DeviceAuthDTO authenticate(String productKey, String deviceName, String deviceSecret) {
         if (isBlank(productKey) || isBlank(deviceName)) {
             return authFailed("INVALID_CREDENTIALS");
         }
         if (isBlank(deviceSecret)) {
-            return authFailed("DEVICE_SECRET_REQUIRED");
+            return authFailed("CREDENTIAL_REQUIRED");
         }
 
         Product product = productMapper.selectByProductKeyIgnoreTenant(productKey);
@@ -67,8 +69,25 @@ public class DeviceCredentialService {
         if (device.getStatus() == DeviceStatus.DISABLED) {
             return authFailed("DEVICE_DISABLED");
         }
-        if (!deviceSecret.equals(device.getDeviceSecret())) {
-            return authFailed("INVALID_SECRET");
+        DeviceAuthType authType = product.getDeviceAuthType() == null
+                ? DeviceAuthType.DEVICE_SECRET
+                : product.getDeviceAuthType();
+        switch (authType) {
+            case X509 -> {
+                if (!certificateService.isFingerprintActive(device, deviceSecret)) {
+                    return authFailed("INVALID_CERTIFICATE");
+                }
+            }
+            case SAS_TOKEN -> {
+                if (!sasTokenService.validate(device, deviceSecret)) {
+                    return authFailed("INVALID_SAS_TOKEN");
+                }
+            }
+            default -> {
+                if (!deviceSecret.equals(device.getDeviceSecret())) {
+                    return authFailed("INVALID_SECRET");
+                }
+            }
         }
 
         cacheSession(productKey, deviceName, device);

@@ -158,11 +158,15 @@ const NODE_TYPE_LABELS: Record<string, string> = {
 const DEVICE_AUTH_LABELS: Record<string, string> = {
   DEVICE_SECRET: '一机一密',
   PRODUCT_SECRET: '一型一密',
+  X509: 'X.509 证书',
+  SAS_TOKEN: 'SAS 令牌',
 };
 
 const DEVICE_AUTH_COLORS: Record<string, string> = {
   DEVICE_SECRET: 'blue',
   PRODUCT_SECRET: 'gold',
+  X509: 'green',
+  SAS_TOKEN: 'purple',
 };
 
 const CATEGORY_OPTIONS = Object.entries(CATEGORY_LABELS).map(([value, label]) => ({ value, label }));
@@ -207,6 +211,8 @@ const DATA_FORMAT_LABELS: Record<string, string> = {
 const DEVICE_AUTH_OPTIONS = [
   { value: 'DEVICE_SECRET', label: '一机一密' },
   { value: 'PRODUCT_SECRET', label: '一型一密' },
+  { value: 'X509', label: 'X.509 证书' },
+  { value: 'SAS_TOKEN', label: 'SAS 令牌' },
 ];
 const CAMERA_DEVICE_AUTH_OPTION = { value: 'DEVICE_SECRET', label: '视频协议接入' };
 

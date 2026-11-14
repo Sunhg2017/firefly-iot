@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.device.mapper.RemoteConfigAssignmentMapper">
+
+    <update id="markLatestAcked">
+        UPDATE device_remote_config_assignment
+        SET status = 'ACKED',
+            updated_at = now()
+        WHERE id = (
+            SELECT id
+            FROM device_remote_config_assignment
+            WHERE tenant_id = #{tenantId}
+              AND device_id = #{deviceId}
+              AND status = 'DELIVERED'
+            ORDER BY id DESC
+            LIMIT 1
+        )
+    </update>
+
+</mapper>

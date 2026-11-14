@@ -187,6 +187,7 @@ const routeConfigs: RouteEntry[] = [
       { path: '/geo-fence', label: '地理围栏', icon: <AimOutlined />, permission: 'geo-fence:read', workspace: 'tenant' },
       { path: '/device-shadow', label: '设备影子', icon: <CloudSyncOutlined />, permission: 'device:read', workspace: 'tenant' },
       { path: '/device-message', label: '设备消息', icon: <SendOutlined />, permission: 'device:read', workspace: 'tenant' },
+      { path: '/remote-config', label: '远程配置', icon: <ControlOutlined />, permission: 'remote-config:read', workspace: 'tenant' },
     ],
   },
   {

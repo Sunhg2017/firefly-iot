@@ -34,8 +34,11 @@ class DeviceCredentialServiceTest {
     private final StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
     private final DeviceService deviceService = mock(DeviceService.class);
     private final DeviceLocatorService deviceLocatorService = mock(DeviceLocatorService.class);
+    private final DeviceCertificateService certificateService = mock(DeviceCertificateService.class);
+    private final SasTokenService sasTokenService = mock(SasTokenService.class);
     private final DeviceCredentialService service =
-            new DeviceCredentialService(productMapper, deviceMapper, redisTemplate, deviceService, deviceLocatorService);
+            new DeviceCredentialService(productMapper, deviceMapper, redisTemplate, deviceService, deviceLocatorService,
+                    certificateService, sasTokenService);
 
     @AfterEach
     void tearDown() {

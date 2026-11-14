@@ -5,6 +5,7 @@ import com.songhg.firefly.iot.common.enums.OnlineStatus;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
 import com.songhg.firefly.iot.common.message.KafkaTopics;
 import com.songhg.firefly.iot.common.message.PlatformEventPublisher;
+import com.songhg.firefly.iot.device.mapper.RemoteConfigAssignmentMapper;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
@@ -27,9 +28,10 @@ class MessageRouterServiceTest {
     private final DeviceLocationService deviceLocationService = mock(DeviceLocationService.class);
     private final DeviceMessageProducer messageProducer = mock(DeviceMessageProducer.class);
     private final PlatformEventPublisher platformEventPublisher = mock(PlatformEventPublisher.class);
+    private final RemoteConfigAssignmentMapper remoteConfigAssignmentMapper = mock(RemoteConfigAssignmentMapper.class);
     private final MessageRouterService routerService =
             new MessageRouterService(shadowService, deviceDataService, deviceService, deviceLocationService, messageProducer,
-                    platformEventPublisher);
+                    platformEventPublisher, remoteConfigAssignmentMapper);
 
     @Test
     void shouldForwardEventReportToRuleEngineTopic() {

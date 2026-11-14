@@ -886,6 +886,12 @@ export const deviceApi = {
   delete: (id: number) => deviceRequest.delete(`/devices/${id}`),
   getSecret: (id: number) => deviceRequest.get(`/devices/${id}/secret`),
   exportTriplesTask: (data: Record<string, unknown> = {}) => deviceRequest.post('/devices/triples/export-task', data),
+  batchEnable: (deviceIds: number[]) => deviceRequest.post('/devices/batch-enable', { deviceIds }),
+  batchDisable: (deviceIds: number[]) => deviceRequest.post('/devices/batch-disable', { deviceIds }),
+  batchDelete: (deviceIds: number[]) => deviceRequest.post('/devices/batch-delete', { deviceIds }),
+  batchTag: (data: Record<string, unknown>) => deviceRequest.post('/devices/batch-tag', data),
+  batchGroup: (data: Record<string, unknown>) => deviceRequest.post('/devices/batch-group', data),
+  batchCommand: (data: Record<string, unknown>) => deviceRequest.post('/devices/batch-command', data),
   // Shadow
   getShadow: (id: number) => deviceRequest.get(`/devices/${id}/shadow`),
   updateDesired: (id: number, data: Record<string, unknown>) => deviceRequest.put(`/devices/${id}/shadow/desired`, data),
@@ -1047,4 +1053,32 @@ export const inAppMessageApi = {
   markAllAsRead: () => supportRequest.put('/in-app-messages/read-all'),
   delete: (id: number) => supportRequest.delete(`/in-app-messages/${id}`),
   send: (data: Record<string, unknown>) => supportRequest.post('/in-app-messages', data),
+};
+
+// ==================== Remote Config API ====================
+export const remoteConfigApi = {
+  list: (data: Record<string, unknown> = {}) => deviceRequest.post('/remote-configs/list', data),
+  get: (id: number) => deviceRequest.get(`/remote-configs/${id}`),
+  create: (data: Record<string, unknown>) => deviceRequest.post('/remote-configs', data),
+  update: (id: number, data: Record<string, unknown>) => deviceRequest.put(`/remote-configs/${id}`, data),
+  delete: (id: number) => deviceRequest.delete(`/remote-configs/${id}`),
+  publish: (id: number) => deviceRequest.put(`/remote-configs/${id}/publish`),
+  disable: (id: number) => deviceRequest.put(`/remote-configs/${id}/disable`),
+  deploy: (id: number, data: Record<string, unknown> = {}) => deviceRequest.post(`/remote-configs/${id}/deploy`, data),
+  versions: (id: number) => deviceRequest.get(`/remote-configs/${id}/versions`),
+  rollback: (id: number, version: number) => deviceRequest.post(`/remote-configs/${id}/rollback`, { version }),
+  assignments: (id: number) => deviceRequest.post(`/remote-configs/${id}/assignments/list`),
+};
+
+// ==================== Device Security API ====================
+export const deviceSecurityApi = {
+  listCertificates: (deviceId: number) => deviceRequest.get(`/devices/${deviceId}/certificates`),
+  registerCertificate: (deviceId: number, data: Record<string, unknown>) =>
+    deviceRequest.post(`/devices/${deviceId}/certificates`, data),
+  revokeCertificate: (deviceId: number, certificateId: number) =>
+    deviceRequest.put(`/devices/${deviceId}/certificates/${certificateId}/revoke`),
+  deleteCertificate: (deviceId: number, certificateId: number) =>
+    deviceRequest.delete(`/devices/${deviceId}/certificates/${certificateId}`),
+  issueSasToken: (deviceId: number, ttlSeconds = 3600) =>
+    deviceRequest.post(`/devices/${deviceId}/sas-token?ttlSeconds=${ttlSeconds}`),
 };

@@ -22,6 +22,12 @@ public class MqttProperties implements EnvironmentAware {
 
     private int port = 1883;
 
+    private boolean sslEnabled = false;
+    private int sslPort = 8883;
+    private String keyStorePath;
+    private String keyStorePassword;
+    private String keyManagerPassword;
+
     private boolean allowAnonymous = false;
 
     private boolean persistenceEnabled = false;

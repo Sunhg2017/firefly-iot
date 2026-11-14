@@ -5,6 +5,7 @@ import type { ColumnsType } from 'antd/es/table';
 import type { TableRowSelection } from 'antd/es/table/interface';
 import { useNavigate } from 'react-router-dom';
 import DeviceShadowDrawer from './DeviceShadowDrawer';
+import DeviceSecurityDrawer from './DeviceSecurityDrawer';
 import DeviceLocatorModal from './DeviceLocatorModal';
 import { asyncTaskApi, deviceApi, deviceGroupApi, deviceTagApi, fileApi, productApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
@@ -121,7 +122,13 @@ const DeviceList: React.FC = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [shadowDevice, setShadowDevice] = useState<ShadowDeviceContext | null>(null);
   const [shadowOpen, setShadowOpen] = useState(false);
+  const [batchActionOpen, setBatchActionOpen] = useState<'tag' | 'group' | 'command' | null>(null);
+  const [batchSubmitting, setBatchSubmitting] = useState(false);
+  const [batchTagForm] = Form.useForm();
+  const [batchGroupForm] = Form.useForm();
+  const [batchCommandForm] = Form.useForm();
   const [locatorDevice, setLocatorDevice] = useState<DeviceRecord | null>(null);
+  const [securityDevice, setSecurityDevice] = useState<DeviceRecord | null>(null);
   const [batchImportFile, setBatchImportFile] = useState<File | null>(null);
   const [importProgress, setImportProgress] = useState<number | null>(null);
   const batchImportInputRef = useRef<HTMLInputElement | null>(null);
@@ -324,6 +331,105 @@ const DeviceList: React.FC = () => {
     finally { setExporting(false); }
   };
 
+  const runBatchStatusAction = (action: 'enable' | 'disable' | 'delete') => {
+    if (selectedDeviceIds.length === 0) return;
+    const labels = { enable: '启用', disable: '停用', delete: '删除' } as const;
+    Modal.confirm({
+      title: `确认批量${labels[action]} ${selectedDeviceIds.length} 台设备？`,
+      content: action === 'delete' ? '删除为逻辑删除，可在设备列表外通过运维手段恢复。' : undefined,
+      onOk: async () => {
+        try {
+          const loader = action === 'enable'
+            ? deviceApi.batchEnable
+            : action === 'disable'
+              ? deviceApi.batchDisable
+              : deviceApi.batchDelete;
+          const res = await loader(selectedDeviceIds);
+          const result = res.data.data as { requested: number; success: number; failed: number };
+          message.success(`批量${labels[action]}完成：成功 ${result.success}，失败 ${result.failed}`);
+          setSelectedRowKeys([]);
+          void fetchData();
+        } catch {
+          message.error(`批量${labels[action]}失败`);
+        }
+      },
+    });
+  };
+
+  const submitBatchTag = async () => {
+    try {
+      const values = await batchTagForm.validateFields();
+      setBatchSubmitting(true);
+      const res = await deviceApi.batchTag({
+        deviceIds: selectedDeviceIds,
+        tagIds: values.tagIds,
+        overwrite: values.overwrite,
+      });
+      const result = res.data.data as { success: number; failed: number };
+      message.success(`批量打标完成：成功 ${result.success}，失败 ${result.failed}`);
+      setBatchActionOpen(null);
+      setSelectedRowKeys([]);
+      void fetchData();
+    } catch (error) {
+      if (error instanceof Error) message.error(error.message);
+    } finally {
+      setBatchSubmitting(false);
+    }
+  };
+
+  const submitBatchGroup = async () => {
+    try {
+      const values = await batchGroupForm.validateFields();
+      setBatchSubmitting(true);
+      const res = await deviceApi.batchGroup({
+        deviceIds: selectedDeviceIds,
+        groupIds: values.groupIds,
+        action: values.action,
+      });
+      const result = res.data.data as { success: number; failed: number };
+      message.success(`批量分组完成：成功 ${result.success}，失败 ${result.failed}`);
+      setBatchActionOpen(null);
+      setSelectedRowKeys([]);
+      void fetchData();
+    } catch (error) {
+      if (error instanceof Error) message.error(error.message);
+    } finally {
+      setBatchSubmitting(false);
+    }
+  };
+
+  const submitBatchCommand = async () => {
+    try {
+      const values = await batchCommandForm.validateFields();
+      let payload: Record<string, unknown> | undefined;
+      let params: Record<string, unknown> | undefined;
+      try {
+        payload = values.payload ? JSON.parse(values.payload) : undefined;
+        params = values.params ? JSON.parse(values.params) : undefined;
+      } catch {
+        message.error('命令内容不是合法 JSON');
+        return;
+      }
+      setBatchSubmitting(true);
+      const res = await deviceApi.batchCommand({
+        deviceIds: selectedDeviceIds,
+        commandType: values.commandType,
+        payload,
+        serviceName: values.serviceName,
+        params,
+      });
+      const result = res.data.data as { success: number; failed: number };
+      message.success(`批量命令已下发：成功 ${result.success}，失败 ${result.failed}`);
+      setBatchActionOpen(null);
+      setSelectedRowKeys([]);
+      void fetchData();
+    } catch (error) {
+      if (error instanceof Error) message.error(error.message);
+    } finally {
+      setBatchSubmitting(false);
+    }
+  };
+
   const rowSelection: TableRowSelection<DeviceRecord> = { selectedRowKeys, preserveSelectedRowKeys: true, onChange: (keys) => setSelectedRowKeys(keys) };
   const columns: ColumnsType<DeviceRecord> = [
     { title: '设备名称', dataIndex: 'deviceName', width: 180, render: (value: string, record: DeviceRecord) => <Space direction="vertical" size={2}><Typography.Text strong>{record.nickname || value}</Typography.Text><Typography.Text code>{value}</Typography.Text></Space> },
@@ -354,12 +460,27 @@ const DeviceList: React.FC = () => {
     { title: '在线', dataIndex: 'onlineStatus', width: 90, render: (value: string) => { const badge = ONLINE_BADGE[value] || ONLINE_BADGE.UNKNOWN; return <Badge status={badge.status} text={badge.text} />; } },
     { title: '固件版本', dataIndex: 'firmwareVersion', width: 120, render: (value?: string) => value || '-' },
     { title: '创建时间', dataIndex: 'createdAt', width: 180, render: (value?: string) => value || '-' },
-    { title: '操作', width: 360, fixed: 'right', render: (_: unknown, record: DeviceRecord) => <Space><Button type="link" size="small" onClick={() => handleEdit(record)}>编辑</Button><Button type="link" size="small" onClick={() => handleToggleStatus(record)}>{record.status === 'DISABLED' ? '启用' : '禁用'}</Button><Button type="link" size="small" icon={<KeyOutlined />} loading={viewingSecretId === record.id} onClick={() => void handleViewSecret(record)}>密钥</Button><Button type="link" size="small" onClick={() => setLocatorDevice(record)}>标识</Button><Button type="link" size="small" icon={<CloudOutlined />} onClick={() => { const product = productLookup.get(record.productId); setShadowDevice({ id: record.id, productId: record.productId, deviceName: record.deviceName, nickname: record.nickname, productName: product?.name, productKey: product?.productKey }); setShadowOpen(true); }}>影子</Button><Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>删除</Button></Space> },
+    { title: '操作', width: 360, fixed: 'right', render: (_: unknown, record: DeviceRecord) => <Space><Button type="link" size="small" onClick={() => handleEdit(record)}>编辑</Button><Button type="link" size="small" onClick={() => handleToggleStatus(record)}>{record.status === 'DISABLED' ? '启用' : '禁用'}</Button><Button type="link" size="small" icon={<KeyOutlined />} loading={viewingSecretId === record.id} onClick={() => void handleViewSecret(record)}>密钥</Button><Button type="link" size="small" onClick={() => setLocatorDevice(record)}>标识</Button><Button type="link" size="small" onClick={() => setSecurityDevice(record)}>安全</Button><Button type="link" size="small" icon={<CloudOutlined />} onClick={() => { const product = productLookup.get(record.productId); setShadowDevice({ id: record.id, productId: record.productId, deviceName: record.deviceName, nickname: record.nickname, productName: product?.name, productKey: product?.productKey }); setShadowOpen(true); }}>影子</Button><Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>删除</Button></Space> },
   ];
 
   return (
     <div>
       <PageHeader title="设备管理" description={`共 ${total} 台设备`} extra={<Space wrap><Button icon={<ApartmentOutlined />} onClick={() => navigate('/device-topology')}>设备拓扑</Button><Button icon={<DownloadOutlined />} loading={exporting} onClick={handleExportTriples}>{selectedDeviceIds.length > 0 ? `导出已选三元组 (${selectedDeviceIds.length})` : '导出当前筛选三元组'}</Button><Button icon={<UploadOutlined />} onClick={() => { if (ensureManualRegistrationProducts()) setBatchOpen(true); }}>批量导入</Button><Button type="primary" icon={<PlusOutlined />} onClick={() => { if (ensureManualRegistrationProducts()) setCreateOpen(true); }}>新建设备</Button></Space>} />
+
+      {selectedDeviceIds.length > 0 ? (
+        <Card size="small" className="ff-query-card" style={{ marginBottom: 12 }}>
+          <Space wrap>
+            <Typography.Text strong>已选 {selectedDeviceIds.length} 台：</Typography.Text>
+            <Button size="small" onClick={() => void runBatchStatusAction('enable')}>批量启用</Button>
+            <Button size="small" onClick={() => void runBatchStatusAction('disable')}>批量停用</Button>
+            <Button size="small" danger onClick={() => void runBatchStatusAction('delete')}>批量删除</Button>
+            <Button size="small" onClick={() => { batchTagForm.resetFields(); setBatchActionOpen('tag'); }}>批量打标</Button>
+            <Button size="small" onClick={() => { batchGroupForm.resetFields(); setBatchActionOpen('group'); }}>批量分组</Button>
+            <Button size="small" onClick={() => { batchCommandForm.resetFields(); setBatchActionOpen('command'); }}>批量命令</Button>
+            <Button size="small" onClick={() => setSelectedRowKeys([])}>清空选择</Button>
+          </Space>
+        </Card>
+      ) : null}
 
       <Card className="ff-query-card">
         <div className="ff-query-bar">
@@ -497,7 +618,43 @@ const DeviceList: React.FC = () => {
         </Form>
       </Modal>
 
+      <Modal title="批量打标" open={batchActionOpen === 'tag'} confirmLoading={batchSubmitting} onOk={() => void submitBatchTag()} onCancel={() => setBatchActionOpen(null)}>
+        <Form form={batchTagForm} layout="vertical" initialValues={{ overwrite: true }}>
+          <Form.Item name="tagIds" label="标签" rules={[{ required: true, message: '请选择标签' }]}>
+            <Select mode="multiple" allowClear options={tagOptions} optionFilterProp="label" placeholder="选择要应用/追加的标签" />
+          </Form.Item>
+          <Form.Item name="overwrite" label="模式"><Switch checkedChildren="覆盖" unCheckedChildren="追加" /></Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title="批量分组" open={batchActionOpen === 'group'} confirmLoading={batchSubmitting} onOk={() => void submitBatchGroup()} onCancel={() => setBatchActionOpen(null)}>
+        <Form form={batchGroupForm} layout="vertical" initialValues={{ action: 'REPLACE' }}>
+          <Form.Item name="groupIds" label="分组" rules={[{ required: true, message: '请选择分组' }]}>
+            <Select mode="multiple" allowClear options={groupOptions} optionFilterProp="label" placeholder="选择分组" />
+          </Form.Item>
+          <Form.Item name="action" label="动作">
+            <Select options={[{ value: 'REPLACE', label: '替换现有分组' }, { value: 'ADD', label: '加入分组' }, { value: 'REMOVE', label: '移出分组' }]} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title="批量下发命令" open={batchActionOpen === 'command'} confirmLoading={batchSubmitting} onOk={() => void submitBatchCommand()} onCancel={() => setBatchActionOpen(null)}>
+        <Form form={batchCommandForm} layout="vertical" initialValues={{ commandType: 'PROPERTY_SET' }}>
+          <Form.Item name="commandType" label="命令类型" rules={[{ required: true, message: '请选择命令类型' }]}>
+            <Select options={[{ value: 'PROPERTY_SET', label: '属性设置' }, { value: 'SERVICE_INVOKE', label: '服务调用' }]} />
+          </Form.Item>
+          <Form.Item name="payload" label="属性设置内容（JSON，属性设置时使用）">
+            <TextArea rows={4} placeholder='{"sampleInterval": 30}' />
+          </Form.Item>
+          <Form.Item name="serviceName" label="服务名称（服务调用时使用）"><Input placeholder="例如 reboot" /></Form.Item>
+          <Form.Item name="params" label="服务参数（JSON，服务调用时使用）">
+            <TextArea rows={4} placeholder='{"delay": 5}' />
+          </Form.Item>
+        </Form>
+      </Modal>
+
       <DeviceShadowDrawer deviceId={shadowDevice?.id || null} productId={shadowDevice?.productId} deviceName={shadowDevice?.deviceName} nickname={shadowDevice?.nickname} productName={shadowDevice?.productName} productKey={shadowDevice?.productKey} open={shadowOpen} onClose={() => { setShadowOpen(false); setShadowDevice(null); }} />
+      <DeviceSecurityDrawer deviceId={securityDevice?.id || null} deviceName={securityDevice?.deviceName} open={Boolean(securityDevice)} onClose={() => setSecurityDevice(null)} />
       <DeviceLocatorModal deviceId={locatorDevice?.id || null} deviceName={locatorDevice?.deviceName} open={Boolean(locatorDevice)} onClose={() => setLocatorDevice(null)} />
     </div>
   );

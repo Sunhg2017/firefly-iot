@@ -239,3 +239,6 @@ GitHub 仓库和服务器的具体配置步骤请查看：
 - [时序数据治理设计](docs/design/detailed-design-telemetry-governance.md)
 - [时序数据治理运维说明](docs/operations/telemetry-governance-operations.md)
 - [时序数据治理使用说明](docs/user-guide/telemetry-governance.md)
+- [设备认证、远程配置与批量操作设计](docs/design/detailed-design-device-auth-remote-config.md)
+- [设备认证、远程配置与批量操作运维说明](docs/operations/device-auth-remote-config-operations.md)
+- [设备认证、远程配置与批量操作使用说明](docs/user-guide/device-auth-remote-config.md)
