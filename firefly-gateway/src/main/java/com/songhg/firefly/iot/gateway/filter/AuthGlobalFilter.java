@@ -80,22 +80,25 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     @Value("${firefly.openapi.appkey.signature-window-seconds:300}")
     private long signatureWindowSeconds;
 
+    @Value("${firefly.internal.token:}")
+    private String internalToken;
+
     private PublicKey publicKey;
 
     @PostConstruct
     public void init() {
         if (!StringUtils.hasText(publicKeyBase64)) {
-            log.warn("No JWT public key configured, gateway running in dev/passthrough mode");
-            return;
+            throw new IllegalStateException(
+                    "auth.jwt.public-key 未配置，网关拒绝启动；请通过 AUTH_JWT_PUBLIC_KEY 提供 Base64(X.509) RSA 公钥");
         }
         try {
-            byte[] keyBytes = Base64.getDecoder().decode(publicKeyBase64);
+            byte[] keyBytes = Base64.getDecoder().decode(publicKeyBase64.trim());
             X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
             KeyFactory kf = KeyFactory.getInstance("RSA");
             this.publicKey = kf.generatePublic(spec);
             log.info("JWT public key loaded for gateway");
         } catch (Exception e) {
-            log.warn("Failed to load JWT public key, token validation will be skipped in dev mode: {}", e.getMessage());
+            throw new IllegalStateException("auth.jwt.public-key 解析失败，网关拒绝启动: " + e.getMessage(), e);
         }
     }
 
@@ -104,9 +107,14 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getPath().value();
 
+        // 内部接口仅用于服务间调用，公共入口一律拒绝，避免登录用户经网关访问 internal 接口。
+        if (path.contains("/api/v1/internal/")) {
+            return notFound(exchange);
+        }
+
         for (String white : WHITE_LIST) {
             if (path.startsWith(white)) {
-                return chain.filter(exchange);
+                return chain.filter(stripInternalHeaders(exchange));
             }
         }
 
@@ -127,15 +135,6 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     }
 
     private Mono<Void> authenticateJwt(ServerWebExchange exchange, GatewayFilterChain chain, String token) {
-        if (publicKey == null) {
-            JwtContext jwtContext = parseJwtPayload(token);
-            if (jwtContext == null || !StringUtils.hasText(jwtContext.userId())) {
-                return unauthorized(exchange);
-            }
-            return validateAndForwardJwt(exchange, chain, token, jwtContext.userId(), jwtContext.tenantId(),
-                    jwtContext.platform(), jwtContext.issuedAtEpoch());
-        }
-
         Claims claims;
         try {
             claims = Jwts.parser()
@@ -165,19 +164,21 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
                     }
                     return redisTemplate.opsForValue()
                             .get(AuthConstants.REDIS_TOKEN_REVOKE_BEFORE + userId)
+                            // 用 defaultIfEmpty 收敛为单元素流，避免 Mono<Void> 的拒绝分支再次触发 switchIfEmpty 转发。
+                            .defaultIfEmpty("")
                             .flatMap(revokeTs -> {
-                                if (issuedAtEpoch != null) {
+                                if (issuedAtEpoch != null && StringUtils.hasText(revokeTs)) {
                                     try {
                                         if (Long.parseLong(revokeTs) > issuedAtEpoch) {
                                             return unauthorized(exchange);
                                         }
                                     } catch (NumberFormatException ignored) {
-                                        // ignore malformed marker
+                                        // 记录值异常时按已撤销处理更安全，但保留原有效 Token 兼容性：
+                                        // 仅当值可解析且明确晚于签发时间才拒绝。
                                     }
                                 }
                                 return forwardWithJwtHeaders(exchange, chain, userId, tenantId, platform);
-                            })
-                            .switchIfEmpty(forwardWithJwtHeaders(exchange, chain, userId, tenantId, platform));
+                            });
                 });
     }
 
@@ -222,9 +223,13 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
                     authRequest.setBodySha256(sha256(cachedRequest.bodyBytes()));
                     authRequest.setClientIp(resolveClientIp(cachedExchange.getRequest()));
 
-                    return webClientBuilder.build()
+                    var requestSpec = webClientBuilder.build()
                             .post()
-                            .uri("http://firefly-system/api/v1/internal/open-apis/authorize")
+                            .uri("http://firefly-system/api/v1/internal/open-apis/authorize");
+                    if (StringUtils.hasText(internalToken)) {
+                        requestSpec = requestSpec.header(AuthConstants.HEADER_INTERNAL_TOKEN, internalToken);
+                    }
+                    return requestSpec
                             .bodyValue(authRequest)
                             .retrieve()
                             .bodyToMono(InternalResponse.class)
@@ -279,6 +284,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     private Mono<Void> forwardWithJwtHeaders(ServerWebExchange exchange, GatewayFilterChain chain,
                                              String userId, String tenantId, String platform) {
         ServerHttpRequest mutated = exchange.getRequest().mutate()
+                .headers(this::clearInternalHeaders)
                 .header(AuthConstants.HEADER_USER_ID, userId)
                 .header(AuthConstants.HEADER_TENANT_ID, tenantId)
                 .header(AuthConstants.HEADER_PLATFORM, StringUtils.hasText(platform) ? platform : "")
@@ -289,13 +295,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     private Mono<Void> forwardWithAppKeyHeaders(ServerWebExchange exchange, GatewayFilterChain chain,
                                                 GatewayAuthPayload payload) {
         ServerHttpRequest.Builder builder = exchange.getRequest().mutate()
-                .headers(headers -> {
-                    // Signature material is only for gateway verification and must not leak downstream.
-                    headers.remove(AuthConstants.HEADER_APP_KEY);
-                    headers.remove(AuthConstants.HEADER_APP_TIMESTAMP);
-                    headers.remove(AuthConstants.HEADER_APP_NONCE);
-                    headers.remove(AuthConstants.HEADER_APP_SIGNATURE);
-                })
+                .headers(this::clearInternalHeaders)
                 .header(AuthConstants.HEADER_TENANT_ID, String.valueOf(payload.tenantId()))
                 .header(AuthConstants.HEADER_PLATFORM, AuthConstants.PLATFORM_OPEN_API)
                 .header(AuthConstants.HEADER_APP_KEY_ID, String.valueOf(payload.appKeyId()))
@@ -304,6 +304,31 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             builder.header(AuthConstants.HEADER_GRANTED_PERMISSIONS, payload.permissionCode());
         }
         return chain.filter(exchange.mutate().request(builder.build()).build());
+    }
+
+    /**
+     * 清除客户端可伪造的内部身份头与签名材料，再由网关按已验证身份重新注入可信上下文。
+     */
+    private ServerWebExchange stripInternalHeaders(ServerWebExchange exchange) {
+        ServerHttpRequest mutated = exchange.getRequest().mutate()
+                .headers(this::clearInternalHeaders)
+                .build();
+        return exchange.mutate().request(mutated).build();
+    }
+
+    private void clearInternalHeaders(HttpHeaders headers) {
+        headers.remove(AuthConstants.HEADER_USER_ID);
+        headers.remove(AuthConstants.HEADER_USERNAME);
+        headers.remove(AuthConstants.HEADER_TENANT_ID);
+        headers.remove(AuthConstants.HEADER_PLATFORM);
+        headers.remove(AuthConstants.HEADER_APP_KEY_ID);
+        headers.remove(AuthConstants.HEADER_OPEN_API_CODE);
+        headers.remove(AuthConstants.HEADER_GRANTED_PERMISSIONS);
+        headers.remove(AuthConstants.HEADER_APP_KEY);
+        headers.remove(AuthConstants.HEADER_APP_TIMESTAMP);
+        headers.remove(AuthConstants.HEADER_APP_NONCE);
+        headers.remove(AuthConstants.HEADER_APP_SIGNATURE);
+        headers.remove(AuthConstants.HEADER_INTERNAL_TOKEN);
     }
 
     private Mono<CachedRequestBody> cacheRequestBody(ServerWebExchange exchange) {
@@ -375,32 +400,6 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
     private boolean isOpenApiGatewayPath(String path) {
         return StringUtils.hasText(path) && path.startsWith(OPEN_API_GATEWAY_PREFIX);
-    }
-
-    private JwtContext parseJwtPayload(String token) {
-        try {
-            String[] parts = token.split("\\.");
-            if (parts.length < 2) {
-                return null;
-            }
-            byte[] payloadBytes = Base64.getUrlDecoder().decode(parts[1]);
-            @SuppressWarnings("unchecked")
-            Map<String, Object> payload = new com.fasterxml.jackson.databind.ObjectMapper().readValue(payloadBytes, Map.class);
-            String userId = payload.get("sub") == null ? null : String.valueOf(payload.get("sub"));
-            String tenantId = payload.get(AuthConstants.JWT_CLAIM_TENANT_ID) == null ? null : String.valueOf(payload.get(AuthConstants.JWT_CLAIM_TENANT_ID));
-            String platform = payload.get(AuthConstants.JWT_CLAIM_PLATFORM) == null ? null : String.valueOf(payload.get(AuthConstants.JWT_CLAIM_PLATFORM));
-            Long issuedAtEpoch = null;
-            Object issuedAt = payload.get("iat");
-            if (issuedAt instanceof Number number) {
-                issuedAtEpoch = number.longValue();
-            } else if (issuedAt != null) {
-                issuedAtEpoch = Long.parseLong(String.valueOf(issuedAt));
-            }
-            return new JwtContext(userId, tenantId, platform, issuedAtEpoch);
-        } catch (Exception e) {
-            log.debug("Failed to parse JWT payload in dev mode: {}", e.getMessage());
-            return null;
-        }
     }
 
     private String resolveClientIp(ServerHttpRequest request) {
@@ -492,9 +491,6 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     @Override
     public int getOrder() {
         return -100;
-    }
-
-    private record JwtContext(String userId, String tenantId, String platform, Long issuedAtEpoch) {
     }
 
     private record ServiceRequest(String serviceCode, String requestPath) {

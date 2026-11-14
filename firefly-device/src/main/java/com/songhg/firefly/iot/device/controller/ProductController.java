@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.Map;
 
 @Tag(name = "Product Management", description = "Product CRUD APIs")
@@ -132,6 +133,15 @@ public class ProductController {
     public R<String> getProductSecret(
             @Parameter(description = "Product ID", required = true) @PathVariable Long id) {
         return R.ok(productService.getProductSecret(id));
+    }
+
+    @PostMapping("/{id}/thing-model/parse-parameters")
+    @RequiresPermission("product:update")
+    @Operation(summary = "服务端解析参数清单文件")
+    public R<List<Map<String, String>>> parseParameterRows(
+            @Parameter(description = "产品编号", required = true) @PathVariable Long id,
+            @Valid @RequestBody ThingModelImportDTO dto) {
+        return R.ok(thingModelImportService.parseParameterRows(dto.getFileKey(), dto.getFileFormat()));
     }
 
     @PostMapping("/{id}/thing-model/import")

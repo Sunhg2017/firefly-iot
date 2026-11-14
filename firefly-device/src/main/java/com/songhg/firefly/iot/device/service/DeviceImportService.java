@@ -17,7 +17,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
@@ -46,6 +45,7 @@ public class DeviceImportService {
     private final DeviceService deviceService;
     private final FileClient fileClient;
     private final AsyncTaskClient asyncTaskClient;
+    private final ImportTaskDispatcher importTaskDispatcher;
 
     private static final int BATCH_SIZE = 100;
     private static final String DEVICE_NAME_PATTERN = "^[a-zA-Z0-9_\\-\\.]{4,64}$";
@@ -77,18 +77,17 @@ public class DeviceImportService {
         Long tenantId = AppContextHolder.getTenantId();
         Long userId = AppContextHolder.getUserId();
 
-        // 异步执行导入
-        executeImportAsync(taskId, dto, tenantId, userId);
+        // 通过独立分发器提交到任务线程池执行，注册接口不等待文件下载与解析
+        importTaskDispatcher.dispatch(() -> executeImport(taskId, dto, tenantId, userId));
 
         log.info("设备导入任务已注册: taskId={}, fileKey={}", taskId, dto.getFileKey());
         return taskId;
     }
 
     /**
-     * 异步执行设备导入
+     * 执行设备导入（由 {@link ImportTaskDispatcher} 在独立线程池中调用）
      */
-    @Async
-    public void executeImportAsync(Long taskId, DeviceImportDTO dto, Long tenantId, Long userId) {
+    public void executeImport(Long taskId, DeviceImportDTO dto, Long tenantId, Long userId) {
         try {
             // 设置上下文（异步线程中需要重新设置）
             AsyncContextHelper.setContext(tenantId, userId);

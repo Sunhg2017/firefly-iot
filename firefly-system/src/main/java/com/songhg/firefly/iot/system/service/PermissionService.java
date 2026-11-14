@@ -80,7 +80,9 @@ public class PermissionService implements PermissionChecker {
         // 回填缓存
         if (!perms.isEmpty()) {
             redisTemplate.opsForSet().add(redisKey, perms.toArray(new String[0]));
-            redisTemplate.expire(redisKey, 30, TimeUnit.MINUTES);
+            // 其他业务服务在无本地 PermissionChecker 时直接读取该集合做权限校验，
+            // 因此保留期需覆盖正常会话周期；权限变更由 PermissionEventConsumer 主动删除。
+            redisTemplate.expire(redisKey, 12, TimeUnit.HOURS);
         }
         l1Cache.put(userId, perms);
 

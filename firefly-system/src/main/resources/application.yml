@@ -1,4 +1,4 @@
-﻿server:
+server:
   port: 8081
   servlet:
     encoding:
@@ -73,8 +73,14 @@ auth:
     expire-seconds: 7200
   refresh-token:
     expire-seconds: 2592000
+  jwt:
+    # 开发环境默认 RSA 私钥（Base64/PKCS#8），仅供本地联调使用。
+    # 生产必须通过 AUTH_JWT_PRIVATE_KEY 覆盖；application-prod.yml 默认留空，缺失时服务拒绝启动。
+    private-key: ${AUTH_JWT_PRIVATE_KEY:MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3+jpXJQ4E3awDF8O/fTF9JSmSE9YW4RkNYJk51gh6VUAMOQrLTes3ICnF7jFXQ02vSQ6AkjdXOTENzcc5nKq90uXZdm5nz/kv8VFNoKpY6z6We2Hm/6gqSq7f2ecKbKIF9onkODOjecPrPGr+NBBSDTUzvDZBCPcnXfK54iggek6NW1jYMHX6gkYuLbqCiffLtv/r6XDs0SfEeJgakMRAQ827It9TPcK8bBdfDvET+eLb09J4ga0NN8HD6SlpjdqQ2jv0NOT+IWp9rsCRELEr7QMuZDhQBDNVj5lD/wWfjHIhP+cyGUjFZW61xkALYcRHBExsDf3tYkzSsMqUgSwhAgMBAAECggEBALAg4TtOYSZtZWCsnpyy6O7q5epQDTRoGQjCgs5oxkL/XEqXTWsm1Fk49GTlzNzCtRtrMHQMBuj8+qZBa0oPXzJNNfjDNZ0y8Fdiijhr6MkppQiBZE+2TzL1vobVYCeNqmtVA9u1plIJn3OTqsZj53/13woBVFtcjuhkO5yTE2FKtiukqZeAAQVeil4j2D/YuTRSMdGzRtRyyVKwUwzO8OXdpW5dZK11cUece+AJPwwTegSv8W/xnIVhE7rnnbGaglvRDfhvbIpat5Rx/XQ6MwJyyYXYLgrvLx/MIvgFajo5XAgsEk3BVDi6sc4/Hbo/3nxy6XKfJoeocKzAks01SXECgYEA4CLLNNqu9y4vvlbLgNMNwreb+1V52EeaHr3JrLIBbTmQq4TL1gYGB+LoWsn/JFsJS0vtLnbnZhszQAIQXHUZwgnu449dFcENCl0s75GEM6lz5Orjq05t/sXA7s4Iu+lz97WGt/L1lkvagocGw1JHsBIpF9aGClgBAdhEoDPxRsUCgYEA0iHoC33eXCvlcRMjaYDeRbKBAffyHA444nH7xb89u1Lw/kw3CvRqDpSh66RWdh8ck7F/fbJ1H9kqlV328XO1QPUB3oXD22xVBPkhVKvv+GR0lthgP2+PrTk05ue8EdZt6Odx3iK/EdnL5xlNbGeSVnPPH8jpUoYgzYvDwijwha0CgYB5V1zbyGhguUhvq12Q6LHScMSpVKUaSelOK0E7lULgdwGzWblgrPIm4tkYDbNrYz2s3fYR6Z1s0dz1Eij5ZQwE2IvT9pFWbaU5ryfcqtL/hQWRMPkAjP1PqI/CuRhRYxm9STEd9RKvw3EQqTkoFStqTuqgVStL/kjNTuAYOwasYQKBgFf2TZaR6AUZcwB0jHxbr6/pW0uhqT3JTlKseEJ9HbBOtgcdjGUPj13vJiDoODFWMLY6tS2/CHx+ge7o2LiWQSeh6FhoEmbF4IkmaKdzGg8Wrh9/EDs9zh0rN1P5aabl5jh6uhXM4cLtMwfYdaqNaJq7+9ZIWjNrZkvk19ttG9I5AoGBANNVk5RCAynN6SxMfouQ1C9RKHTWJUK5olJgV09DFUMRk/7IsZFCDcn07DrTPFzflsN18PfYSg5WWNXQtXgxsNPnfGQjGC4kjWtgi7kXqiFlJKOdNWh/82b/6rkwxPv08bUu8HPmMLVGsLdNnd1s0yV9KlJBHoFmg50Ylx/ITJx7}
 
 firefly:
+  internal:
+    token: ${FIREFLY_INTERNAL_TOKEN:firefly-internal-dev}
   openapi:
     appkey:
       signature-window-seconds: 300

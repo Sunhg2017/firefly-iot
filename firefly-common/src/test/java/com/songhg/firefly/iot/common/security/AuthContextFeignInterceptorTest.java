@@ -17,7 +17,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AuthContextFeignInterceptorTest {
 
-    private final AuthContextFeignInterceptor interceptor = new AuthContextFeignInterceptor();
+    private final InternalAuthProperties internalAuthProperties = new InternalAuthProperties();
+    private final AuthContextFeignInterceptor interceptor = new AuthContextFeignInterceptor(internalAuthProperties);
 
     @AfterEach
     void tearDown() {

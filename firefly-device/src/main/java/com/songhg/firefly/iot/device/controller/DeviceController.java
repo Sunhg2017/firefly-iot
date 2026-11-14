@@ -14,6 +14,7 @@ import com.songhg.firefly.iot.device.dto.device.DeviceTripleExportDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceUpdateDTO;
 import com.songhg.firefly.iot.device.dto.device.DeviceVO;
 import com.songhg.firefly.iot.device.service.DeviceImportService;
+import com.songhg.firefly.iot.device.service.DeviceTripleExportTask;
 import com.songhg.firefly.iot.device.service.DeviceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -39,6 +40,7 @@ public class DeviceController {
 
     private final DeviceService deviceService;
     private final DeviceImportService deviceImportService;
+    private final DeviceTripleExportTask deviceTripleExportTask;
 
     @PostMapping
     @RequiresPermission("device:create")
@@ -129,10 +131,10 @@ public class DeviceController {
         return R.ok(deviceService.getDeviceSecret(id));
     }
 
-    @PostMapping("/triples/export")
-    @RequiresPermission("device:read")
-    @Operation(summary = "批量导出设备三元组")
-    public R<List<DeviceCredentialVO>> exportDeviceTriples(@RequestBody(required = false) DeviceTripleExportDTO dto) {
-        return R.ok(deviceService.exportDeviceTriples(dto));
+    @PostMapping("/triples/export-task")
+    @RequiresPermission("device:export")
+    @Operation(summary = "注册设备三元组异步导出任务")
+    public R<Long> exportDeviceTriples(@RequestBody(required = false) DeviceTripleExportDTO dto) {
+        return R.ok(deviceTripleExportTask.register(dto));
     }
 }

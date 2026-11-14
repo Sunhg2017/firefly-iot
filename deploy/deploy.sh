@@ -887,7 +887,7 @@ wait_for_application_ready() {
 
     wait_for_service_healthy web 120
     wait_for_http_endpoint "Gateway health" "http://localhost:8080/actuator/health" 120
-    wait_for_http_endpoint "Rule health" "http://localhost:9030/actuator/health" 120
+    # 业务服务端口已收回内部网络，rule 健康状态由容器 HEALTHCHECK 覆盖
     wait_for_http_endpoint "Web" "http://localhost/" 120
 }
 

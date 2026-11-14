@@ -6,8 +6,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.songhg.firefly.iot.api.dto.DeviceBasicVO;
 import com.songhg.firefly.iot.api.dto.InternalDeviceCreateDTO;
 import com.songhg.firefly.iot.api.dto.DeviceLocatorInputDTO;
+import com.songhg.firefly.iot.common.context.AppContext;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
 import com.songhg.firefly.iot.common.enums.DeviceAuthType;
+import com.songhg.firefly.iot.common.enums.DataScopeType;
 import com.songhg.firefly.iot.common.enums.DeviceStatus;
 import com.songhg.firefly.iot.common.enums.NodeType;
 import com.songhg.firefly.iot.common.enums.OnlineStatus;
@@ -16,6 +18,8 @@ import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.message.PlatformEvent;
 import com.songhg.firefly.iot.common.message.PlatformEventPublisher;
 import com.songhg.firefly.iot.common.mybatis.DataScope;
+import com.songhg.firefly.iot.common.mybatis.DataScopeContext;
+import com.songhg.firefly.iot.common.mybatis.DataScopeResolver;
 import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.device.convert.DeviceConvert;
 import com.songhg.firefly.iot.device.convert.DeviceGroupConvert;
@@ -79,6 +83,7 @@ public class DeviceService {
     private final DeviceVideoProfileMapper deviceVideoProfileMapper;
     private final DeviceVideoChannelMapper deviceVideoChannelMapper;
     private final PlatformEventPublisher platformEventPublisher;
+    private final DataScopeResolver dataScopeResolver;
 
     @Transactional
     public DeviceCredentialVO createDevice(DeviceCreateDTO dto) {
@@ -1046,7 +1051,40 @@ public class DeviceService {
         if (device == null || device.getDeletedAt() != null) {
             throw new BizException(ResultCode.DEVICE_NOT_FOUND);
         }
+        assertDeviceInScope(device);
         return device;
+    }
+
+    /**
+     * 详情、修改、启停、删除与密钥读取共用同一数据范围校验：
+     * 租户隔离之外，当前用户还必须被授权到该设备所属项目/产品/分组或设备本身。
+     * 无用户上下文（内部服务调用）不在此处拦截，内部接口由服务身份令牌与专属入口保护。
+     */
+    private void assertDeviceInScope(Device device) {
+        AppContext appContext = AppContextHolder.get();
+        if (appContext == null || appContext.getUserId() == null) {
+            return;
+        }
+        DataScopeContext scope = dataScopeResolver.resolve(appContext.getUserId(), appContext.getTenantId());
+        if (scope == null || scope.getScopeType() == null || scope.getScopeType() == DataScopeType.ALL) {
+            return;
+        }
+        if (scope.getScopeType() == DataScopeType.SELF) {
+            if (Objects.equals(device.getCreatedBy(), appContext.getUserId())) {
+                return;
+            }
+            throw new BizException(ResultCode.PERMISSION_DENIED);
+        }
+        if (containsId(scope.getProjectIds(), device.getProjectId())
+                || containsId(scope.getProductIds(), device.getProductId())
+                || containsId(scope.getDeviceIds(), device.getId())) {
+            return;
+        }
+        throw new BizException(ResultCode.PERMISSION_DENIED);
+    }
+
+    private boolean containsId(List<Long> ids, Long value) {
+        return value != null && ids != null && ids.contains(value);
     }
 
     private String trimToNull(String value) {

@@ -17,5 +17,6 @@ public class DeviceTelemetry {
     private Double valueNumber;
     private String valueString;
     private Boolean valueBool;
+    private String messageId;
     private String rawPayload;
 }

@@ -114,6 +114,8 @@ auth:
     public-key: ${AUTH_JWT_PUBLIC_KEY:}
 
 firefly:
+  internal:
+    token: ${FIREFLY_INTERNAL_TOKEN:}
   openapi:
     appkey:
       signature-window-seconds: ${FIREFLY_OPENAPI_APPKEY_SIGNATURE_WINDOW_SECONDS:300}

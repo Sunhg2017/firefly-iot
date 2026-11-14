@@ -33,6 +33,8 @@ x-java-service: &java-service
     SPRING_CLOUD_NACOS_CONFIG_NAMESPACE: ${NACOS_NAMESPACE:-firefly-dev}
     FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY: ${FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY:-}
     FIREFLY_OPENAPI_APPKEY_SIGNATURE_WINDOW_SECONDS: ${FIREFLY_OPENAPI_APPKEY_SIGNATURE_WINDOW_SECONDS:-300}
+    # 服务间内部接口共享令牌；生产必须显式配置，缺失时内部接口拒绝访问
+    FIREFLY_INTERNAL_TOKEN: ${FIREFLY_INTERNAL_TOKEN:-}
     JAVA_OPTS: ${JAVA_OPTS:--Xms256m -Xmx512m}
   networks:
     - firefly-net
@@ -235,10 +237,11 @@ services:
       args:
         MODULE: firefly-system
         PORT: 8081
-    ports:
-      - "8081:8081"
     volumes:
       - ${APP_LOG_ROOT:-./runtime/logs}/system:/app/logs
+    environment:
+      <<: *java-env
+      AUTH_JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
 
   device:
     <<: *java-service
@@ -249,8 +252,6 @@ services:
       args:
         MODULE: firefly-device
         PORT: 9020
-    ports:
-      - "9020:9020"
     volumes:
       - ${APP_LOG_ROOT:-./runtime/logs}/device:/app/logs
 
@@ -263,8 +264,6 @@ services:
       args:
         MODULE: firefly-rule
         PORT: 9030
-    ports:
-      - "9030:9030"
     volumes:
       - ${APP_LOG_ROOT:-./runtime/logs}/rule:/app/logs
 
@@ -278,7 +277,6 @@ services:
         MODULE: firefly-media
         PORT: 9040
     ports:
-      - "9040:9040"
       - "5060:5060/udp"
     volumes:
       - ${APP_LOG_ROOT:-./runtime/logs}/media:/app/logs
@@ -316,8 +314,6 @@ services:
       args:
         MODULE: firefly-data
         PORT: 9050
-    ports:
-      - "9050:9050"
     volumes:
       - ${APP_LOG_ROOT:-./runtime/logs}/data:/app/logs
 
@@ -330,8 +326,6 @@ services:
       args:
         MODULE: firefly-support
         PORT: 9060
-    ports:
-      - "9060:9060"
     volumes:
       - ${APP_LOG_ROOT:-./runtime/logs}/support:/app/logs
     environment:

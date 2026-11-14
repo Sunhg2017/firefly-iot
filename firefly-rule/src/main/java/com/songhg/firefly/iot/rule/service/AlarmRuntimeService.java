@@ -29,7 +29,7 @@ import org.springframework.context.expression.MapAccessor;
 import org.springframework.expression.Expression;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.expression.spel.support.StandardEvaluationContext;
+import org.springframework.expression.spel.support.SimpleEvaluationContext;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -419,9 +419,10 @@ public class AlarmRuntimeService {
 
     private Object evaluateExpression(String expression, Map<String, Object> context) {
         Expression spelExpression = spelParser.parseExpression(normalizeExpression(expression));
-        StandardEvaluationContext evaluationContext = new StandardEvaluationContext(context);
-        evaluationContext.addPropertyAccessor(new MapAccessor());
-        return spelExpression.getValue(evaluationContext);
+        // 告警条件与规则/流转模板共用同一受限求值口径：仅允许只读数据访问。
+        SimpleEvaluationContext evaluationContext = SimpleEvaluationContext.forPropertyAccessors(new MapAccessor())
+                .build();
+        return spelExpression.getValue(evaluationContext, context);
     }
 
     private String normalizeExpression(String expression) {

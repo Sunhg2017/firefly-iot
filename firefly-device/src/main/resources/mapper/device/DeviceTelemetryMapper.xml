@@ -9,6 +9,7 @@
             device_id,
             product_id,
             property,
+            message_id,
             value_number,
             value_string,
             value_bool,
@@ -22,12 +23,14 @@
                 #{item.deviceId},
                 #{item.productId},
                 #{item.property},
+                #{item.messageId, jdbcType=VARCHAR},
                 #{item.valueNumber},
                 #{item.valueString},
                 #{item.valueBool},
                 CAST(#{item.rawPayload, jdbcType=VARCHAR} AS JSONB)
             )
         </foreach>
+        ON CONFLICT DO NOTHING
     </insert>
 
     <select id="queryTelemetry" resultType="com.songhg.firefly.iot.device.dto.devicedata.TelemetryDataVO">

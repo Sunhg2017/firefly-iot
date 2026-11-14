@@ -55,3 +55,7 @@ logging:
   level:
     root: INFO
     com.songhg.firefly: INFO
+
+firefly:
+  internal:
+    token: ${FIREFLY_INTERNAL_TOKEN:}

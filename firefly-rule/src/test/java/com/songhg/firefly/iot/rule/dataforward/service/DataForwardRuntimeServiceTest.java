@@ -8,7 +8,7 @@ import com.songhg.firefly.iot.common.message.DeviceMessage;
 import com.songhg.firefly.iot.rule.dataforward.entity.DataForwardRule;
 import com.songhg.firefly.iot.rule.dataforward.mapper.DataForwardRuleMapper;
 import com.songhg.firefly.iot.rule.dataforward.support.ForwardTemplateRenderer;
-import com.songhg.firefly.iot.rule.dataforward.target.DataForwardTargetExecutor;
+import com.songhg.firefly.iot.rule.dataforward.executor.DataForwardTargetExecutor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

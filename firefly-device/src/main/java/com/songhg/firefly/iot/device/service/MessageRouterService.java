@@ -57,19 +57,11 @@ public class MessageRouterService {
         Map<String, Object> payload = normalizePropertyPayload(message.getPayload());
         DeviceMessage normalizedMessage = payload != null && !payload.isEmpty() ? withPayload(message, payload) : message;
         if (payload != null && !payload.isEmpty()) {
-            try {
-                deviceDataService.writeTelemetryFromMessage(normalizedMessage);
-            } catch (Exception ex) {
-                log.error("Failed to persist property report telemetry for device {}: {}",
-                        message.getDeviceId(), ex.getMessage());
-            }
-            try {
-                shadowService.updateReported(message.getDeviceId(), payload);
-                log.debug("Shadow reported updated for device {}", message.getDeviceId());
-            } catch (Exception ex) {
-                log.error("Failed to update shadow for property report device {}: {}",
-                        message.getDeviceId(), ex.getMessage());
-            }
+            // 遥测与影子属于核心持久化：失败必须抛给消费框架进入重试/死信，不能只记日志后继续。
+            deviceDataService.writeTelemetryFromMessage(normalizedMessage);
+            shadowService.updateReported(message.getDeviceId(), payload);
+            log.debug("Shadow reported updated for device {}", message.getDeviceId());
+            // 位置同步属于派生能力，失败不回滚已完成的遥测与影子写入。
             try {
                 deviceLocationService.syncLocationFromPropertyReport(normalizedMessage);
             } catch (Exception ex) {
@@ -81,12 +73,8 @@ public class MessageRouterService {
     }
 
     private void handleEventReport(DeviceMessage message) {
-        try {
-            deviceDataService.writeEventFromMessage(message);
-        } catch (Exception ex) {
-            log.error("Failed to persist event report for device {}: {}",
-                    message.getDeviceId(), ex.getMessage());
-        }
+        // 事件落库失败需进入重试流程，避免事件永久缺失。
+        deviceDataService.writeEventFromMessage(message);
         forwardToRuleEngine(message);
     }
 
@@ -120,12 +108,8 @@ public class MessageRouterService {
     private void handlePropertySetReply(DeviceMessage message) {
         Map<String, Object> payload = message.getPayload();
         if (payload != null && !payload.isEmpty()) {
-            try {
-                shadowService.applyPropertySetReply(message.getDeviceId(), payload);
-            } catch (Exception ex) {
-                log.error("Failed to reconcile property set reply for device {}: {}",
-                        message.getDeviceId(), ex.getMessage());
-            }
+            // 影子期望/上报值对齐是核心状态，失败需重试。
+            shadowService.applyPropertySetReply(message.getDeviceId(), payload);
         }
         persistOperationalEvent(message, "PROPERTY_SET_REPLY", "Property Set Reply", EventLevel.INFO);
         forwardToRuleEngine(message);
@@ -159,17 +143,13 @@ public class MessageRouterService {
     }
 
     private void updateConnectionState(DeviceMessage message, OnlineStatus onlineStatus) {
-        try {
-            deviceService.updateRuntimeConnectionState(
-                    message.getTenantId(),
-                    message.getDeviceId(),
-                    onlineStatus,
-                    resolveOccurredAt(message)
-            );
-        } catch (Exception ex) {
-            log.error("Failed to update device connection state: deviceId={}, status={}, error={}",
-                    message.getDeviceId(), onlineStatus, ex.getMessage());
-        }
+        // 在线状态是设备可用性的核心状态，失败需进入重试流程。
+        deviceService.updateRuntimeConnectionState(
+                message.getTenantId(),
+                message.getDeviceId(),
+                onlineStatus,
+                resolveOccurredAt(message)
+        );
     }
 
     private void persistOperationalEvent(DeviceMessage message,

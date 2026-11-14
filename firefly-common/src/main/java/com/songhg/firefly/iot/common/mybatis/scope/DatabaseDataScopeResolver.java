@@ -144,12 +144,8 @@ public class DatabaseDataScopeResolver implements DataScopeResolver {
                             if (device.getId() != null) {
                                 deviceIds.add(device.getId());
                             }
-                            if (device.getProjectId() != null) {
-                                projectIds.add(device.getProjectId());
-                            }
-                            if (device.getProductId() != null) {
-                                productIds.add(device.getProductId());
-                            }
+                            // 分组授权只覆盖组内设备本身；不能把设备所属项目/产品加入范围，
+                            // 否则只授权一个分组的用户会看到同项目下未授权设备。
                         });
             }
         }

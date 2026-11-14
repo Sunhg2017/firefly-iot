@@ -23,7 +23,7 @@ import org.springframework.context.expression.MapAccessor;
 import org.springframework.expression.Expression;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.expression.spel.support.StandardEvaluationContext;
+import org.springframework.expression.spel.support.SimpleEvaluationContext;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -162,9 +162,23 @@ public class RuleRuntimeService {
         return response.getData();
     }
 
+    private Map<String, Object> messageFields(DeviceMessage message) {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("messageId", message.getMessageId());
+        fields.put("tenantId", message.getTenantId());
+        fields.put("productId", message.getProductId());
+        fields.put("deviceId", message.getDeviceId());
+        fields.put("deviceName", message.getDeviceName());
+        fields.put("type", message.getType() == null ? null : message.getType().name());
+        fields.put("topic", message.getTopic());
+        fields.put("payload", message.getPayload() == null ? Collections.emptyMap() : message.getPayload());
+        fields.put("timestamp", message.getTimestamp());
+        return fields;
+    }
+
     private Map<String, Object> buildContext(DeviceMessage message, DeviceBasicVO deviceBasic) {
         Map<String, Object> context = new LinkedHashMap<>();
-        context.put("message", message);
+        context.put("message", messageFields(message));
         context.put("messageId", message.getMessageId());
         context.put("tenantId", message.getTenantId());
         context.put("productId", message.getProductId());
@@ -365,9 +379,10 @@ public class RuleRuntimeService {
 
     private Object evaluateValue(String expression, Map<String, Object> context) {
         Expression spelExpression = spelParser.parseExpression(normalizeExpression(expression));
-        StandardEvaluationContext evaluationContext = new StandardEvaluationContext(context);
-        evaluationContext.addPropertyAccessor(new MapAccessor());
-        return spelExpression.getValue(evaluationContext);
+        // 租户可配置表达式必须限制在只读数据访问范围内：禁止类型引用、构造器与静态/实例方法调用。
+        SimpleEvaluationContext evaluationContext = SimpleEvaluationContext.forPropertyAccessors(new MapAccessor())
+                .build();
+        return spelExpression.getValue(evaluationContext, context);
     }
 
     private String normalizeExpression(String expression) {

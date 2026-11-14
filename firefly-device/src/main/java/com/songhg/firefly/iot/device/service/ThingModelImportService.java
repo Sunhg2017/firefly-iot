@@ -20,15 +20,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
@@ -48,6 +47,7 @@ public class ThingModelImportService {
     private final AsyncTaskClient asyncTaskClient;
     private final ObjectMapper objectMapper;
     private final ThingModelBuiltinDefinitionSupport thingModelBuiltinDefinitionSupport;
+    private final ImportTaskDispatcher importTaskDispatcher;
 
     private static final int MAX_ERROR_MESSAGE_LENGTH = 500;
 
@@ -78,19 +78,19 @@ public class ThingModelImportService {
         Long tenantId = AppContextHolder.getTenantId();
         Long userId = AppContextHolder.getUserId();
 
-        // 异步执行导入
-        executeImportAsync(taskId, productId, dto, tenantId, userId);
+        // 通过独立分发器提交到任务线程池执行，注册接口不等待文件下载与解析
+        importTaskDispatcher.dispatch(() -> executeImport(taskId, productId, dto, tenantId, userId));
 
         log.info("物模型导入任务已注册: taskId={}, productId={}, fileKey={}", taskId, productId, dto.getFileKey());
         return taskId;
     }
 
     /**
-     * 异步执行物模型导入
+     * 执行物模型导入（由 {@link ImportTaskDispatcher} 在独立线程池中调用）。
+     * 导入仅在产品维度做一次 JSONB 更新，单条写入使用数据库自动提交即可，
+     * 不需要依赖代理事务；文件下载与任务状态上报本身也不在数据库事务范围内。
      */
-    @Async
-    @Transactional
-    public void executeImportAsync(Long taskId, Long productId, ThingModelImportDTO dto, Long tenantId, Long userId) {
+    public void executeImport(Long taskId, Long productId, ThingModelImportDTO dto, Long tenantId, Long userId) {
         try {
             AsyncContextHelper.setContext(tenantId, userId);
 
@@ -343,6 +343,119 @@ public class ThingModelImportService {
             return "rw";
         }
         return "r";
+    }
+
+    /**
+     * 服务端解析参数清单文件（CSV/Excel），返回行数据供前端表单预览。
+     * 浏览器不再直接解析导入文件；实际物模型保存仍走既有保存接口。
+     */
+    public List<Map<String, String>> parseParameterRows(String fileKey, String fileFormat) {
+        R<Map<String, String>> presignedResult = fileClient.getPresignedUrl(fileKey);
+        if (presignedResult == null || presignedResult.getData() == null) {
+            throw new BizException(ResultCode.INTERNAL_ERROR, "获取文件URL失败");
+        }
+        String fileUrl = presignedResult.getData().get("url");
+        try {
+            HttpURLConnection conn = (HttpURLConnection) URI.create(fileUrl).toURL().openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(60000);
+            try (InputStream inputStream = conn.getInputStream()) {
+                if ("CSV".equalsIgnoreCase(fileFormat)) {
+                    return parseCsvRows(inputStream);
+                }
+                return parseExcelRows(inputStream);
+            }
+        } catch (BizException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BizException(ResultCode.INTERNAL_ERROR, "解析参数清单失败: " + ex.getMessage());
+        }
+    }
+
+    private List<Map<String, String>> parseCsvRows(InputStream inputStream) throws Exception {
+        List<Map<String, String>> rows = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+            String headerLine = reader.readLine();
+            if (headerLine == null) {
+                return rows;
+            }
+            String[] headers = splitCsvLine(headerLine);
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.isBlank()) {
+                    continue;
+                }
+                String[] values = splitCsvLine(line);
+                Map<String, String> row = new LinkedHashMap<>();
+                for (int i = 0; i < headers.length; i++) {
+                    row.put(headers[i].trim(), i < values.length ? values[i].trim() : "");
+                }
+                rows.add(row);
+            }
+        }
+        return rows;
+    }
+
+    private List<Map<String, String>> parseExcelRows(InputStream inputStream) throws Exception {
+        List<Map<String, String>> rows = new ArrayList<>();
+        try (Workbook workbook = new XSSFWorkbook(inputStream)) {
+            Sheet sheet = workbook.getSheetAt(0);
+            if (sheet == null) {
+                return rows;
+            }
+            Row headerRow = sheet.getRow(0);
+            if (headerRow == null) {
+                return rows;
+            }
+            List<String> headers = new ArrayList<>();
+            for (int i = 0; i < headerRow.getLastCellNum(); i++) {
+                headers.add(getCellValueAsString(headerRow.getCell(i)).trim());
+            }
+            for (int r = 1; r <= sheet.getLastRowNum(); r++) {
+                Row row = sheet.getRow(r);
+                if (row == null) {
+                    continue;
+                }
+                Map<String, String> values = new LinkedHashMap<>();
+                boolean hasValue = false;
+                for (int i = 0; i < headers.size(); i++) {
+                    String cell = getCellValueAsString(row.getCell(i)).trim();
+                    if (!cell.isEmpty()) {
+                        hasValue = true;
+                    }
+                    values.put(headers.get(i), cell);
+                }
+                if (hasValue) {
+                    rows.add(values);
+                }
+            }
+        }
+        return rows;
+    }
+
+    private String[] splitCsvLine(String line) {
+        boolean inQuote = false;
+        StringBuilder current = new StringBuilder();
+        List<String> parts = new ArrayList<>();
+        for (int i = 0; i < line.length(); i++) {
+            char ch = line.charAt(i);
+            if (ch == '"') {
+                if (inQuote && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                    current.append('"');
+                    i++;
+                } else {
+                    inQuote = !inQuote;
+                }
+            } else if (ch == ',' && !inQuote) {
+                parts.add(current.toString());
+                current.setLength(0);
+            } else {
+                current.append(ch);
+            }
+        }
+        parts.add(current.toString());
+        return parts.toArray(new String[0]);
     }
 
     private String mapDataType(String type) {

@@ -8,7 +8,7 @@ import com.songhg.firefly.iot.common.message.DeviceMessage;
 import com.songhg.firefly.iot.rule.dataforward.entity.DataForwardRule;
 import com.songhg.firefly.iot.rule.dataforward.mapper.DataForwardRuleMapper;
 import com.songhg.firefly.iot.rule.dataforward.support.ForwardTemplateRenderer;
-import com.songhg.firefly.iot.rule.dataforward.target.DataForwardTargetExecutor;
+import com.songhg.firefly.iot.rule.dataforward.executor.DataForwardTargetExecutor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -89,7 +89,7 @@ public class DataForwardRuntimeService {
 
     private Map<String, Object> buildVariables(DeviceMessage message) {
         Map<String, Object> context = new LinkedHashMap<>();
-        context.put("message", message);
+        context.put("message", messageFields(message));
         context.put("messageId", message.getMessageId());
         context.put("tenantId", message.getTenantId());
         context.put("productId", message.getProductId());
@@ -104,6 +104,20 @@ public class DataForwardRuntimeService {
             message.getPayload().forEach(context::putIfAbsent);
         }
         return context;
+    }
+
+    private Map<String, Object> messageFields(DeviceMessage message) {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("messageId", message.getMessageId());
+        fields.put("tenantId", message.getTenantId());
+        fields.put("productId", message.getProductId());
+        fields.put("deviceId", message.getDeviceId());
+        fields.put("deviceName", message.getDeviceName());
+        fields.put("type", message.getType() == null ? null : message.getType().name());
+        fields.put("topic", message.getTopic());
+        fields.put("payload", message.getPayload() == null ? Collections.emptyMap() : message.getPayload());
+        fields.put("timestamp", message.getTimestamp());
+        return fields;
     }
 
     private boolean matchesSource(String sourcePattern, DeviceMessage message) {

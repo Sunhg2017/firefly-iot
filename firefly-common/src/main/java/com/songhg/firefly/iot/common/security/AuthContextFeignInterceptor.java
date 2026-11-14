@@ -6,7 +6,9 @@ import com.songhg.firefly.iot.common.context.AppContextHolder;
 import feign.RequestInterceptor;
 import feign.RequestTemplate;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -18,13 +20,22 @@ import java.util.stream.Collectors;
 
 /**
  * Feign 请求上下文透传拦截器。
- * 保证跨服务调用继续携带当前租户、用户与权限头，避免下游内部接口在同一业务链路中丢失可见范围。
+ * 保证跨服务调用继续携带当前租户、用户与权限头，避免下游内部接口在同一业务链路中丢失可见范围，
+ * 同时注入服务间共享令牌以通过内部接口边界校验。
  */
 @Component
+@RequiredArgsConstructor
 public class AuthContextFeignInterceptor implements RequestInterceptor {
+
+    private final InternalAuthProperties internalAuthProperties;
 
     @Override
     public void apply(RequestTemplate template) {
+        // 服务身份令牌必须无条件注入：定时任务、Kafka 消费等无 HTTP 上下文的调用同样需要访问内部接口。
+        if (StringUtils.hasText(internalAuthProperties.getToken())) {
+            template.header(AuthConstants.HEADER_INTERNAL_TOKEN, internalAuthProperties.getToken());
+        }
+
         HttpServletRequest request = resolveCurrentRequest();
         if (request != null) {
             copyHeader(request, template, AuthConstants.HEADER_AUTHORIZATION);

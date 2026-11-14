@@ -28,6 +28,8 @@ logging:
     com.songhg.firefly: INFO
 
 firefly:
+  internal:
+    token: ${FIREFLY_INTERNAL_TOKEN:}
   http:
     presence-timeout-seconds: ${FIREFLY_HTTP_PRESENCE_TIMEOUT_SECONDS:300}
     presence-sweep-interval-seconds: ${FIREFLY_HTTP_PRESENCE_SWEEP_INTERVAL_SECONDS:30}

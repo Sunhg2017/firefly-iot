@@ -19,6 +19,7 @@ public final class AuthConstants {
     public static final String HEADER_APP_KEY_ID = "X-App-Key-Id";
     public static final String HEADER_OPEN_API_CODE = "X-Open-Api-Code";
     public static final String HEADER_GRANTED_PERMISSIONS = "X-Granted-Permissions";
+    public static final String HEADER_INTERNAL_TOKEN = "X-Internal-Token";
     public static final String TOKEN_PREFIX = "Bearer ";
 
     // Token types

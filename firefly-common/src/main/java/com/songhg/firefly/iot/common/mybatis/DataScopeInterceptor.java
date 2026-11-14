@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
+import net.sf.jsqlparser.expression.operators.relational.ParenthesedExpressionList;
 import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
 import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
@@ -91,7 +92,10 @@ public class DataScopeInterceptor implements Interceptor {
             if (where == null) {
                 plainSelect.setWhere(scopeExpr);
             } else {
-                plainSelect.setWhere(new AndExpression(where, scopeExpr));
+                // 原条件若本身是 OR 组合，必须整体加括号后再与数据范围做 AND；
+                // 数据范围内部也可能包含多个 OR，同样需要整体加括号，避免优先级导致越权。
+                Expression groupedWhere = where instanceof OrExpression ? new ParenthesedExpressionList<>(where) : where;
+                plainSelect.setWhere(new AndExpression(groupedWhere, new ParenthesedExpressionList<>(scopeExpr)));
             }
 
             return select.toString();
@@ -183,7 +187,7 @@ public class DataScopeInterceptor implements Interceptor {
             }
             InExpression in = new InExpression();
             in.setLeftExpression(new Column(column));
-            in.setRightExpression(new ExpressionList(new LongValue(-1)));
+            in.setRightExpression(new ParenthesedExpressionList<>(new LongValue(-1)));
             return in;
         }
         InExpression in = new InExpression();
@@ -191,7 +195,7 @@ public class DataScopeInterceptor implements Interceptor {
         List<Expression> values = ids.stream()
                 .map(id -> (Expression) new LongValue(id))
                 .collect(Collectors.toList());
-        in.setRightExpression(new ExpressionList(values));
+        in.setRightExpression(new ParenthesedExpressionList<>(values));
         return in;
     }
 
@@ -205,7 +209,7 @@ public class DataScopeInterceptor implements Interceptor {
             }
             InExpression in = new InExpression();
             in.setLeftExpression(new Column(column));
-            in.setRightExpression(new ExpressionList(new StringValue("__NONE__")));
+            in.setRightExpression(new ParenthesedExpressionList<>(new StringValue("__NONE__")));
             return in;
         }
         InExpression in = new InExpression();
@@ -213,7 +217,7 @@ public class DataScopeInterceptor implements Interceptor {
         List<Expression> values = ids.stream()
                 .map(id -> (Expression) new StringValue(id))
                 .collect(Collectors.toList());
-        in.setRightExpression(new ExpressionList(values));
+        in.setRightExpression(new ParenthesedExpressionList<>(values));
         return in;
     }
 }

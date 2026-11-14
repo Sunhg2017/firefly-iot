@@ -885,7 +885,7 @@ export const deviceApi = {
   disable: (id: number) => deviceRequest.put(`/devices/${id}/disable`),
   delete: (id: number) => deviceRequest.delete(`/devices/${id}`),
   getSecret: (id: number) => deviceRequest.get(`/devices/${id}/secret`),
-  exportTriples: (data: Record<string, unknown> = {}) => deviceRequest.post('/devices/triples/export', data),
+  exportTriplesTask: (data: Record<string, unknown> = {}) => deviceRequest.post('/devices/triples/export-task', data),
   // Shadow
   getShadow: (id: number) => deviceRequest.get(`/devices/${id}/shadow`),
   updateDesired: (id: number, data: Record<string, unknown>) => deviceRequest.put(`/devices/${id}/shadow/desired`, data),
@@ -922,6 +922,8 @@ export const productApi = {
     deviceRequest.put(`/products/${id}/thing-model`, data, {
       headers: { 'Content-Type': 'text/plain' },
     }),
+  parseParameterRows: (id: number, data: { fileKey: string; fileFormat: string }) =>
+    deviceRequest.post(`/products/${id}/thing-model/parse-parameters`, data),
   importThingModel: (id: number, data: { fileKey: string; fileFormat: string; importType?: string }) =>
     deviceRequest.post(`/products/${id}/thing-model/import`, data),
 };

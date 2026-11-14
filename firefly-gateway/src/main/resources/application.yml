@@ -1,4 +1,4 @@
-﻿server:
+server:
   port: 8080
 
 spring:
@@ -136,9 +136,13 @@ spring:
 
 auth:
   jwt:
-    public-key: ''  # Base64 encoded RSA public key, leave empty for dev passthrough mode
+    # 开发环境默认 RSA 公钥（Base64/X.509），仅供本地联调使用，必须与 firefly-system 私钥匹配。
+    # 生产必须通过 AUTH_JWT_PUBLIC_KEY 覆盖；application-prod.yml 默认留空，缺失时网关拒绝启动。
+    public-key: ${AUTH_JWT_PUBLIC_KEY:MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt/o6VyUOBN2sAxfDv30xfSUpkhPWFuEZDWCZOdYIelVADDkKy03rNyApxe4xV0NNr0kOgJI3VzkxDc3HOZyqvdLl2XZuZ8/5L/FRTaCqWOs+lnth5v+oKkqu39nnCmyiBfaJ5Dgzo3nD6zxq/jQQUg01M7w2QQj3J13yueIoIHpOjVtY2DB1+oJGLi26gon3y7b/6+lw7NEnxHiYGpDEQEPNuyLfUz3CvGwXXw7xE/ni29PSeIGtDTfBw+kpaY3akNo79DTk/iFqfa7AkRCxK+0DLmQ4UAQzVY+ZQ/8Fn4xyIT/nMhlIxWVutcZAC2HERwRMbA397WJM0rDKlIEsIQIDAQAB}
 
 firefly:
+  internal:
+    token: ${FIREFLY_INTERNAL_TOKEN:firefly-internal-dev}
   openapi:
     appkey:
       signature-window-seconds: 300

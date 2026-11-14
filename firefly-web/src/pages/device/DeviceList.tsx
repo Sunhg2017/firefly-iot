@@ -65,11 +65,6 @@ const getErrorMessage = (error: unknown, fallback: string) => {
   return fallback;
 };
 
-const toCsvValue = (value: unknown) => {
-  const text = `${value ?? ''}`;
-  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-};
-
 const normalizeLocatorInputs = (locators?: DeviceLocatorFormItem[]) => {
   const normalized = (locators || [])
     .map((item) => ({
@@ -84,19 +79,6 @@ const normalizeLocatorInputs = (locators?: DeviceLocatorFormItem[]) => {
   return normalized.length > 0 ? normalized : undefined;
 };
 
-const exportTriples = (records: DeviceCredentialRecord[]) => {
-  const header = ['设备ID', '产品ID', '产品Key', '产品名称', '设备名称', '设备别名', '设备密钥'];
-  const rows = records.map((item) => [item.id, item.productId, item.productKey, item.productName || '', item.deviceName, item.nickname || '', item.deviceSecret].map(toCsvValue).join(','));
-  const blob = new Blob([`\uFEFF${header.join(',')}\r\n${rows.join('\r\n')}`], { type: 'text/csv;charset=utf-8;' });
-  const url = window.URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `device-triples-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  window.URL.revokeObjectURL(url);
-};
 
 const pollTaskStatus = async (taskId: number, onProgress: (progress: number) => void, onComplete: () => void, onFail: (error: string) => void) => {
   let attempts = 0;
@@ -334,11 +316,10 @@ const DeviceList: React.FC = () => {
             status: filters.status,
             onlineStatus: filters.onlineStatus,
           };
-      const res = await deviceApi.exportTriples(payload);
-      const credentials = (res.data.data || []) as DeviceCredentialRecord[];
-      if (!credentials.length) { message.warning('没有匹配到可导出的设备三元组'); return; }
-      exportTriples(credentials);
-      message.success(`已导出 ${credentials.length} 条设备三元组`);
+      const res = await deviceApi.exportTriplesTask(payload);
+      const taskId = res.data.data as number | undefined;
+      if (!taskId) { message.error('创建导出任务失败'); return; }
+      message.success(`已提交导出任务（#${taskId}），请到「异步任务」下载结果`);
     } catch (error) { message.error(getErrorMessage(error, '导出设备三元组失败')); }
     finally { setExporting(false); }
   };

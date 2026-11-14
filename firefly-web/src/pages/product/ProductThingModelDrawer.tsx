@@ -1474,24 +1474,6 @@ const asEnumValuesText = (value: unknown) => {
   return Object.keys(objectValue).length > 0 ? JSON.stringify(objectValue, null, 2) : '';
 };
 
-const readSpreadsheetRows = async (file: File) => {
-  const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-  const firstSheetName = workbook.SheetNames[0];
-  if (!firstSheetName) {
-    throw new Error('导入文件中没有可读取的工作表');
-  }
-
-  const worksheet = workbook.Sheets[firstSheetName];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
-    defval: '',
-    raw: true,
-  });
-
-  return rows.filter((row) =>
-    Object.values(row).some((value) => value !== undefined && value !== null && `${value}`.trim() !== ''),
-  );
-};
-
 const downloadSpreadsheetTemplate = (fileName: string, sheetName: string, rows: SpreadsheetTemplateRow[]) => {
   const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
   const worksheet = XLSX.utils.json_to_sheet(rows, { header: headers });
@@ -1916,9 +1898,16 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
       return;
     }
 
-    // For parameters import (smaller data), keep local parsing
+    // 参数清单改由后端解析，浏览器不再解析导入文件
     try {
-      const rows = await readSpreadsheetRows(file);
+      const uploadRes = await fileApi.upload(file, 'thing-model-import');
+      const fileKey = uploadRes.data.data?.fileKey || uploadRes.data.data?.objectName;
+      if (!fileKey) {
+        throw new Error('上传文件失败');
+      }
+      const fileFormat = lowerName.endsWith('.csv') ? 'CSV' : 'XLSX';
+      const parseRes = await productApi.parseParameterRows(product.id, { fileKey, fileFormat });
+      const rows = (parseRes.data.data || []) as Record<string, unknown>[];
       if (rows.length === 0) {
         message.warning('导入文件没有可识别的数据行');
         return;

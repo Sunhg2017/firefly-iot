@@ -41,13 +41,27 @@ public class DeviceMessageConsumer {
         processMessage(payload, "OTA_PROGRESS");
     }
 
+    /**
+     * 消费失败不再吞异常：抛回监听容器，由 DefaultErrorHandler 做有限重试，
+     * 重试耗尽后投递到死信 topic，保证失败可观测、可补偿。
+     */
     private void processMessage(String payload, String source) {
+        DeviceMessage message;
         try {
-            DeviceMessage message = objectMapper.readValue(payload, DeviceMessage.class);
-            log.debug("Consumed [{}]: deviceId={}, type={}, messageId={}", source, message.getDeviceId(), message.getType(), message.getMessageId());
+            message = objectMapper.readValue(payload, DeviceMessage.class);
+        } catch (Exception ex) {
+            log.error("Failed to deserialize message from {}", source, ex);
+            throw new IllegalStateException("Invalid device message payload from " + source, ex);
+        }
+
+        log.debug("Consumed [{}]: deviceId={}, type={}, messageId={}",
+                source, message.getDeviceId(), message.getType(), message.getMessageId());
+        try {
             routerService.routeUpstream(message);
-        } catch (Exception e) {
-            log.error("Failed to process message from {}: {}", source, e.getMessage(), e);
+        } catch (Exception ex) {
+            log.error("Failed to process message from {}: messageId={}", source, message.getMessageId(), ex);
+            throw new IllegalStateException(
+                    "Device message processing failed: source=" + source + ", messageId=" + message.getMessageId(), ex);
         }
     }
 }

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.time.LocalDateTime;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -111,7 +112,7 @@ class MessageRouterServiceTest {
     }
 
     @Test
-    void shouldStillUpdateShadowWhenTelemetryPersistenceFails() {
+    void shouldPropagateErrorWhenTelemetryPersistenceFails() {
         DeviceMessage message = DeviceMessage.builder()
                 .messageId("msg-2c")
                 .tenantId(1L)
@@ -125,14 +126,11 @@ class MessageRouterServiceTest {
                 .build();
         doThrow(new RuntimeException("tsdb down")).when(deviceDataService).writeTelemetryFromMessage(any(DeviceMessage.class));
 
-        routerService.routeUpstream(message);
+        // 遥测持久化属于核心步骤：失败必须上抛给消费框架进入重试/死信，而不是继续转发。
+        assertThrows(RuntimeException.class, () -> routerService.routeUpstream(message));
 
-        verify(shadowService).updateReported(eq(3L), eq(message.getPayload()));
-        verify(deviceLocationService).syncLocationFromPropertyReport(message);
-        verify(messageProducer).publishToTopic(
-                eq(KafkaTopics.RULE_ENGINE_INPUT),
-                argThat(ruleMessage -> "/sys/pk/dev-001/thing/property/post".equals(ruleMessage.getTopic()))
-        );
+        verify(shadowService, never()).updateReported(any(), any());
+        verify(messageProducer, never()).publishToTopic(any(), any());
     }
 
     @Test

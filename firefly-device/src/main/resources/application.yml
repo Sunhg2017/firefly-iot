@@ -98,6 +98,8 @@ management:
 
 
 firefly:
+  internal:
+    token: ${FIREFLY_INTERNAL_TOKEN:firefly-internal-dev}
   telemetry:
     # 全局默认保留天数，未单独配置的租户使用该值
     default-retention-days: ${FIREFLY_TELEMETRY_DEFAULT_RETENTION_DAYS:90}

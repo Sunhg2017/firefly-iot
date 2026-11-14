@@ -1,15 +1,19 @@
 package com.songhg.firefly.iot.device.controller;
 
 import com.songhg.firefly.iot.api.dto.DeviceAuthDTO;
+import com.songhg.firefly.iot.api.dto.DeviceBasicVO;
 import com.songhg.firefly.iot.api.dto.DeviceLocatorResolveDTO;
 import com.songhg.firefly.iot.api.dto.DeviceLocatorResolveRequestDTO;
 import com.songhg.firefly.iot.api.dto.DeviceRegisterDTO;
 import com.songhg.firefly.iot.api.dto.DeviceRegisterRequestDTO;
 import com.songhg.firefly.iot.api.dto.DeviceUnregisterDTO;
 import com.songhg.firefly.iot.api.dto.DeviceUnregisterRequestDTO;
+import com.songhg.firefly.iot.common.exception.BizException;
 import com.songhg.firefly.iot.common.result.R;
+import com.songhg.firefly.iot.common.result.ResultCode;
 import com.songhg.firefly.iot.device.protocolparser.service.DeviceLocatorService;
 import com.songhg.firefly.iot.device.service.DeviceCredentialService;
+import com.songhg.firefly.iot.device.service.DeviceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -37,6 +41,7 @@ public class InternalDeviceAuthController {
 
     private final DeviceCredentialService credentialService;
     private final DeviceLocatorService deviceLocatorService;
+    private final DeviceService deviceService;
     private final StringRedisTemplate redisTemplate;
 
     @GetMapping("/authenticate")
@@ -106,10 +111,21 @@ public class InternalDeviceAuthController {
             @Parameter(description = "租户编号", required = true) @RequestParam Long tenantId,
             @Parameter(description = "产品编号", required = true) @RequestParam Long productId,
             @Parameter(description = "令牌有效期（秒）", required = true) @RequestParam long ttlSeconds) {
+        // 只能为真实存在且租户/产品归属一致的设备签发令牌，避免任意编号组合被用于换取设备身份。
+        DeviceBasicVO device = deviceId == null ? null : deviceService.getDeviceBasic(deviceId);
+        if (device == null
+                || !java.util.Objects.equals(device.getTenantId(), tenantId)
+                || !java.util.Objects.equals(device.getProductId(), productId)) {
+            throw new BizException(ResultCode.DEVICE_NOT_FOUND);
+        }
+        if (ttlSeconds <= 0 || ttlSeconds > 86400) {
+            throw new BizException(ResultCode.PARAM_ERROR, "令牌有效期必须在 1~86400 秒之间");
+        }
+
         String token = UUID.randomUUID().toString().replace("-", "");
         String cacheKey = "device:token:" + token;
         redisTemplate.opsForValue().set(cacheKey,
-                deviceId + ":" + tenantId + ":" + productId, Duration.ofSeconds(ttlSeconds));
+                device.getId() + ":" + tenantId + ":" + productId, Duration.ofSeconds(ttlSeconds));
         return R.ok(token);
     }
 

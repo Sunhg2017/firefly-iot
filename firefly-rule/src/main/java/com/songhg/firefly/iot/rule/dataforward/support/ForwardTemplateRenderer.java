@@ -6,7 +6,7 @@ import org.springframework.context.expression.MapAccessor;
 import org.springframework.expression.Expression;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.expression.spel.support.StandardEvaluationContext;
+import org.springframework.expression.spel.support.SimpleEvaluationContext;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -101,9 +101,10 @@ public class ForwardTemplateRenderer {
      */
     public Object evaluate(String expression, Map<String, Object> context) {
         Expression spelExpression = spelParser.parseExpression(normalizeExpression(expression));
-        StandardEvaluationContext evaluationContext = new StandardEvaluationContext(context);
-        evaluationContext.addPropertyAccessor(new MapAccessor());
-        return spelExpression.getValue(evaluationContext);
+        // 与规则引擎共用同一受限求值口径：只允许只读数据访问与属性绑定，禁止方法与构造器调用。
+        SimpleEvaluationContext evaluationContext = SimpleEvaluationContext.forPropertyAccessors(new MapAccessor())
+                .build();
+        return spelExpression.getValue(evaluationContext, context);
     }
 
     private String normalizeExpression(String expression) {

@@ -51,7 +51,14 @@ logging:
     com.songhg.firefly: INFO
 
 firefly:
+  internal:
+    token: ${FIREFLY_INTERNAL_TOKEN:}
   openapi:
     appkey:
       signature-window-seconds: ${FIREFLY_OPENAPI_APPKEY_SIGNATURE_WINDOW_SECONDS:300}
       secret-encrypt-key: ${FIREFLY_OPENAPI_APPKEY_SECRET_ENCRYPT_KEY:}
+
+auth:
+  jwt:
+    # 生产环境必须显式提供 Base64(PKCS#8) RSA 私钥，缺失时服务拒绝启动
+    private-key: ${AUTH_JWT_PRIVATE_KEY:}

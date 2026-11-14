@@ -153,6 +153,7 @@ public class DeviceDataService {
             telemetry.setDeviceId(device.getId());
             telemetry.setProductId(device.getProductId());
             telemetry.setProperty(entry.getKey());
+            telemetry.setMessageId(message.getMessageId());
 
             Object val = entry.getValue();
             if (val instanceof Number number) {

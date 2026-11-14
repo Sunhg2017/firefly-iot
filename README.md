@@ -126,6 +126,20 @@ npm run dev
 
 `firefly-connector` 仍保留 `/CONNECTOR/api/v1/protocol/mqtt/*` Webhook 接口，用于兼容外部 MQTT Broker 的 `auth`、`acl`、`message`、`disconnect` 回调，但内置 Broker 已是默认实现。
 
+## 安全配置（必读）
+
+生产部署必须显式配置以下密钥，缺失时网关/系统服务会拒绝启动：
+
+| 变量 | 作用 | 开发默认 |
+| --- | --- | --- |
+| `JWT_PRIVATE_KEY` | system 签发 JWT 的 RSA 私钥（Base64/PKCS#8） | `application.yml` 内置开发密钥 |
+| `JWT_PUBLIC_KEY` | gateway 校验 JWT 的 RSA 公钥（Base64/X.509） | `application.yml` 内置开发公钥 |
+| `FIREFLY_INTERNAL_TOKEN` | 服务间 `/api/v1/internal/**` 共享令牌 | `firefly-internal-dev` |
+
+- 生成密钥对：`openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out key.pem`，私钥 `openssl pkcs8 -topk8 -nocrypt -in key.pem -outform DER | base64`，公钥 `openssl rsa -in key.pem -pubout -outform DER | base64`。
+- 公共网关会拒绝 `/api/v1/internal/**`；业务服务端口不再映射到宿主机，外部只通过网关/前端/Connector 访问。
+- 生产部署请参考 `deploy/.env.example` 与审计整改记录 `docs/progress/project-audit-2026-11-15-remediation.md`。
+
 ## Docker 部署
 
 ### 一键部署
