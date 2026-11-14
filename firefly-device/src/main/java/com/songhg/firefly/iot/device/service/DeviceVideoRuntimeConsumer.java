@@ -38,6 +38,7 @@ public class DeviceVideoRuntimeConsumer {
             consumer.accept(objectMapper.readValue(payload, type));
         } catch (Exception ex) {
             log.error("Failed to consume video runtime event: type={}, error={}", type.getSimpleName(), ex.getMessage(), ex);
+            throw new IllegalStateException("Video runtime event processing failed: " + type.getSimpleName(), ex);
         }
     }
 }

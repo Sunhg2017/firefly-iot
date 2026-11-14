@@ -1,6 +1,7 @@
 package com.songhg.firefly.iot.connector.protocol;
 
 import com.songhg.firefly.iot.common.result.R;
+import com.songhg.firefly.iot.common.security.RequiresLogin;
 import com.songhg.firefly.iot.connector.protocol.dto.ModbusCollectorTask;
 import com.songhg.firefly.iot.connector.protocol.dto.ModbusRegisterDef;
 import com.songhg.firefly.iot.connector.protocol.dto.ModbusTarget;
@@ -23,6 +24,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/modbus")
 @RequiredArgsConstructor
+@RequiresLogin
 public class ModbusController {
 
     private final ModbusService modbusService;

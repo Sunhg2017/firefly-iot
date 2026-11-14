@@ -37,6 +37,7 @@ public class AuthEventConsumer {
             }
         } catch (Exception e) {
             log.error("Failed to process auth event: {}", message, e);
+            throw new IllegalStateException("Auth event processing failed", e);
         }
     }
 

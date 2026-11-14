@@ -356,7 +356,7 @@ services:
         MODULE: firefly-connector
         PORT: 9070
     ports:
-      - "9070:9070"
+      # 9070 管理/设备 HTTP 端口仅保留在内部网络，统一经网关访问
       - "${FIREFLY_MQTT_PORT:-1883}:${FIREFLY_MQTT_PORT:-1883}"
       - "5683:5683/udp"
     environment:

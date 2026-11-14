@@ -53,6 +53,7 @@ public class PermissionEventConsumer {
             }
         } catch (Exception e) {
             log.error("Failed to process permission event: {}", message, e);
+            throw new IllegalStateException("Permission event processing failed", e);
         }
     }
 
@@ -76,6 +77,7 @@ public class PermissionEventConsumer {
             }
         } catch (Exception e) {
             log.error("Failed to process role event: {}", message, e);
+            throw new IllegalStateException("Role event processing failed", e);
         }
     }
 }

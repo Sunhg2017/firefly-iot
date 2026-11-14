@@ -2,6 +2,7 @@ package com.songhg.firefly.iot.connector.protocol.lorawan;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.result.R;
+import com.songhg.firefly.iot.common.security.RequiresLogin;
 import com.songhg.firefly.iot.connector.config.LoRaWanProperties;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -125,18 +126,21 @@ public class LoRaWanController {
     // ==================== Device Management ====================
 
     @Operation(summary = "List known LoRaWAN devices")
+    @RequiresLogin
     @GetMapping("/devices")
     public R<Collection<LoRaWanDeviceInfo>> listDevices() {
         return R.ok(loRaWanServer.listDevices());
     }
 
     @Operation(summary = "Count known LoRaWAN devices")
+    @RequiresLogin
     @GetMapping("/devices/count")
     public R<Integer> deviceCount() {
         return R.ok(loRaWanServer.getDeviceCount());
     }
 
     @Operation(summary = "Get a known LoRaWAN device")
+    @RequiresLogin
     @GetMapping("/devices/{devEui}")
     public R<LoRaWanDeviceInfo> getDevice(
             @Parameter(description = "Unique device EUI", required = true, example = "0102030405060708")
@@ -151,6 +155,7 @@ public class LoRaWanController {
     // ==================== Downlink ====================
 
     @Operation(summary = "Queue a simulated LoRaWAN downlink")
+    @RequiresLogin
     @PostMapping("/downlink")
     public R<Boolean> sendDownlink(@RequestBody DownlinkDTO dto) {
         if (!loRaWanServer.queueDownlink(dto.getDevEui(), dto.getFPort(), dto.getData(), dto.isConfirmed(), dto.getData(), null)) {
@@ -160,6 +165,7 @@ public class LoRaWanController {
     }
 
     @Operation(summary = "List queued LoRaWAN downlinks")
+    @RequiresLogin
     @GetMapping("/devices/{devEui}/downlinks")
     public R<List<LoRaWanServer.DownlinkRecord>> listDownlinks(
             @Parameter(description = "Unique device EUI", required = true, example = "0102030405060708")
@@ -172,6 +178,7 @@ public class LoRaWanController {
     // ==================== Stats ====================
 
     @Operation(summary = "Get LoRaWAN runtime statistics")
+    @RequiresLogin
     @GetMapping("/stats")
     public R<Map<String, Object>> stats() {
         Map<String, Object> stats = new LinkedHashMap<>();
@@ -185,6 +192,7 @@ public class LoRaWanController {
     }
 
     @Operation(summary = "Get LoRaWAN configuration")
+    @RequiresLogin
     @GetMapping("/config")
     public R<Map<String, Object>> config() {
         Map<String, Object> cfg = new LinkedHashMap<>();

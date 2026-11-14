@@ -68,6 +68,12 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             "/SYSTEM/api/v1/auth/qrcode",
             "/SYSTEM/api/v1/auth/.well-known/jwks.json",
             "/CONNECTOR/api/v1/lorawan/webhook",
+            // 设备侧 HTTP 接入：设备以产品密钥/设备 Token 自证身份，不依赖用户 JWT
+            "/CONNECTOR/api/v1/protocol/http/",
+            "/CONNECTOR/api/v1/protocol/device/",
+            "/CONNECTOR/api/v1/protocol/coap/",
+            "/CONNECTOR/api/v1/protocol/mqtt/",
+            "/CONNECTOR/api/v1/protocol/products/",
             "/actuator/health"
     );
 

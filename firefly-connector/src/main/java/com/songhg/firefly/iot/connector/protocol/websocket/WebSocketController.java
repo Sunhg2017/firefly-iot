@@ -1,6 +1,7 @@
 package com.songhg.firefly.iot.connector.protocol.websocket;
 
 import com.songhg.firefly.iot.common.result.R;
+import com.songhg.firefly.iot.common.security.RequiresLogin;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -20,6 +21,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1/websocket")
 @RequiredArgsConstructor
+@RequiresLogin
 public class WebSocketController {
 
     private final DeviceWebSocketHandler webSocketHandler;

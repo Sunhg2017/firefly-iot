@@ -27,6 +27,7 @@ public class MqttProperties implements EnvironmentAware {
     private String keyStorePath;
     private String keyStorePassword;
     private String keyManagerPassword;
+    private String webhookToken;
 
     private boolean allowAnonymous = false;
 

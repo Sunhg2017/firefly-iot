@@ -21,11 +21,17 @@ public class EventSubscriptionConsumer {
 
     @KafkaListener(topics = KafkaTopics.PLATFORM_EVENT, groupId = "firefly-event-subscription")
     public void onMessage(String payload) {
+        PlatformEvent event;
         try {
-            PlatformEvent event = objectMapper.readValue(payload, PlatformEvent.class);
+            event = objectMapper.readValue(payload, PlatformEvent.class);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to deserialize platform event", ex);
+        }
+        try {
             runtimeService.process(event);
         } catch (Exception ex) {
             log.error("Failed to consume platform event: {}", ex.getMessage(), ex);
+            throw new IllegalStateException("Platform event processing failed: eventId=" + event.getEventId(), ex);
         }
     }
 }

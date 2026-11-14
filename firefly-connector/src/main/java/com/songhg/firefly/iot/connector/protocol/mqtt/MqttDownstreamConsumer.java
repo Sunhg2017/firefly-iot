@@ -32,26 +32,28 @@ public class MqttDownstreamConsumer {
             groupId = "#{@mqttProperties.downstreamConsumerGroup}"
     )
     public void onDownstreamMessage(String payload) {
+        DeviceMessage message;
         try {
-            DeviceMessage message = objectMapper.readValue(payload, DeviceMessage.class);
-            if (message.getDeviceId() == null) {
-                log.warn("Skip MQTT downstream message because deviceId is missing: {}", payload);
-                return;
-            }
-
-            if (tryDispatchByMqtt(payload, message)) {
-                return;
-            }
-
-            if (nonMqttDownstreamDispatcher.dispatch(message)) {
-                log.debug("Delivered downstream message through non-MQTT transport: deviceId={}", message.getDeviceId());
-                return;
-            }
-
-            log.debug("Skip downstream message because no transport route is online: deviceId={}", message.getDeviceId());
+            message = objectMapper.readValue(payload, DeviceMessage.class);
         } catch (Exception ex) {
-            log.error("Failed to consume MQTT downstream message: {}", ex.getMessage(), ex);
+            throw new IllegalStateException("Failed to deserialize downstream message", ex);
         }
+        if (message.getDeviceId() == null) {
+            log.warn("Skip MQTT downstream message because deviceId is missing: {}", payload);
+            return;
+        }
+
+        if (tryDispatchByMqtt(payload, message)) {
+            return;
+        }
+
+        if (nonMqttDownstreamDispatcher.dispatch(message)) {
+            log.debug("Delivered downstream message through non-MQTT transport: deviceId={}", message.getDeviceId());
+            return;
+        }
+
+        // 无在线路由时不能静默提交 offset：抛回容器触发重试，最终进入死信以便补偿。
+        throw new IllegalStateException("No online transport route for downstream message: deviceId=" + message.getDeviceId());
     }
 
     private boolean tryDispatchByMqtt(String payload, DeviceMessage message) {

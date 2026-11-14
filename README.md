@@ -77,7 +77,7 @@ cd firefly-gateway && mvn spring-boot:run
 
 `firefly-connector` 本地启动后会默认监听：
 
-- HTTP: `9070`
+- HTTP: `9070`（仅内网，管理与设备 HTTP 统一经网关 8080）
 - MQTT: `1883`
 - CoAP: `5683/udp`
 
@@ -102,7 +102,7 @@ npm run dev
 | firefly-media | 9040 | 视频监控 |
 | firefly-data | 9050 | 监控分析 |
 | firefly-support | 9060 | 文件、通知、导出 |
-| firefly-connector | 9070 | 协议接入 HTTP 管理接口 |
+| firefly-connector | 9070 | 协议接入 HTTP；**仅内网**，管理与设备 HTTP 统一经网关 8080 |
 | firefly-connector MQTT | 1883 | 设备 MQTT 接入端口 |
 | firefly-connector CoAP | 5683/udp | CoAP 接入端口 |
 | firefly-web | 3000 | 前端开发服务 |
@@ -170,7 +170,7 @@ bash deploy.sh up
 
 - 前端: [http://localhost](http://localhost)
 - Gateway API: [http://localhost:8080](http://localhost:8080)
-- Connector HTTP: [http://localhost:9070](http://localhost:9070)
+- Connector HTTP: 经网关访问 [http://localhost:8080/CONNECTOR/api/v1/protocol/http/...](http://localhost:8080)（9070 仅内网）
 - MQTT: `mqtt://localhost:1883`
 - CoAP: `coap://localhost:5683`
 - Nacos: [http://localhost:8848/nacos](http://localhost:8848/nacos)
@@ -242,3 +242,6 @@ GitHub 仓库和服务器的具体配置步骤请查看：
 - [设备认证、远程配置与批量操作设计](docs/design/detailed-design-device-auth-remote-config.md)
 - [设备认证、远程配置与批量操作运维说明](docs/operations/device-auth-remote-config-operations.md)
 - [设备认证、远程配置与批量操作使用说明](docs/user-guide/device-auth-remote-config.md)
+- [Connector 管理面鉴权与 Kafka 重试/死信设计](docs/design/connector-management-auth-kafka-reliability.md)
+- [Connector 管理面鉴权与 Kafka 重试/死信运维说明](docs/operations/connector-management-auth-kafka-reliability.md)
+- [Connector 管理面鉴权与 Kafka 重试/死信使用说明](docs/user-guide/connector-management-auth-kafka-reliability.md)

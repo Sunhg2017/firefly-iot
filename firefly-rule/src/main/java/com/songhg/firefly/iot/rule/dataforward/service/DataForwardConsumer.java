@@ -21,11 +21,17 @@ public class DataForwardConsumer {
 
     @KafkaListener(topics = KafkaTopics.RULE_ENGINE_INPUT, groupId = "firefly-data-forward")
     public void onMessage(String payload) {
+        DeviceMessage message;
         try {
-            DeviceMessage message = objectMapper.readValue(payload, DeviceMessage.class);
+            message = objectMapper.readValue(payload, DeviceMessage.class);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to deserialize data forward message", ex);
+        }
+        try {
             runtimeService.process(message);
         } catch (Exception ex) {
             log.error("Failed to consume data forward message: {}", ex.getMessage(), ex);
+            throw new IllegalStateException("Data forward processing failed: messageId=" + message.getMessageId(), ex);
         }
     }
 }

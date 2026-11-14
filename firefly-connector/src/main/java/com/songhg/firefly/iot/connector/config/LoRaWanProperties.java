@@ -29,6 +29,7 @@ public class LoRaWanProperties {
 
     /** Webhook 回调路径前缀 (本地接收上行数据) */
     private String webhookPath = "/api/v1/lorawan/webhook";
+    private String webhookToken;
 
     /** 上行数据编码格式: JSON / CAYENNE_LPP / BASE64 */
     private String payloadCodec = "JSON";

@@ -48,6 +48,7 @@ public class ProtocolParserChangedConsumer {
                     node.path("publishedVersion").asInt(0));
         } catch (Exception ex) {
             log.warn("Failed to consume protocol parser changed event: {}", ex.getMessage());
+            throw new IllegalStateException("Protocol parser changed event processing failed", ex);
         }
     }
 }

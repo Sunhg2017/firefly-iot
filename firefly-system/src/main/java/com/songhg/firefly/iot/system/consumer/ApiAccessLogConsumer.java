@@ -52,6 +52,7 @@ public class ApiAccessLogConsumer {
             apiAccessLogMapper.insert(entity);
         } catch (Exception e) {
             log.error("Failed to process API access log: {}", message, e);
+            throw new IllegalStateException("API access log processing failed", e);
         }
     }
 }

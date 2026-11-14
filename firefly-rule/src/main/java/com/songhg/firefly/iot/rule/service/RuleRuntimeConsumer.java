@@ -19,20 +19,30 @@ public class RuleRuntimeConsumer {
 
     @KafkaListener(topics = KafkaTopics.RULE_ENGINE_INPUT, groupId = "firefly-rule-runtime")
     public void onMessage(String payload) {
+        DeviceMessage message;
         try {
-            DeviceMessage message = objectMapper.readValue(payload, DeviceMessage.class);
-            try {
-                ruleRuntimeService.process(message);
-            } catch (Exception ex) {
-                log.error("Rule runtime execution failed: {}", ex.getMessage(), ex);
-            }
-            try {
-                alarmRuntimeService.process(message);
-            } catch (Exception ex) {
-                log.error("Alarm runtime execution failed: {}", ex.getMessage(), ex);
-            }
+            message = objectMapper.readValue(payload, DeviceMessage.class);
         } catch (Exception ex) {
-            log.error("Failed to consume rule runtime message: {}", ex.getMessage(), ex);
+            throw new IllegalStateException("Failed to deserialize rule runtime message", ex);
+        }
+        RuntimeException failure = null;
+        try {
+            ruleRuntimeService.process(message);
+        } catch (Exception ex) {
+            log.error("Rule runtime execution failed: {}", ex.getMessage(), ex);
+            failure = new IllegalStateException("Rule runtime execution failed", ex);
+        }
+        try {
+            alarmRuntimeService.process(message);
+        } catch (Exception ex) {
+            log.error("Alarm runtime execution failed: {}", ex.getMessage(), ex);
+            if (failure == null) {
+                failure = new IllegalStateException("Alarm runtime execution failed", ex);
+            }
+        }
+        // 失败抛回监听容器，由统一 ErrorHandler 重试并最终投递 DLT。
+        if (failure != null) {
+            throw failure;
         }
     }
 }

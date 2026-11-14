@@ -15,7 +15,7 @@
 | `firefly-media` | Boot | 9040 | 视频监控、GB28181、ZLMediaKit 集成 |
 | `firefly-data` | Boot | 9050 | 监控、分析、看板 |
 | `firefly-support` | Boot | 9060 | 文件、通知、导出 |
-| `firefly-connector` | Boot | 9070 | 协议接入层，内置 MQTT Broker、HTTP/CoAP 接入、动态注册 |
+| `firefly-connector` | Boot | 9070（内网） | 协议接入层，内置 MQTT Broker、HTTP/CoAP 接入、动态注册；管理接口需登录，设备 HTTP 经网关访问 |
 
 ## 2. 总体拓扑
 
@@ -206,7 +206,7 @@ deploy/
 - 暴露端口：
   - Web: `80`
   - Gateway: `8080`
-  - Connector HTTP: `9070`
+  - Connector HTTP: `9070`（仅内网，管理与设备 HTTP 经网关访问）
   - MQTT: `1883`
   - CoAP: `5683/udp`
 - 默认不再包含 EMQX 服务。

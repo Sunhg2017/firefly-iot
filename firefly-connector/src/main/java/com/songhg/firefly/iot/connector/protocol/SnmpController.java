@@ -1,6 +1,7 @@
 package com.songhg.firefly.iot.connector.protocol;
 
 import com.songhg.firefly.iot.common.result.R;
+import com.songhg.firefly.iot.common.security.RequiresLogin;
 import com.songhg.firefly.iot.connector.protocol.dto.SnmpCollectorTask;
 import com.songhg.firefly.iot.connector.protocol.dto.SnmpTarget;
 import io.swagger.v3.oas.annotations.Operation;
@@ -22,6 +23,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1/snmp")
 @RequiredArgsConstructor
+@RequiresLogin
 public class SnmpController {
 
     private final SnmpService snmpService;
