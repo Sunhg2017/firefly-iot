@@ -72,6 +72,19 @@
           AND online_status = 'ONLINE'
     </select>
 
+    <select id="selectOnlineCountByTenantIgnoreTenant"
+            resultType="com.songhg.firefly.iot.device.dto.device.TenantOnlineCount">
+        SELECT d.tenant_id                      AS tenantId,
+               COALESCE(t.code, d.tenant_id::text) AS tenantCode,
+               COUNT(1)                         AS onlineCount
+        FROM devices d
+        LEFT JOIN tenants t ON t.id = d.tenant_id
+        WHERE d.deleted_at IS NULL
+          AND d.online_status = 'ONLINE'
+        GROUP BY d.tenant_id, t.code
+        ORDER BY d.tenant_id
+    </select>
+
     <select id="selectSharedBasicsIgnoreTenant" resultType="com.songhg.firefly.iot.api.dto.DeviceBasicVO">
         SELECT d.id,
                d.device_name AS deviceName,

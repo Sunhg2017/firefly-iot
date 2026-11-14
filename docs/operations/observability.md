@@ -30,6 +30,7 @@ docker compose -f docker-compose.prod.yml --env-file .env up -d
 | `ALERTMANAGER_PORT` | `9093` | 宿主机端口 |
 | `GRAFANA_PORT` | `3000` | 宿主机端口 |
 | `GRAFANA_ADMIN_PASSWORD` | `admin` | 生产必须修改 |
+| `FIREFLY_METRICS_DEVICE_ONLINE_REFRESH_INTERVAL_MS` | `30000` | 按租户在线设备指标刷新间隔（毫秒） |
 
 ## 3. 抓取目标
 
@@ -62,11 +63,21 @@ docker compose -f docker-compose.prod.yml --env-file .env up -d
 
 `alertmanager.yml` 默认 webhook 指向 `http://127.0.0.1:5001/alert`，接入企业微信/钉钉/邮件时替换 `receivers`。
 
-## 5. 看板
+## 5. 在线设备指标
+
+| 指标 | 口径 | 说明 |
+| --- | --- | --- |
+| `firefly_device_online` | 全租户 | 抓取时实时查库，单个数值 |
+| `firefly_device_online_by_tenant{tenant="..."}` | 按租户 | 每 30s 刷新；`tenant` 标签优先取租户编码，缺失时回退为租户 ID |
+
+- 按租户指标只注册出现过在线设备的租户；租户掉线后序列保留并读取 0。
+- 刷新间隔由 `FIREFLY_METRICS_DEVICE_ONLINE_REFRESH_INTERVAL_MS` 控制，可在租户数量大时调大以降低查询压力。
+
+## 6. 看板
 
 Grafana 启动后自动加载「Firefly IoT 概览」看板（uid `firefly-overview`），包含服务在线、在线设备、OTA 进度上报、消息失败速率、API QPS、5xx 比例、消息吞吐、规则/流转执行、JVM 堆、CPU。
 
-## 6. 验证
+## 7. 验证
 
 ```bash
 # 指标端点
@@ -79,7 +90,7 @@ curl -s http://<host>:9090/api/v1/targets | grep -o '"health":"[a-z]*"' | sort |
 open http://<host>:3000
 ```
 
-## 7. 故障排查
+## 8. 故障排查
 
 | 现象 | 排查 |
 | --- | --- |
@@ -88,12 +99,12 @@ open http://<host>:3000
 | 告警不触发 | 检查 `promtool check rules deploy/observability/alerts.yml`、Alertmanager 路由 |
 | 看板无数据 | 检查 Grafana 数据源指向 `http://firefly-prometheus:9090` |
 
-## 8. 回滚
+## 9. 回滚
 
 - 监控栈与业务服务解耦，可单独 `docker compose stop prometheus alertmanager grafana`。
 - 业务指标为空操作不影响业务，回滚代码后指标自然消失。
 
-## 9. 后续
+## 10. 后续
 
 - 集中日志（Loki/Promtail）。
 - 链路后端（Tempo/Jaeger）接入 OTLP。

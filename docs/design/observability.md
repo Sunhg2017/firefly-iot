@@ -37,7 +37,8 @@
 
 | 指标 | 类型 | 标签 | 打点位置 |
 | --- | --- | --- | --- |
-| `firefly.device.online` | Gauge | - | 设备域启动时注册，抓取时实时查库 |
+| `firefly.device.online` | Gauge | - | 设备域启动时注册，抓取时实时查库（全租户） |
+| `firefly.device.online.by.tenant` | Gauge | `tenant` | 设备域定时刷新，按租户拆分（标签优先 `tenants.code`，缺失回退租户 ID） |
 | `firefly.device.message.consumed` | Counter | `source` | `DeviceMessageConsumer` |
 | `firefly.device.message.failed` | Counter | `source` | `DeviceMessageConsumer` |
 | `firefly.device.message.downstream` | Counter | `type` | `DeviceMessageProducer` |
@@ -56,12 +57,12 @@ HTTP/JVM 指标由 Spring Boot Actuator + Micrometer 自动提供（`http_server
 ## 4. 关键取舍
 
 - **静态门面**：避免给既有服务构造函数注入 `MeterRegistry` 导致大范围改动与测试破坏；代价是打点依赖全局状态，单测中为空操作。
-- **在线设备用 Gauge 查库**：Prometheus 抓取时实时统计，避免额外定时任务；代价是抓取频率即查询频率（默认 15s）。
+- **在线设备双口径**：全租户指标在抓取时实时查库；按租户指标因需要分组与租户标签，采用「定时查库 + 内存快照 + 每租户一个 Gauge」，刷新间隔默认 30s，避免每次抓取都做分组查询，也避免 MultiGauge 重复追加行。
 - **服务标签由抓取配置注入**：`service` 标签来自 `prometheus.yml`，避免每个服务重复配置 `management.metrics.tags`。
 
 ## 5. 风险
 
-- 在线设备 Gauge 为全租户统计，若后续需要按租户拆分需改为带标签的 MultiGauge。
+- 按租户指标会为每个在线租户生成一个时间序列，租户数量很多时需关注 Prometheus 基数；租户掉线为 0 后仍保留序列（读取 0），可在 Grafana 用 `topk` 限制展示。
 - 告警阈值（5xx 5%、失败速率 1/s）为初始值，需结合真实流量调整。
 - 未接入日志聚合，排障仍需登录容器查看日志。
 

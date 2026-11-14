@@ -1,5 +1,7 @@
 {
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -10,107 +12,345 @@
     {
       "type": "stat",
       "title": "在线服务",
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
       "targets": [
-        { "expr": "sum(up{job=~\"firefly-.*\"})", "refId": "A" }
+        {
+          "expr": "sum(up{job=~\"firefly-.*\"})",
+          "refId": "A"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 8 }] } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 8
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      }
     },
     {
       "type": "stat",
       "title": "在线设备",
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
       "targets": [
-        { "expr": "firefly_device_online", "refId": "A" }
+        {
+          "expr": "firefly_device_online",
+          "refId": "A"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      }
     },
     {
       "type": "stat",
       "title": "OTA 进度上报（累计）",
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
       "targets": [
-        { "expr": "sum(firefly_ota_progress_received_total)", "refId": "A" }
+        {
+          "expr": "sum(firefly_ota_progress_received_total)",
+          "refId": "A"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      }
     },
     {
       "type": "stat",
       "title": "设备消息失败速率（5m）",
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
       "targets": [
-        { "expr": "sum(rate(firefly_device_message_failed_total[5m]))", "refId": "A" }
+        {
+          "expr": "sum(rate(firefly_device_message_failed_total[5m]))",
+          "refId": "A"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "ops", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      }
     },
     {
       "type": "timeseries",
       "title": "API 请求速率（按服务）",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
       "targets": [
-        { "expr": "sum by (service) (rate(http_server_requests_seconds_count[5m]))", "legendFormat": "{{service}}", "refId": "A" }
+        {
+          "expr": "sum by (service) (rate(http_server_requests_seconds_count[5m]))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
     },
     {
       "type": "timeseries",
       "title": "5xx 比例（按服务）",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
       "targets": [
-        { "expr": "sum by (service) (rate(http_server_requests_seconds_count{status=~\"5..\"}[5m])) / sum by (service) (rate(http_server_requests_seconds_count[5m]))", "legendFormat": "{{service}}", "refId": "A" }
+        {
+          "expr": "sum by (service) (rate(http_server_requests_seconds_count{status=~\"5..\"}[5m])) / sum by (service) (rate(http_server_requests_seconds_count[5m]))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "max": 1
+        },
+        "overrides": []
+      }
     },
     {
       "type": "timeseries",
       "title": "设备消息吞吐（上行/下行）",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
       "targets": [
-        { "expr": "sum by (source) (rate(firefly_device_message_consumed_total[5m]))", "legendFormat": "上行 {{source}}", "refId": "A" },
-        { "expr": "sum by (type) (rate(firefly_device_message_downstream_total[5m]))", "legendFormat": "下行 {{type}}", "refId": "B" }
+        {
+          "expr": "sum by (source) (rate(firefly_device_message_consumed_total[5m]))",
+          "legendFormat": "上行 {{source}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (type) (rate(firefly_device_message_downstream_total[5m]))",
+          "legendFormat": "下行 {{type}}",
+          "refId": "B"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
     },
     {
       "type": "timeseries",
       "title": "规则/流转执行（成功/失败）",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
       "targets": [
-        { "expr": "rate(firefly_rule_execution_success_total[5m])", "legendFormat": "规则成功", "refId": "A" },
-        { "expr": "rate(firefly_rule_execution_failed_total[5m])", "legendFormat": "规则失败", "refId": "B" },
-        { "expr": "sum by (target) (rate(firefly_dataforward_execution_success_total[5m]))", "legendFormat": "流转成功 {{target}}", "refId": "C" },
-        { "expr": "sum by (target) (rate(firefly_dataforward_execution_failed_total[5m]))", "legendFormat": "流转失败 {{target}}", "refId": "D" }
+        {
+          "expr": "rate(firefly_rule_execution_success_total[5m])",
+          "legendFormat": "规则成功",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(firefly_rule_execution_failed_total[5m])",
+          "legendFormat": "规则失败",
+          "refId": "B"
+        },
+        {
+          "expr": "sum by (target) (rate(firefly_dataforward_execution_success_total[5m]))",
+          "legendFormat": "流转成功 {{target}}",
+          "refId": "C"
+        },
+        {
+          "expr": "sum by (target) (rate(firefly_dataforward_execution_failed_total[5m]))",
+          "legendFormat": "流转失败 {{target}}",
+          "refId": "D"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
     },
     {
       "type": "timeseries",
       "title": "JVM 堆内存使用（按服务）",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
       "targets": [
-        { "expr": "sum by (service) (jvm_memory_used_bytes{area=\"heap\"})", "legendFormat": "{{service}}", "refId": "A" }
+        {
+          "expr": "sum by (service) (jvm_memory_used_bytes{area=\"heap\"})",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      }
     },
     {
       "type": "timeseries",
       "title": "进程 CPU 使用（按服务）",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
       "targets": [
-        { "expr": "sum by (service) (process_cpu_usage)", "legendFormat": "{{service}}", "refId": "A" }
+        {
+          "expr": "sum by (service) (process_cpu_usage)",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "各租户在线设备（Top 10）",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "targets": [
+        {
+          "expr": "topk(10, firefly_device_online_by_tenant)",
+          "legendFormat": "{{tenant}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["firefly", "iot"],
-  "templating": { "list": [] },
-  "time": { "from": "now-6h", "to": "now" },
+  "tags": [
+    "firefly",
+    "iot"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
   "title": "Firefly IoT 概览",

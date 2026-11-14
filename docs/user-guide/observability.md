@@ -20,7 +20,7 @@ Grafana 默认账号 `admin`，密码由 `GRAFANA_ADMIN_PASSWORD` 配置。
 「Firefly IoT 概览」包含：
 
 - **在线服务**：期望 8 个服务全部 up。
-- **在线设备**：`firefly_device_online`。
+- **在线设备**：`firefly_device_online`（全租户）与「各租户在线设备（Top 10）」面板。
 - **OTA 进度上报（累计）**：`firefly_ota_progress_received_total`。
 - **设备消息失败速率**：按来源拆分。
 - **API 请求速率 / 5xx 比例**：按服务拆分。
@@ -40,8 +40,11 @@ sum by (source) (rate(firefly_device_message_consumed_total[5m]))
 # 设备消息失败
 sum by (source) (rate(firefly_device_message_failed_total[5m]))
 
-# 在线设备数
+# 在线设备数（全租户）
 firefly_device_online
+
+# 按租户在线设备数（Top 10）
+topk(10, firefly_device_online_by_tenant)
 
 # 规则失败
 rate(firefly_rule_execution_failed_total[5m])
@@ -56,7 +59,7 @@ rate(firefly_rule_execution_failed_total[5m])
 
 ## 5. 注意事项
 
-- 在线设备数按全租户统计，不是单租户口径。
+- 在线设备提供全租户与按租户两种口径；按租户指标默认每 30 秒刷新，非实时。
 - 指标抓取间隔 15s，短于该间隔的抖动可能被平滑。
 - 当前未接入集中日志，排障需登录宿主或容器查看日志。
 - 告警阈值需按真实流量调整，默认值仅作初始基线。

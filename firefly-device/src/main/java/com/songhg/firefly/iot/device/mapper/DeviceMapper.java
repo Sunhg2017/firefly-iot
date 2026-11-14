@@ -34,6 +34,12 @@ public interface DeviceMapper extends BaseMapper<Device> {
     @InterceptorIgnore(tenantLine = "true")
     Long countOnlineIgnoreTenant();
 
+    /**
+     * 按租户分组的在线设备数，供 Prometheus 按租户指标使用。
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    List<com.songhg.firefly.iot.device.dto.device.TenantOnlineCount> selectOnlineCountByTenantIgnoreTenant();
+
     @InterceptorIgnore(tenantLine = "true")
     List<DeviceBasicVO> selectSharedBasicsIgnoreTenant(@Param("ownerTenantId") Long ownerTenantId,
                                                        @Param("productIds") List<Long> productIds,

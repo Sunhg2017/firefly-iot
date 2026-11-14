@@ -111,3 +111,6 @@ firefly:
   ota:
     signature-public-key: ${FIREFLY_OTA_SIGNATURE_PUBLIC_KEY:}
     signature-algorithm: ${FIREFLY_OTA_SIGNATURE_ALGORITHM:SHA256withRSA}
+  metrics:
+    # 按租户在线设备指标的刷新间隔（毫秒）
+    device-online-refresh-interval-ms: ${FIREFLY_METRICS_DEVICE_ONLINE_REFRESH_INTERVAL_MS:30000}
