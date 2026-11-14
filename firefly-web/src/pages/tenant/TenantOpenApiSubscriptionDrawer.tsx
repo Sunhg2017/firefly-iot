@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Button,
   Card,
   Col,
   Drawer,
   Input,
   InputNumber,
+  Modal,
   Row,
   Segmented,
   Select,
@@ -17,8 +19,12 @@ import {
   Typography,
   message,
 } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { tenantApi } from '../../services/api';
+import ListEmpty from '../../components/ListEmpty';
+import { useConfirmDiscard, useDirtyGuard } from '../../hooks/useDirtyGuard';
+import { getErrorMessage } from '../../utils/errors';
 
 interface TenantSummary {
   id: number;
@@ -51,6 +57,11 @@ interface TenantOpenApiSubscriptionDrawerProps {
 type SubscriptionFilter = 'ALL' | 'SUBSCRIBED' | 'UNSUBSCRIBED';
 type AvailabilityFilter = 'ALL' | 'ENABLED' | 'DISABLED';
 
+interface ToggleDraft {
+  subscribed: boolean;
+  codes: string[];
+}
+
 const methodColorMap: Record<string, string> = {
   GET: 'blue',
   POST: 'green',
@@ -64,13 +75,6 @@ const subscriptionFilterOptions = [
   { label: '已订阅', value: 'SUBSCRIBED' },
   { label: '未订阅', value: 'UNSUBSCRIBED' },
 ];
-
-const getErrorMessage = (error: unknown, fallback: string): string => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return fallback;
-};
 
 const sortItems = (items: TenantOpenApiSubscriptionItem[]): TenantOpenApiSubscriptionItem[] =>
   [...items].sort((left, right) => {
@@ -97,12 +101,19 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
 }) => {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [items, setItems] = useState<TenantOpenApiSubscriptionItem[]>([]);
   const [keyword, setKeyword] = useState('');
   const [serviceFilter, setServiceFilter] = useState<string>();
   const [methodFilter, setMethodFilter] = useState<string>();
   const [subscriptionFilter, setSubscriptionFilter] = useState<SubscriptionFilter>('ALL');
   const [availabilityFilter, setAvailabilityFilter] = useState<AvailabilityFilter>('ALL');
+  const [toggleDraft, setToggleDraft] = useState<ToggleDraft | null>(null);
+
+  const confirmDiscard = useConfirmDiscard();
+  useDirtyGuard(open && dirty);
+
+  const requestIdRef = useRef(0);
 
   const resetFilters = () => {
     setKeyword('');
@@ -117,15 +128,26 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
       setItems([]);
       return;
     }
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
     setLoading(true);
     try {
       const res = await tenantApi.getOpenApiSubscriptions(tenant.id);
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
       setItems(sortItems((res.data?.data ?? []) as TenantOpenApiSubscriptionItem[]));
       resetFilters();
+      setDirty(false);
     } catch (error) {
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
       message.error(getErrorMessage(error, '加载租户 OpenAPI 订阅失败'));
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -144,15 +166,39 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
         return { ...item, ...patch };
       }),
     );
+    setDirty(true);
+  };
+
+  const applySubscription = (codes: string[], subscribed: boolean) => {
+    const codeSet = new Set(codes);
+    setItems((current) =>
+      current.map((item) => {
+        if (!codeSet.has(item.openApiCode)) {
+          return item;
+        }
+        return {
+          ...item,
+          subscribed,
+          ipWhitelist: subscribed ? item.ipWhitelist ?? [] : [],
+          concurrencyLimit: subscribed ? item.concurrencyLimit ?? -1 : -1,
+          dailyLimit: subscribed ? item.dailyLimit ?? -1 : -1,
+        };
+      }),
+    );
+    setDirty(true);
   };
 
   const handleToggle = (record: TenantOpenApiSubscriptionItem, checked: boolean) => {
-    updateItem(record.openApiCode, {
-      subscribed: checked,
-      ipWhitelist: checked ? record.ipWhitelist ?? [] : [],
-      concurrencyLimit: checked ? record.concurrencyLimit ?? -1 : -1,
-      dailyLimit: checked ? record.dailyLimit ?? -1 : -1,
-    });
+    if (submitting) {
+      return;
+    }
+    if (checked) {
+      applySubscription([record.openApiCode], true);
+      message.success(`已将 ${record.name} 加入订阅草稿，保存订阅后生效`);
+      return;
+    }
+    // 取消订阅会让租户立即失去该接口的调用权限；即使当前只是草稿，也要先说清后果。
+    setToggleDraft({ subscribed: false, codes: [record.openApiCode] });
   };
 
   const normalizedKeyword = keyword.trim().toLowerCase();
@@ -165,7 +211,7 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
     value,
   }));
 
-  const filteredItems = sortItems(
+  const filteredItems = useMemo(() => sortItems(
     items.filter((item) => {
       if (serviceFilter && item.serviceCode !== serviceFilter) {
         return false;
@@ -201,7 +247,7 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
         .toLowerCase();
       return searchText.includes(normalizedKeyword);
     }),
-  );
+  ), [availabilityFilter, items, methodFilter, normalizedKeyword, serviceFilter, subscriptionFilter]);
 
   const subscribedCount = items.filter((item) => item.subscribed).length;
   const enabledCount = items.filter((item) => item.enabled).length;
@@ -209,33 +255,36 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
   const filteredEnabledCount = filteredItems.filter((item) => item.enabled).length;
 
   const handleBatchToggle = (checked: boolean) => {
-    const targetCodes = new Set(
-      filteredItems
-        .filter((item) => item.enabled && item.subscribed !== checked)
-        .map((item) => item.openApiCode),
-    );
-    if (targetCodes.size === 0) {
+    if (submitting) {
+      return;
+    }
+    const targetCodes = filteredItems
+      .filter((item) => item.enabled && item.subscribed !== checked)
+      .map((item) => item.openApiCode);
+    if (targetCodes.length === 0) {
       message.info(checked ? '当前筛选结果里没有可订阅的 OpenAPI' : '当前筛选结果里没有可取消的 OpenAPI');
       return;
     }
-    setItems((current) =>
-      current.map((item) => {
-        if (!targetCodes.has(item.openApiCode)) {
-          return item;
-        }
-        return {
-          ...item,
-          subscribed: checked,
-          ipWhitelist: checked ? item.ipWhitelist ?? [] : [],
-          concurrencyLimit: checked ? item.concurrencyLimit ?? -1 : -1,
-          dailyLimit: checked ? item.dailyLimit ?? -1 : -1,
-        };
-      }),
+    setToggleDraft({ subscribed: checked, codes: targetCodes });
+  };
+
+  const confirmToggleDraft = () => {
+    if (!toggleDraft) {
+      return;
+    }
+    applySubscription(toggleDraft.codes, toggleDraft.subscribed);
+    message.success(
+      toggleDraft.subscribed
+        ? `已将 ${toggleDraft.codes.length} 个 OpenAPI 加入订阅草稿，保存订阅后生效`
+        : `已从订阅草稿移除 ${toggleDraft.codes.length} 个 OpenAPI，保存订阅后生效`,
     );
-    message.success(checked ? `已订阅当前筛选的 ${targetCodes.size} 个 OpenAPI` : `已取消当前筛选的 ${targetCodes.size} 个 OpenAPI`);
+    setToggleDraft(null);
   };
 
   const handleBatchUnlimited = () => {
+    if (submitting) {
+      return;
+    }
     const targetCodes = new Set(
       filteredItems.filter((item) => item.subscribed).map((item) => item.openApiCode),
     );
@@ -255,7 +304,8 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
         };
       }),
     );
-    message.success(`已将当前筛选的 ${targetCodes.size} 个已订阅 OpenAPI 设置为不限额`);
+    setDirty(true);
+    message.success(`已将当前筛选的 ${targetCodes.size} 个已订阅 OpenAPI 设为不限额草稿，保存订阅后生效`);
   };
 
   const handleSave = async () => {
@@ -275,13 +325,25 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
           })),
       });
       message.success('租户 OpenAPI 订阅已更新');
+      setDirty(false);
       onClose();
       onSaved?.();
     } catch (error) {
+      // 保存失败时保留当前草稿并保持抽屉打开，避免用户重新勾选一遍。
       message.error(getErrorMessage(error, '保存租户 OpenAPI 订阅失败'));
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const closeDrawer = () => {
+    if (submitting) {
+      return;
+    }
+    confirmDiscard(dirty, () => {
+      setDirty(false);
+      onClose();
+    });
   };
 
   const columns: ColumnsType<TenantOpenApiSubscriptionItem> = [
@@ -293,7 +355,8 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
       render: (value: boolean, record) => (
         <Switch
           checked={value}
-          disabled={!record.enabled}
+          disabled={!record.enabled || submitting}
+          loading={submitting}
           onChange={(checked) => handleToggle(record, checked)}
         />
       ),
@@ -326,7 +389,7 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
           <Select
             mode="tags"
             style={{ width: '100%' }}
-            disabled={!record.subscribed}
+            disabled={!record.subscribed || submitting}
             tokenSeparators={[',', ' ']}
             value={record.ipWhitelist ?? []}
             placeholder="留空表示不限 IP"
@@ -339,7 +402,7 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
                 precision={0}
                 min={-1}
                 style={{ width: 132 }}
-                disabled={!record.subscribed}
+                disabled={!record.subscribed || submitting}
                 value={record.concurrencyLimit}
                 placeholder="-1 表示不限"
                 onChange={(nextValue) =>
@@ -355,7 +418,7 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
                 precision={0}
                 min={-1}
                 style={{ width: 152 }}
-                disabled={!record.subscribed}
+                disabled={!record.subscribed || submitting}
                 value={record.dailyLimit}
                 placeholder="-1 表示不限"
                 onChange={(nextValue) =>
@@ -376,15 +439,20 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
       destroyOnClose
       title={`OpenAPI 订阅${tenant ? ` - ${tenant.name}` : ''}`}
       open={open}
-      onClose={onClose}
+      onClose={closeDrawer}
       width="86vw"
       styles={{ body: { paddingBottom: 24 } }}
       footer={(
-        <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-          <Button onClick={onClose}>取消</Button>
-          <Button type="primary" loading={submitting} onClick={() => void handleSave()}>
-            保存订阅
-          </Button>
+        <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+          <Typography.Text type="secondary">
+            {dirty ? '有未保存的订阅修改，点击“保存订阅”后生效。' : '订阅开关和限额修改均需保存后生效。'}
+          </Typography.Text>
+          <Space>
+            <Button onClick={closeDrawer} disabled={submitting}>取消</Button>
+            <Button type="primary" loading={submitting} onClick={() => void handleSave()}>
+              保存订阅
+            </Button>
+          </Space>
         </Space>
       )}
     >
@@ -399,6 +467,15 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
             </Typography.Text>
           </Space>
         </Card>
+
+        {dirty ? (
+          <Alert
+            type="warning"
+            showIcon
+            message="订阅修改尚未保存"
+            description="离开前请点击“保存订阅”，否则本次对订阅、IP 白名单和限额的修改不会生效。"
+          />
+        ) : null}
 
         <Card size="small">
           <Row gutter={[12, 12]}>
@@ -455,6 +532,9 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
                 onChange={(value) => setAvailabilityFilter(value as AvailabilityFilter)}
               />
               <Button onClick={resetFilters}>重置筛选</Button>
+              <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void fetchData()}>
+                刷新
+              </Button>
             </Space>
 
             <Space wrap size={12} align="center">
@@ -463,13 +543,13 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
                 value={subscriptionFilter}
                 onChange={(value) => setSubscriptionFilter(value as SubscriptionFilter)}
               />
-              <Button type="primary" ghost disabled={filteredEnabledCount === 0} onClick={() => handleBatchToggle(true)}>
+              <Button type="primary" ghost disabled={filteredEnabledCount === 0 || submitting} onClick={() => handleBatchToggle(true)}>
                 订阅当前筛选
               </Button>
-              <Button danger disabled={filteredSubscribedCount === 0} onClick={() => handleBatchToggle(false)}>
+              <Button danger disabled={filteredSubscribedCount === 0 || submitting} onClick={() => handleBatchToggle(false)}>
                 取消当前筛选
               </Button>
-              <Button disabled={filteredSubscribedCount === 0} onClick={handleBatchUnlimited}>
+              <Button disabled={filteredSubscribedCount === 0 || submitting} onClick={handleBatchUnlimited}>
                 当前筛选设为不限额
               </Button>
               <Typography.Text type="secondary">
@@ -486,8 +566,48 @@ const TenantOpenApiSubscriptionDrawer: React.FC<TenantOpenApiSubscriptionDrawerP
           columns={columns}
           pagination={false}
           scroll={{ x: 960, y: 560 }}
+          locale={{
+            emptyText: (
+              <ListEmpty
+                hasFilters={Boolean(keyword || serviceFilter || methodFilter || subscriptionFilter !== 'ALL' || availabilityFilter !== 'ALL')}
+                emptyText="暂无可订阅的 OpenAPI"
+                filteredText="没有符合当前筛选条件的 OpenAPI"
+                onClearFilters={resetFilters}
+              />
+            ),
+          }}
         />
       </Space>
+
+      <Modal
+        open={Boolean(toggleDraft)}
+        title={toggleDraft?.subscribed ? '订阅所选 OpenAPI' : '取消所选 OpenAPI 订阅'}
+        okText={toggleDraft?.subscribed ? '加入订阅草稿' : '取消订阅'}
+        cancelText="取消"
+        okButtonProps={{ danger: toggleDraft ? !toggleDraft.subscribed : false }}
+        onOk={confirmToggleDraft}
+        onCancel={() => setToggleDraft(null)}
+        destroyOnClose
+      >
+        {toggleDraft ? (
+          <Space direction="vertical" size={8}>
+            <Typography.Text>
+              本次操作影响 <Typography.Text strong>{toggleDraft.codes.length}</Typography.Text> 个接口：
+              {toggleDraft.codes.slice(0, 5).join('、')}
+              {toggleDraft.codes.length > 5 ? ` 等 ${toggleDraft.codes.length} 个` : ''}
+            </Typography.Text>
+            {toggleDraft.subscribed ? (
+              <Typography.Text>
+                加入草稿后，点击“保存订阅”才会让租户获得这些接口的调用权限；停用的接口不会被订阅。
+              </Typography.Text>
+            ) : (
+              <Typography.Text>
+                取消后租户将无法再调用这些接口；保存订阅后立即生效，如需恢复需要重新订阅并保存。
+              </Typography.Text>
+            )}
+          </Space>
+        ) : null}
+      </Modal>
     </Drawer>
   );
 };

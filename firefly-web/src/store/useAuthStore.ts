@@ -1,5 +1,20 @@
 import { create } from 'zustand';
 import request from '../utils/request';
+import { markSessionActive } from '../utils/request';
+import { getErrorMessage, isUnauthorizedError } from '../utils/errors';
+import {
+  clearRefreshToken,
+  clearSessionExpired,
+  markSessionExpired,
+  clearTokens,
+  clearUserCache,
+  getAccessToken,
+  getRefreshToken,
+  readUserCache,
+  setAccessToken,
+  setRefreshToken,
+  writeUserCache,
+} from '../utils/authStorage';
 
 interface UserInfo {
   id: number;
@@ -29,6 +44,8 @@ interface AuthState {
   user: UserInfo | null;
   isAuthenticated: boolean;
   loading: boolean;
+  /** Set when the user profile could not be refreshed (network/5xx), not for 401. */
+  meError: string | null;
   login: (loginMethod: string, credentials: Record<string, string>) => Promise<void>;
   logout: () => Promise<void>;
   fetchMe: () => Promise<void>;
@@ -37,8 +54,6 @@ interface AuthState {
   hasPermission: (perm: string) => boolean;
   hasAnyPermission: (...perms: string[]) => boolean;
 }
-
-const USER_CACHE_KEY = 'user_info';
 
 function normalizeUser(payload: UserPayload | UserInfo | null | undefined): UserInfo {
   const raw = payload ?? {};
@@ -79,7 +94,7 @@ function normalizeUser(payload: UserPayload | UserInfo | null | undefined): User
 
 function loadCachedUser(): UserInfo | null {
   try {
-    const raw = localStorage.getItem(USER_CACHE_KEY);
+    const raw = readUserCache();
     if (!raw) {
       return null;
     }
@@ -90,11 +105,12 @@ function loadCachedUser(): UserInfo | null {
 }
 
 const useAuthStore = create<AuthState>((set, get) => ({
-  token: localStorage.getItem('access_token'),
-  refreshToken: localStorage.getItem('refresh_token'),
+  token: getAccessToken(),
+  refreshToken: getRefreshToken(),
   user: loadCachedUser(),
-  isAuthenticated: !!localStorage.getItem('access_token'),
+  isAuthenticated: !!getAccessToken(),
   loading: false,
+  meError: null,
 
   fetchMe: async () => {
     const { token } = get();
@@ -102,23 +118,63 @@ const useAuthStore = create<AuthState>((set, get) => ({
       return;
     }
 
-    set({ loading: true });
+    set({ loading: true, meError: null });
+    let meRes;
     try {
-      const [meRes, permsRes] = await Promise.all([
-        request.get('/users/me'),
-        request.get('/users/me/permissions').catch(() => null),
-      ]);
-      const normalizedUser = normalizeUser({
-        ...(meRes.data?.data || {}),
-        permissions: Array.isArray(permsRes?.data?.data) ? permsRes?.data?.data : [],
+      meRes = await request.get('/users/me');
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        markSessionExpired();
+        get().clearAuth();
+        set({ loading: false });
+        return;
+      }
+      // A transient backend/network failure must not log the user out; keep the cached
+      // session and surface a retry affordance in the layout instead.
+      set({
+        loading: false,
+        meError: getErrorMessage(error, '加载用户信息失败'),
       });
-
-      localStorage.setItem(USER_CACHE_KEY, JSON.stringify(normalizedUser));
-      set({ user: normalizedUser, isAuthenticated: true, loading: false });
-    } catch {
-      get().clearAuth();
-      set({ loading: false });
+      return;
     }
+
+    const cached = get().user ?? loadCachedUser();
+    let permissions = cached?.permissions ?? [];
+    let authorizedMenuPaths = cached?.authorizedMenuPaths ?? [];
+    let permissionError: string | null = null;
+    try {
+      const permsRes = await request.get('/users/me/permissions');
+      if (Array.isArray(permsRes.data?.data)) {
+        permissions = permsRes.data.data.filter(
+          (perm: unknown): perm is string => typeof perm === 'string' && perm.length > 0,
+        );
+      }
+    } catch (error) {
+      // Never overwrite known permissions with an empty list: that would turn a
+      // temporary failure into "no menu, no access" for the rest of the session.
+      permissionError = getErrorMessage(error, '加载权限信息失败，部分菜单可能不可见');
+    }
+
+    const mePayload = (meRes.data?.data ?? {}) as UserPayload;
+    if (Array.isArray(mePayload.authorizedMenuPaths)) {
+      // An explicit empty list means "no menus for this account"; only a missing field falls back to cache.
+      authorizedMenuPaths = (mePayload.authorizedMenuPaths as string[])
+        .filter((path): path is string => typeof path === 'string' && path.length > 0);
+    }
+
+    const normalizedUser = normalizeUser({
+      ...mePayload,
+      permissions,
+      authorizedMenuPaths,
+    });
+
+    writeUserCache(JSON.stringify(normalizedUser));
+    set({
+      user: normalizedUser,
+      isAuthenticated: true,
+      loading: false,
+      meError: permissionError,
+    });
   },
 
   login: async (loginMethod, credentials) => {
@@ -130,7 +186,7 @@ const useAuthStore = create<AuthState>((set, get) => ({
     const data = res.data?.data || {};
     const accessToken = data.accessToken as string;
     if (!accessToken) {
-      throw new Error('Invalid login response: accessToken is missing.');
+      throw new Error('登录响应异常：未返回访问令牌，请稍后重试或联系管理员');
     }
     const refreshToken = (data.refreshToken as string | undefined) || null;
     get().setAuth(accessToken, refreshToken, data.user as UserPayload | undefined);
@@ -140,24 +196,26 @@ const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await request.post('/auth/logout');
     } catch {
-      // ignore
+      // Ignore: the local session must be cleared even when the server call fails.
     }
     get().clearAuth();
   },
 
   setAuth: (token, refreshToken, user) => {
-    localStorage.setItem('access_token', token);
+    setAccessToken(token);
     if (refreshToken) {
-      localStorage.setItem('refresh_token', refreshToken);
+      setRefreshToken(refreshToken);
     } else {
-      localStorage.removeItem('refresh_token');
+      clearRefreshToken();
     }
+    markSessionActive();
+    clearSessionExpired();
 
     const normalizedUser = user ? normalizeUser(user) : null;
     if (normalizedUser) {
-      localStorage.setItem(USER_CACHE_KEY, JSON.stringify(normalizedUser));
+      writeUserCache(JSON.stringify(normalizedUser));
     } else {
-      localStorage.removeItem(USER_CACHE_KEY);
+      clearUserCache();
     }
 
     set({
@@ -165,14 +223,20 @@ const useAuthStore = create<AuthState>((set, get) => ({
       refreshToken,
       user: normalizedUser,
       isAuthenticated: true,
+      meError: null,
     });
   },
 
   clearAuth: () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem(USER_CACHE_KEY);
-    set({ token: null, refreshToken: null, user: null, isAuthenticated: false });
+    clearTokens();
+    clearUserCache();
+    set({
+      token: null,
+      refreshToken: null,
+      user: null,
+      isAuthenticated: false,
+      meError: null,
+    });
   },
 
   hasPermission: (perm) => {

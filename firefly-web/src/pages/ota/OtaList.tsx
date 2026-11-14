@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -12,9 +13,12 @@ import {
   Row,
   Select,
   Space,
+  Spin,
+  Switch,
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Upload,
   message,
 } from 'antd';
@@ -25,6 +29,7 @@ import {
   EditOutlined,
   FileProtectOutlined,
   PlusOutlined,
+  ReloadOutlined,
   RocketOutlined,
   StopOutlined,
   ThunderboltOutlined,
@@ -33,8 +38,15 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadFile, UploadProps } from 'antd/es/upload/interface';
+import CopyText from '../../components/CopyText';
+import ListEmpty from '../../components/ListEmpty';
 import PageHeader from '../../components/PageHeader';
+import { ProductSelect, useRemoteOptions } from '../../components/EntitySelect';
 import { deviceApi, deviceFirmwareApi, fileApi, firmwareApi, otaTaskApi, productApi } from '../../services/api';
+import { formatDateTime } from '../../utils/datetime';
+import { getErrorMessage } from '../../utils/errors';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import { usePageActivation } from '../../hooks/usePageActivation';
 
 interface ProductOption {
   id: number;
@@ -117,17 +129,27 @@ interface BindingPreset {
 }
 
 interface ProductScopedProps {
-  productOptions: ProductOption[];
   productLabelMap: Map<number, string>;
+  /** 按需补查产品名称，供列表展示 productId 对应的产品，避免预加载全部产品。 */
+  ensureProductLabels: (ids: Array<number | undefined | null>) => void;
 }
 
 interface FirmwareLibraryTabProps extends ProductScopedProps {
   onInspectBindings: (preset: BindingPreset) => void;
+  active: boolean;
+  activationToken: number;
 }
 
 interface DeviceBindingsTabProps extends ProductScopedProps {
   preset: BindingPreset;
   presetToken: number;
+  active: boolean;
+  activationToken: number;
+}
+
+interface OtaTasksTabProps extends ProductScopedProps {
+  active: boolean;
+  activationToken: number;
 }
 
 const fwStatusLabels: Record<string, string> = { DRAFT: '草稿', VERIFIED: '已验证', RELEASED: '已发布' };
@@ -209,9 +231,10 @@ const SummaryCards: React.FC<{ items: SummaryCardItem[] }> = ({ items }) => (
   </Row>
 );
 
-const FirmwareLibraryTab: React.FC<FirmwareLibraryTabProps> = ({ productOptions, productLabelMap, onInspectBindings }) => {
+const FirmwareLibraryTab: React.FC<FirmwareLibraryTabProps> = ({ productLabelMap, ensureProductLabels, onInspectBindings, active, activationToken }) => {
   const [data, setData] = useState<FirmwareRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
@@ -221,10 +244,12 @@ const FirmwareLibraryTab: React.FC<FirmwareLibraryTabProps> = ({ productOptions,
   const [editingRecord, setEditingRecord] = useState<FirmwareRecord | null>(null);
   const [selectedBinary, setSelectedBinary] = useState<File | null>(null);
   const [uploadFileList, setUploadFileList] = useState<UploadFile[]>([]);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [form] = Form.useForm();
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await firmwareApi.list({
         ...params,
@@ -232,19 +257,35 @@ const FirmwareLibraryTab: React.FC<FirmwareLibraryTabProps> = ({ productOptions,
         productId: filters.productId,
         status: filters.status,
       });
-      const page = res.data.data;
-      setData(page.records || []);
+      const page = res.data.data as { records?: FirmwareRecord[]; total?: number };
+      const records = page.records || [];
+      setData(records);
       setTotal(page.total || 0);
-    } catch {
-      message.error('加载固件列表失败');
+      void ensureProductLabels(records.map((item) => item.productId));
+    } catch (error) {
+      setData([]);
+      setTotal(0);
+      setLoadError(getErrorMessage(error, '加载固件列表失败'));
     } finally {
       setLoading(false);
     }
-  }, [filters, params]);
+  }, [ensureProductLabels, filters, params]);
 
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  const fetchDataRef = useRef(fetchData);
+  useEffect(() => {
+    fetchDataRef.current = fetchData;
+  }, [fetchData]);
+
+  useEffect(() => {
+    // keep-alive 切回本页时刷新当前可见 Tab，避免长时间停留后看到过期列表。
+    if (active && activationToken > 0) {
+      void fetchDataRef.current();
+    }
+  }, [activationToken, active]);
 
   const fwStats = useMemo(
     () => ({
@@ -314,39 +355,61 @@ const FirmwareLibraryTab: React.FC<FirmwareLibraryTabProps> = ({ productOptions,
     setParams((current) => ({ ...current, pageNum: 1 }));
   };
 
+  const runRowAction = async (key: string, fallback: string, action: () => Promise<void>) => {
+    if (pendingAction) {
+      return;
+    }
+    setPendingAction(key);
+    try {
+      await action();
+    } catch (error) {
+      message.error(getErrorMessage(error, fallback));
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
   const handleDelete = (record: FirmwareRecord) => {
     Modal.confirm({
-      title: '确认删除固件？',
-      content: `删除「${record.version}」后不可恢复。`,
+      title: '确认删除固件包？',
+      content: `删除「${record.version}」后固件包与版本记录不可恢复；已创建的升级任务记录会保留，但将无法再基于该固件发起升级。`,
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
       onOk: async () => {
-        await firmwareApi.delete(record.id);
-        message.success('固件已删除');
-        await fetchData();
+        setPendingAction(`delete:${record.id}`);
+        try {
+          await firmwareApi.delete(record.id);
+          message.success('固件已删除');
+          await fetchData();
+        } catch (error) {
+          message.error(getErrorMessage(error, '删除固件失败'));
+          throw error;
+        } finally {
+          setPendingAction(null);
+        }
       },
     });
   };
 
-  const handleVerify = async (record: FirmwareRecord) => {
-    try {
+  const handleVerify = (record: FirmwareRecord) =>
+    runRowAction(`verify:${record.id}`, '验证固件失败', async () => {
       await firmwareApi.verify(record.id);
       message.success('固件已验证');
       await fetchData();
-    } catch {
-      message.error('验证失败');
-    }
-  };
+    });
 
-  const handleRelease = async (record: FirmwareRecord) => {
-    try {
+  const handleRelease = (record: FirmwareRecord) =>
+    runRowAction(`release:${record.id}`, '发布固件失败', async () => {
       await firmwareApi.release(record.id);
       message.success('固件已发布');
       await fetchData();
-    } catch {
-      message.error('发布失败');
-    }
-  };
+    });
 
   const handleSubmit = async (values: Record<string, unknown>) => {
+    if (saving) {
+      return;
+    }
     if (!editingRecord && !selectedBinary) {
       message.error('请选择固件文件');
       return;
@@ -383,8 +446,8 @@ const FirmwareLibraryTab: React.FC<FirmwareLibraryTabProps> = ({ productOptions,
 
       resetEditor();
       await fetchData();
-    } catch {
-      message.error(editingRecord ? '更新失败' : '上传失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, editingRecord ? '更新固件失败' : '上传固件失败'));
     } finally {
       setSaving(false);
     }
@@ -395,15 +458,20 @@ const FirmwareLibraryTab: React.FC<FirmwareLibraryTabProps> = ({ productOptions,
       title: '产品',
       dataIndex: 'productId',
       width: 220,
-      render: (value: number) => productLabelMap.get(value) || `#${value}`,
+      ellipsis: true,
+      render: (value: number) => productLabelMap.get(value) || '未知产品',
     },
-    { title: '版本号', dataIndex: 'version', width: 120 },
+    {
+      title: '版本号',
+      dataIndex: 'version',
+      width: 120,
+      render: (value: string) => <CopyText text={value} ellipsis />,
+    },
     {
       title: '显示名称',
       dataIndex: 'displayName',
       width: 180,
-      ellipsis: true,
-      render: (value?: string) => value || '-',
+      render: (value?: string) => (value ? <CopyText text={value} ellipsis /> : '-'),
     },
     {
       title: '状态',
@@ -421,10 +489,14 @@ const FirmwareLibraryTab: React.FC<FirmwareLibraryTabProps> = ({ productOptions,
       title: 'MD5',
       dataIndex: 'md5Checksum',
       width: 150,
-      ellipsis: true,
-      render: (value?: string) => value || '-',
+      render: (value?: string) => (value ? <CopyText text={value} ellipsis /> : '-'),
     },
-    { title: '创建时间', dataIndex: 'createdAt', width: 180 },
+    {
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      width: 190,
+      render: (value: string) => <CopyText text={formatDateTime(value)} ellipsis />,
+    },
     {
       title: '操作',
       width: 320,
@@ -440,17 +512,36 @@ const FirmwareLibraryTab: React.FC<FirmwareLibraryTabProps> = ({ productOptions,
             </Button>
           )}
           {record.status === 'DRAFT' && (
-            <Button type="link" size="small" icon={<CheckCircleOutlined />} onClick={() => void handleVerify(record)}>
+            <Button
+              type="link"
+              size="small"
+              icon={<CheckCircleOutlined />}
+              loading={pendingAction === `verify:${record.id}`}
+              onClick={() => void handleVerify(record)}
+            >
               验证
             </Button>
           )}
           {record.status === 'VERIFIED' && (
-            <Button type="link" size="small" icon={<RocketOutlined />} onClick={() => void handleRelease(record)}>
+            <Button
+              type="link"
+              size="small"
+              icon={<RocketOutlined />}
+              loading={pendingAction === `release:${record.id}`}
+              onClick={() => void handleRelease(record)}
+            >
               发布
             </Button>
           )}
           {record.status !== 'RELEASED' && (
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>
+            <Button
+              type="link"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              loading={pendingAction === `delete:${record.id}`}
+              onClick={() => handleDelete(record)}
+            >
               删除
             </Button>
           )}
@@ -480,15 +571,18 @@ const FirmwareLibraryTab: React.FC<FirmwareLibraryTabProps> = ({ productOptions,
             onChange={(event) => setDraftFilters((current) => ({ ...current, keyword: event.target.value }))}
             onPressEnter={applyFilters}
           />
-          <Select
-            className="ff-query-field"
-            placeholder="产品"
-            allowClear
-            style={{ width: 220 }}
-            value={draftFilters.productId}
-            options={productOptions.map((item) => ({ value: item.id, label: buildProductLabel(item) }))}
-            onChange={(value) => setDraftFilters((current) => ({ ...current, productId: value }))}
-          />
+          <div className="ff-query-field" style={{ width: 220 }}>
+            <ProductSelect
+              placeholder="搜索并选择产品（名称或 productKey）"
+              style={{ width: '100%' }}
+              value={draftFilters.productId}
+              pinnedLabel={draftFilters.productId ? productLabelMap.get(draftFilters.productId) : undefined}
+              onChange={(value) => {
+                setDraftFilters((current) => ({ ...current, productId: value }));
+                void ensureProductLabels([value]);
+              }}
+            />
+          </div>
           <Select
             className="ff-query-field"
             placeholder="状态"
@@ -506,6 +600,17 @@ const FirmwareLibraryTab: React.FC<FirmwareLibraryTabProps> = ({ productOptions,
         </div>
       </Card>
 
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="加载固件列表失败"
+          description={loadError}
+          action={<Button size="small" danger onClick={() => void fetchData()}>重试</Button>}
+        />
+      ) : null}
+
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Table
           rowKey="id"
@@ -513,6 +618,18 @@ const FirmwareLibraryTab: React.FC<FirmwareLibraryTabProps> = ({ productOptions,
           dataSource={data}
           loading={loading}
           scroll={{ x: 1380 }}
+          locale={{
+            emptyText: loadError ? (
+              '加载失败，请点击上方“重试”'
+            ) : (
+              <ListEmpty
+                hasFilters={filters.keyword !== '' || filters.productId != null || filters.status != null}
+                emptyText="暂无固件，点击“上传固件”创建"
+                filteredText="没有符合当前筛选条件的固件"
+                onClearFilters={resetFilters}
+              />
+            ),
+          }}
           pagination={{
             current: params.pageNum,
             pageSize: params.pageSize,
@@ -543,12 +660,7 @@ const FirmwareLibraryTab: React.FC<FirmwareLibraryTabProps> = ({ productOptions,
           {!editingRecord && (
             <>
               <Form.Item name="productId" label="所属产品" rules={[{ required: true, message: '请选择产品' }]}>
-                <Select
-                  placeholder="请选择产品"
-                  showSearch
-                  optionFilterProp="label"
-                  options={productOptions.map((item) => ({ value: item.id, label: buildProductLabel(item) }))}
-                />
+                <ProductSelect placeholder="搜索并选择产品（名称或 productKey）" />
               </Form.Item>
               <Form.Item name="version" label="版本号" rules={[{ required: true, message: '请输入版本号' }]}>
                 <Input placeholder="如：1.2.0" />
@@ -581,9 +693,10 @@ const FirmwareLibraryTab: React.FC<FirmwareLibraryTabProps> = ({ productOptions,
   );
 };
 
-const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productOptions, productLabelMap, preset, presetToken }) => {
+const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productLabelMap, ensureProductLabels, preset, presetToken, active, activationToken }) => {
   const [data, setData] = useState<DeviceBindingRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [bindingLoading, setBindingLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
@@ -606,8 +719,9 @@ const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productOptions, p
     try {
       const res = await firmwareApi.list({ pageSize: 500, productId, status });
       setFilterFirmwareOptions(res.data.data?.records || []);
-    } catch {
+    } catch (error) {
       setFilterFirmwareOptions([]);
+      message.warning(getErrorMessage(error, '加载可筛选固件失败'));
     }
   }, []);
 
@@ -619,13 +733,15 @@ const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productOptions, p
     try {
       const res = await firmwareApi.list({ pageSize: 500, productId });
       setBindFirmwareOptions(res.data.data?.records || []);
-    } catch {
+    } catch (error) {
       setBindFirmwareOptions([]);
+      message.warning(getErrorMessage(error, '加载可登记固件失败'));
     }
   }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await deviceFirmwareApi.list({
         ...params,
@@ -635,19 +751,34 @@ const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productOptions, p
         onlineStatus: filters.onlineStatus,
         upgradeStatus: filters.upgradeStatus,
       });
-      const page = res.data.data;
-      setData(page.records || []);
+      const page = res.data.data as { records?: DeviceBindingRecord[]; total?: number };
+      const records = page.records || [];
+      setData(records);
       setTotal(page.total || 0);
-    } catch {
-      message.error('加载设备版本失败');
+      void ensureProductLabels(records.map((item) => item.productId));
+    } catch (error) {
+      setData([]);
+      setTotal(0);
+      setLoadError(getErrorMessage(error, '加载设备版本失败'));
     } finally {
       setLoading(false);
     }
-  }, [filters, params]);
+  }, [ensureProductLabels, filters, params]);
 
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  const fetchDataRef = useRef(fetchData);
+  useEffect(() => {
+    fetchDataRef.current = fetchData;
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (active && activationToken > 0) {
+      void fetchDataRef.current();
+    }
+  }, [activationToken, active]);
 
   useEffect(() => {
     if (!presetToken) return;
@@ -733,6 +864,9 @@ const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productOptions, p
   };
 
   const handleBindSubmit = async (values: Record<string, unknown>) => {
+    if (bindingLoading) {
+      return;
+    }
     if (bindDeviceIds.length === 0) {
       message.error('没有可登记的设备');
       return;
@@ -749,8 +883,8 @@ const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productOptions, p
       setSelectedRowKeys([]);
       setSelectedRows([]);
       await fetchData();
-    } catch {
-      message.error('登记失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '登记设备固件失败'));
     } finally {
       setBindingLoading(false);
     }
@@ -760,13 +894,22 @@ const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productOptions, p
     {
       title: '设备',
       width: 220,
-      render: (_value, record) => record.nickname ? `${record.nickname} (${record.deviceName})` : record.deviceName,
+      render: (_value, record) => (
+        <CopyText text={record.nickname ? `${record.nickname} (${record.deviceName})` : record.deviceName} ellipsis />
+      ),
     },
     {
       title: '产品',
       dataIndex: 'productId',
       width: 220,
-      render: (value: number, record) => record.productName && record.productKey ? `${record.productName} (${record.productKey})` : productLabelMap.get(value) || `#${value}`,
+      render: (value: number, record) => (
+        <CopyText
+          text={record.productName && record.productKey
+            ? `${record.productName} (${record.productKey})`
+            : productLabelMap.get(value) || '未知产品'}
+          ellipsis
+        />
+      ),
     },
     {
       title: '在线状态',
@@ -778,13 +921,13 @@ const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productOptions, p
       title: '当前版本',
       dataIndex: 'currentVersion',
       width: 110,
-      render: (value?: string) => value || '-',
+      render: (value?: string) => (value ? <CopyText text={value} ellipsis /> : '-'),
     },
     {
       title: '目标版本',
       dataIndex: 'targetVersion',
       width: 110,
-      render: (value?: string) => value || '-',
+      render: (value?: string) => (value ? <CopyText text={value} ellipsis /> : '-'),
     },
     {
       title: '升级状态',
@@ -803,8 +946,8 @@ const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productOptions, p
     {
       title: '最近更新时间',
       dataIndex: 'updatedAt',
-      width: 180,
-      render: (value?: string) => value || '-',
+      width: 190,
+      render: (value?: string) => <CopyText text={formatDateTime(value)} ellipsis />,
     },
     {
       title: '操作',
@@ -818,7 +961,7 @@ const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productOptions, p
     },
   ];
 
-  const bindProductLabel = bindProductId ? productLabelMap.get(bindProductId) || `#${bindProductId}` : '-';
+  const bindProductLabel = bindProductId ? productLabelMap.get(bindProductId) || '未知产品' : '-';
 
   return (
     <>
@@ -841,15 +984,18 @@ const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productOptions, p
             onChange={(event) => setDraftFilters((current) => ({ ...current, keyword: event.target.value }))}
             onPressEnter={applyFilters}
           />
-          <Select
-            className="ff-query-field"
-            placeholder="产品"
-            allowClear
-            style={{ width: 220 }}
-            value={draftFilters.productId}
-            options={productOptions.map((item) => ({ value: item.id, label: buildProductLabel(item) }))}
-            onChange={handleFilterProductChange}
-          />
+          <div className="ff-query-field" style={{ width: 220 }}>
+            <ProductSelect
+              placeholder="搜索并选择产品（名称或 productKey）"
+              style={{ width: '100%' }}
+              value={draftFilters.productId}
+              pinnedLabel={draftFilters.productId ? productLabelMap.get(draftFilters.productId) : undefined}
+              onChange={(value) => {
+                handleFilterProductChange(value);
+                void ensureProductLabels([value]);
+              }}
+            />
+          </div>
           <Select
             className="ff-query-field"
             placeholder="固件"
@@ -887,6 +1033,17 @@ const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productOptions, p
         </div>
       </Card>
 
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="加载设备版本失败"
+          description={loadError}
+          action={<Button size="small" danger onClick={() => void fetchData()}>重试</Button>}
+        />
+      ) : null}
+
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Table
           rowKey="deviceId"
@@ -894,6 +1051,22 @@ const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productOptions, p
           dataSource={data}
           loading={loading}
           scroll={{ x: 1500 }}
+          locale={{
+            emptyText: loadError ? (
+              '加载失败，请点击上方“重试”'
+            ) : (
+              <ListEmpty
+                hasFilters={filters.keyword !== ''
+                  || filters.productId != null
+                  || filters.firmwareId != null
+                  || filters.onlineStatus != null
+                  || filters.upgradeStatus != null}
+                emptyText="暂无设备版本记录"
+                filteredText="没有符合当前筛选条件的设备"
+                onClearFilters={resetFilters}
+              />
+            ),
+          }}
           rowSelection={{
             selectedRowKeys,
             onChange: (keys, rows) => {
@@ -951,20 +1124,107 @@ const DeviceBindingsTab: React.FC<DeviceBindingsTabProps> = ({ productOptions, p
   );
 };
 
-const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabelMap }) => {
+interface DeviceSelectRecord {
+  id: number;
+  deviceName: string;
+  nickname?: string | null;
+}
+
+/**
+ * 升级任务的目标设备多选。设备候选必须跟随所选产品，因此按 productId + keyword
+ * 走服务端搜索，并缓存已选设备名称，保证切换搜索关键字后不会回显成裸 ID。
+ */
+const RemoteDeviceMultiSelect: React.FC<{
+  value?: number[];
+  onChange?: (value: number[]) => void;
+  productId?: number;
+  placeholder?: string;
+}> = ({ value, onChange, productId, placeholder }) => {
+  const { options, loading, onSearch } = useRemoteOptions<DeviceSelectRecord>(
+    async (keyword) => {
+      if (!productId) {
+        return [];
+      }
+      try {
+        const res = await deviceApi.list({ pageNum: 1, pageSize: 20, keyword: keyword || undefined, productId });
+        return (res.data.data?.records ?? []) as DeviceSelectRecord[];
+      } catch (error) {
+        message.error(getErrorMessage(error, '搜索设备失败'));
+        throw error;
+      }
+    },
+    (item) => ({
+      value: item.id,
+      label: item.nickname ? `${item.nickname} (${item.deviceName})` : item.deviceName,
+    }),
+  );
+  const [labelCache, setLabelCache] = useState<Record<number, string>>({});
+  const previousProductRef = useRef<number | undefined>(productId);
+
+  useEffect(() => {
+    if (previousProductRef.current === productId) {
+      return;
+    }
+    previousProductRef.current = productId;
+    onSearch('');
+  }, [onSearch, productId]);
+
+  useEffect(() => {
+    if (options.length === 0) {
+      return;
+    }
+    setLabelCache((previous) => {
+      const next = { ...previous };
+      options.forEach((item) => {
+        next[item.value] = item.label;
+      });
+      return next;
+    });
+  }, [options]);
+
+  const mergedOptions = useMemo(() => {
+    const known = new Set(options.map((item) => item.value));
+    const missing = (value ?? []).filter((id) => !known.has(id));
+    return [...options, ...missing.map((id) => ({ value: id, label: labelCache[id] ?? '已选设备' }))];
+  }, [labelCache, options, value]);
+
+  return (
+    <Select
+      mode="multiple"
+      allowClear
+      showSearch
+      filterOption={false}
+      onSearch={onSearch}
+      placeholder={placeholder}
+      options={mergedOptions}
+      loading={loading}
+      value={value}
+      onChange={(next) => onChange?.(next)}
+      notFoundContent={
+        loading ? <Spin size="small" /> : (productId ? '未找到匹配设备，换个关键字试试' : '请先选择产品')
+      }
+    />
+  );
+};
+
+const OtaTasksTab: React.FC<OtaTasksTabProps> = ({ productLabelMap, ensureProductLabels, active, activationToken }) => {
   const [data, setData] = useState<OtaTaskRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
   const [draftFilters, setDraftFilters] = useState<{ keyword: string; productId?: number; status?: string }>({ keyword: '' });
   const [filters, setFilters] = useState<{ keyword: string; productId?: number; status?: string }>({ keyword: '' });
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [deviceOptions, setDeviceOptions] = useState<Array<{ value: number; label: string }>>([]);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTask, setDetailTask] = useState<OtaTaskRecord | null>(null);
   const [detailDevices, setDetailDevices] = useState<OtaTaskDeviceRecord[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailFetchedAt, setDetailFetchedAt] = useState<Date | null>(null);
+  const [cancelingId, setCancelingId] = useState<number | null>(null);
+  const detailStatusRef = useRef<string | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<number | undefined>();
   const [firmwareOptions, setFirmwareOptions] = useState<FirmwareRecord[]>([]);
   const [createForm] = Form.useForm();
@@ -978,6 +1238,7 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await otaTaskApi.list({
         ...params,
@@ -985,19 +1246,34 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
         productId: filters.productId,
         status: filters.status,
       });
-      const page = res.data.data;
-      setData(page.records || []);
+      const page = res.data.data as { records?: OtaTaskRecord[]; total?: number };
+      const records = page.records || [];
+      setData(records);
       setTotal(page.total || 0);
-    } catch {
-      message.error('加载升级任务失败');
+      void ensureProductLabels(records.map((item) => item.productId));
+    } catch (error) {
+      setData([]);
+      setTotal(0);
+      setLoadError(getErrorMessage(error, '加载升级任务失败'));
     } finally {
       setLoading(false);
     }
-  }, [filters, params]);
+  }, [ensureProductLabels, filters, params]);
 
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  const fetchDataRef = useRef(fetchData);
+  useEffect(() => {
+    fetchDataRef.current = fetchData;
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (active && activationToken > 0) {
+      void fetchDataRef.current();
+    }
+  }, [activationToken, active]);
 
   const loadReleasedFirmwares = useCallback(async (productId?: number) => {
     if (!productId) {
@@ -1007,8 +1283,9 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
     try {
       const res = await firmwareApi.list({ pageSize: 500, productId, status: 'RELEASED' });
       setFirmwareOptions(res.data.data?.records || []);
-    } catch {
+    } catch (error) {
       setFirmwareOptions([]);
+      message.warning(getErrorMessage(error, '加载可发布固件失败'));
     }
   }, []);
 
@@ -1040,7 +1317,6 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
     createForm.resetFields();
     setSelectedProductId(undefined);
     setFirmwareOptions([]);
-    setDeviceOptions([]);
     setDrawerOpen(true);
   };
 
@@ -1051,32 +1327,17 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
     createForm.resetFields();
   };
 
-  const loadDevicesForProduct = useCallback(async (productId?: number) => {
-    if (!productId) {
-      setDeviceOptions([]);
-      return;
-    }
-    try {
-      const res = await deviceApi.list({ pageNum: 1, pageSize: 500, productId });
-      const records = res.data.data?.records || [];
-      setDeviceOptions(records.map((item: { id: number; deviceName: string; nickname?: string }) => ({
-        value: item.id,
-        label: item.nickname ? `${item.nickname} (${item.deviceName})` : item.deviceName,
-      })));
-    } catch {
-      setDeviceOptions([]);
-    }
-  }, []);
-
   const handleProductChange = (productId?: number) => {
     setSelectedProductId(productId);
     createForm.setFieldValue('firmwareId', undefined);
     createForm.setFieldValue('deviceIds', undefined);
     void loadReleasedFirmwares(productId);
-    void loadDevicesForProduct(productId);
   };
 
   const handleCreate = async (values: Record<string, unknown>) => {
+    if (creating) {
+      return;
+    }
     if (!selectedFirmware) {
       message.error('请选择目标固件');
       return;
@@ -1097,36 +1358,112 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
       message.success('升级任务已创建');
       closeCreateDrawer();
       await fetchData();
-    } catch {
-      message.error('创建失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '创建升级任务失败'));
     } finally {
       setCreating(false);
     }
   };
 
-  const openDetail = async (record: OtaTaskRecord) => {
-    setDetailTask(record);
-    setDetailOpen(true);
+  const fetchDetail = useCallback(async (taskId: number, silent = false) => {
+    if (!silent) {
+      setDetailLoading(true);
+    }
+    setDetailError(null);
+    try {
+      const res = await otaTaskApi.get(taskId);
+      const detail = res.data.data;
+      if (!detail) {
+        throw new Error('任务详情为空');
+      }
+      setDetailTask(detail as OtaTaskRecord);
+      setDetailDevices((detail.devices || []) as OtaTaskDeviceRecord[]);
+      setDetailFetchedAt(new Date());
+    } catch (error) {
+      setDetailError(getErrorMessage(error, '加载任务进度失败'));
+    } finally {
+      if (!silent) {
+        setDetailLoading(false);
+      }
+    }
+  }, []);
+
+  const detailInProgress = detailOpen
+    && (detailTask?.status === 'PENDING' || detailTask?.status === 'IN_PROGRESS');
+
+  // 进行中的任务进度会持续变化：每 5 秒静默轮询，完成后自动停止，允许用户暂停。
+  const { paused, togglePaused, refresh: refreshDetail } = useAutoRefresh(
+    async () => {
+      if (detailTask) {
+        await fetchDetail(detailTask.id, true);
+      }
+    },
+    { intervalMs: 5000, enabled: detailInProgress, immediate: false },
+  );
+
+  const handleManualRefresh = async () => {
+    if (!detailTask) {
+      return;
+    }
     setDetailLoading(true);
     try {
-      const res = await otaTaskApi.get(record.id);
-      setDetailDevices(((res.data.data?.devices || []) as OtaTaskDeviceRecord[]));
-    } catch {
-      setDetailDevices([]);
-      message.error('加载任务进度失败');
+      // 手动刷新复用自动刷新使用的 fetcher，避免两套进度加载逻辑。
+      await refreshDetail();
     } finally {
       setDetailLoading(false);
     }
   };
 
+  useEffect(() => {
+    if (!detailOpen || !detailTask) {
+      detailStatusRef.current = null;
+      return;
+    }
+    const previousStatus = detailStatusRef.current;
+    const finished = detailTask.status !== 'PENDING' && detailTask.status !== 'IN_PROGRESS';
+    if (previousStatus && previousStatus !== detailTask.status && finished) {
+      message.success(`任务已结束：${taskStatusLabels[detailTask.status] || detailTask.status}`);
+      void fetchDataRef.current();
+    }
+    detailStatusRef.current = detailTask.status;
+  }, [detailOpen, detailTask]);
+
+  const openDetail = async (record: OtaTaskRecord) => {
+    setDetailTask(record);
+    setDetailDevices([]);
+    setDetailError(null);
+    setDetailFetchedAt(null);
+    setDetailOpen(true);
+    detailStatusRef.current = record.status;
+    // 每次打开任务进度时恢复自动刷新，避免沿用上一任务的暂停状态。
+    if (paused) {
+      togglePaused();
+    }
+    await fetchDetail(record.id);
+  };
+
   const handleCancel = (record: OtaTaskRecord) => {
     Modal.confirm({
       title: '确认取消升级任务？',
-      content: `取消「${record.name}」后，进行中的升级不会继续下发。`,
+      content: `取消「${record.name}」后，任务将停止向剩余设备下发升级指令；已开始升级的设备不会自动回滚。`,
+      okText: '确认取消',
+      okButtonProps: { danger: true },
+      cancelText: '继续执行',
       onOk: async () => {
-        await otaTaskApi.cancel(record.id);
-        message.success('任务已取消');
-        await fetchData();
+        setCancelingId(record.id);
+        try {
+          await otaTaskApi.cancel(record.id);
+          message.success('任务已取消');
+          await fetchData();
+          if (detailOpen && detailTask?.id === record.id) {
+            await fetchDetail(record.id, true);
+          }
+        } catch (error) {
+          message.error(getErrorMessage(error, '取消升级任务失败'));
+          throw error;
+        } finally {
+          setCancelingId(null);
+        }
       },
     });
   };
@@ -1136,13 +1473,14 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
       title: '任务名称',
       dataIndex: 'name',
       width: 220,
-      ellipsis: true,
+      render: (value: string) => <CopyText text={value} ellipsis />,
     },
     {
       title: '产品',
       dataIndex: 'productId',
       width: 220,
-      render: (value: number) => productLabelMap.get(value) || `#${value}`,
+      ellipsis: true,
+      render: (value: number) => productLabelMap.get(value) || '未知产品',
     },
     {
       title: '类型',
@@ -1154,6 +1492,7 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
       title: '目标版本',
       dataIndex: 'destVersion',
       width: 110,
+      render: (value: string) => <CopyText text={value} ellipsis />,
     },
     {
       title: '状态',
@@ -1182,16 +1521,35 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
       width: 100,
       render: (value?: number) => (value != null ? `${value}%` : '-'),
     },
-    { title: '创建时间', dataIndex: 'createdAt', width: 180 },
+    {
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      width: 190,
+      render: (value: string) => <CopyText text={formatDateTime(value)} ellipsis />,
+    },
     {
       title: '操作',
       width: 160,
       fixed: 'right',
       render: (_value, record) => (
         <Space size="small">
-          <Button type="link" size="small" onClick={() => void openDetail(record)}>详情</Button>
+          <Button
+            type="link"
+            size="small"
+            loading={detailLoading && detailTask?.id === record.id}
+            onClick={() => void openDetail(record)}
+          >
+            详情
+          </Button>
           {(record.status === 'PENDING' || record.status === 'IN_PROGRESS') ? (
-            <Button type="link" size="small" danger icon={<StopOutlined />} onClick={() => handleCancel(record)}>
+            <Button
+              type="link"
+              size="small"
+              danger
+              icon={<StopOutlined />}
+              loading={cancelingId === record.id}
+              onClick={() => handleCancel(record)}
+            >
               取消
             </Button>
           ) : null}
@@ -1221,15 +1579,18 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
             onChange={(event) => setDraftFilters((current) => ({ ...current, keyword: event.target.value }))}
             onPressEnter={applyFilters}
           />
-          <Select
-            className="ff-query-field"
-            placeholder="产品"
-            allowClear
-            style={{ width: 220 }}
-            value={draftFilters.productId}
-            options={productOptions.map((item) => ({ value: item.id, label: buildProductLabel(item) }))}
-            onChange={(value) => setDraftFilters((current) => ({ ...current, productId: value }))}
-          />
+          <div className="ff-query-field" style={{ width: 220 }}>
+            <ProductSelect
+              placeholder="搜索并选择产品（名称或 productKey）"
+              style={{ width: '100%' }}
+              value={draftFilters.productId}
+              pinnedLabel={draftFilters.productId ? productLabelMap.get(draftFilters.productId) : undefined}
+              onChange={(value) => {
+                setDraftFilters((current) => ({ ...current, productId: value }));
+                void ensureProductLabels([value]);
+              }}
+            />
+          </div>
           <Select
             className="ff-query-field"
             placeholder="状态"
@@ -1247,6 +1608,17 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
         </div>
       </Card>
 
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="加载升级任务失败"
+          description={loadError}
+          action={<Button size="small" danger onClick={() => void fetchData()}>重试</Button>}
+        />
+      ) : null}
+
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Table
           rowKey="id"
@@ -1254,6 +1626,18 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
           dataSource={data}
           loading={loading}
           scroll={{ x: 1500 }}
+          locale={{
+            emptyText: loadError ? (
+              '加载失败，请点击上方“重试”'
+            ) : (
+              <ListEmpty
+                hasFilters={filters.keyword !== '' || filters.productId != null || filters.status != null}
+                emptyText="暂无升级任务，点击“新建任务”创建"
+                filteredText="没有符合当前筛选条件的升级任务"
+                onClearFilters={resetFilters}
+              />
+            ),
+          }}
           pagination={{
             current: params.pageNum,
             pageSize: params.pageSize,
@@ -1288,11 +1672,9 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
             <Input.TextArea rows={3} />
           </Form.Item>
           <Form.Item name="productId" label="所属产品" rules={[{ required: true, message: '请选择产品' }]}>
-            <Select
-              placeholder="请选择产品"
-              showSearch
-              optionFilterProp="label"
-              options={productOptions.map((item) => ({ value: item.id, label: buildProductLabel(item) }))}
+            <ProductSelect
+              placeholder="搜索并选择产品（名称或 productKey）"
+              pinnedLabel={selectedProductId ? productLabelMap.get(selectedProductId) : undefined}
               onChange={handleProductChange}
             />
           </Form.Item>
@@ -1315,12 +1697,10 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
             <Input placeholder="可选，如 1.1.0" />
           </Form.Item>
           <Form.Item name="deviceIds" label="指定设备">
-            <Select
-              mode="multiple"
-              allowClear
-              optionFilterProp="label"
-              placeholder="留空则按产品与源版本筛选；选择后仅升级指定设备"
-              options={deviceOptions}
+            <RemoteDeviceMultiSelect
+              key={selectedProductId ?? 'all'}
+              productId={selectedProductId}
+              placeholder="搜索并选择设备（名称或别名，可多选）；留空则按产品与源版本筛选"
             />
           </Form.Item>
           {selectedTaskType === 'GRAY' ? (
@@ -1337,15 +1717,68 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
         width={760}
         destroyOnClose
         onClose={() => setDetailOpen(false)}
+        extra={(
+          <Space wrap>
+            <Tooltip title={detailFetchedAt ? `最近刷新：${formatDateTime(detailFetchedAt)}` : '尚未刷新'}>
+              <Switch
+                size="small"
+                checked={!paused}
+                onChange={togglePaused}
+                checkedChildren="自动刷新"
+                unCheckedChildren="已暂停"
+                disabled={!detailInProgress}
+              />
+            </Tooltip>
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              loading={detailLoading}
+              disabled={!detailTask}
+              onClick={() => void handleManualRefresh()}
+            >
+              刷新
+            </Button>
+          </Space>
+        )}
       >
+        {detailTask ? (
+          <Space wrap size={12} style={{ marginBottom: 12 }}>
+            <Tag color={taskStatusColors[detailTask.status]}>{taskStatusLabels[detailTask.status] || detailTask.status}</Tag>
+            <span style={{ fontSize: 12, color: '#64748b' }}>
+              总 {detailTask.totalCount} · 成功 {detailTask.successCount} · 失败 {detailTask.failureCount}
+            </span>
+            <span style={{ fontSize: 12, color: '#64748b' }}>
+              {detailInProgress ? '进行中，每 5 秒自动刷新' : '任务已结束，自动刷新已停止'}
+            </span>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>
+              {detailFetchedAt ? `最近刷新：${formatDateTime(detailFetchedAt)}` : '尚未刷新'}
+            </span>
+          </Space>
+        ) : null}
+        {detailError ? (
+          <Alert
+            type="error"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="加载任务进度失败"
+            description={detailError}
+            action={detailTask ? <Button size="small" danger onClick={() => void handleManualRefresh()}>重试</Button> : null}
+          />
+        ) : null}
         <Table
           rowKey="id"
           size="small"
           loading={detailLoading}
           dataSource={detailDevices}
-          pagination={{ pageSize: 10 }}
+          locale={{ emptyText: <ListEmpty compact emptyText={detailTask ? '该任务暂无逐设备进度记录' : '请选择任务查看进度'} /> }}
+          pagination={{ pageSize: 10, showTotal: (count: number) => `共 ${count} 条` }}
           columns={[
-            { title: '设备', dataIndex: 'deviceName', render: (value?: string) => value || '-' },
+            {
+              title: '设备',
+              dataIndex: 'deviceName',
+              ellipsis: true,
+              render: (value?: string) => (value ? <CopyText text={value} ellipsis /> : '-'),
+            },
             {
               title: '状态',
               dataIndex: 'status',
@@ -1358,8 +1791,18 @@ const OtaTasksTab: React.FC<ProductScopedProps> = ({ productOptions, productLabe
               width: 160,
               render: (value: number) => <Progress percent={value || 0} size="small" />,
             },
-            { title: '错误', dataIndex: 'errorMessage', ellipsis: true, render: (value?: string) => value || '-' },
-            { title: '更新时间', dataIndex: 'updatedAt', width: 180, render: (value?: string) => value || '-' },
+            {
+              title: '错误',
+              dataIndex: 'errorMessage',
+              ellipsis: true,
+              render: (value?: string) => (value ? <CopyText text={value} ellipsis /> : '-'),
+            },
+            {
+              title: '更新时间',
+              dataIndex: 'updatedAt',
+              width: 190,
+              render: (value?: string) => <CopyText text={formatDateTime(value)} ellipsis />,
+            },
           ]}
         />
       </Drawer>
@@ -1372,20 +1815,45 @@ const OtaList: React.FC = () => {
   const [activeTab, setActiveTab] = useState('firmware');
   const [bindingPreset, setBindingPreset] = useState<BindingPreset>({});
   const [bindingPresetToken, setBindingPresetToken] = useState(0);
+  const [activationToken, setActivationToken] = useState(0);
 
-  const fetchProducts = useCallback(async () => {
-    try {
-      const res = await productApi.list({ pageSize: 500 });
-      const records = res.data.data?.records || [];
-      setProductOptions(records.map((item: ProductOption) => ({ id: item.id, productKey: item.productKey, name: item.name })));
-    } catch {
-      setProductOptions([]);
+  const productRequestRef = useRef<Set<number>>(new Set());
+
+  // 列表只保存 productId，按需补查产品名称用于标签展示；选择器本身走远程搜索，不再预加载 500 条。
+  const ensureProductLabels = useCallback((ids: Array<number | undefined | null>) => {
+    const missing = Array.from(new Set(
+      ids.filter((id): id is number => typeof id === 'number' && id > 0),
+    )).filter((id) => !productRequestRef.current.has(id));
+    if (missing.length === 0) {
+      return;
     }
+    missing.forEach((id) => productRequestRef.current.add(id));
+    void Promise.all(missing.map(async (id) => {
+      try {
+        const res = await productApi.get(id);
+        const record = res.data.data as ProductOption | null;
+        return record?.id ? record : null;
+      } catch {
+        productRequestRef.current.delete(id);
+        return null;
+      }
+    })).then((records) => {
+      const found = records.filter((item): item is ProductOption => item !== null);
+      if (found.length === 0) {
+        return;
+      }
+      setProductOptions((current) => {
+        const merged = new Map(current.map((item) => [item.id, item]));
+        found.forEach((item) => merged.set(item.id, item));
+        return Array.from(merged.values());
+      });
+    });
   }, []);
 
-  useEffect(() => {
-    void fetchProducts();
-  }, [fetchProducts]);
+  // 页面被 keep-alive 缓存，切回时通知当前可见 Tab 刷新列表。
+  usePageActivation(() => {
+    setActivationToken((current) => current + 1);
+  });
 
   const productLabelMap = useMemo(() => {
     const map = new Map<number, string>();
@@ -1412,17 +1880,41 @@ const OtaList: React.FC = () => {
             {
               key: 'firmware',
               label: <span><FileProtectOutlined style={{ marginRight: 6 }} />固件库</span>,
-              children: <FirmwareLibraryTab productOptions={productOptions} productLabelMap={productLabelMap} onInspectBindings={handleInspectBindings} />,
+              children: (
+                <FirmwareLibraryTab
+                  productLabelMap={productLabelMap}
+                  ensureProductLabels={ensureProductLabels}
+                  onInspectBindings={handleInspectBindings}
+                  active={activeTab === 'firmware'}
+                  activationToken={activationToken}
+                />
+              ),
             },
             {
               key: 'devices',
               label: <span><UsbOutlined style={{ marginRight: 6 }} />设备版本</span>,
-              children: <DeviceBindingsTab productOptions={productOptions} productLabelMap={productLabelMap} preset={bindingPreset} presetToken={bindingPresetToken} />,
+              children: (
+                <DeviceBindingsTab
+                  productLabelMap={productLabelMap}
+                  ensureProductLabels={ensureProductLabels}
+                  preset={bindingPreset}
+                  presetToken={bindingPresetToken}
+                  active={activeTab === 'devices'}
+                  activationToken={activationToken}
+                />
+              ),
             },
             {
               key: 'tasks',
               label: <span><RocketOutlined style={{ marginRight: 6 }} />升级任务</span>,
-              children: <OtaTasksTab productOptions={productOptions} productLabelMap={productLabelMap} />,
+              children: (
+                <OtaTasksTab
+                  productLabelMap={productLabelMap}
+                  ensureProductLabels={ensureProductLabels}
+                  active={activeTab === 'tasks'}
+                  activationToken={activationToken}
+                />
+              ),
             },
           ]}
         />

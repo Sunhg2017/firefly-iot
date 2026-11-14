@@ -1,10 +1,14 @@
-import React, { useEffect, useState } from 'react';
-import { Button, Input, Popconfirm, Select, Space, Table, Tabs, Tag, message } from 'antd';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, Button, Input, Popconfirm, Select, Space, Table, Tabs, Tag, message } from 'antd';
 import { DeleteOutlined, LogoutOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
+import CopyText from '../../components/CopyText';
+import ListEmpty from '../../components/ListEmpty';
 import { adminSessionApi, authApi, loginLogApi, sessionApi } from '../../services/api';
+import { getErrorMessage } from '../../utils/errors';
+import { usePageActivation } from '../../hooks/usePageActivation';
 
 interface LoginLogItem {
   id: number;
@@ -69,6 +73,9 @@ interface OauthProviderItem {
   usageHint?: string | null;
 }
 
+const EMPTY_LOGIN_QUERY: LoginLogQueryState = { pageNum: 1, pageSize: 20 };
+const EMPTY_ADMIN_QUERY: AdminSessionQueryState = { pageNum: 1, pageSize: 20 };
+
 const renderPlatform = (value?: string | null) => <Tag color="blue">{value || '-'}</Tag>;
 
 const renderLoginMethod = (value?: string | null) => <Tag>{value || 'PASSWORD'}</Tag>;
@@ -87,13 +94,21 @@ const renderOauthBindingStatus = (bound: boolean) => (
   <Tag color={bound ? 'success' : 'default'}>{bound ? '已绑定' : '未绑定'}</Tag>
 );
 
+const reloadButton = (loading: boolean, onReload: () => void) => (
+  <Button icon={<ReloadOutlined />} size="small" loading={loading} onClick={onReload}>
+    重试
+  </Button>
+);
+
 const LoginLogTab: React.FC = () => {
   const [data, setData] = useState<LoginLogItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
-  const [query, setQuery] = useState<LoginLogQueryState>({ pageNum: 1, pageSize: 20 });
+  const [query, setQuery] = useState<LoginLogQueryState>(EMPTY_LOGIN_QUERY);
+  const [keywordInput, setKeywordInput] = useState('');
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const res = await loginLogApi.list({ ...query });
@@ -108,16 +123,26 @@ const LoginLogTab: React.FC = () => {
         setData([]);
         setTotal(0);
       }
+      setLoadError(null);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '加载登录日志失败');
+      setLoadError(getErrorMessage(error, '加载登录日志失败'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [query]);
+
+  usePageActivation(() => { void fetchData(); });
 
   useEffect(() => {
     void fetchData();
-  }, [query]);
+  }, [fetchData]);
+
+  const hasFilters = Boolean(query.keyword || query.result);
+
+  const resetQuery = () => {
+    setKeywordInput('');
+    setQuery(EMPTY_LOGIN_QUERY);
+  };
 
   const columns: ColumnsType<LoginLogItem> = [
     {
@@ -141,8 +166,8 @@ const LoginLogTab: React.FC = () => {
     {
       title: 'IP',
       dataIndex: 'loginIp',
-      width: 160,
-      render: (value?: string | null) => value || '-',
+      width: 170,
+      render: (value?: string | null) => (value ? <CopyText text={value} /> : '-'),
     },
     {
       title: '结果',
@@ -156,16 +181,14 @@ const LoginLogTab: React.FC = () => {
     {
       title: '失败原因',
       dataIndex: 'failReason',
-      width: 180,
-      ellipsis: true,
-      render: (value?: string | null) => value || '-',
+      width: 200,
+      render: (value?: string | null) => (value ? <CopyText text={value} ellipsis /> : '-'),
     },
     {
       title: 'User-Agent',
       dataIndex: 'userAgent',
       width: 320,
-      ellipsis: true,
-      render: (value?: string | null) => value || '-',
+      render: (value?: string | null) => (value ? <CopyText text={value} ellipsis /> : '-'),
     },
     {
       title: '时间',
@@ -183,6 +206,15 @@ const LoginLogTab: React.FC = () => {
           enterButton="查询"
           placeholder="搜索用户名或登录 IP"
           style={{ width: 260 }}
+          value={keywordInput}
+          onChange={(event) => {
+            const next = event.target.value;
+            setKeywordInput(next);
+            // 点击清空时立即移除关键字筛选，避免列表仍停留在上一次搜索结果。
+            if (!next) {
+              setQuery((current) => ({ ...current, keyword: undefined, pageNum: 1 }));
+            }
+          }}
           onSearch={(value) =>
             setQuery((current) => ({
               ...current,
@@ -208,10 +240,21 @@ const LoginLogTab: React.FC = () => {
             { label: '失败', value: 'FAILED' },
           ]}
         />
-        <Button icon={<ReloadOutlined />} onClick={() => void fetchData()}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void fetchData()}>
           刷新
         </Button>
       </Space>
+
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="登录日志加载失败"
+          description={loadError}
+          action={reloadButton(loading, () => void fetchData())}
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
 
       <Table<LoginLogItem>
         rowKey="id"
@@ -220,6 +263,16 @@ const LoginLogTab: React.FC = () => {
         loading={loading}
         size="small"
         scroll={{ x: 1400 }}
+        locale={{
+          emptyText: (
+            <ListEmpty
+              hasFilters={hasFilters}
+              onClearFilters={resetQuery}
+              emptyText="暂无登录日志"
+              filteredText="没有符合当前筛选条件的登录日志"
+            />
+          ),
+        }}
         pagination={{
           current: query.pageNum,
           pageSize: query.pageSize,
@@ -241,30 +294,38 @@ const LoginLogTab: React.FC = () => {
 const MySessionTab: React.FC = () => {
   const [data, setData] = useState<SessionItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [kickingId, setKickingId] = useState<number | null>(null);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const res = await sessionApi.list();
       setData(res.data?.data || []);
+      setLoadError(null);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '加载会话失败');
+      setLoadError(getErrorMessage(error, '加载会话失败'));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  usePageActivation(() => { void fetchData(); });
 
   useEffect(() => {
     void fetchData();
-  }, []);
+  }, [fetchData]);
 
   const handleKick = async (id: number) => {
+    setKickingId(id);
     try {
       await sessionApi.kick(id);
       message.success('会话已下线');
       await fetchData();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '下线会话失败');
+      message.error(getErrorMessage(error, '下线会话失败'));
+    } finally {
+      setKickingId(null);
     }
   };
 
@@ -284,15 +345,14 @@ const MySessionTab: React.FC = () => {
     {
       title: 'IP',
       dataIndex: 'loginIp',
-      width: 160,
-      render: (value?: string | null) => value || '-',
+      width: 170,
+      render: (value?: string | null) => (value ? <CopyText text={value} /> : '-'),
     },
     {
       title: 'User-Agent',
       dataIndex: 'userAgent',
       width: 360,
-      ellipsis: true,
-      render: (value?: string | null) => value || '-',
+      render: (value?: string | null) => (value ? <CopyText text={value} ellipsis /> : '-'),
     },
     {
       title: '最后活跃时间',
@@ -311,8 +371,18 @@ const MySessionTab: React.FC = () => {
       width: 120,
       fixed: 'right',
       render: (_value, record) => (
-        <Popconfirm title="确认下线这个会话吗？" onConfirm={() => void handleKick(record.id)}>
-          <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+        <Popconfirm
+          title="确认下线这个会话？"
+          description="该会话将立即失效，需要重新登录。"
+          onConfirm={() => void handleKick(record.id)}
+        >
+          <Button
+            type="link"
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+            loading={kickingId === record.id}
+          >
             下线
           </Button>
         </Popconfirm>
@@ -322,9 +392,19 @@ const MySessionTab: React.FC = () => {
 
   return (
     <div>
-      <Button icon={<ReloadOutlined />} onClick={() => void fetchData()} style={{ marginBottom: 16 }}>
+      <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void fetchData()} style={{ marginBottom: 16 }}>
         刷新
       </Button>
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="会话加载失败"
+          description={loadError}
+          action={reloadButton(loading, () => void fetchData())}
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
       <Table<SessionItem>
         rowKey="id"
         columns={columns}
@@ -333,6 +413,7 @@ const MySessionTab: React.FC = () => {
         size="small"
         scroll={{ x: 1280 }}
         pagination={false}
+        locale={{ emptyText: <ListEmpty emptyText="当前没有其他登录会话" /> }}
       />
     </div>
   );
@@ -341,10 +422,13 @@ const MySessionTab: React.FC = () => {
 const AdminSessionTab: React.FC = () => {
   const [data, setData] = useState<AdminSessionItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
-  const [query, setQuery] = useState<AdminSessionQueryState>({ pageNum: 1, pageSize: 20 });
+  const [query, setQuery] = useState<AdminSessionQueryState>(EMPTY_ADMIN_QUERY);
+  const [keywordInput, setKeywordInput] = useState('');
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const res = await adminSessionApi.list({ ...query });
@@ -359,34 +443,50 @@ const AdminSessionTab: React.FC = () => {
         setData([]);
         setTotal(0);
       }
+      setLoadError(null);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '加载管理员会话失败');
+      setLoadError(getErrorMessage(error, '加载管理员会话失败'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [query]);
+
+  usePageActivation(() => { void fetchData(); });
 
   useEffect(() => {
     void fetchData();
-  }, [query]);
+  }, [fetchData]);
+
+  const hasFilters = Boolean(query.keyword || query.platform || query.adminType);
+
+  const resetQuery = () => {
+    setKeywordInput('');
+    setQuery(EMPTY_ADMIN_QUERY);
+  };
 
   const handleKickSession = async (sessionId: number) => {
+    setPendingKey(`session-${sessionId}`);
     try {
       await adminSessionApi.kickSession(sessionId);
       message.success('管理员会话已下线');
       await fetchData();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '下线管理员会话失败');
+      message.error(getErrorMessage(error, '下线管理员会话失败'));
+    } finally {
+      setPendingKey(null);
     }
   };
 
   const handleKickUser = async (username: string) => {
+    setPendingKey(`user-${username}`);
     try {
       await adminSessionApi.kickUser(username);
       message.success('管理员全部会话已下线');
       await fetchData();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '下线管理员全部会话失败');
+      message.error(getErrorMessage(error, '下线管理员全部会话失败'));
+    } finally {
+      setPendingKey(null);
     }
   };
 
@@ -428,15 +528,14 @@ const AdminSessionTab: React.FC = () => {
     {
       title: 'IP',
       dataIndex: 'loginIp',
-      width: 160,
-      render: (value?: string | null) => value || '-',
+      width: 170,
+      render: (value?: string | null) => (value ? <CopyText text={value} /> : '-'),
     },
     {
       title: 'User-Agent',
       dataIndex: 'userAgent',
-      width: 360,
-      ellipsis: true,
-      render: (value?: string | null) => value || '-',
+      width: 340,
+      render: (value?: string | null) => (value ? <CopyText text={value} ellipsis /> : '-'),
     },
     {
       title: '最后活跃时间',
@@ -452,21 +551,39 @@ const AdminSessionTab: React.FC = () => {
     },
     {
       title: '操作',
-      width: 220,
+      width: 230,
       fixed: 'right',
       render: (_value, record) => (
         <Space size={4}>
-          <Popconfirm title="确认下线这个管理员会话吗？" onConfirm={() => void handleKickSession(record.id)}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+          <Popconfirm
+            title="确认下线这个管理员会话？"
+            description="该会话将立即失效，需要重新登录。"
+            onConfirm={() => void handleKickSession(record.id)}
+          >
+            <Button
+              type="link"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              loading={pendingKey === `session-${record.id}`}
+            >
               下线会话
             </Button>
           </Popconfirm>
           <Popconfirm
-            title={`确认下线 ${record.username || '该管理员'} 的全部会话吗？`}
+            title={`确认下线 ${record.username || '该管理员'} 的全部会话？`}
+            description="该管理员在所有终端的会话都会立即失效，需要重新登录。"
             onConfirm={() => record.username && void handleKickUser(record.username)}
             disabled={!record.username}
           >
-            <Button type="link" size="small" danger icon={<LogoutOutlined />} disabled={!record.username}>
+            <Button
+              type="link"
+              size="small"
+              danger
+              icon={<LogoutOutlined />}
+              disabled={!record.username}
+              loading={pendingKey === `user-${record.username}`}
+            >
               全部下线
             </Button>
           </Popconfirm>
@@ -483,6 +600,14 @@ const AdminSessionTab: React.FC = () => {
           enterButton="查询"
           placeholder="搜索管理员账号、姓名、租户或登录 IP"
           style={{ width: 320 }}
+          value={keywordInput}
+          onChange={(event) => {
+            const next = event.target.value;
+            setKeywordInput(next);
+            if (!next) {
+              setQuery((current) => ({ ...current, keyword: undefined, pageNum: 1 }));
+            }
+          }}
           onSearch={(value) =>
             setQuery((current) => ({
               ...current,
@@ -528,10 +653,21 @@ const AdminSessionTab: React.FC = () => {
             { label: '租户管理员', value: 'TENANT_SUPER_ADMIN' },
           ]}
         />
-        <Button icon={<ReloadOutlined />} onClick={() => void fetchData()}>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void fetchData()}>
           刷新
         </Button>
       </Space>
+
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="管理员会话加载失败"
+          description={loadError}
+          action={reloadButton(loading, () => void fetchData())}
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
 
       <Table<AdminSessionItem>
         rowKey="id"
@@ -539,7 +675,17 @@ const AdminSessionTab: React.FC = () => {
         dataSource={data}
         loading={loading}
         size="small"
-        scroll={{ x: 1680 }}
+        scroll={{ x: 1800 }}
+        locale={{
+          emptyText: (
+            <ListEmpty
+              hasFilters={hasFilters}
+              onClearFilters={resetQuery}
+              emptyText="暂无管理员会话"
+              filteredText="没有符合当前筛选条件的管理员会话"
+            />
+          ),
+        }}
         pagination={{
           current: query.pageNum,
           pageSize: query.pageSize,
@@ -560,11 +706,13 @@ const AdminSessionTab: React.FC = () => {
 
 const OauthBindingTab: React.FC = () => {
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [bindingProvider, setBindingProvider] = useState<string | null>(null);
+  const [unbindingId, setUnbindingId] = useState<number | null>(null);
   const [providers, setProviders] = useState<OauthProviderItem[]>([]);
   const [bindings, setBindings] = useState<OauthBindingItem[]>([]);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [providerRes, bindingRes] = await Promise.all([
@@ -573,16 +721,19 @@ const OauthBindingTab: React.FC = () => {
       ]);
       setProviders(Array.isArray(providerRes.data?.data) ? providerRes.data.data : []);
       setBindings(Array.isArray(bindingRes.data?.data) ? bindingRes.data.data : []);
+      setLoadError(null);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '加载第三方绑定失败');
+      setLoadError(getErrorMessage(error, '加载第三方绑定失败'));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  usePageActivation(() => { void fetchData(); });
 
   useEffect(() => {
     void fetchData();
-  }, []);
+  }, [fetchData]);
 
   const startBinding = async (provider: string) => {
     setBindingProvider(provider);
@@ -599,18 +750,21 @@ const OauthBindingTab: React.FC = () => {
       }
       window.location.href = authorizeUrl;
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '拉起绑定失败');
+      message.error(getErrorMessage(error, '拉起绑定失败'));
       setBindingProvider(null);
     }
   };
 
   const handleDelete = async (id: number) => {
+    setUnbindingId(id);
     try {
       await sessionApi.deleteOauthBinding(id);
       message.success('第三方账号已解绑');
       await fetchData();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '解绑失败');
+      message.error(getErrorMessage(error, '解绑失败'));
+    } finally {
+      setUnbindingId(null);
     }
   };
 
@@ -643,7 +797,7 @@ const OauthBindingTab: React.FC = () => {
     {
       title: '绑定账号',
       width: 220,
-      render: (_value, record) => record.binding?.nickname || '-',
+      render: (_value, record) => (record.binding?.nickname ? <CopyText text={record.binding.nickname} /> : '-'),
     },
     {
       title: '可用方式',
@@ -660,10 +814,20 @@ const OauthBindingTab: React.FC = () => {
       width: 180,
       fixed: 'right',
       render: (_value, record) => {
-        if (record.binding?.id) {
+        const bindingId = record.binding?.id;
+        if (bindingId) {
           return (
-            <Popconfirm title="确认解绑这个第三方账号吗？" onConfirm={() => void handleDelete(record.binding!.id)}>
-              <Button type="link" danger size="small">
+            <Popconfirm
+              title="确认解绑这个第三方账号？"
+              description="解绑后将无法使用该第三方账号登录，需要重新绑定。"
+              onConfirm={() => void handleDelete(bindingId)}
+            >
+              <Button
+                type="link"
+                danger
+                size="small"
+                loading={unbindingId === bindingId}
+              >
                 解绑
               </Button>
             </Popconfirm>
@@ -690,9 +854,19 @@ const OauthBindingTab: React.FC = () => {
 
   return (
     <div>
-      <Button icon={<ReloadOutlined />} onClick={() => void fetchData()} style={{ marginBottom: 16 }}>
+      <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void fetchData()} style={{ marginBottom: 16 }}>
         刷新
       </Button>
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="第三方绑定加载失败"
+          description={loadError}
+          action={reloadButton(loading, () => void fetchData())}
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
       <Table
         rowKey="provider"
         columns={columns}
@@ -701,6 +875,7 @@ const OauthBindingTab: React.FC = () => {
         size="small"
         scroll={{ x: 1120 }}
         pagination={false}
+        locale={{ emptyText: <ListEmpty emptyText="暂无可用的第三方登录提供商" /> }}
       />
     </div>
   );

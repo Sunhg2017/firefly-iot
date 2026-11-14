@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Suspense } from 'react';
 import {
   ApiOutlined,
@@ -11,8 +11,10 @@ import {
   PlusOutlined,
   ReloadOutlined,
   StopOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -23,7 +25,6 @@ import {
   Form,
   Input,
   Modal,
-  Popconfirm,
   Row,
   Select,
   Space,
@@ -40,10 +41,17 @@ import type { ColumnsType } from 'antd/es/table';
 import type { MenuProps } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import PageHeader from '../../components/PageHeader';
+import CopyText from '../../components/CopyText';
+import ListEmpty from '../../components/ListEmpty';
+import { TenantSelect } from '../../components/EntitySelect';
+import { useConfirmDiscard, useDirtyGuard } from '../../hooks/useDirtyGuard';
+import { usePageActivation } from '../../hooks/usePageActivation';
 import { tenantApi } from '../../services/api';
 import TenantOpenApiSubscriptionDrawer from './TenantOpenApiSubscriptionDrawer';
 import TenantWebhookDrawer from './TenantWebhookDrawer';
 import { generateRandomPassword } from '../../utils/password';
+import { getErrorMessage } from '../../utils/errors';
+import { formatDateTime } from '../../utils/datetime';
 
 const { RangePicker } = DatePicker;
 const TenantTrendChart = React.lazy(() => import('./TenantTrendChart'));
@@ -152,6 +160,16 @@ type TrendMetricKey =
   | 'videoChannelCount'
   | 'videoStorageBytes';
 
+interface StatusDialogState {
+  record: TenantItem;
+  target: 'ACTIVE' | 'SUSPENDED';
+}
+
+interface PasswordResult {
+  tenantName: string;
+  password: string;
+}
+
 const statusLabels: Record<TenantStatus, string> = {
   PENDING: '待处理',
   INITIALIZING: '初始化中',
@@ -191,11 +209,6 @@ const trendMetricOptions: Array<{ value: TrendMetricKey; label: string; isByte?:
 ];
 
 const defaultTrendRange = (): [Dayjs, Dayjs] => [dayjs().subtract(6, 'day'), dayjs()];
-
-const getErrorMessage = (error: unknown, fallback: string): string => {
-  if (error instanceof Error && error.message) return error.message;
-  return fallback;
-};
 
 const formatBytes = (value?: number): string => {
   if (value == null || Number.isNaN(value)) return '0 B';
@@ -260,6 +273,8 @@ const TenantList: React.FC = () => {
   const [usageLoading, setUsageLoading] = useState(false);
   const [spaceLoading, setSpaceLoading] = useState(false);
   const [spaceSubmitting, setSpaceSubmitting] = useState(false);
+  const [spaceDirty, setSpaceDirty] = useState(false);
+  const [editDirty, setEditDirty] = useState(false);
 
   const [items, setItems] = useState<TenantItem[]>([]);
   const [overview, setOverview] = useState<TenantOverview>({});
@@ -267,6 +282,7 @@ const TenantList: React.FC = () => {
   const [pageNum, setPageNum] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [filters, setFilters] = useState<TenantQueryValues>({});
+  const [reloadToken, setReloadToken] = useState(0);
 
   const [editingTenant, setEditingTenant] = useState<TenantItem | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -283,60 +299,125 @@ const TenantList: React.FC = () => {
   const [spaceMenuTree, setSpaceMenuTree] = useState<TenantSpaceMenuItem[]>([]);
   const [checkedSpaceKeys, setCheckedSpaceKeys] = useState<string[]>([]);
 
+  const [statusDialog, setStatusDialog] = useState<StatusDialogState | null>(null);
+  const [statusReason, setStatusReason] = useState('');
+  const [statusSubmitting, setStatusSubmitting] = useState(false);
+  const [deactivateDialog, setDeactivateDialog] = useState<TenantItem | null>(null);
+  const [deactivateConfirmCode, setDeactivateConfirmCode] = useState('');
+  const [deactivateSubmitting, setDeactivateSubmitting] = useState(false);
+  const [resetPasswordDialog, setResetPasswordDialog] = useState<TenantItem | null>(null);
+  const [resetPasswordSubmitting, setResetPasswordSubmitting] = useState(false);
+  const [passwordResult, setPasswordResult] = useState<PasswordResult | null>(null);
+
+  const confirmDiscard = useConfirmDiscard();
+  useDirtyGuard(editOpen && editDirty);
+  useDirtyGuard(spaceOpen && spaceDirty);
+  // 布局在切换页签时会广播激活事件；忽略与首次挂载同一轮触发的事件，避免刚打开页面就请求两次。
+  const activationReadyRef = useRef(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      activationReadyRef.current = true;
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  usePageActivation(() => {
+    if (!activationReadyRef.current) {
+      return;
+    }
+    setReloadToken((current) => current + 1);
+  });
+
   const tenantSpaceTreeData = useMemo(() => buildTenantSpaceTreeData(spaceMenuTree), [spaceMenuTree]);
   const allTenantSpaceKeys = useMemo(() => collectGrantableMenuKeys(spaceMenuTree), [spaceMenuTree]);
 
+  const tenantRequestIdRef = useRef(0);
+  const overviewRequestIdRef = useRef(0);
+
   const fetchTenants = async () => {
+    const requestId = tenantRequestIdRef.current + 1;
+    tenantRequestIdRef.current = requestId;
     setLoading(true);
     try {
       const res = await tenantApi.list({ pageNum, pageSize, ...filters });
+      if (requestId !== tenantRequestIdRef.current) {
+        return;
+      }
       const page = (res.data?.data ?? {}) as { records?: TenantItem[]; total?: number };
       setItems(page.records ?? []);
       setTotal(page.total ?? 0);
     } catch (error) {
+      if (requestId !== tenantRequestIdRef.current) {
+        return;
+      }
       message.error(getErrorMessage(error, '加载租户列表失败'));
     } finally {
-      setLoading(false);
+      if (requestId === tenantRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   const fetchOverview = async () => {
+    const requestId = overviewRequestIdRef.current + 1;
+    overviewRequestIdRef.current = requestId;
     setOverviewLoading(true);
     try {
       const res = await tenantApi.overview();
+      if (requestId !== overviewRequestIdRef.current) {
+        return;
+      }
       setOverview((res.data?.data ?? {}) as TenantOverview);
     } catch (error) {
+      if (requestId !== overviewRequestIdRef.current) {
+        return;
+      }
       message.error(getErrorMessage(error, '加载租户概览失败'));
     } finally {
-      setOverviewLoading(false);
+      if (requestId === overviewRequestIdRef.current) {
+        setOverviewLoading(false);
+      }
     }
   };
 
+  const usageRequestIdRef = useRef(0);
+  const usageTenantIdRef = useRef<number | null>(null);
+
   const fetchUsageData = async (tenant: TenantItem, range = trendRange) => {
+    const requestId = usageRequestIdRef.current + 1;
+    usageRequestIdRef.current = requestId;
     setUsageLoading(true);
     try {
       const [usageRes, usageDailyRes] = await Promise.all([
         tenantApi.getUsage(tenant.id),
         tenantApi.getUsageDaily(tenant.id, range[0].format('YYYY-MM-DD'), range[1].format('YYYY-MM-DD')),
       ]);
+      // 快速切换租户时旧请求可能后返回，丢弃过期结果避免展示错租户的数据。
+      if (requestId !== usageRequestIdRef.current) {
+        return;
+      }
       setUsage((usageRes.data?.data ?? null) as TenantUsage | null);
       setUsageDaily((usageDailyRes.data?.data ?? []) as TenantUsageDaily[]);
     } catch (error) {
+      if (requestId !== usageRequestIdRef.current) {
+        return;
+      }
       message.error(getErrorMessage(error, '加载租户用量失败'));
       setUsage(null);
       setUsageDaily([]);
     } finally {
-      setUsageLoading(false);
+      if (requestId === usageRequestIdRef.current) {
+        setUsageLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     void fetchTenants();
-  }, [pageNum, pageSize, filters]);
+  }, [pageNum, pageSize, filters, reloadToken]);
 
   useEffect(() => {
     void fetchOverview();
-  }, []);
+  }, [reloadToken]);
 
   useEffect(() => {
     if (!usageTenant && items.length > 0) {
@@ -345,27 +426,36 @@ const TenantList: React.FC = () => {
     }
     if (usageTenant) {
       const matched = items.find((item) => item.id === usageTenant.id);
-      if (matched && matched !== usageTenant) {
+      // 只同步发生变化的字段，避免把不同的对象引用写回 state 造成重复渲染。
+      if (matched && (matched.name !== usageTenant.name
+        || matched.code !== usageTenant.code
+        || matched.status !== usageTenant.status)) {
         setUsageTenant(matched);
       }
     }
   }, [items, usageTenant]);
 
   useEffect(() => {
-    if (!usageTenant) return;
+    if (!usageTenant) {
+      usageTenantIdRef.current = null;
+      return;
+    }
+    if (usageTenantIdRef.current !== usageTenant.id) {
+      // 切换租户时先清空旧数据，避免在新租户名称下短暂展示上一个租户的统计值。
+      usageTenantIdRef.current = usageTenant.id;
+      setUsage(null);
+      setUsageDaily([]);
+    }
     void fetchUsageData(usageTenant, trendRange);
-  }, [usageTenant?.id, trendRange]);
+  }, [usageTenant?.id, trendRange, reloadToken]);
 
-  const refreshAll = async () => {
-    await Promise.all([
-      fetchTenants(),
-      fetchOverview(),
-      usageTenant ? fetchUsageData(usageTenant) : Promise.resolve(),
-    ]);
+  const refreshAll = () => {
+    setReloadToken((current) => current + 1);
   };
 
   const openCreateModal = () => {
     setEditingTenant(null);
+    setEditDirty(false);
     editForm.resetFields();
     editForm.setFieldsValue({ isolationLevel: 'SHARED_RLS' });
     setEditOpen(true);
@@ -373,6 +463,7 @@ const TenantList: React.FC = () => {
 
   const openEditModal = (record: TenantItem) => {
     setEditingTenant(record);
+    setEditDirty(false);
     editForm.setFieldsValue({
       name: record.name,
       displayName: record.displayName,
@@ -383,6 +474,13 @@ const TenantList: React.FC = () => {
       contactEmail: record.contactEmail,
     });
     setEditOpen(true);
+  };
+
+  const closeEditDrawer = () => {
+    confirmDiscard(editDirty, () => {
+      setEditOpen(false);
+      setEditDirty(false);
+    });
   };
 
   const handleSaveTenant = async () => {
@@ -420,8 +518,9 @@ const TenantList: React.FC = () => {
         });
         message.success('租户创建成功');
       }
+      setEditDirty(false);
       setEditOpen(false);
-      await refreshAll();
+      refreshAll();
     } catch (error) {
       message.error(getErrorMessage(error, '保存租户失败'));
     } finally {
@@ -429,75 +528,97 @@ const TenantList: React.FC = () => {
     }
   };
 
-  const handleStatusChange = async (record: TenantItem, nextStatus: TenantStatus) => {
+  const openSuspendDialog = (record: TenantItem) => {
+    setStatusReason('');
+    setStatusDialog({ record, target: 'SUSPENDED' });
+  };
+
+  const openEnableDialog = (record: TenantItem) => {
+    setStatusReason('');
+    setStatusDialog({ record, target: 'ACTIVE' });
+  };
+
+  const handleConfirmStatus = async () => {
+    if (!statusDialog) {
+      return;
+    }
+    if (statusDialog.target === 'SUSPENDED' && !statusReason.trim()) {
+      message.warning('请填写暂停原因，便于租户和其他管理员了解影响原因');
+      return;
+    }
+    setStatusSubmitting(true);
     try {
-      await tenantApi.updateStatus(record.id, nextStatus);
-      message.success('租户状态已更新');
-      await refreshAll();
+      await tenantApi.updateStatus(
+        statusDialog.record.id,
+        statusDialog.target,
+        statusDialog.target === 'SUSPENDED' ? statusReason.trim() : undefined,
+      );
+      message.success(statusDialog.target === 'ACTIVE' ? '租户已恢复启用' : '租户已暂停');
+      setStatusDialog(null);
+      setStatusReason('');
+      refreshAll();
     } catch (error) {
+      // 失败时不关闭弹窗，避免用户误以为状态已经变更。
       message.error(getErrorMessage(error, '更新租户状态失败'));
+    } finally {
+      setStatusSubmitting(false);
     }
   };
 
-  const handleDeactivate = async (record: TenantItem) => {
+  const openDeactivateDialog = (record: TenantItem) => {
+    setDeactivateConfirmCode('');
+    setDeactivateDialog(record);
+  };
+
+  const handleConfirmDeactivate = async () => {
+    if (!deactivateDialog) {
+      return;
+    }
+    if (deactivateConfirmCode.trim() !== deactivateDialog.code) {
+      message.warning('输入的租户编码与当前租户不一致');
+      return;
+    }
+    setDeactivateSubmitting(true);
     try {
-      await tenantApi.deactivate(record.id);
+      await tenantApi.deactivate(deactivateDialog.id);
       message.success('已发起租户注销');
-      await refreshAll();
+      if (usageTenant?.id === deactivateDialog.id) {
+        // 被注销的租户不应继续出现在用量统计中。
+        setUsageTenant(null);
+        setUsage(null);
+        setUsageDaily([]);
+      }
+      setDeactivateDialog(null);
+      setDeactivateConfirmCode('');
+      refreshAll();
     } catch (error) {
       message.error(getErrorMessage(error, '注销租户失败'));
+    } finally {
+      setDeactivateSubmitting(false);
     }
   };
 
-  const handleResetAdminPassword = (record: TenantItem) => {
-    Modal.confirm({
-      title: '确认重置超级管理员密码',
-      content: `将为租户 ${record.name} 的超级管理员生成新的随机密码，并立即使旧密码失效。`,
-      okText: '重置密码',
-      cancelText: '取消',
-      onOk: async () => {
-        const newPassword = generateRandomPassword();
-        try {
-          await tenantApi.resetAdminPassword(record.id, newPassword);
-          Modal.success({
-            title: '超级管理员密码已重置',
-            okText: '我知道了',
-            content: (
-              <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                <Typography.Text>
-                  租户 <Typography.Text strong>{record.name}</Typography.Text> 的超级管理员新密码如下，请及时通知对方登录后修改。
-                </Typography.Text>
-                <Typography.Paragraph
-                  copyable={{ text: newPassword }}
-                  style={{
-                    marginBottom: 0,
-                    padding: '12px 16px',
-                    borderRadius: 8,
-                    background: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                    fontFamily: 'Consolas, Monaco, monospace',
-                    fontSize: 16,
-                  }}
-                >
-                  {newPassword}
-                </Typography.Paragraph>
-                <Typography.Text type="secondary">
-                  新密码只会展示这一次。
-                </Typography.Text>
-              </Space>
-            ),
-          });
-        } catch (error) {
-          message.error(getErrorMessage(error, '重置超级管理员密码失败'));
-          throw error;
-        }
-      },
-    });
+  const handleConfirmResetPassword = async () => {
+    if (!resetPasswordDialog) {
+      return;
+    }
+    const newPassword = generateRandomPassword();
+    setResetPasswordSubmitting(true);
+    try {
+      await tenantApi.resetAdminPassword(resetPasswordDialog.id, newPassword);
+      setPasswordResult({ tenantName: resetPasswordDialog.name, password: newPassword });
+      setResetPasswordDialog(null);
+    } catch (error) {
+      message.error(getErrorMessage(error, '重置超级管理员密码失败'));
+    } finally {
+      setResetPasswordSubmitting(false);
+    }
   };
 
   const openSpaceModal = async (record: TenantItem) => {
     setCurrentTenant(record);
     setSpaceLoading(true);
+    setSpaceDirty(false);
     try {
       const res = await tenantApi.getSpaceMenus(record.id);
       const data = (res.data?.data ?? {}) as TenantSpaceAuthorization;
@@ -509,6 +630,13 @@ const TenantList: React.FC = () => {
     } finally {
       setSpaceLoading(false);
     }
+  };
+
+  const closeSpaceDrawer = () => {
+    confirmDiscard(spaceDirty, () => {
+      setSpaceOpen(false);
+      setSpaceDirty(false);
+    });
   };
 
   const openWebhookDrawer = (record: TenantItem) => {
@@ -532,6 +660,7 @@ const TenantList: React.FC = () => {
       setSpaceSubmitting(true);
       await tenantApi.updateSpaceMenus(currentTenant.id, { menuKeys: checkedSpaceKeys });
       message.success('租户空间授权已更新');
+      setSpaceDirty(false);
       setSpaceOpen(false);
     } catch (error) {
       message.error(getErrorMessage(error, '保存租户空间授权失败'));
@@ -552,18 +681,44 @@ const TenantList: React.FC = () => {
     setFilters({});
   };
 
+  const handleUsageTenantChange = async (tenantId?: number) => {
+    if (!tenantId) {
+      setUsageTenant(null);
+      return;
+    }
+    const localTenant = items.find((item) => item.id === tenantId);
+    if (localTenant) {
+      setUsageTenant(localTenant);
+      return;
+    }
+    try {
+      const res = await tenantApi.get(tenantId);
+      const detail = res.data?.data as TenantItem | undefined;
+      if (detail) {
+        setUsageTenant({
+          id: detail.id,
+          name: detail.name,
+          code: detail.code,
+          status: detail.status,
+        });
+      }
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载租户信息失败，请重试'));
+    }
+  };
+
   const buildMoreActionItems = (record: TenantItem): MenuProps['items'] => {
-    const items: MenuProps['items'] = [
+    const actionItems: MenuProps['items'] = [
       {
         key: 'reset-admin-password',
         icon: <KeyOutlined />,
         label: '重置超管密码',
-        onClick: () => void handleResetAdminPassword(record),
+        onClick: () => setResetPasswordDialog(record),
       },
     ];
 
     if (!isSystemOpsTenant(record)) {
-      items.push(
+      actionItems.push(
         {
           key: 'open-api-subscription',
           icon: <ApiOutlined />,
@@ -585,33 +740,27 @@ const TenantList: React.FC = () => {
       );
     }
 
-    items.push(
+    actionItems.push(
       { type: 'divider' },
       {
         key: 'deactivate',
         icon: <StopOutlined />,
         danger: true,
         label: '注销租户',
-        onClick: () => {
-          Modal.confirm({
-            title: '确认注销该租户？',
-            content: `租户 ${record.name} 注销后将进入注销流程，请谨慎操作。`,
-            okText: '确认注销',
-            cancelText: '取消',
-            okButtonProps: { danger: true },
-            onOk: async () => {
-              await handleDeactivate(record);
-            },
-          });
-        },
+        onClick: () => openDeactivateDialog(record),
       },
     );
 
-    return items;
+    return actionItems;
   };
 
   const columns: ColumnsType<TenantItem> = [
-      { title: '编码', dataIndex: 'code', width: 160 },
+      {
+        title: '编码',
+        dataIndex: 'code',
+        width: 190,
+        render: (value: string) => <CopyText text={value} ellipsis />,
+      },
       { title: '名称', dataIndex: 'name', width: 180 },
       { title: '展示名', dataIndex: 'displayName', width: 180, render: (value?: string) => value || '-' },
       {
@@ -629,7 +778,12 @@ const TenantList: React.FC = () => {
       { title: '联系人', dataIndex: 'contactName', width: 120, render: (value?: string) => value || '-' },
       { title: '联系电话', dataIndex: 'contactPhone', width: 140, render: (value?: string) => value || '-' },
       { title: '联系邮箱', dataIndex: 'contactEmail', width: 200, render: (value?: string) => value || '-' },
-      { title: '创建时间', dataIndex: 'createdAt', width: 180 },
+      {
+        title: '创建时间',
+        dataIndex: 'createdAt',
+        width: 180,
+        render: (value?: string) => (value ? formatDateTime(value) : '-'),
+      },
       {
         title: '操作',
         key: 'action',
@@ -640,13 +794,17 @@ const TenantList: React.FC = () => {
             <Button type="link" size="small" icon={<BarChartOutlined />} onClick={() => setUsageTenant(record)}>用量</Button>
             <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEditModal(record)}>编辑</Button>
             {record.status === 'SUSPENDED' ? (
-              <Popconfirm title="确认恢复该租户？" onConfirm={() => void handleStatusChange(record, 'ACTIVE')}>
-                <Button type="link" size="small">启用</Button>
-              </Popconfirm>
+              <Button type="link" size="small" onClick={() => openEnableDialog(record)}>启用</Button>
             ) : (
-              <Popconfirm title="确认暂停该租户？" onConfirm={() => void handleStatusChange(record, 'SUSPENDED')}>
-                <Button type="link" size="small" icon={<StopOutlined />}>暂停</Button>
-              </Popconfirm>
+              <Button
+                type="link"
+                size="small"
+                icon={<StopOutlined />}
+                disabled={record.status === 'DELETED' || record.status === 'DEACTIVATING'}
+                onClick={() => openSuspendDialog(record)}
+              >
+                暂停
+              </Button>
             )}
             <Dropdown menu={{ items: buildMoreActionItems(record) }} trigger={['click']}>
               <Button type="link" size="small" icon={<MoreOutlined />}>
@@ -660,7 +818,10 @@ const TenantList: React.FC = () => {
     ];
 
   const trendChartData = useMemo(
-    () => usageDaily.map((item) => ({ date: item.date, value: Number(item[trendMetric] ?? 0) })),
+    // 趋势图必须按日期升序，否则后端返回倒序时会画出折返的折线。
+    () => [...usageDaily]
+      .sort((left, right) => left.date.localeCompare(right.date))
+      .map((item) => ({ date: item.date, value: Number(item[trendMetric] ?? 0) })),
     [trendMetric, usageDaily],
   );
 
@@ -680,17 +841,41 @@ const TenantList: React.FC = () => {
     { title: '视频存储', value: formatBytes(usage?.videoStorageBytes) },
   ];
 
+  const hasQueryFilters = Boolean(filters.keyword || filters.status);
+  const usagePinnedLabel = usageTenant
+    ? `${usageTenant.name}${usageTenant.code ? `（${usageTenant.code}）` : ''}`
+    : undefined;
+
   return (
     <div>
       <PageHeader
         title="租户管理"
-        extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>新建租户</Button>}
+        extra={(
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={refreshAll}>
+              刷新
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>新建租户</Button>
+          </Space>
+        )}
       />
 
       <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={8}><Card loading={overviewLoading}><Statistic title="租户总数" value={overview.totalTenants ?? 0} /></Card></Col>
-        <Col xs={24} md={8}><Card loading={overviewLoading}><Statistic title="启用租户" value={overview.activeTenants ?? 0} /></Card></Col>
-        <Col xs={24} md={8}><Card loading={overviewLoading}><Statistic title="暂停租户" value={overview.suspendedTenants ?? 0} /></Card></Col>
+        <Col xs={24} md={8}>
+          <Card loading={overviewLoading}>
+            <Statistic title="租户总数（全局）" value={overview.totalTenants ?? 0} />
+          </Card>
+        </Col>
+        <Col xs={24} md={8}>
+          <Card loading={overviewLoading}>
+            <Statistic title="启用租户（全局）" value={overview.activeTenants ?? 0} />
+          </Card>
+        </Col>
+        <Col xs={24} md={8}>
+          <Card loading={overviewLoading}>
+            <Statistic title="暂停租户（全局）" value={overview.suspendedTenants ?? 0} />
+          </Card>
+        </Col>
       </Row>
 
       <Card>
@@ -706,8 +891,28 @@ const TenantList: React.FC = () => {
           loading={loading}
           dataSource={items}
           columns={columns}
-          scroll={{ x: 1760 }}
-          pagination={{ current: pageNum, pageSize, total, showSizeChanger: true, onChange: (nextPage, nextPageSize) => { setPageNum(nextPage); setPageSize(nextPageSize); } }}
+          scroll={{ x: 1790 }}
+          locale={{
+            emptyText: (
+              <ListEmpty
+                hasFilters={hasQueryFilters}
+                emptyText="暂无租户，请先新建租户"
+                filteredText="没有符合当前筛选条件的租户"
+                onClearFilters={handleReset}
+              />
+            ),
+          }}
+          pagination={{
+            current: pageNum,
+            pageSize,
+            total,
+            showSizeChanger: true,
+            showTotal: (count) => `共 ${count} 条`,
+            onChange: (nextPage, nextPageSize) => {
+              setPageNum(nextPage);
+              setPageSize(nextPageSize);
+            },
+          }}
         />
       </Card>
 
@@ -716,12 +921,12 @@ const TenantList: React.FC = () => {
         title="用量统计 / 趋势图"
         extra={
           <Space wrap>
-            <Select
+            <TenantSelect
               value={usageTenant?.id}
-              placeholder="选择租户"
-              style={{ width: 220 }}
-              options={items.map((item) => ({ value: item.id, label: `${item.name} (${item.code})` }))}
-              onChange={(tenantId) => setUsageTenant(items.find((item) => item.id === tenantId) ?? null)}
+              pinnedLabel={usagePinnedLabel}
+              placeholder="输入租户名称或编码搜索"
+              style={{ width: 260 }}
+              onChange={(tenantId) => void handleUsageTenantChange(tenantId)}
             />
             <Select
               value={trendMetric}
@@ -741,7 +946,7 @@ const TenantList: React.FC = () => {
         }
       >
         {!usageTenant ? (
-          <Empty description="暂无可查看的租户" />
+          <Empty description="请选择要查看用量的租户" />
         ) : (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -750,7 +955,9 @@ const TenantList: React.FC = () => {
                 <Tag>{usageTenant.code}</Tag>
                 {usageTenant.status && <Tag color={statusColors[usageTenant.status]}>{statusLabels[usageTenant.status]}</Tag>}
               </Space>
-              <Typography.Text type="secondary">最近更新时间：{usage?.updatedAt || '-'}</Typography.Text>
+              <Typography.Text type="secondary">
+                最近更新时间：{usage?.updatedAt ? formatDateTime(usage.updatedAt) : '-'}
+              </Typography.Text>
             </div>
 
             <Row gutter={[16, 16]}>
@@ -790,19 +997,19 @@ const TenantList: React.FC = () => {
         destroyOnClose
         title={editingTenant ? '编辑租户' : '新建租户'}
         open={editOpen}
-        onClose={() => setEditOpen(false)}
+        onClose={closeEditDrawer}
         width={920}
         styles={{ body: { paddingBottom: 24 } }}
         footer={
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button onClick={() => setEditOpen(false)}>取消</Button>
+            <Button onClick={closeEditDrawer}>取消</Button>
             <Button type="primary" loading={submitting} onClick={() => void handleSaveTenant()}>
               {editingTenant ? '保存修改' : '创建租户'}
             </Button>
           </Space>
         }
       >
-        <Form form={editForm} layout="vertical">
+        <Form form={editForm} layout="vertical" onValuesChange={() => setEditDirty(true)}>
           <Row gutter={16}>
             {!editingTenant && (
               <>
@@ -845,12 +1052,12 @@ const TenantList: React.FC = () => {
         destroyOnClose
         title={`空间授权${currentTenant ? ` - ${currentTenant.name}` : ''}`}
         open={spaceOpen}
-        onClose={() => setSpaceOpen(false)}
+        onClose={closeSpaceDrawer}
         width={860}
         styles={{ body: { paddingBottom: 24 } }}
         footer={
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button onClick={() => setSpaceOpen(false)}>取消</Button>
+            <Button onClick={closeSpaceDrawer}>取消</Button>
             <Button type="primary" loading={spaceSubmitting} onClick={() => void handleSaveSpaceMenus()}>
               保存授权
             </Button>
@@ -872,8 +1079,24 @@ const TenantList: React.FC = () => {
               extra={(
                 <Space size={8}>
                   <Typography.Text type="secondary">已选 {checkedSpaceKeys.length} / 全部 {allTenantSpaceKeys.length} 项</Typography.Text>
-                  <Button size="small" onClick={() => setCheckedSpaceKeys(allTenantSpaceKeys)}>全选</Button>
-                  <Button size="small" onClick={() => setCheckedSpaceKeys([])}>清空</Button>
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      setCheckedSpaceKeys(allTenantSpaceKeys);
+                      setSpaceDirty(true);
+                    }}
+                  >
+                    全选
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      setCheckedSpaceKeys([]);
+                      setSpaceDirty(true);
+                    }}
+                  >
+                    清空
+                  </Button>
                 </Space>
               )}
             >
@@ -890,12 +1113,195 @@ const TenantList: React.FC = () => {
                     ? (checkedKeysValue as string[])
                     : (checkedKeysValue.checked as string[]);
                   setCheckedSpaceKeys(nextKeys.filter((key) => allTenantSpaceKeys.includes(key)));
+                  setSpaceDirty(true);
                 }}
               />
             </Card>
           </Space>
         )}
       </Drawer>
+
+      <Modal
+        open={Boolean(statusDialog)}
+        title={statusDialog?.target === 'ACTIVE' ? '启用租户' : '暂停租户'}
+        okText={statusDialog?.target === 'ACTIVE' ? '确认启用' : '确认暂停'}
+        cancelText="取消"
+        okButtonProps={{ danger: statusDialog?.target === 'SUSPENDED' }}
+        confirmLoading={statusSubmitting}
+        maskClosable={!statusSubmitting}
+        onCancel={() => {
+          if (!statusSubmitting) {
+            setStatusDialog(null);
+            setStatusReason('');
+          }
+        }}
+        onOk={() => void handleConfirmStatus()}
+        destroyOnClose
+      >
+        {statusDialog ? (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Typography.Text>
+              租户：<Typography.Text strong>{statusDialog.record.name}</Typography.Text>
+              （{statusDialog.record.code}）
+            </Typography.Text>
+            {statusDialog.target === 'SUSPENDED' ? (
+              <>
+                <Alert
+                  type="warning"
+                  showIcon
+                  icon={<WarningOutlined />}
+                  message="暂停后的影响"
+                  description={(
+                    <Space direction="vertical" size={4}>
+                      <span>该租户下的全部用户将无法登录，租户 API 调用与设备接入会被拒绝。</span>
+                      <span>恢复方式：在租户列表点击“启用”，租户状态恢复后用户即可重新登录。</span>
+                    </Space>
+                  )}
+                />
+                <div>
+                  <Typography.Text>暂停原因（必填）</Typography.Text>
+                  <Input.TextArea
+                    value={statusReason}
+                    maxLength={200}
+                    showCount
+                    rows={3}
+                    placeholder="例如：客户欠费、合同到期或安全事件处置"
+                    onChange={(event) => setStatusReason(event.target.value)}
+                    style={{ marginTop: 8 }}
+                  />
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    原因会记录在租户暂停信息中，供后续恢复和审计时参考。
+                  </Typography.Text>
+                </div>
+              </>
+            ) : (
+              <>
+                <Alert
+                  type="info"
+                  showIcon
+                  message="启用后的影响"
+                  description="启用后该租户的全部用户可重新登录，租户下接口调用与设备接入恢复正常。"
+                />
+                {statusDialog.record.status === 'SUSPENDED' ? (
+                  <Typography.Text type="secondary">
+                    当前租户为暂停状态，启用后会清除暂停原因和暂停时间。
+                  </Typography.Text>
+                ) : null}
+              </>
+            )}
+          </Space>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(deactivateDialog)}
+        title="注销租户"
+        okText="确认注销"
+        cancelText="取消"
+        okButtonProps={{ danger: true }}
+        confirmLoading={deactivateSubmitting}
+        maskClosable={!deactivateSubmitting}
+        onCancel={() => {
+          if (!deactivateSubmitting) {
+            setDeactivateDialog(null);
+            setDeactivateConfirmCode('');
+          }
+        }}
+        onOk={() => void handleConfirmDeactivate()}
+        destroyOnClose
+      >
+        {deactivateDialog ? (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Alert
+              type="error"
+              showIcon
+              message="注销是不可恢复的高危操作"
+              description={(
+                <Space direction="vertical" size={4}>
+                  <span>注销后该租户的全部用户将立即无法登录。</span>
+                  <span>租户会退出租户列表并进入注销流程，无法在控制台自行恢复；如需恢复必须联系平台运维处理。</span>
+                  <span>租户下的业务数据按平台数据保留策略处理，建议先完成数据备份或导出。</span>
+                </Space>
+              )}
+            />
+            <div>
+              <Typography.Text>
+                请输入租户编码 <Typography.Text code>{deactivateDialog.code}</Typography.Text> 以再次确认：
+              </Typography.Text>
+              <Input
+                value={deactivateConfirmCode}
+                placeholder={deactivateDialog.code}
+                onChange={(event) => setDeactivateConfirmCode(event.target.value)}
+                style={{ marginTop: 8 }}
+                autoComplete="off"
+              />
+            </div>
+          </Space>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(resetPasswordDialog)}
+        title="重置租户超级管理员密码"
+        okText="重置密码"
+        cancelText="取消"
+        confirmLoading={resetPasswordSubmitting}
+        maskClosable={!resetPasswordSubmitting}
+        onCancel={() => {
+          if (!resetPasswordSubmitting) {
+            setResetPasswordDialog(null);
+          }
+        }}
+        onOk={() => void handleConfirmResetPassword()}
+        destroyOnClose
+      >
+        {resetPasswordDialog ? (
+          <Space direction="vertical" size={8}>
+            <Typography.Text>
+              将为租户 <Typography.Text strong>{resetPasswordDialog.name}</Typography.Text> 的超级管理员生成新的随机密码。
+            </Typography.Text>
+            <Typography.Text>重置后该超级管理员的旧密码立即失效，需要使用新密码重新登录。</Typography.Text>
+            <Typography.Text type="secondary">新密码只展示一次，请确保可以复制并转交给租户。</Typography.Text>
+          </Space>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(passwordResult)}
+        title="超级管理员密码已重置"
+        okText="我已保存，关闭"
+        maskClosable={false}
+        keyboard={false}
+        closable={false}
+        onOk={() => setPasswordResult(null)}
+        onCancel={() => setPasswordResult(null)}
+        destroyOnClose
+      >
+        {passwordResult ? (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Typography.Text>
+              租户 <Typography.Text strong>{passwordResult.tenantName}</Typography.Text> 的超级管理员新密码如下，请及时通知对方登录后修改。
+            </Typography.Text>
+            <Typography.Paragraph
+              copyable={{ text: passwordResult.password, tooltips: ['复制密码', '已复制'] }}
+              style={{
+                marginBottom: 0,
+                padding: '12px 16px',
+                borderRadius: 8,
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                fontFamily: 'Consolas, Monaco, monospace',
+                fontSize: 16,
+              }}
+            >
+              {passwordResult.password}
+            </Typography.Paragraph>
+            <Typography.Text type="secondary">
+              关闭弹窗后无法再次查看该密码，请先复制或妥善记录后再关闭。
+            </Typography.Text>
+          </Space>
+        ) : null}
+      </Modal>
 
       <TenantWebhookDrawer
         open={webhookOpen}
@@ -907,6 +1313,7 @@ const TenantList: React.FC = () => {
         open={openApiOpen}
         tenant={currentTenant ? { id: currentTenant.id, name: currentTenant.name, code: currentTenant.code } : null}
         onClose={() => setOpenApiOpen(false)}
+        onSaved={refreshAll}
       />
     </div>
   );

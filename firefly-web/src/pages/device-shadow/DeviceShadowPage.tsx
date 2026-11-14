@@ -25,10 +25,14 @@ import {
   SearchOutlined,
 } from '@ant-design/icons';
 import CodeEditorField from '../../components/CodeEditorField';
+import CopyText from '../../components/CopyText';
 import PageHeader from '../../components/PageHeader';
 import ShadowPanelFullscreenDrawer from '../../components/ShadowPanelFullscreenDrawer';
 import { deviceApi, productApi } from '../../services/api';
 import { buildDesiredTemplateFromThingModel } from '../../utils/deviceShadowThingModel';
+import { formatDateTime } from '../../utils/datetime';
+import { getErrorMessage } from '../../utils/errors';
+import { usePageActivation } from '../../hooks/usePageActivation';
 
 const { Paragraph } = Typography;
 
@@ -125,6 +129,14 @@ const formatSelectedDeviceLabel = (device: DeviceOptionRecord) => {
   return `${display}（${value}）`;
 };
 
+const mergeDeviceOptions = (current: DeviceOption[], incoming: DeviceOption[]) => {
+  const mapped = new Map<number, DeviceOption>();
+  current.forEach((item) => mapped.set(item.value, item));
+  // 搜索时保留已选设备，避免回显退化成设备主键。
+  incoming.forEach((item) => mapped.set(item.value, item));
+  return Array.from(mapped.values());
+};
+
 const renderDeviceOption = (device: DeviceOptionRecord) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
     <span style={{ fontWeight: 600, color: '#0f172a' }}>{device.nickname || device.deviceName}</span>
@@ -141,7 +153,7 @@ const readOnlyTitle = (title: string) => (
   </Space>
 );
 
-const desiredEditorDescription = <>属性值设为 <code>null</code> 可删除对应属性。</>;
+const desiredEditorDescription = <>属性值设为 <code>null</code> 可删除对应属性；保存时按属性合并到现有期望值，不会整体覆盖未列出的属性。</>;
 const reportedEditorDescription = null;
 const deltaEditorDescription = null;
 const metadataEditorDescription = null;
@@ -153,8 +165,12 @@ const DeviceShadowPage: React.FC = () => {
   const [shadow, setShadow] = useState<ShadowData | null>(null);
   const [delta, setDelta] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
+  const [shadowError, setShadowError] = useState<string | null>(null);
   const [editingDesired, setEditingDesired] = useState(false);
   const [prefillingDesired, setPrefillingDesired] = useState(false);
+  const [savingDesired, setSavingDesired] = useState(false);
+  const [clearingDesired, setClearingDesired] = useState(false);
+  const [deletingShadow, setDeletingShadow] = useState(false);
   const [desiredText, setDesiredText] = useState('{}');
   const [thingModel, setThingModel] = useState<unknown>(null);
   const [expandedPanelKey, setExpandedPanelKey] = useState<ShadowPanelKey | null>(null);
@@ -181,16 +197,21 @@ const DeviceShadowPage: React.FC = () => {
     setEditingDesired(false);
   };
 
-  const refreshDeltaForDevice = async (deviceId: number, warningMessage?: string) => {
+  const refreshDeltaForDevice = async (deviceId: number, warningMessage: string) => {
     try {
       const deltaRes = await deviceApi.getDelta(deviceId);
       setDelta((deltaRes.data.data || {}) as Record<string, unknown>);
-    } catch {
-      if (warningMessage) {
-        message.warning(warningMessage);
-      }
+    } catch (error) {
+      message.warning(getErrorMessage(error, warningMessage));
     }
   };
+
+  // 统一各 JSON 面板的复制入口，长内容不需要用户手动选中。
+  const renderCopyAction = (text: string) => (
+    <CopyText text={text}>
+      <span style={{ fontSize: 12, color: '#64748b' }}>复制 JSON</span>
+    </CopyText>
+  );
 
   const renderExpandTrigger = (panelKey: ShadowPanelKey) => (
     <Button size="small" icon={<FullscreenOutlined />} onClick={() => setExpandedPanelKey(panelKey)}>
@@ -206,15 +227,16 @@ const DeviceShadowPage: React.FC = () => {
         keyword: keyword || undefined,
       });
       const records = (res.data.data?.records || []) as DeviceOptionRecord[];
-      setDeviceOptions(
+      setDeviceOptions((current) => mergeDeviceOptions(
+        current,
         records.map((item) => ({
           value: item.id,
           label: formatSelectedDeviceLabel(item),
           meta: item,
         })),
-      );
-    } catch {
-      message.error('加载设备选项失败');
+      ));
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载设备选项失败'));
     }
   };
 
@@ -231,10 +253,12 @@ const DeviceShadowPage: React.FC = () => {
     }
 
     setLoading(true);
+    setShadowError(null);
     try {
       const [shadowRes, deltaRes, thingModelRes] = await Promise.all([
         deviceApi.getShadow(targetDeviceId),
         deviceApi.getDelta(targetDeviceId),
+        // 物模型只用于生成本地编辑模板，加载失败不应阻断影子主数据展示。
         targetDevice?.meta.productId
           ? productApi.getThingModel(targetDevice.meta.productId).catch(() => null)
           : Promise.resolve(null),
@@ -244,12 +268,20 @@ const DeviceShadowPage: React.FC = () => {
       setDelta((deltaRes.data.data || {}) as Record<string, unknown>);
       // Cache the latest thing model so desired editing and drawer expansion share one source of truth.
       setThingModel(thingModelRes?.data?.data ?? null);
-    } catch {
-      message.error('加载设备影子失败');
+    } catch (error) {
+      setShadow(null);
+      setDelta(null);
+      setShadowError(getErrorMessage(error, '加载设备影子失败'));
     } finally {
       setLoading(false);
     }
   };
+
+  usePageActivation(() => {
+    if (selectedDeviceId) {
+      void fetchShadow(selectedDeviceId);
+    }
+  });
 
   const loadThingModelForEdit = async () => {
     const targetProductId = selectedDevice?.meta.productId;
@@ -261,12 +293,13 @@ const DeviceShadowPage: React.FC = () => {
       const payload = res.data.data ?? null;
       setThingModel(payload);
       return payload;
-    } catch {
+    } catch (error) {
+      const detail = getErrorMessage(error, '加载产品物模型失败');
       if (thingModel) {
-        message.warning('最新物模型加载失败，已按当前缓存的物模型生成 desired 草稿');
+        message.warning(`${detail}，已按当前缓存的物模型生成 desired 草稿`);
         return thingModel;
       }
-      message.warning('加载产品物模型失败，已按当前 desired 打开编辑器');
+      message.warning(`${detail}，已按当前 desired 打开编辑器`);
       return null;
     }
   };
@@ -290,50 +323,70 @@ const DeviceShadowPage: React.FC = () => {
     if (!selectedDeviceId) {
       return;
     }
+    if (savingDesired) {
+      return;
+    }
 
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(desiredText);
-      const updateRes = await deviceApi.updateDesired(selectedDeviceId, parsed);
+      parsed = JSON.parse(desiredText);
+    } catch (error) {
+      message.error(error instanceof SyntaxError ? 'Desired JSON 格式错误，请修正后再保存' : getErrorMessage(error, 'Desired JSON 解析失败'));
+      return;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      message.error('Desired 必须是 JSON 对象');
+      return;
+    }
+
+    setSavingDesired(true);
+    try {
+      const updateRes = await deviceApi.updateDesired(selectedDeviceId, parsed as Record<string, unknown>);
       applyShadowSnapshot(updateRes.data.data as ShadowData);
       message.success('期望值已更新');
       await refreshDeltaForDevice(selectedDeviceId, '期望值已更新，但差异刷新失败，请手动点击刷新');
-    } catch (error: unknown) {
-      if (error instanceof SyntaxError) {
-        message.error('Desired JSON 格式错误');
-        return;
-      }
-      message.error('更新期望值失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '更新期望值失败'));
+    } finally {
+      setSavingDesired(false);
     }
   };
 
   const handleClearDesired = async () => {
-    if (!selectedDeviceId) {
+    if (!selectedDeviceId || clearingDesired) {
       return;
     }
+    setClearingDesired(true);
     try {
       const clearRes = await deviceApi.clearDesired(selectedDeviceId);
       applyShadowSnapshot(clearRes.data.data as ShadowData);
       setDelta({});
       message.success('期望值已清空');
-    } catch {
-      message.error('清空期望值失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '清空期望值失败'));
+    } finally {
+      setClearingDesired(false);
     }
   };
 
   const handleDeleteShadow = async () => {
-    if (!selectedDeviceId) {
+    if (!selectedDeviceId || deletingShadow) {
       return;
     }
+    setDeletingShadow(true);
     try {
       await deviceApi.deleteShadow(selectedDeviceId);
       message.success('设备影子已删除');
       setShadow(null);
       setDelta(null);
+      setShadowError(null);
       setDesiredText('{}');
       setEditingDesired(false);
       closeExpandedPanel();
-    } catch {
-      message.error('删除设备影子失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '删除设备影子失败'));
+    } finally {
+      setDeletingShadow(false);
     }
   };
 
@@ -373,7 +426,8 @@ const DeviceShadowPage: React.FC = () => {
   );
 
   const renderDesiredActions = (includeExpand = false) => (
-    <Space size={8}>
+    <Space size={8} wrap>
+      {renderCopyAction(desiredText)}
       {!editingDesired ? (
         <Button
           size="small"
@@ -385,11 +439,18 @@ const DeviceShadowPage: React.FC = () => {
         </Button>
       ) : (
         <>
-          <Button size="small" type="primary" icon={<SaveOutlined />} onClick={() => void handleSaveDesired()}>
+          <Button
+            size="small"
+            type="primary"
+            icon={<SaveOutlined />}
+            loading={savingDesired}
+            onClick={() => void handleSaveDesired()}
+          >
             保存
           </Button>
           <Button
             size="small"
+            disabled={savingDesired}
             onClick={() => {
               setEditingDesired(false);
               setDesiredText(formatJson(shadow?.desired));
@@ -401,10 +462,13 @@ const DeviceShadowPage: React.FC = () => {
       )}
       <Popconfirm
         title="确认清空 desired 吗？"
-        description="清空后设备将不再有待同步的目标状态。"
-        onConfirm={() => void handleClearDesired()}
+        description="清空后设备将不再有待同步的目标状态，此操作不可撤销；设备已上报的实际状态不会改变。"
+        okText="确认清空"
+        okButtonProps={{ danger: true }}
+        cancelText="取消"
+        onConfirm={() => handleClearDesired()}
       >
-        <Button size="small" danger icon={<ClearOutlined />}>
+        <Button size="small" danger icon={<ClearOutlined />} loading={clearingDesired}>
           清空
         </Button>
       </Popconfirm>
@@ -466,12 +530,21 @@ const DeviceShadowPage: React.FC = () => {
     if (expandedPanelKey === 'desired') {
       return renderDesiredActions(false);
     }
+    if (expandedPanelKey === 'reported') {
+      return renderCopyAction(formatJson(shadow?.reported));
+    }
     if (expandedPanelKey === 'delta') {
       return (
-        <Tag color={deltaCount > 0 ? 'warning' : 'success'} style={{ marginInlineEnd: 0 }}>
-          {deltaCount > 0 ? `${deltaCount} 项待同步` : '已同步'}
-        </Tag>
+        <Space size={8}>
+          {renderCopyAction(formatJson(delta || {}))}
+          <Tag color={deltaCount > 0 ? 'warning' : 'success'} style={{ marginInlineEnd: 0 }}>
+            {deltaCount > 0 ? `${deltaCount} 项待同步` : '已同步'}
+          </Tag>
+        </Space>
       );
+    }
+    if (expandedPanelKey === 'metadata') {
+      return renderCopyAction(formatJson(shadow?.metadata));
     }
     return null;
   };
@@ -556,12 +629,15 @@ const DeviceShadowPage: React.FC = () => {
               onChange={(value) => {
                 setSelectedDeviceId(value);
                 closeExpandedPanel();
-                if (!value) {
-                  setShadow(null);
-                  setDelta(null);
-                  setDesiredText('{}');
-                  setThingModel(null);
-                  setEditingDesired(false);
+                // 切换设备时先清空上一台设备的影子数据，避免旧数据挂在新设备下展示。
+                setShadow(null);
+                setDelta(null);
+                setDesiredText('{}');
+                setThingModel(null);
+                setEditingDesired(false);
+                setShadowError(null);
+                if (value) {
+                  void fetchShadow(value);
                 }
               }}
               notFoundContent={deviceSearchText ? '未找到匹配设备' : '暂无设备'}
@@ -569,16 +645,19 @@ const DeviceShadowPage: React.FC = () => {
             <Button type="primary" icon={<SearchOutlined />} loading={loading} onClick={() => void fetchShadow()}>
               查询影子
             </Button>
-            <Button icon={<ReloadOutlined />} disabled={!selectedDeviceId} onClick={() => void fetchShadow()}>
+            <Button icon={<ReloadOutlined />} disabled={!selectedDeviceId} loading={loading} onClick={() => void fetchShadow()}>
               刷新
             </Button>
             <Popconfirm
               title="确认删除当前设备影子吗？"
-              description="删除后 desired、reported、metadata 会一起清空。"
-              onConfirm={() => void handleDeleteShadow()}
+              description="删除后 desired、reported、metadata 会一起清空且不可恢复；设备下次上报会重新生成 reported，但期望值需要重新设置。"
+              okText="确认删除"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+              onConfirm={() => handleDeleteShadow()}
               disabled={!selectedDeviceId}
             >
-              <Button danger icon={<DeleteOutlined />} disabled={!selectedDeviceId}>
+              <Button danger icon={<DeleteOutlined />} disabled={!selectedDeviceId} loading={deletingShadow}>
                 删除影子
               </Button>
             </Popconfirm>
@@ -620,7 +699,9 @@ const DeviceShadowPage: React.FC = () => {
                 {
                   key: 'updatedAt',
                   label: '最近更新时间',
-                  children: shadow?.updatedAt || '尚未生成影子',
+                  children: shadow?.updatedAt
+                    ? <CopyText text={formatDateTime(shadow.updatedAt)} ellipsis />
+                    : '尚未生成影子',
                 },
                 {
                   key: 'sync',
@@ -640,9 +721,31 @@ const DeviceShadowPage: React.FC = () => {
         </Space>
       </Card>
 
-      {!shadow && !loading ? (
+      {shadowError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ ...surfaceCardStyle, marginBottom: 20 }}
+          message="加载设备影子失败"
+          description={shadowError}
+          action={<Button size="small" danger onClick={() => void fetchShadow()}>重试</Button>}
+        />
+      ) : null}
+
+      {!shadow && !loading && !shadowError ? (
         <Card style={surfaceCardStyle} styles={{ body: { padding: 48 } }}>
-          <Empty description="请选择设备" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          {selectedDevice ? (
+            <Empty
+              description="已选择设备，点击「查询影子」加载当前影子数据"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            >
+              <Button type="primary" icon={<SearchOutlined />} loading={loading} onClick={() => void fetchShadow()}>
+                查询影子
+              </Button>
+            </Empty>
+          ) : (
+            <Empty description="请选择设备后查询影子" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          )}
         </Card>
       ) : null}
 
@@ -710,7 +813,7 @@ const DeviceShadowPage: React.FC = () => {
             <Col xs={24} xl={12} style={editorColStyle}>
               <Card
                 title={readOnlyTitle('Reported / 上报值')}
-                extra={renderExpandTrigger('reported')}
+                extra={<Space size={8}>{renderCopyAction(formatJson(shadow.reported))}{renderExpandTrigger('reported')}</Space>}
                 style={{ ...editorCardStyle, width: '100%' }}
                 styles={{ body: editorCardBodyStyle }}
               >
@@ -735,7 +838,7 @@ const DeviceShadowPage: React.FC = () => {
                     </Tag>
                   </Space>
                 }
-                extra={renderExpandTrigger('delta')}
+                extra={<Space size={8}>{renderCopyAction(formatJson(delta || {}))}{renderExpandTrigger('delta')}</Space>}
                 style={{ ...editorCardStyle, width: '100%' }}
                 styles={{ body: editorCardBodyStyle }}
               >
@@ -753,7 +856,7 @@ const DeviceShadowPage: React.FC = () => {
             <Col xs={24} xl={12} style={editorColStyle}>
               <Card
                 title={readOnlyTitle('Metadata / 元数据')}
-                extra={renderExpandTrigger('metadata')}
+                extra={<Space size={8}>{renderCopyAction(formatJson(shadow.metadata))}{renderExpandTrigger('metadata')}</Space>}
                 style={{ ...editorCardStyle, width: '100%' }}
                 styles={{ body: editorCardBodyStyle }}
               >

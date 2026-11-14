@@ -1,8 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Form, Input, Modal, Popconfirm, Space, Switch, Table, Tag, Typography, message } from 'antd';
+import { Button, Drawer, Form, Input, Popconfirm, Select, Space, Switch, Table, Tag, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import { deviceApi } from '../../services/api';
+import CopyText from '../../components/CopyText';
+import ListEmpty from '../../components/ListEmpty';
+import { useConfirmDiscard } from '../../hooks/useDirtyGuard';
+import { formatDateTime } from '../../utils/datetime';
+import { getErrorMessage } from '../../utils/errors';
 
 interface DeviceLocatorModalProps {
   deviceId: number | null;
@@ -28,31 +33,28 @@ interface LocatorFormValues {
   primaryLocator: boolean;
 }
 
+const LOCATOR_TYPE_LABELS: Record<string, string> = {
+  IMEI: 'IMEI（国际移动设备识别码）',
+  ICCID: 'ICCID（SIM 卡标识）',
+  MAC: 'MAC（网络物理地址）',
+  SERIAL: 'SERIAL（设备序列号）',
+};
+const LOCATOR_TYPE_OPTIONS = Object.entries(LOCATOR_TYPE_LABELS).map(([value, label]) => ({ value, label }));
+
 const DEFAULT_VALUES: LocatorFormValues = {
   locatorType: 'IMEI',
   locatorValue: '',
   primaryLocator: false,
 };
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const response = (error as { response?: { data?: { message?: string } } }).response;
-    if (response?.data?.message) {
-      return response.data.message;
-    }
-  }
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return fallback;
-};
-
 const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, deviceName, open, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [records, setRecords] = useState<DeviceLocatorRecord[]>([]);
   const [editingRecord, setEditingRecord] = useState<DeviceLocatorRecord | null>(null);
   const [form] = Form.useForm<LocatorFormValues>();
+  const confirmDiscard = useConfirmDiscard();
 
   const fetchData = async () => {
     if (!deviceId) {
@@ -73,18 +75,31 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
     if (!open || !deviceId) {
       return;
     }
-    form.setFieldsValue(DEFAULT_VALUES);
+    // 切换到另一台设备时先清空旧标识，避免加载期间误读上一台设备的数据。
+    setRecords([]);
+    form.resetFields();
     setEditingRecord(null);
     void fetchData();
   }, [deviceId, form, open]);
 
   const resetEditor = () => {
     setEditingRecord(null);
-    form.setFieldsValue(DEFAULT_VALUES);
+    form.resetFields();
+  };
+
+  const handleClose = () => {
+    confirmDiscard(
+      form.isFieldsTouched(),
+      () => {
+        resetEditor();
+        onClose();
+      },
+      { title: '放弃未保存的设备标识？', content: '关闭后本次填写或编辑的标识内容将丢失。' },
+    );
   };
 
   const handleSubmit = async (values: LocatorFormValues) => {
-    if (!deviceId) {
+    if (!deviceId || submitting) {
       return;
     }
     setSubmitting(true);
@@ -111,9 +126,10 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
   };
 
   const handleDelete = async (locatorId: number) => {
-    if (!deviceId) {
+    if (!deviceId || deletingId !== null) {
       return;
     }
+    setDeletingId(locatorId);
     try {
       await deviceApi.deleteLocator(deviceId, locatorId);
       message.success('设备标识已删除');
@@ -123,6 +139,8 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
       void fetchData();
     } catch (error) {
       message.error(getErrorMessage(error, '删除设备标识失败'));
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -130,31 +148,34 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
     {
       title: '类型',
       dataIndex: 'locatorType',
-      width: 140,
-      render: (value: string) => <Tag color="blue">{value}</Tag>,
+      width: 190,
+      render: (value: string) => {
+        const label = LOCATOR_TYPE_LABELS[value?.toUpperCase()] || value;
+        return <Tag color="blue">{label}</Tag>;
+      },
     },
     {
       title: '标识值',
       dataIndex: 'locatorValue',
-      render: (value: string) => <Typography.Text copyable={{ text: value }}>{value}</Typography.Text>,
+      render: (value: string) => <CopyText text={value} ellipsis />,
     },
     {
       title: '主标识',
       dataIndex: 'primaryLocator',
-      width: 100,
+      width: 90,
       render: (value?: boolean) => (value ? <Tag color="success">是</Tag> : <Tag>否</Tag>),
     },
     {
       title: '更新时间',
       dataIndex: 'updatedAt',
-      width: 180,
-      render: (value?: string) => value || '-',
+      width: 170,
+      render: (value?: string) => (value ? formatDateTime(value) : '-'),
     },
     {
       title: '操作',
-      width: 140,
+      width: 130,
       render: (_, record) => (
-        <Space>
+        <Space size={0}>
           <Button
             type="link"
             size="small"
@@ -162,7 +183,7 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
             onClick={() => {
               setEditingRecord(record);
               form.setFieldsValue({
-                locatorType: record.locatorType,
+                locatorType: record.locatorType?.toUpperCase(),
                 locatorValue: record.locatorValue,
                 primaryLocator: Boolean(record.primaryLocator),
               });
@@ -170,8 +191,21 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
           >
             编辑
           </Button>
-          <Popconfirm title="确认删除该标识吗？" onConfirm={() => void handleDelete(record.id)}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+          <Popconfirm
+            title="确认删除该设备标识？"
+            description="删除后设备上报的该标识将无法再被识别，需要重新绑定才能恢复。"
+            okText="删除"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => handleDelete(record.id)}
+          >
+            <Button
+              type="link"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              loading={deletingId === record.id}
+              disabled={deletingId !== null && deletingId !== record.id}
+            >
               删除
             </Button>
           </Popconfirm>
@@ -181,34 +215,30 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
   ];
 
   return (
-    <Modal
+    <Drawer
       title={`设备标识${deviceName ? ` · ${deviceName}` : ''}`}
       open={open}
-      width={900}
+      width={720}
       destroyOnHidden
-      footer={null}
-      onCancel={() => {
-        resetEditor();
-        onClose();
-      }}
+      onClose={handleClose}
     >
       <Form form={form} layout="vertical" initialValues={DEFAULT_VALUES} onFinish={handleSubmit}>
-        <Space align="start" style={{ display: 'flex', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
           <Form.Item
             name="locatorType"
             label="标识类型"
-            rules={[{ required: true, message: '请输入标识类型' }]}
-            style={{ minWidth: 180, marginBottom: 0 }}
+            rules={[{ required: true, message: '请选择标识类型' }]}
+            style={{ width: 170, marginBottom: 0 }}
           >
-            <Input placeholder="IMEI / ICCID / MAC / SERIAL" />
+            <Select showSearch optionFilterProp="label" options={LOCATOR_TYPE_OPTIONS} placeholder="选择标识类型" />
           </Form.Item>
           <Form.Item
             name="locatorValue"
             label="标识值"
-            rules={[{ required: true, message: '请输入标识值' }]}
-            style={{ flex: 1, marginBottom: 0 }}
+            rules={[{ required: true, whitespace: true, message: '请输入标识值' }]}
+            style={{ flex: '1 1 260px', minWidth: 240, marginBottom: 0 }}
           >
-            <Input placeholder="设备实际上报的标识内容" />
+            <Input maxLength={128} placeholder="填写设备实际上报的标识内容" />
           </Form.Item>
           <Form.Item name="primaryLocator" label="主标识" valuePropName="checked" style={{ marginBottom: 0 }}>
             <Switch checkedChildren="是" unCheckedChildren="否" />
@@ -216,12 +246,12 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
           <Form.Item label=" " style={{ marginBottom: 0 }}>
             <Space>
               <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={submitting}>
-                {editingRecord ? '更新' : '新增'}
+                {editingRecord ? '保存修改' : '新增标识'}
               </Button>
-              {editingRecord ? <Button onClick={resetEditor}>取消</Button> : null}
+              {editingRecord ? <Button onClick={resetEditor}>取消编辑</Button> : null}
             </Space>
           </Form.Item>
-        </Space>
+        </div>
       </Form>
 
       <Table
@@ -231,9 +261,17 @@ const DeviceLocatorModal: React.FC<DeviceLocatorModalProps> = ({ deviceId, devic
         columns={columns}
         dataSource={records}
         pagination={false}
-        scroll={{ x: 760 }}
+        scroll={{ x: 680 }}
+        locale={{
+          emptyText: (
+            <ListEmpty
+              compact
+              emptyText="暂无设备标识；新增后协议解析与设备识别会复用这些标识"
+            />
+          ),
+        }}
       />
-    </Modal>
+    </Drawer>
   );
 };
 

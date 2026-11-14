@@ -1,12 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { AutoComplete, Button, Card, Drawer, Form, Input, Modal, Select, Space, Table, Tag, message } from 'antd';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, AutoComplete, Button, Card, Drawer, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, message } from 'antd';
 import { DeleteOutlined, PauseCircleOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
+import ListEmpty from '../../components/ListEmpty';
+import JsonEditorField from '../../components/JsonEditorField';
 import { dataForwardRuleApi, projectApi } from '../../services/api';
+import { useRemoteOptions, type RemoteOption } from '../../components/EntitySelect';
+import { getErrorMessage } from '../../utils/errors';
 import { formatDateTime } from '../../utils/datetime';
-
-const { TextArea } = Input;
+import { useConfirmDiscard, useDirtyGuard } from '../../hooks/useDirtyGuard';
+import { usePageActivation } from '../../hooks/usePageActivation';
 
 type ForwardStatus = 'ENABLED' | 'DISABLED';
 type TargetType = 'MQTT' | 'AMQP' | 'TSDB' | 'WEBHOOK';
@@ -110,6 +114,12 @@ const targetTypeOptions = (Object.keys(targetTypeMeta) as TargetType[]).map((val
   label: targetTypeMeta[value].label,
 }));
 
+const targetConfigTemplates = (Object.keys(targetTypeMeta) as TargetType[]).map((type) => ({
+  key: type,
+  label: `${targetTypeMeta[type].label} 模板`,
+  value: JSON.stringify(targetTypeMeta[type].template, null, 2),
+}));
+
 const sourceSuggestions = [
   { value: 'PROPERTY_REPORT', label: '消息类型 · 属性上报' },
   { value: 'EVENT_REPORT', label: '消息类型 · 事件上报' },
@@ -147,9 +157,73 @@ function buildProjectLabel(project: ProjectOption): string {
   return project.code ? `${project.name} (${project.code})` : project.name;
 }
 
+interface RemoteProjectSelectProps {
+  value?: number;
+  onChange?: (value?: number) => void;
+  pinnedLabel?: string;
+}
+
+/** 项目单选：按 keyword 远程搜索，编辑回填用 pinnedLabel 兜底显示项目名称。 */
+const RemoteProjectSelect: React.FC<RemoteProjectSelectProps> = ({ value, onChange, pinnedLabel }) => {
+  const { options, loading, onSearch } = useRemoteOptions<ProjectOption>(
+    async (keyword) => {
+      try {
+        const res = await projectApi.list({ pageNum: 1, pageSize: 20, keyword: keyword || undefined });
+        return (res.data.data?.records ?? []) as ProjectOption[];
+      } catch (error) {
+        message.error(getErrorMessage(error, '搜索项目失败'));
+        throw error;
+      }
+    },
+    (item) => ({ value: item.id, label: buildProjectLabel(item) }),
+  );
+  const [labelCache, setLabelCache] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    if (options.length === 0) {
+      return;
+    }
+    setLabelCache((current) => {
+      const next = { ...current };
+      options.forEach((item) => {
+        next[item.value] = item.label;
+      });
+      return next;
+    });
+  }, [options]);
+
+  useEffect(() => {
+    if (value && pinnedLabel) {
+      setLabelCache((current) => (current[value] === pinnedLabel ? current : { ...current, [value]: pinnedLabel }));
+    }
+  }, [pinnedLabel, value]);
+
+  const mergedOptions = useMemo<RemoteOption[]>(() => {
+    const known = new Set(options.map((item) => item.value));
+    const missing = value != null && !known.has(value) ? [value] : [];
+    return [...options, ...missing.map((id) => ({ value: id, label: labelCache[id] ?? '已选项' }))];
+  }, [labelCache, options, value]);
+
+  return (
+    <Select
+      allowClear
+      showSearch
+      filterOption={false}
+      onSearch={onSearch}
+      options={mergedOptions}
+      loading={loading}
+      value={value}
+      onChange={(next) => onChange?.(next)}
+      placeholder="搜索并选择项目（名称或编码），可选"
+      notFoundContent={loading ? '项目搜索中...' : '未找到匹配项目，换个关键字试试'}
+    />
+  );
+};
+
 const DataForwardRulePage: React.FC = () => {
   const [data, setData] = useState<DataForwardRuleRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
@@ -157,27 +231,23 @@ const DataForwardRulePage: React.FC = () => {
   const [draftFilters, setDraftFilters] = useState<{ keyword: string; status?: ForwardStatus; targetType?: TargetType }>({ keyword: '' });
   const [drawerMode, setDrawerMode] = useState<'create' | 'edit' | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [projectLabelMap, setProjectLabelMap] = useState<Record<number, string>>({});
   const [form] = Form.useForm<DataForwardRuleFormValues>();
+  const [formDirty, setFormDirty] = useState(false);
+  const [editLoadingId, setEditLoadingId] = useState<number | null>(null);
+  const [pendingRows, setPendingRows] = useState<Set<string>>(new Set());
+  const pendingRowsRef = useRef<Set<string>>(new Set());
 
-  const watchedTargetType = Form.useWatch('targetType', form);
+  useDirtyGuard(drawerMode !== null && formDirty);
+  const confirmDiscard = useConfirmDiscard();
 
-  const projectOptions = useMemo(
-    () => projects.map((project) => ({ value: project.id, label: buildProjectLabel(project) })),
-    [projects],
-  );
+  const hasFilters = Boolean(filters.keyword || filters.status || filters.targetType);
 
-  const loadProjects = async () => {
-    try {
-      const res = await projectApi.list({ pageNum: 1, pageSize: 500 });
-      setProjects(res.data.data?.records || []);
-    } catch {
-      setProjects([]);
-    }
-  };
+  const watchedProjectId = Form.useWatch('projectId', form) as number | undefined;
 
   const loadRules = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await dataForwardRuleApi.list({
         pageNum: params.pageNum,
@@ -189,20 +259,36 @@ const DataForwardRulePage: React.FC = () => {
       const page = res.data.data;
       setData(page.records || []);
       setTotal(page.total || 0);
-    } catch {
-      message.error('加载数据流转规则失败');
+    } catch (error) {
+      setData([]);
+      setTotal(0);
+      setLoadError(getErrorMessage(error, '加载数据流转规则失败'));
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    void loadProjects();
-  }, []);
-
-  useEffect(() => {
     void loadRules();
   }, [filters, params.pageNum, params.pageSize]);
+
+  usePageActivation(() => {
+    void loadRules();
+  });
+
+  const runRowAction = async (key: string, task: () => Promise<void>) => {
+    if (pendingRowsRef.current.has(key)) {
+      return;
+    }
+    pendingRowsRef.current.add(key);
+    setPendingRows(new Set(pendingRowsRef.current));
+    try {
+      await task();
+    } finally {
+      pendingRowsRef.current.delete(key);
+      setPendingRows(new Set(pendingRowsRef.current));
+    }
+  };
 
   const applyFilters = () => {
     setFilters({
@@ -220,37 +306,59 @@ const DataForwardRulePage: React.FC = () => {
   };
 
   const openCreateDrawer = () => {
-    setDrawerMode('create');
-    setEditingId(null);
     form.resetFields();
     form.setFieldsValue({ targetType: 'MQTT', targetConfig: getTargetTemplate('MQTT') });
+    setFormDirty(false);
+    setEditingId(null);
+    setDrawerMode('create');
   };
 
   const closeDrawer = () => {
-    setDrawerMode(null);
-    setEditingId(null);
-    form.resetFields();
+    confirmDiscard(formDirty, () => {
+      setDrawerMode(null);
+      setEditingId(null);
+      setFormDirty(false);
+      form.resetFields();
+    });
   };
 
   const openEditDrawer = async (record: DataForwardRuleRecord) => {
-    setDrawerMode('edit');
-    setEditingId(record.id);
+    if (editLoadingId != null) {
+      return;
+    }
+    setEditLoadingId(record.id);
     try {
+      // 详情加载成功后再打开抽屉，避免抽屉短暂展示上一条规则的数据。
       const res = await dataForwardRuleApi.get(record.id);
       const detail = res.data.data as DataForwardRuleRecord;
+      if (detail.projectId) {
+        try {
+          const projectRes = await projectApi.get(detail.projectId);
+          const project = projectRes.data.data as ProjectOption | null;
+          if (project?.id) {
+            setProjectLabelMap((current) => ({ ...current, [project.id]: buildProjectLabel(project) }));
+          }
+        } catch {
+          // 项目名称仅用于编辑回填展示，补查失败时仍保留 projectId。
+        }
+      }
+      form.resetFields();
       form.setFieldsValue({
         name: detail.name,
-        description: detail.description,
-        projectId: detail.projectId,
+        description: detail.description ?? undefined,
+        projectId: detail.projectId ?? undefined,
         sourcePattern: detail.sourcePattern,
-        matchCondition: detail.matchCondition,
+        matchCondition: detail.matchCondition ?? undefined,
         targetType: detail.targetType,
         targetConfig: formatJsonForEditor(detail.targetConfig),
       });
-    } catch {
-      message.error('加载规则详情失败');
-      setDrawerMode(null);
-      setEditingId(null);
+      setFormDirty(false);
+      setEditingId(detail.id ?? record.id);
+      setDrawerMode('edit');
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载规则详情失败'));
+    } finally {
+      setEditLoadingId(null);
     }
   };
 
@@ -263,6 +371,9 @@ const DataForwardRulePage: React.FC = () => {
   };
 
   const handleSubmit = async (values: DataForwardRuleFormValues) => {
+    if (submitting) {
+      return;
+    }
     let targetConfig: string;
     try {
       const parsed = JSON.parse(values.targetConfig);
@@ -291,43 +402,51 @@ const DataForwardRulePage: React.FC = () => {
         await dataForwardRuleApi.create(payload);
         message.success('规则已创建');
       }
-      closeDrawer();
-      void loadRules();
-    } catch {
-      message.error(drawerMode === 'edit' ? '更新失败' : '创建失败');
+      setDrawerMode(null);
+      setEditingId(null);
+      setFormDirty(false);
+      form.resetFields();
+      await loadRules();
+    } catch (error) {
+      message.error(getErrorMessage(error, drawerMode === 'edit' ? '更新规则失败' : '创建规则失败'));
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleToggle = async (record: DataForwardRuleRecord) => {
-    try {
-      if (record.status === 'ENABLED') {
-        await dataForwardRuleApi.disable(record.id);
-        message.success('规则已停用');
-      } else {
-        await dataForwardRuleApi.enable(record.id);
-        message.success('规则已启用');
+    await runRowAction(`toggle:${record.id}`, async () => {
+      try {
+        if (record.status === 'ENABLED') {
+          await dataForwardRuleApi.disable(record.id);
+          message.success('规则已停用');
+        } else {
+          await dataForwardRuleApi.enable(record.id);
+          message.success('规则已启用');
+        }
+        await loadRules();
+      } catch (error) {
+        message.error(getErrorMessage(error, record.status === 'ENABLED' ? '停用规则失败' : '启用规则失败'));
       }
-      void loadRules();
-    } catch {
-      message.error('状态更新失败');
-    }
+    });
   };
 
   const handleDelete = (record: DataForwardRuleRecord) => {
     Modal.confirm({
       title: '确认删除规则',
       content: `删除后不可恢复，确认删除“${record.name}”？`,
-      onOk: async () => {
+      okText: '删除',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: () => runRowAction(`delete:${record.id}`, async () => {
         try {
           await dataForwardRuleApi.delete(record.id);
           message.success('规则已删除');
-          void loadRules();
-        } catch {
-          message.error('删除失败');
+          await loadRules();
+        } catch (error) {
+          message.error(getErrorMessage(error, '删除规则失败'));
         }
-      },
+      }),
     });
   };
 
@@ -360,24 +479,42 @@ const DataForwardRulePage: React.FC = () => {
     { title: '最近触发', dataIndex: 'lastTriggerAt', width: 170, render: (value?: string) => (value ? formatDateTime(value) : '-') },
     {
       title: '操作',
-      width: 180,
+      width: 190,
       fixed: 'right',
       render: (_, record) => (
         <Space size="small">
-          <Button type="link" size="small" onClick={() => void openEditDrawer(record)}>
+          <Button
+            type="link"
+            size="small"
+            loading={editLoadingId === record.id}
+            onClick={() => void openEditDrawer(record)}
+          >
             编辑
           </Button>
           <Button
             type="link"
             size="small"
             icon={record.status === 'ENABLED' ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+            loading={pendingRows.has(`toggle:${record.id}`)}
             onClick={() => void handleToggle(record)}
           >
             {record.status === 'ENABLED' ? '停用' : '启用'}
           </Button>
-          <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>
-            删除
-          </Button>
+          <Tooltip title={record.status === 'ENABLED' ? '请先停用后再删除' : '删除规则'}>
+            <span style={{ display: 'inline-block', cursor: record.status === 'ENABLED' ? 'not-allowed' : undefined }}>
+              <Button
+                type="link"
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                disabled={record.status === 'ENABLED'}
+                loading={pendingRows.has(`delete:${record.id}`)}
+                onClick={() => handleDelete(record)}
+              >
+                删除
+              </Button>
+            </span>
+          </Tooltip>
         </Space>
       ),
     },
@@ -387,7 +524,6 @@ const DataForwardRulePage: React.FC = () => {
     <div>
       <PageHeader
         title="数据流转规则"
-        description="按消息源匹配并过滤设备数据，转发到第三方 MQTT Broker、RabbitMQ、时序库或 Webhook。"
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreateDrawer}>
             新建规则
@@ -430,17 +566,30 @@ const DataForwardRulePage: React.FC = () => {
           <Button onClick={resetFilters}>重置</Button>
         </Space>
 
+        {loadError ? (
+          <Alert
+            type="error"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="加载数据流转规则失败"
+            description={loadError}
+            action={<Button size="small" danger onClick={() => void loadRules()}>重试</Button>}
+          />
+        ) : null}
+
         <Table
           rowKey="id"
           columns={columns}
           dataSource={data}
           loading={loading}
           scroll={{ x: 1000 }}
+          locale={{ emptyText: <ListEmpty hasFilters={hasFilters} emptyText="暂无数据流转规则" onClearFilters={resetFilters} /> }}
           pagination={{
             current: params.pageNum,
             pageSize: params.pageSize,
             total,
             showSizeChanger: true,
+            showTotal: (value) => `共 ${value} 条`,
             onChange: (pageNum, pageSize) => setParams({ pageNum, pageSize }),
           }}
         />
@@ -448,10 +597,11 @@ const DataForwardRulePage: React.FC = () => {
 
       <Drawer
         title={drawerMode === 'edit' ? '编辑数据流转规则' : '新建数据流转规则'}
-        width={560}
+        width={620}
         open={drawerMode !== null}
         onClose={closeDrawer}
         destroyOnClose
+        maskClosable={false}
         footer={
           <Space style={{ float: 'right' }}>
             <Button onClick={closeDrawer}>取消</Button>
@@ -461,12 +611,12 @@ const DataForwardRulePage: React.FC = () => {
           </Space>
         }
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit}>
+        <Form form={form} layout="vertical" onFinish={(values) => void handleSubmit(values)} onValuesChange={() => setFormDirty(true)}>
           <Form.Item name="name" label="规则名称" rules={[{ required: true, message: '请输入规则名称' }]}>
             <Input placeholder="例如：温度数据转发到客户 MQTT" maxLength={256} />
           </Form.Item>
           <Form.Item name="projectId" label="所属项目">
-            <Select placeholder="选择项目（可选）" allowClear options={projectOptions} showSearch optionFilterProp="label" />
+            <RemoteProjectSelect pinnedLabel={watchedProjectId ? projectLabelMap[watchedProjectId] : undefined} />
           </Form.Item>
           <Form.Item name="sourcePattern" label="消息源" rules={[{ required: true, message: '请输入消息源' }]}>
             <AutoComplete options={sourceSuggestions} placeholder="消息类型名或 Topic 通配，如 PROPERTY_REPORT" />
@@ -481,9 +631,13 @@ const DataForwardRulePage: React.FC = () => {
             name="targetConfig"
             label="目标配置"
             rules={[{ required: true, message: '请输入目标配置' }]}
-            extra="JSON 格式，支持 ${deviceName}、${payload.xxx} 等占位符。"
           >
-            <TextArea rows={12} placeholder={getTargetTemplate(watchedTargetType)} style={{ fontFamily: 'monospace' }} />
+            <JsonEditorField
+              height={280}
+              path="target-config.json"
+              templates={targetConfigTemplates}
+              hint="支持 ${deviceName}、${payload.xxx} 等占位符"
+            />
           </Form.Item>
         </Form>
       </Drawer>

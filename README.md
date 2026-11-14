@@ -91,6 +91,17 @@ npm run dev
 
 默认访问地址为 [http://localhost:3000](http://localhost:3000)。
 
+前端提交前需通过以下校验：
+
+```bash
+cd firefly-web
+npx tsc --noEmit
+npx eslint src
+npm run build
+```
+
+控制台交互约定（错误提示、未保存修改保护、页签与保活、实体选择器、异步任务中心等）见 [控制台交互使用说明](docs/user-guide/frontend-interaction-guide.md)；本轮整改的设计与运维说明见 [前端交互友好性整改设计说明](docs/design/frontend-ux-remediation.md) 与 [运维说明](docs/operations/frontend-ux-remediation.md)。
+
 ## 服务与端口
 
 | 服务 | 端口 | 说明 |

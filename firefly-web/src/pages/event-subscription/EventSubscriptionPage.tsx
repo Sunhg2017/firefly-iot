@@ -1,12 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import { Button, Card, Drawer, Form, Input, Modal, Select, Space, Table, Tag, message } from 'antd';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Button, Card, Drawer, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, message } from 'antd';
 import { DeleteOutlined, PauseCircleOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
+import CopyText from '../../components/CopyText';
+import ListEmpty from '../../components/ListEmpty';
+import JsonEditorField from '../../components/JsonEditorField';
 import { eventSubscriptionApi } from '../../services/api';
+import { getErrorMessage } from '../../utils/errors';
 import { formatDateTime } from '../../utils/datetime';
-
-const { TextArea } = Input;
+import { useConfirmDiscard, useDirtyGuard } from '../../hooks/useDirtyGuard';
+import { usePageActivation } from '../../hooks/usePageActivation';
 
 type ForwardStatus = 'ENABLED' | 'DISABLED';
 
@@ -48,6 +52,10 @@ const eventTypeMeta: Record<string, { label: string; color: string }> = {
 
 const eventTypeOptions = Object.entries(eventTypeMeta).map(([value, meta]) => ({ value, label: meta.label }));
 
+const headerTemplates = [
+  { key: 'custom', label: '自定义请求头', value: JSON.stringify({ 'X-Custom-Header': 'value' }, null, 2) },
+];
+
 function normalizeOptionalText(value?: string | null): string | undefined {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
@@ -57,9 +65,17 @@ function formatJsonForEditor(value?: Record<string, string>): string {
   return JSON.stringify(value && Object.keys(value).length > 0 ? value : {}, null, 2);
 }
 
+/** 生成 32 字节随机十六进制密钥，接收方用同一个值校验 HMAC-SHA256 签名。 */
+function generateSecret(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 const EventSubscriptionPage: React.FC = () => {
   const [data, setData] = useState<EventSubscriptionRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
@@ -68,9 +84,19 @@ const EventSubscriptionPage: React.FC = () => {
   const [drawerMode, setDrawerMode] = useState<'create' | 'edit' | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form] = Form.useForm<EventSubscriptionFormValues>();
+  const [formDirty, setFormDirty] = useState(false);
+  const [editLoadingId, setEditLoadingId] = useState<number | null>(null);
+  const [pendingRows, setPendingRows] = useState<Set<string>>(new Set());
+  const pendingRowsRef = useRef<Set<string>>(new Set());
+
+  useDirtyGuard(drawerMode !== null && formDirty);
+  const confirmDiscard = useConfirmDiscard();
+
+  const hasFilters = Boolean(filters.keyword || filters.status);
 
   const loadSubscriptions = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await eventSubscriptionApi.list({
         pageNum: params.pageNum,
@@ -81,8 +107,10 @@ const EventSubscriptionPage: React.FC = () => {
       const page = res.data.data;
       setData(page.records || []);
       setTotal(page.total || 0);
-    } catch {
-      message.error('加载事件订阅失败');
+    } catch (error) {
+      setData([]);
+      setTotal(0);
+      setLoadError(getErrorMessage(error, '加载事件订阅失败'));
     } finally {
       setLoading(false);
     }
@@ -91,6 +119,24 @@ const EventSubscriptionPage: React.FC = () => {
   useEffect(() => {
     void loadSubscriptions();
   }, [filters, params.pageNum, params.pageSize]);
+
+  usePageActivation(() => {
+    void loadSubscriptions();
+  });
+
+  const runRowAction = async (key: string, task: () => Promise<void>) => {
+    if (pendingRowsRef.current.has(key)) {
+      return;
+    }
+    pendingRowsRef.current.add(key);
+    setPendingRows(new Set(pendingRowsRef.current));
+    try {
+      await task();
+    } finally {
+      pendingRowsRef.current.delete(key);
+      setPendingRows(new Set(pendingRowsRef.current));
+    }
+  };
 
   const applyFilters = () => {
     setFilters({ keyword: draftFilters.keyword.trim(), status: draftFilters.status });
@@ -104,44 +150,68 @@ const EventSubscriptionPage: React.FC = () => {
   };
 
   const openCreateDrawer = () => {
-    setDrawerMode('create');
-    setEditingId(null);
     form.resetFields();
     form.setFieldsValue({ eventTypes: [], headers: formatJsonForEditor() });
+    setFormDirty(false);
+    setEditingId(null);
+    setDrawerMode('create');
   };
 
   const closeDrawer = () => {
-    setDrawerMode(null);
-    setEditingId(null);
-    form.resetFields();
+    confirmDiscard(formDirty, () => {
+      setDrawerMode(null);
+      setEditingId(null);
+      setFormDirty(false);
+      form.resetFields();
+    });
   };
 
   const openEditDrawer = async (record: EventSubscriptionRecord) => {
-    setDrawerMode('edit');
-    setEditingId(record.id);
+    if (editLoadingId != null) {
+      return;
+    }
+    setEditLoadingId(record.id);
     try {
+      // 详情加载成功后再打开抽屉，避免先展示上一条订阅的数据。
       const res = await eventSubscriptionApi.get(record.id);
       const detail = res.data.data as EventSubscriptionRecord;
+      form.resetFields();
       form.setFieldsValue({
         name: detail.name,
         eventTypes: detail.eventTypes || [],
         webhookUrl: detail.webhookUrl,
-        secret: detail.secret,
+        secret: detail.secret ?? undefined,
         headers: formatJsonForEditor(detail.headers),
       });
-    } catch {
-      message.error('加载订阅详情失败');
-      setDrawerMode(null);
-      setEditingId(null);
+      setFormDirty(false);
+      setEditingId(detail.id ?? record.id);
+      setDrawerMode('edit');
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载订阅详情失败'));
+    } finally {
+      setEditLoadingId(null);
     }
   };
 
   const handleSubmit = async (values: EventSubscriptionFormValues) => {
+    if (submitting) {
+      return;
+    }
     let headers: Record<string, string> | undefined;
     const rawHeaders = normalizeOptionalText(values.headers);
     if (rawHeaders) {
       try {
-        headers = JSON.parse(rawHeaders) as Record<string, string>;
+        const parsed = JSON.parse(rawHeaders) as unknown;
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          message.error('自定义请求头必须是 JSON 对象');
+          return;
+        }
+        const entries = Object.entries(parsed as Record<string, unknown>);
+        if (entries.some(([, headerValue]) => typeof headerValue !== 'string')) {
+          message.error('自定义请求头的值必须是字符串');
+          return;
+        }
+        headers = entries.length > 0 ? (Object.fromEntries(entries) as Record<string, string>) : undefined;
       } catch {
         message.error('自定义请求头不是合法 JSON');
         return;
@@ -165,43 +235,51 @@ const EventSubscriptionPage: React.FC = () => {
         await eventSubscriptionApi.create(payload);
         message.success('订阅已创建');
       }
-      closeDrawer();
-      void loadSubscriptions();
-    } catch {
-      message.error(drawerMode === 'edit' ? '更新失败' : '创建失败');
+      setDrawerMode(null);
+      setEditingId(null);
+      setFormDirty(false);
+      form.resetFields();
+      await loadSubscriptions();
+    } catch (error) {
+      message.error(getErrorMessage(error, drawerMode === 'edit' ? '更新订阅失败' : '创建订阅失败'));
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleToggle = async (record: EventSubscriptionRecord) => {
-    try {
-      if (record.status === 'ENABLED') {
-        await eventSubscriptionApi.disable(record.id);
-        message.success('订阅已停用');
-      } else {
-        await eventSubscriptionApi.enable(record.id);
-        message.success('订阅已启用');
+    await runRowAction(`toggle:${record.id}`, async () => {
+      try {
+        if (record.status === 'ENABLED') {
+          await eventSubscriptionApi.disable(record.id);
+          message.success('订阅已停用');
+        } else {
+          await eventSubscriptionApi.enable(record.id);
+          message.success('订阅已启用');
+        }
+        await loadSubscriptions();
+      } catch (error) {
+        message.error(getErrorMessage(error, record.status === 'ENABLED' ? '停用订阅失败' : '启用订阅失败'));
       }
-      void loadSubscriptions();
-    } catch {
-      message.error('状态更新失败');
-    }
+    });
   };
 
   const handleDelete = (record: EventSubscriptionRecord) => {
     Modal.confirm({
       title: '确认删除订阅',
       content: `删除后不可恢复，确认删除“${record.name}”？`,
-      onOk: async () => {
+      okText: '删除',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: () => runRowAction(`delete:${record.id}`, async () => {
         try {
           await eventSubscriptionApi.delete(record.id);
           message.success('订阅已删除');
-          void loadSubscriptions();
-        } catch {
-          message.error('删除失败');
+          await loadSubscriptions();
+        } catch (error) {
+          message.error(getErrorMessage(error, '删除订阅失败'));
         }
-      },
+      }),
     });
   };
 
@@ -218,7 +296,7 @@ const EventSubscriptionPage: React.FC = () => {
           </Tag>
         )),
     },
-    { title: '回调地址', dataIndex: 'webhookUrl', ellipsis: true },
+    { title: '回调地址', dataIndex: 'webhookUrl', ellipsis: true, render: (value: string) => <CopyText text={value} ellipsis /> },
     {
       title: '状态',
       dataIndex: 'status',
@@ -248,20 +326,33 @@ const EventSubscriptionPage: React.FC = () => {
       fixed: 'right',
       render: (_, record) => (
         <Space size="small">
-          <Button type="link" size="small" onClick={() => void openEditDrawer(record)}>
+          <Button type="link" size="small" loading={editLoadingId === record.id} onClick={() => void openEditDrawer(record)}>
             编辑
           </Button>
           <Button
             type="link"
             size="small"
             icon={record.status === 'ENABLED' ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+            loading={pendingRows.has(`toggle:${record.id}`)}
             onClick={() => void handleToggle(record)}
           >
             {record.status === 'ENABLED' ? '停用' : '启用'}
           </Button>
-          <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>
-            删除
-          </Button>
+          <Tooltip title={record.status === 'ENABLED' ? '请先停用后再删除' : '删除订阅'}>
+            <span style={{ display: 'inline-block', cursor: record.status === 'ENABLED' ? 'not-allowed' : undefined }}>
+              <Button
+                type="link"
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                disabled={record.status === 'ENABLED'}
+                loading={pendingRows.has(`delete:${record.id}`)}
+                onClick={() => handleDelete(record)}
+              >
+                删除
+              </Button>
+            </span>
+          </Tooltip>
         </Space>
       ),
     },
@@ -271,7 +362,7 @@ const EventSubscriptionPage: React.FC = () => {
     <div>
       <PageHeader
         title="事件订阅"
-        description="订阅设备创建、上下线、告警触发、OTA 进度等平台事件，通过带 HMAC 签名的 Webhook 推送。"
+        description="停用后停止投递；签名密钥需与接收方保持一致。"
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreateDrawer}>
             新建订阅
@@ -306,17 +397,30 @@ const EventSubscriptionPage: React.FC = () => {
           <Button onClick={resetFilters}>重置</Button>
         </Space>
 
+        {loadError ? (
+          <Alert
+            type="error"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="加载事件订阅失败"
+            description={loadError}
+            action={<Button size="small" danger onClick={() => void loadSubscriptions()}>重试</Button>}
+          />
+        ) : null}
+
         <Table
           rowKey="id"
           columns={columns}
           dataSource={data}
           loading={loading}
           scroll={{ x: 1000 }}
+          locale={{ emptyText: <ListEmpty hasFilters={hasFilters} emptyText="暂无事件订阅" onClearFilters={resetFilters} /> }}
           pagination={{
             current: params.pageNum,
             pageSize: params.pageSize,
             total,
             showSizeChanger: true,
+            showTotal: (value) => `共 ${value} 条`,
             onChange: (pageNum, pageSize) => setParams({ pageNum, pageSize }),
           }}
         />
@@ -328,6 +432,7 @@ const EventSubscriptionPage: React.FC = () => {
         open={drawerMode !== null}
         onClose={closeDrawer}
         destroyOnClose
+        maskClosable={false}
         footer={
           <Space style={{ float: 'right' }}>
             <Button onClick={closeDrawer}>取消</Button>
@@ -337,7 +442,7 @@ const EventSubscriptionPage: React.FC = () => {
           </Space>
         }
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit}>
+        <Form form={form} layout="vertical" onFinish={(values) => void handleSubmit(values)} onValuesChange={() => setFormDirty(true)}>
           <Form.Item name="name" label="订阅名称" rules={[{ required: true, message: '请输入订阅名称' }]}>
             <Input placeholder="例如：设备上下线通知" maxLength={256} />
           </Form.Item>
@@ -351,11 +456,26 @@ const EventSubscriptionPage: React.FC = () => {
           >
             <Input placeholder="https://example.com/hooks/device-event" maxLength={512} />
           </Form.Item>
-          <Form.Item name="secret" label="签名密钥（可选）">
-            <Input.Password placeholder="配置后投递会携带 X-Firefly-Signature (HMAC-SHA256)" />
+          <Form.Item
+            name="secret"
+            label="签名密钥（可选）"
+            extra="投递时使用该密钥生成 X-Firefly-Signature（HMAC-SHA256），必须与接收方配置一致；可手动修改。"
+          >
+            <Input.Password
+              placeholder="留空则不签名"
+              addonAfter={
+                <Button type="text" size="small" onClick={() => {
+                  form.setFieldsValue({ secret: generateSecret() });
+                  setFormDirty(true);
+                }}
+                >
+                  随机生成
+                </Button>
+              }
+            />
           </Form.Item>
           <Form.Item name="headers" label="自定义请求头（可选）">
-            <TextArea rows={4} placeholder='{"X-Custom": "value"}' style={{ fontFamily: 'monospace' }} />
+            <JsonEditorField height={150} path="headers.json" templates={headerTemplates} hint="JSON 对象，值必须为字符串" />
           </Form.Item>
         </Form>
       </Drawer>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -6,7 +6,6 @@ import {
   Card,
   Col,
   Descriptions,
-  Empty,
   Input,
   List,
   Row,
@@ -30,13 +29,13 @@ import {
 } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
 import PageHeader from '../../components/PageHeader';
-import { deviceApi, deviceGroupApi, productApi } from '../../services/api';
-
-interface ProductOption {
-  id: number;
-  name: string;
-  productKey: string;
-}
+import CopyText from '../../components/CopyText';
+import ListEmpty from '../../components/ListEmpty';
+import { usePageActivation } from '../../hooks/usePageActivation';
+import { formatDateTime } from '../../utils/datetime';
+import { getErrorMessage } from '../../utils/errors';
+import { deviceApi, deviceGroupApi } from '../../services/api';
+import { ProductSelect } from '../../components/EntitySelect';
 
 interface DeviceGroupRecord {
   id: number;
@@ -117,15 +116,6 @@ const NODE_TYPE_META: Record<string, { label: string; color: string }> = {
   DEVICE: { label: '设备', color: 'default' },
 };
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const response = (error as { response?: { data?: { message?: string } } }).response;
-    if (response?.data?.message) return response.data.message;
-  }
-  if (error instanceof Error && error.message) return error.message;
-  return fallback;
-};
-
 const getNodeDisplayName = (node?: DeviceTopologyNodeRecord | null) => {
   if (!node) return '-';
   return node.nickname?.trim() || node.deviceName;
@@ -161,37 +151,32 @@ const indexNodes = (
 
 const DeviceTopologyPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
   const [draftFilters, setDraftFilters] = useState<DeviceTopologyFilters>({ keyword: '' });
   const [filters, setFilters] = useState<DeviceTopologyFilters>({ keyword: '' });
-  const [products, setProducts] = useState<ProductOption[]>([]);
   const [groups, setGroups] = useState<DeviceGroupRecord[]>([]);
   const [topology, setTopology] = useState<DeviceTopologyResponse>({});
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
   const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
   const [activeTab, setActiveTab] = useState('roots');
 
-  const fetchProducts = async () => {
+  const fetchFilterOptions = useCallback(async () => {
+    setOptionsError(null);
     try {
-      const res = await productApi.list({ pageNum: 1, pageSize: 500 });
-      setProducts(res.data.data.records || []);
-    } catch {
-      setProducts([]);
-    }
-  };
-
-  const fetchGroups = async () => {
-    try {
-      const res = await deviceGroupApi.listAll();
-      setGroups((res.data.data || [])
+      const groupRes = await deviceGroupApi.listAll();
+      setGroups((groupRes.data.data || [])
         .filter((item: DeviceGroupRecord) => item.type !== 'DYNAMIC')
         .map((item: DeviceGroupRecord) => ({ id: item.id, name: item.name, type: item.type })));
-    } catch {
+    } catch (error) {
       setGroups([]);
+      setOptionsError(getErrorMessage(error, '加载分组筛选项失败'));
     }
-  };
+  }, []);
 
-  const loadTopology = async () => {
+  const loadTopology = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await deviceApi.topology({
         keyword: filters.keyword || undefined,
@@ -208,20 +193,26 @@ const DeviceTopologyPage: React.FC = () => {
         orphanDevices: nextTopology.orphanDevices || [],
       });
     } catch (error) {
-      message.error(getErrorMessage(error, '加载设备拓扑失败'));
-      setTopology({});
+      const errorMessage = getErrorMessage(error, '加载设备拓扑失败');
+      setLoadError(errorMessage);
+      message.error(errorMessage);
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters]);
 
   useEffect(() => {
-    void Promise.all([fetchProducts(), fetchGroups()]);
-  }, []);
+    void fetchFilterOptions();
+  }, [fetchFilterOptions]);
 
   useEffect(() => {
     void loadTopology();
-  }, [filters]);
+  }, [loadTopology]);
+
+  const handleActivate = useCallback(() => {
+    void loadTopology();
+  }, [loadTopology]);
+  usePageActivation(handleActivate);
 
   const applyFilters = () => {
     setFilters({
@@ -246,6 +237,8 @@ const DeviceTopologyPage: React.FC = () => {
   const rootNodes = topology.rootNodes || [];
   const standaloneDevices = topology.standaloneDevices || [];
   const orphanDevices = topology.orphanDevices || [];
+  const hasActiveFilters = Boolean(filters.keyword || filters.productId || filters.groupId || filters.status || filters.onlineStatus);
+  const hasAnyData = rootNodes.length + standaloneDevices.length + orphanDevices.length > 0;
 
   const { nodeMap, parentMap } = useMemo(() => {
     const nextNodeMap = new Map<number, DeviceTopologyNodeRecord>();
@@ -339,7 +332,7 @@ const DeviceTopologyPage: React.FC = () => {
 
   const renderNodeList = (nodes: DeviceTopologyNodeRecord[], emptyText: string) => {
     if (!nodes.length) {
-      return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText} />;
+      return <ListEmpty hasFilters={hasActiveFilters} emptyText={emptyText} filteredText={emptyText} onClearFilters={resetFilters} />;
     }
     return (
       <List
@@ -451,22 +444,16 @@ const DeviceTopologyPage: React.FC = () => {
             }}
             onPressEnter={applyFilters}
           />
-          <Select
-            className="ff-query-field"
-            allowClear
-            showSearch
-            optionFilterProp="label"
-            placeholder="所属产品"
-            style={{ width: 240 }}
-            value={draftFilters.productId}
-            options={products.map((item) => ({
-              value: item.id,
-              label: `${item.name} (${item.productKey})`,
-            }))}
-            onChange={(value) => {
-              setDraftFilters((current) => ({ ...current, productId: value }));
-            }}
-          />
+          <div className="ff-query-field" style={{ width: 240 }}>
+            <ProductSelect
+              style={{ width: '100%' }}
+              placeholder="搜索并选择产品（名称或 productKey）"
+              value={draftFilters.productId}
+              onChange={(value) => {
+                setDraftFilters((current) => ({ ...current, productId: value }));
+              }}
+            />
+          </div>
           <Select
             className="ff-query-field"
             allowClear
@@ -514,21 +501,35 @@ const DeviceTopologyPage: React.FC = () => {
             <Button type="primary" onClick={applyFilters}>查询</Button>
           </div>
         </div>
+        {optionsError ? (
+          <Alert
+            style={{ marginTop: 12 }}
+            type="warning"
+            showIcon
+            message={optionsError}
+            action={<Button size="small" onClick={() => void fetchFilterOptions()}>重试</Button>}
+          />
+        ) : null}
       </Card>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={16}>
           <Card style={{ borderRadius: 24 }} bodyStyle={{ paddingTop: 16 }}>
-            <Alert
-              type="info"
-              showIcon
-              style={{ marginBottom: 16 }}
-              message="筛选会保留上下游链路，命中节点用蓝色边框标记，断链设备会单独列出。"
-            />
+            {loadError ? (
+              <Alert
+                type="error"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={loadError}
+                action={<Button size="small" onClick={() => void loadTopology()}>重试</Button>}
+              />
+            ) : null}
             {loading ? (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 420 }}>
                 <Spin size="large" />
               </div>
+            ) : !hasAnyData ? (
+              <ListEmpty hasFilters={hasActiveFilters} emptyText="当前没有设备拓扑数据" filteredText="当前筛选下没有设备拓扑数据" onClearFilters={resetFilters} />
             ) : (
               <Tabs
                 activeKey={activeTab}
@@ -553,7 +554,7 @@ const DeviceTopologyPage: React.FC = () => {
                         }}
                       />
                     ) : (
-                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前筛选下没有可展示的拓扑链路" />
+                      <ListEmpty hasFilters={hasActiveFilters} emptyText="当前没有可展示的拓扑链路" filteredText="当前筛选下没有可展示的拓扑链路" onClearFilters={resetFilters} />
                     ),
                   },
                   {
@@ -590,13 +591,13 @@ const DeviceTopologyPage: React.FC = () => {
 
                   <Descriptions column={1} size="small" labelStyle={{ width: 88 }}>
                     <Descriptions.Item label="设备名称">
-                      <Typography.Text code>{selectedNode.deviceName}</Typography.Text>
+                      <CopyText text={selectedNode.deviceName} />
                     </Descriptions.Item>
                     <Descriptions.Item label="产品">
-                      {selectedNode.productName || '-'}
-                      {selectedNode.productKey ? (
-                        <Typography.Text type="secondary"> ({selectedNode.productKey})</Typography.Text>
-                      ) : null}
+                      <Space size={8} wrap>
+                        <span>{selectedNode.productName || '-'}</span>
+                        {selectedNode.productKey ? <CopyText text={selectedNode.productKey} secondary /> : null}
+                      </Space>
                     </Descriptions.Item>
                     <Descriptions.Item label="链路位置">{relationText}</Descriptions.Item>
                     <Descriptions.Item label="在线状态">
@@ -612,9 +613,10 @@ const DeviceTopologyPage: React.FC = () => {
                     </Descriptions.Item>
                     <Descriptions.Item label="直属下级">{selectedNode.directChildCount || 0}</Descriptions.Item>
                     <Descriptions.Item label="子树规模">{selectedNode.descendantCount || 0}</Descriptions.Item>
-                    <Descriptions.Item label="固件版本">{selectedNode.firmwareVersion || '-'}</Descriptions.Item>
-                    <Descriptions.Item label="IP 地址">{selectedNode.ipAddress || '-'}</Descriptions.Item>
-                    <Descriptions.Item label="最后在线">{selectedNode.lastOnlineAt || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="固件版本">{selectedNode.firmwareVersion ? <CopyText text={selectedNode.firmwareVersion} /> : '-'}</Descriptions.Item>
+                    <Descriptions.Item label="IP 地址">{selectedNode.ipAddress ? <CopyText text={selectedNode.ipAddress} /> : '-'}</Descriptions.Item>
+                    <Descriptions.Item label="最后在线">{formatDateTime(selectedNode.lastOnlineAt)}</Descriptions.Item>
+                    <Descriptions.Item label="创建时间">{formatDateTime(selectedNode.createdAt)}</Descriptions.Item>
                   </Descriptions>
 
                   <Card size="small" title="路径" style={{ borderRadius: 18 }}>
@@ -635,16 +637,8 @@ const DeviceTopologyPage: React.FC = () => {
                   </Card>
                 </Space>
               ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请选择节点" />
+                <ListEmpty emptyText="请在左侧拓扑树或设备列表中选择节点查看详情" />
               )}
-            </Card>
-
-            <Card title="处理建议" style={{ borderRadius: 24 }}>
-              <Space direction="vertical" size={10}>
-                <Typography.Text>1. 先看“断链设备”，确认上级网关是否被删除、停用或未纳入当前筛选范围。</Typography.Text>
-                <Typography.Text>2. 再看“拓扑链路”，确认父子设备是否挂到了预期网关下。</Typography.Text>
-                <Typography.Text>3. 如果只有独立设备，没有链路关系，回到设备管理或接入侧补齐网关挂载关系。</Typography.Text>
-              </Space>
             </Card>
           </Space>
         </Col>

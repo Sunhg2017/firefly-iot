@@ -6,6 +6,7 @@ import {
   Col,
   Descriptions,
   Empty,
+  Modal,
   Row,
   Select,
   Space,
@@ -22,9 +23,13 @@ import {
   SettingOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
-import CodeEditorField from '../../components/CodeEditorField';
+import CopyText from '../../components/CopyText';
+import JsonEditorField from '../../components/JsonEditorField';
 import PageHeader from '../../components/PageHeader';
+import { DeviceSelect } from '../../components/EntitySelect';
 import { deviceApi, deviceMessageApi, productApi } from '../../services/api';
+import { formatDateTime } from '../../utils/datetime';
+import { getErrorMessage } from '../../utils/errors';
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -119,13 +124,29 @@ interface SendFeedback {
   mode: string;
   title: string;
   detail: string;
+  deviceId: number;
+  deviceName: string;
   sentAt: string;
+  payload?: string;
+}
+
+/** 按设备维度保存的编辑草稿，切换设备后恢复，避免把 A 设备的载荷发给 B 设备。 */
+interface DeviceMessageDraft {
+  propertyKeys?: string[];
+  propertyText?: string;
+  serviceName?: string;
+  serviceText?: string;
+  rawType?: string;
+  rawText?: string;
 }
 
 interface BaseTabProps {
   selectedDevice: DeviceOption | null;
   thingModelLoading: boolean;
   onFeedback: (feedback: SendFeedback) => void;
+  initialDraft?: DeviceMessageDraft;
+  onDraftChange: (patch: Partial<DeviceMessageDraft>) => void;
+  getActiveDeviceId: () => number | undefined;
 }
 
 interface PropertySetTabProps extends BaseTabProps {
@@ -182,8 +203,6 @@ const editorCardStyle = { ...surfaceCardStyle, width: '100%' } as const;
 const stretchColStyle = { display: 'flex' } as const;
 const editorCardBodyStyle = { padding: 18, display: 'flex', flexDirection: 'column', gap: 16 } as const;
 const helperCardBodyStyle = { padding: 18 } as const;
-
-const formatCommandTime = () => new Date().toLocaleString('zh-CN', { hour12: false });
 
 const formatSelectedDeviceLabel = (device: DeviceRecord) => {
   const display = device.nickname?.trim();
@@ -258,8 +277,6 @@ const buildTemplateText = (entries: Array<{ identifier: string; dataType?: Recor
     2,
   );
 
-const formatJsonText = (value: string) => JSON.stringify(JSON.parse(value), null, 2);
-
 const parseJsonObject = (value: string, fieldName: string) => {
   const parsed = JSON.parse(value);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -270,6 +287,36 @@ const parseJsonObject = (value: string, fieldName: string) => {
 
 const buildRawMessageTemplate = (type: string) => JSON.stringify(RAW_MESSAGE_TEMPLATES[type] || RAW_MESSAGE_TEMPLATES.CUSTOM, null, 2);
 
+const formatDeviceLabelForConfirm = (device: DeviceRecord) => {
+  const display = device.nickname?.trim();
+  return display && display !== device.deviceName ? `${display}（${device.deviceName}）` : device.deviceName;
+};
+
+/** 发送前必须让用户再次确认目标设备，降低把 A 设备载荷误发到 B 设备的概率。 */
+const confirmSendTarget = (device: DeviceOption, action: string) => new Promise<boolean>((resolve) => {
+  let settled = false;
+  const settle = (value: boolean) => {
+    if (!settled) {
+      settled = true;
+      resolve(value);
+    }
+  };
+  Modal.confirm({
+    title: `确认向该设备发送${action}？`,
+    content: (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span>目标设备：<strong>{formatDeviceLabelForConfirm(device.meta)}</strong></span>
+        <span style={{ color: '#cf1322' }}>命令只会发送到该设备，请确认不是误选其他设备。</span>
+      </div>
+    ),
+    okText: '确认发送',
+    cancelText: '取消',
+    onOk: () => settle(true),
+    onCancel: () => settle(false),
+    afterClose: () => settle(false),
+  });
+});
+
 const parseThingModelDefinition = (rawThingModel: unknown): ThingModelSummary => {
   let parsed: ThingModelRoot | null = null;
 
@@ -278,6 +325,7 @@ const parseThingModelDefinition = (rawThingModel: unknown): ThingModelSummary =>
     try {
       parsed = JSON.parse(rawThingModel) as ThingModelRoot;
     } catch {
+      // 物模型内容非法时按“无可用物模型”处理，页面会提示加载失败并允许刷新重试。
       return { properties: [], services: [] };
     }
   } else if (rawThingModel && typeof rawThingModel === 'object' && !Array.isArray(rawThingModel)) {
@@ -332,9 +380,12 @@ const PropertySetTab: React.FC<PropertySetTabProps> = ({
   propertyOptions,
   thingModelLoading,
   onFeedback,
+  initialDraft,
+  onDraftChange,
+  getActiveDeviceId,
 }) => {
-  const [selectedPropertyKeys, setSelectedPropertyKeys] = useState<string[]>([]);
-  const [editorText, setEditorText] = useState(EMPTY_JSON_TEXT);
+  const [selectedPropertyKeys, setSelectedPropertyKeys] = useState<string[]>(initialDraft?.propertyKeys ?? []);
+  const [editorText, setEditorText] = useState(initialDraft?.propertyText ?? EMPTY_JSON_TEXT);
   const [sending, setSending] = useState(false);
 
   const selectedProperties = useMemo(
@@ -348,21 +399,22 @@ const PropertySetTab: React.FC<PropertySetTabProps> = ({
     );
   }, [propertyOptions]);
 
+  const updateEditorText = (next: string) => {
+    setEditorText(next);
+    onDraftChange({ propertyText: next });
+  };
+
+  const updateSelectedPropertyKeys = (keys: string[]) => {
+    setSelectedPropertyKeys(keys);
+    onDraftChange({ propertyKeys: keys });
+  };
+
   const applyTemplate = (targets: PropertyOption[]) => {
     if (!targets.length) {
       message.warning('当前产品暂无可写属性模板');
       return;
     }
-    setEditorText(buildTemplateText(targets.map((item) => ({ identifier: item.value, dataType: item.dataType }))));
-  };
-
-  const handleFormat = () => {
-    try {
-      setEditorText(formatJsonText(editorText));
-      message.success('属性 JSON 已格式化');
-    } catch {
-      message.warning('属性 JSON 格式不正确');
-    }
+    updateEditorText(buildTemplateText(targets.map((item) => ({ identifier: item.value, dataType: item.dataType }))));
   };
 
   const handleSend = async () => {
@@ -370,34 +422,46 @@ const PropertySetTab: React.FC<PropertySetTabProps> = ({
       message.warning('请先选择设备');
       return;
     }
+    const device = selectedDevice;
+    const confirmed = await confirmSendTarget(device, '属性设置');
+    if (!confirmed) {
+      return;
+    }
+    if (getActiveDeviceId() !== device.value) {
+      message.warning('目标设备已切换，本次发送已取消，请重新确认目标设备');
+      return;
+    }
 
     setSending(true);
     try {
       const payload = parseJsonObject(editorText, '属性 JSON');
-      await deviceMessageApi.setProperty(selectedDevice.value, payload);
+      await deviceMessageApi.setProperty(device.value, payload);
       const propertyCount = Object.keys(payload).length;
-      message.success('属性设置命令已发送');
+      message.success(`属性设置命令已发送到 ${device.meta.deviceName}`);
       onFeedback({
         status: 'success',
         mode: '属性设置',
         title: '属性设置命令已发送',
-        detail: `设备 ${selectedDevice.meta.deviceName} 已收到 ${propertyCount} 个属性字段的下发请求。`,
-        sentAt: formatCommandTime(),
+        detail: `设备 ${formatDeviceLabelForConfirm(device.meta)} 已收到 ${propertyCount} 个属性字段的下发请求。`,
+        deviceId: device.value,
+        deviceName: formatDeviceLabelForConfirm(device.meta),
+        sentAt: new Date().toISOString(),
+        payload: JSON.stringify(payload, null, 2),
       });
     } catch (error) {
-      const detail =
-        error instanceof SyntaxError
-          ? '属性 JSON 格式错误，请先修正后再发送。'
-          : error instanceof Error
-            ? error.message
-            : '属性设置发送失败，请稍后重试。';
+      const detail = error instanceof SyntaxError
+        ? '属性 JSON 格式错误，请先修正后再发送。'
+        : getErrorMessage(error, '属性设置发送失败，请稍后重试。');
       message.error(detail);
       onFeedback({
         status: 'error',
         mode: '属性设置',
         title: '属性设置发送失败',
         detail,
-        sentAt: formatCommandTime(),
+        deviceId: device.value,
+        deviceName: formatDeviceLabelForConfirm(device.meta),
+        sentAt: new Date().toISOString(),
+        payload: editorText,
       });
     } finally {
       setSending(false);
@@ -413,17 +477,16 @@ const PropertySetTab: React.FC<PropertySetTabProps> = ({
           bodyStyle={editorCardBodyStyle}
           extra={
             <Space wrap>
-              <Button icon={<CodeOutlined />} onClick={handleFormat}>格式化 JSON</Button>
-              <Button icon={<ClearOutlined />} onClick={() => setEditorText(EMPTY_JSON_TEXT)}>清空</Button>
+              <Button icon={<ClearOutlined />} onClick={() => updateEditorText(EMPTY_JSON_TEXT)}>清空</Button>
             </Space>
           }
         >
-          <CodeEditorField
-            language="json"
+          <JsonEditorField
+            height={340}
             path={`file:///device-message/${selectedDevice?.value || 'draft'}/property-set.json`}
             value={editorText}
-            onChange={setEditorText}
-            height={340}
+            onChange={updateEditorText}
+            hint="仅支持 JSON 对象，键为属性标识"
           />
           <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
             <Button type="primary" icon={<SettingOutlined />} loading={sending} disabled={!selectedDevice} onClick={() => void handleSend()}>
@@ -442,7 +505,7 @@ const PropertySetTab: React.FC<PropertySetTabProps> = ({
                 placeholder={selectedDevice ? '先选想要下发的属性字段' : '选择设备后可按属性生成模板'}
                 disabled={!selectedDevice || !propertyOptions.length}
                 value={selectedPropertyKeys}
-                onChange={setSelectedPropertyKeys}
+                onChange={updateSelectedPropertyKeys}
                 optionFilterProp="label"
                 options={propertyOptions.map((item) => ({ value: item.value, label: item.label }))}
               />
@@ -476,11 +539,19 @@ const ServiceInvokeTab: React.FC<ServiceInvokeTabProps> = ({
   serviceOptions,
   thingModelLoading,
   onFeedback,
+  initialDraft,
+  onDraftChange,
+  getActiveDeviceId,
 }) => {
-  const [selectedServiceName, setSelectedServiceName] = useState<string>();
-  const [paramsText, setParamsText] = useState(EMPTY_JSON_TEXT);
+  const [selectedServiceName, setSelectedServiceName] = useState<string | undefined>(initialDraft?.serviceName);
+  const [paramsText, setParamsText] = useState(initialDraft?.serviceText ?? EMPTY_JSON_TEXT);
   const [sending, setSending] = useState(false);
   const autoTemplateRef = useRef(EMPTY_JSON_TEXT);
+  const paramsTextRef = useRef(paramsText);
+
+  useEffect(() => {
+    paramsTextRef.current = paramsText;
+  }, [paramsText]);
 
   const selectedService = useMemo(
     () => serviceOptions.find((item) => item.value === selectedServiceName) ?? null,
@@ -497,28 +568,22 @@ const ServiceInvokeTab: React.FC<ServiceInvokeTabProps> = ({
   }, [serviceOptions]);
 
   useEffect(() => {
-    // Keep the user's draft when possible; only replace the editor when it still contains the previous auto template.
+    // 保留用户草稿：仅当编辑器仍是上一份自动模板时才替换为新服务的入参模板。
     const nextTemplate = selectedService
       ? buildTemplateText(selectedService.inputData.map((item) => ({ identifier: item.identifier, dataType: item.dataType })))
       : EMPTY_JSON_TEXT;
-
-    setParamsText((current) => {
-      if (!current.trim() || current === EMPTY_JSON_TEXT || current === autoTemplateRef.current) {
-        autoTemplateRef.current = nextTemplate;
-        return nextTemplate;
-      }
-      autoTemplateRef.current = nextTemplate;
-      return current;
-    });
-  }, [selectedService]);
-
-  const handleFormat = () => {
-    try {
-      setParamsText(formatJsonText(paramsText));
-      message.success('服务参数 JSON 已格式化');
-    } catch {
-      message.warning('服务参数 JSON 格式不正确');
+    const current = paramsTextRef.current;
+    const shouldReplace = !current.trim() || current === EMPTY_JSON_TEXT || current === autoTemplateRef.current;
+    autoTemplateRef.current = nextTemplate;
+    if (shouldReplace) {
+      setParamsText(nextTemplate);
+      onDraftChange({ serviceText: nextTemplate });
     }
+  }, [onDraftChange, selectedService]);
+
+  const updateParamsText = (next: string) => {
+    setParamsText(next);
+    onDraftChange({ serviceText: next });
   };
 
   const handleFillTemplate = () => {
@@ -528,7 +593,7 @@ const ServiceInvokeTab: React.FC<ServiceInvokeTabProps> = ({
     }
     const nextTemplate = buildTemplateText(selectedService.inputData.map((item) => ({ identifier: item.identifier, dataType: item.dataType })));
     autoTemplateRef.current = nextTemplate;
-    setParamsText(nextTemplate);
+    updateParamsText(nextTemplate);
   };
 
   const handleSend = async () => {
@@ -540,33 +605,45 @@ const ServiceInvokeTab: React.FC<ServiceInvokeTabProps> = ({
       message.warning('请先选择服务');
       return;
     }
+    const device = selectedDevice;
+    const confirmed = await confirmSendTarget(device, '服务调用');
+    if (!confirmed) {
+      return;
+    }
+    if (getActiveDeviceId() !== device.value) {
+      message.warning('目标设备已切换，本次发送已取消，请重新确认目标设备');
+      return;
+    }
 
     setSending(true);
     try {
       const payload = parseJsonObject(paramsText, '服务参数 JSON');
-      await deviceMessageApi.invokeService(selectedDevice.value, selectedService.value, payload);
-      message.success('服务调用命令已发送');
+      await deviceMessageApi.invokeService(device.value, selectedService.value, payload);
+      message.success(`服务调用命令已发送到 ${device.meta.deviceName}`);
       onFeedback({
         status: 'success',
         mode: '服务调用',
         title: '服务调用命令已发送',
-        detail: `已向设备 ${selectedDevice.meta.deviceName} 下发服务 ${selectedService.label}（${selectedService.value}）。`,
-        sentAt: formatCommandTime(),
+        detail: `已向设备 ${formatDeviceLabelForConfirm(device.meta)} 下发服务 ${selectedService.label}（${selectedService.value}）。`,
+        deviceId: device.value,
+        deviceName: formatDeviceLabelForConfirm(device.meta),
+        sentAt: new Date().toISOString(),
+        payload: JSON.stringify(payload, null, 2),
       });
     } catch (error) {
-      const detail =
-        error instanceof SyntaxError
-          ? '服务参数 JSON 格式错误，请先修正后再发送。'
-          : error instanceof Error
-            ? error.message
-            : '服务调用发送失败，请稍后重试。';
+      const detail = error instanceof SyntaxError
+        ? '服务参数 JSON 格式错误，请先修正后再发送。'
+        : getErrorMessage(error, '服务调用发送失败，请稍后重试。');
       message.error(detail);
       onFeedback({
         status: 'error',
         mode: '服务调用',
         title: '服务调用发送失败',
         detail,
-        sentAt: formatCommandTime(),
+        deviceId: device.value,
+        deviceName: formatDeviceLabelForConfirm(device.meta),
+        sentAt: new Date().toISOString(),
+        payload: paramsText,
       });
     } finally {
       setSending(false);
@@ -582,8 +659,7 @@ const ServiceInvokeTab: React.FC<ServiceInvokeTabProps> = ({
           bodyStyle={editorCardBodyStyle}
           extra={
             <Space wrap>
-              <Button icon={<CodeOutlined />} onClick={handleFormat}>格式化 JSON</Button>
-              <Button icon={<ClearOutlined />} onClick={() => setParamsText(EMPTY_JSON_TEXT)}>清空</Button>
+              <Button icon={<ClearOutlined />} onClick={() => updateParamsText(EMPTY_JSON_TEXT)}>清空</Button>
             </Space>
           }
         >
@@ -594,15 +670,18 @@ const ServiceInvokeTab: React.FC<ServiceInvokeTabProps> = ({
             disabled={!selectedDevice || !serviceOptions.length}
             loading={thingModelLoading}
             value={selectedServiceName}
-            onChange={setSelectedServiceName}
+            onChange={(name) => {
+              setSelectedServiceName(name);
+              onDraftChange({ serviceName: name });
+            }}
             options={serviceOptions.map((item) => ({ value: item.value, label: item.label }))}
           />
-          <CodeEditorField
-            language="json"
+          <JsonEditorField
+            height={340}
             path={`file:///device-message/${selectedDevice?.value || 'draft'}/service-invoke.json`}
             value={paramsText}
-            onChange={setParamsText}
-            height={340}
+            onChange={updateParamsText}
+            hint="仅支持 JSON 对象，作为服务入参"
           />
           <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
             <Button type="primary" icon={<ThunderboltOutlined />} loading={sending} disabled={!selectedDevice || !selectedService} onClick={() => void handleSend()}>
@@ -648,36 +727,37 @@ const ServiceInvokeTab: React.FC<ServiceInvokeTabProps> = ({
   );
 };
 
-const RawMessageTab: React.FC<BaseTabProps> = ({ selectedDevice, onFeedback }) => {
-  const [messageType, setMessageType] = useState<string>('SERVICE_INVOKE');
-  const [payloadText, setPayloadText] = useState(() => buildRawMessageTemplate('SERVICE_INVOKE'));
+const RawMessageTab: React.FC<BaseTabProps> = ({
+  selectedDevice,
+  onFeedback,
+  initialDraft,
+  onDraftChange,
+  getActiveDeviceId,
+}) => {
+  const initialMessageType = initialDraft?.rawType ?? 'SERVICE_INVOKE';
+  const [messageType, setMessageType] = useState(initialMessageType);
+  const [payloadText, setPayloadText] = useState(initialDraft?.rawText ?? buildRawMessageTemplate(initialMessageType));
   const [sending, setSending] = useState(false);
-  const autoTemplateRef = useRef(buildRawMessageTemplate('SERVICE_INVOKE'));
+  const autoTemplateRef = useRef(buildRawMessageTemplate(initialMessageType));
+
+  const updatePayloadText = (next: string) => {
+    setPayloadText(next);
+    onDraftChange({ rawText: next });
+  };
 
   const applyTemplateByType = (nextType: string, force = false) => {
     const nextTemplate = buildRawMessageTemplate(nextType);
-    setPayloadText((current) => {
-      if (force || !current.trim() || current === EMPTY_JSON_TEXT || current === autoTemplateRef.current) {
-        autoTemplateRef.current = nextTemplate;
-        return nextTemplate;
-      }
-      autoTemplateRef.current = nextTemplate;
-      return current;
-    });
+    const shouldReplace = force || !payloadText.trim() || payloadText === EMPTY_JSON_TEXT || payloadText === autoTemplateRef.current;
+    autoTemplateRef.current = nextTemplate;
+    if (shouldReplace) {
+      updatePayloadText(nextTemplate);
+    }
   };
 
   const handleTypeChange = (nextType: string) => {
     setMessageType(nextType);
+    onDraftChange({ rawType: nextType });
     applyTemplateByType(nextType);
-  };
-
-  const handleFormat = () => {
-    try {
-      setPayloadText(formatJsonText(payloadText));
-      message.success('原始消息 JSON 已格式化');
-    } catch {
-      message.warning('原始消息 JSON 格式不正确');
-    }
   };
 
   const handleSend = async () => {
@@ -685,37 +765,49 @@ const RawMessageTab: React.FC<BaseTabProps> = ({ selectedDevice, onFeedback }) =
       message.warning('请先选择设备');
       return;
     }
+    const device = selectedDevice;
+    const confirmed = await confirmSendTarget(device, '原始下行消息');
+    if (!confirmed) {
+      return;
+    }
+    if (getActiveDeviceId() !== device.value) {
+      message.warning('目标设备已切换，本次发送已取消，请重新确认目标设备');
+      return;
+    }
 
     setSending(true);
     try {
       const payload = parseJsonObject(payloadText, '原始消息 Payload JSON');
       await deviceMessageApi.publishDownstream({
-        deviceId: selectedDevice.value,
+        deviceId: device.value,
         type: messageType,
         payload,
       });
-      message.success('原始下行消息已发送');
+      message.success(`原始下行消息已发送到 ${device.meta.deviceName}`);
       onFeedback({
         status: 'success',
         mode: '原始消息',
         title: '原始下行消息已发送',
-        detail: `已向设备 ${selectedDevice.meta.deviceName} 下发 ${messageType} 类型的原始消息。`,
-        sentAt: formatCommandTime(),
+        detail: `已向设备 ${formatDeviceLabelForConfirm(device.meta)} 下发 ${messageType} 类型的原始消息。`,
+        deviceId: device.value,
+        deviceName: formatDeviceLabelForConfirm(device.meta),
+        sentAt: new Date().toISOString(),
+        payload: JSON.stringify(payload, null, 2),
       });
     } catch (error) {
-      const detail =
-        error instanceof SyntaxError
-          ? '原始消息 Payload JSON 格式错误，请先修正后再发送。'
-          : error instanceof Error
-            ? error.message
-            : '原始消息发送失败，请稍后重试。';
+      const detail = error instanceof SyntaxError
+        ? '原始消息 Payload JSON 格式错误，请先修正后再发送。'
+        : getErrorMessage(error, '原始消息发送失败，请稍后重试。');
       message.error(detail);
       onFeedback({
         status: 'error',
         mode: '原始消息',
         title: '原始消息发送失败',
         detail,
-        sentAt: formatCommandTime(),
+        deviceId: device.value,
+        deviceName: formatDeviceLabelForConfirm(device.meta),
+        sentAt: new Date().toISOString(),
+        payload: payloadText,
       });
     } finally {
       setSending(false);
@@ -731,22 +823,21 @@ const RawMessageTab: React.FC<BaseTabProps> = ({ selectedDevice, onFeedback }) =
           bodyStyle={editorCardBodyStyle}
           extra={
             <Space wrap>
-              <Button icon={<CodeOutlined />} onClick={handleFormat}>格式化 JSON</Button>
-              <Button icon={<ClearOutlined />} onClick={() => setPayloadText(EMPTY_JSON_TEXT)}>清空</Button>
+              <Button icon={<ClearOutlined />} onClick={() => updatePayloadText(EMPTY_JSON_TEXT)}>清空</Button>
             </Space>
           }
         >
           <Select
             value={messageType}
             onChange={handleTypeChange}
-            options={RAW_MESSAGE_TYPE_OPTIONS.map((item) => ({ value: item.value, label: item.label }))}
+            options={RAW_MESSAGE_TYPE_OPTIONS.map((item) => ({ value: item.value, label: item.value }))}
           />
-          <CodeEditorField
-            language="json"
+          <JsonEditorField
+            height={340}
             path={`file:///device-message/${selectedDevice?.value || 'draft'}/raw-message.json`}
             value={payloadText}
-            onChange={setPayloadText}
-            height={340}
+            onChange={updatePayloadText}
+            hint="仅支持 JSON 对象，作为原始下行 Payload"
           />
           <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
             <Button type="primary" icon={<SendOutlined />} loading={sending} disabled={!selectedDevice} onClick={() => void handleSend()}>
@@ -775,45 +866,82 @@ const RawMessageTab: React.FC<BaseTabProps> = ({ selectedDevice, onFeedback }) =
 };
 
 const DeviceMessagePage: React.FC = () => {
-  const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
-  const [products, setProducts] = useState<ProductRecord[]>([]);
+  const [selectedDevice, setSelectedDevice] = useState<DeviceOption | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<ProductRecord | null>(null);
   const [deviceLoading, setDeviceLoading] = useState(false);
   const [thingModelLoading, setThingModelLoading] = useState(false);
   const [selectedDeviceId, setSelectedDeviceId] = useState<number>();
   const [thingModelSummary, setThingModelSummary] = useState<ThingModelSummary>({ properties: [], services: [] });
   const [feedback, setFeedback] = useState<SendFeedback | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [thingModelError, setThingModelError] = useState<string | null>(null);
   const thingModelCacheRef = useRef<Map<number, ThingModelSummary>>(new Map());
+  const draftsRef = useRef<Map<number, DeviceMessageDraft>>(new Map());
+  const activeDeviceIdRef = useRef<number | undefined>(undefined);
 
-  const productMap = useMemo(() => new Map(products.map((item) => [item.id, item])), [products]);
+  useEffect(() => {
+    activeDeviceIdRef.current = selectedDeviceId;
+  }, [selectedDeviceId]);
 
-  const selectedDevice = useMemo(
-    () => deviceOptions.find((item) => item.value === selectedDeviceId) ?? null,
-    [deviceOptions, selectedDeviceId],
-  );
+  const handleDraftChange = useCallback((patch: Partial<DeviceMessageDraft>) => {
+    const deviceId = activeDeviceIdRef.current;
+    if (!deviceId) {
+      return;
+    }
+    const current = draftsRef.current.get(deviceId) ?? {};
+    draftsRef.current.set(deviceId, { ...current, ...patch });
+  }, []);
 
-  const selectedProduct = useMemo(
-    () => (selectedDevice ? productMap.get(selectedDevice.meta.productId) ?? null : null),
-    [productMap, selectedDevice],
-  );
+  const getActiveDeviceId = useCallback(() => activeDeviceIdRef.current, []);
 
-  const fetchPageContext = useCallback(async () => {
-    setDeviceLoading(true);
-    try {
-      const [deviceResponse, productResponse] = await Promise.all([
-        deviceApi.list({ pageNum: 1, pageSize: 500 }),
-        productApi.list({ pageNum: 1, pageSize: 500 }),
-      ]);
+  const deviceDetailRequestRef = useRef(0);
 
-      const deviceRecords = (deviceResponse.data.data?.records || []) as DeviceRecord[];
-      const productRecords = (productResponse.data.data?.records || []) as ProductRecord[];
-
-      setDeviceOptions(deviceRecords.map((item) => ({ value: item.id, label: formatSelectedDeviceLabel(item), meta: item })));
-      setProducts(productRecords);
-      setSelectedDeviceId((current) => (current && deviceRecords.some((item) => item.id === current) ? current : undefined));
-    } catch {
-      message.error('加载设备消息页基础数据失败');
-    } finally {
+  const loadDeviceDetail = useCallback(async (deviceId?: number) => {
+    const requestId = deviceDetailRequestRef.current + 1;
+    deviceDetailRequestRef.current = requestId;
+    if (!deviceId) {
+      setSelectedDevice(null);
+      setSelectedProduct(null);
+      setPageError(null);
       setDeviceLoading(false);
+      return;
+    }
+    setDeviceLoading(true);
+    setPageError(null);
+    try {
+      const response = await deviceApi.get(deviceId);
+      const record = response.data.data as DeviceRecord | null;
+      if (requestId !== deviceDetailRequestRef.current) {
+        return;
+      }
+      if (!record) {
+        throw new Error('设备详情为空');
+      }
+      setSelectedDevice({ value: record.id, label: formatSelectedDeviceLabel(record), meta: record });
+      // 设备下拉只返回值，产品名称与物模型依赖 productId，因此选中后补查单个产品详情。
+      try {
+        const productResponse = await productApi.get(record.productId);
+        if (requestId !== deviceDetailRequestRef.current) {
+          return;
+        }
+        const product = productResponse.data.data as ProductRecord | null;
+        setSelectedProduct(product?.id ? product : null);
+      } catch {
+        // 产品名称仅用于展示，补查失败不影响设备消息下发。
+        if (requestId === deviceDetailRequestRef.current) {
+          setSelectedProduct(null);
+        }
+      }
+    } catch (error) {
+      if (requestId === deviceDetailRequestRef.current) {
+        setSelectedDevice(null);
+        setSelectedProduct(null);
+        setPageError(getErrorMessage(error, '加载设备详情失败'));
+      }
+    } finally {
+      if (requestId === deviceDetailRequestRef.current) {
+        setDeviceLoading(false);
+      }
     }
   }, []);
 
@@ -823,31 +951,34 @@ const DeviceMessagePage: React.FC = () => {
       const cached = thingModelCacheRef.current.get(productId);
       if (cached) {
         setThingModelSummary(cached);
+        setThingModelError(null);
         return;
       }
     }
 
     setThingModelLoading(true);
+    setThingModelError(null);
     try {
       const response = await productApi.getThingModel(productId);
       const parsed = parseThingModelDefinition(response.data.data);
       thingModelCacheRef.current.set(productId, parsed);
       setThingModelSummary(parsed);
-    } catch {
+    } catch (error) {
       setThingModelSummary({ properties: [], services: [] });
-      message.warning('加载产品物模型失败，请稍后重试');
+      setThingModelError(getErrorMessage(error, '加载产品物模型失败，请稍后重试'));
     } finally {
       setThingModelLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void fetchPageContext();
-  }, [fetchPageContext]);
+    void loadDeviceDetail(selectedDeviceId);
+  }, [loadDeviceDetail, selectedDeviceId]);
 
   useEffect(() => {
     if (!selectedDevice?.meta.productId) {
       setThingModelSummary({ properties: [], services: [] });
+      setThingModelError(null);
       return;
     }
     void loadThingModelSummary(selectedDevice.meta.productId);
@@ -862,32 +993,56 @@ const DeviceMessagePage: React.FC = () => {
     void loadThingModelSummary(selectedDevice.meta.productId, true);
   };
 
+  const handleDeviceChange = (value?: number) => {
+    if (value === selectedDeviceId) {
+      return;
+    }
+    activeDeviceIdRef.current = value;
+    setSelectedDeviceId(value);
+    setSelectedDevice(null);
+    setSelectedProduct(null);
+    // 切换设备必须丢弃上一台设备的结果提示，编辑区通过 key 重新挂载并恢复该设备自己的草稿。
+    setFeedback(null);
+    if (value != null && draftsRef.current.has(value)) {
+      message.info('已恢复该设备上次草稿');
+    }
+  };
+
+  const deviceKey = String(selectedDeviceId ?? 'none');
+  const initialDraft = selectedDeviceId != null ? draftsRef.current.get(selectedDeviceId) : undefined;
+
   return (
     <div>
       <PageHeader
         title="设备消息工作台"
         extra={
           <Space wrap>
-            <Button icon={<ReloadOutlined />} onClick={() => void fetchPageContext()} loading={deviceLoading}>刷新设备</Button>
+            <Button icon={<ReloadOutlined />} onClick={() => void loadDeviceDetail(selectedDeviceId)} loading={deviceLoading}>刷新设备</Button>
             <Button icon={<CodeOutlined />} onClick={handleRefreshThingModel} loading={thingModelLoading} disabled={!selectedDevice}>刷新物模型</Button>
           </Space>
         }
       />
+
+      {pageError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="加载设备详情失败"
+          description={pageError}
+          action={<Button size="small" danger onClick={() => void loadDeviceDetail(selectedDeviceId)}>重试</Button>}
+        />
+      ) : null}
 
       <Card style={summaryCardStyle} bodyStyle={{ padding: 20, background: 'transparent' }}>
         <Row gutter={[20, 20]} align="top">
           <Col xs={24} xl={14}>
             <Space direction="vertical" size={14} style={{ width: '100%' }}>
               <Title level={5} style={{ margin: 0 }}>目标设备</Title>
-              <Select
-                showSearch
-                allowClear
-                optionFilterProp="label"
-                placeholder="搜索设备名称或别名"
-                loading={deviceLoading}
+              <DeviceSelect
+                placeholder="搜索并选择设备（名称或别名）"
                 value={selectedDeviceId}
-                onChange={setSelectedDeviceId}
-                options={deviceOptions.map((item) => ({ value: item.value, label: item.label }))}
+                onChange={handleDeviceChange}
                 style={{ width: '100%' }}
               />
               <Space wrap>
@@ -896,12 +1051,33 @@ const DeviceMessagePage: React.FC = () => {
                 {selectedDevice?.meta.status ? <Tag color={deviceStatusColorMap[selectedDevice.meta.status] || 'default'} style={{ marginInlineEnd: 0 }}>{deviceStatusTextMap[selectedDevice.meta.status] || selectedDevice.meta.status}</Tag> : null}
                 {thingModelLoading ? <Tag color="processing" style={{ marginInlineEnd: 0 }}>物模型加载中</Tag> : null}
               </Space>
-              {feedback ? (
+              {thingModelError ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message="加载物模型失败，属性与服务模板可能不完整"
+                  description={thingModelError}
+                  action={<Button size="small" onClick={handleRefreshThingModel}>重试</Button>}
+                />
+              ) : null}
+              {feedback && feedback.deviceId === selectedDeviceId ? (
                 <Alert
                   type={feedback.status === 'success' ? 'success' : 'error'}
                   showIcon
                   message={`${feedback.mode}结果：${feedback.title}`}
-                  description={<Space direction="vertical" size={4}><span>{feedback.detail}</span><Text type="secondary">发送时间：{feedback.sentAt}</Text></Space>}
+                  description={(
+                    <Space direction="vertical" size={4}>
+                      <span>{feedback.detail}</span>
+                      <Text type="secondary">目标设备：{feedback.deviceName}</Text>
+                      <Text type="secondary">发送时间：{formatDateTime(feedback.sentAt)}</Text>
+                      {feedback.payload ? (
+                        <Space size={6} wrap>
+                          <Text type="secondary">下发载荷：</Text>
+                          <CopyText text={feedback.payload} ellipsis />
+                        </Space>
+                      ) : null}
+                    </Space>
+                  )}
                 />
               ) : null}
             </Space>
@@ -910,7 +1086,7 @@ const DeviceMessagePage: React.FC = () => {
             <Card style={{ ...surfaceCardStyle, height: '100%', background: 'rgba(255,255,255,0.78)' }} bodyStyle={{ padding: 18 }}>
               {selectedDevice ? (
                 <Descriptions column={1} size="small" title="当前设备上下文">
-                  <Descriptions.Item label="设备标识">{selectedDevice.meta.deviceName}</Descriptions.Item>
+                  <Descriptions.Item label="设备标识"><CopyText text={selectedDevice.meta.deviceName} ellipsis /></Descriptions.Item>
                   <Descriptions.Item label="展示名称">{selectedDevice.meta.nickname || '-'}</Descriptions.Item>
                   <Descriptions.Item label="所属产品">{selectedProduct ? `${selectedProduct.name}（${selectedProduct.productKey}）` : '-'}</Descriptions.Item>
                   <Descriptions.Item label="在线状态"><Tag color={onlineStatusColorMap[selectedDevice.meta.onlineStatus || 'UNKNOWN'] || 'default'}>{onlineStatusTextMap[selectedDevice.meta.onlineStatus || 'UNKNOWN'] || selectedDevice.meta.onlineStatus || '未知'}</Tag></Descriptions.Item>
@@ -933,17 +1109,49 @@ const DeviceMessagePage: React.FC = () => {
             {
               key: 'property-set',
               label: <span><SettingOutlined style={{ marginRight: 6 }} />属性设置</span>,
-              children: <PropertySetTab selectedDevice={selectedDevice} propertyOptions={thingModelSummary.properties} thingModelLoading={thingModelLoading} onFeedback={setFeedback} />,
+              children: (
+                <PropertySetTab
+                  key={deviceKey}
+                  selectedDevice={selectedDevice}
+                  propertyOptions={thingModelSummary.properties}
+                  thingModelLoading={thingModelLoading}
+                  onFeedback={setFeedback}
+                  initialDraft={initialDraft}
+                  onDraftChange={handleDraftChange}
+                  getActiveDeviceId={getActiveDeviceId}
+                />
+              ),
             },
             {
               key: 'service-invoke',
               label: <span><ThunderboltOutlined style={{ marginRight: 6 }} />服务调用</span>,
-              children: <ServiceInvokeTab selectedDevice={selectedDevice} serviceOptions={thingModelSummary.services} thingModelLoading={thingModelLoading} onFeedback={setFeedback} />,
+              children: (
+                <ServiceInvokeTab
+                  key={deviceKey}
+                  selectedDevice={selectedDevice}
+                  serviceOptions={thingModelSummary.services}
+                  thingModelLoading={thingModelLoading}
+                  onFeedback={setFeedback}
+                  initialDraft={initialDraft}
+                  onDraftChange={handleDraftChange}
+                  getActiveDeviceId={getActiveDeviceId}
+                />
+              ),
             },
             {
               key: 'raw-message',
               label: <span><SendOutlined style={{ marginRight: 6 }} />原始消息</span>,
-              children: <RawMessageTab selectedDevice={selectedDevice} thingModelLoading={thingModelLoading} onFeedback={setFeedback} />,
+              children: (
+                <RawMessageTab
+                  key={deviceKey}
+                  selectedDevice={selectedDevice}
+                  thingModelLoading={thingModelLoading}
+                  onFeedback={setFeedback}
+                  initialDraft={initialDraft}
+                  onDraftChange={handleDraftChange}
+                  getActiveDeviceId={getActiveDeviceId}
+                />
+              ),
             },
           ]}
         />

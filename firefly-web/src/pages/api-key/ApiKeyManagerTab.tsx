@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
   Button,
   Card,
   DatePicker,
@@ -26,7 +27,12 @@ import {
   StopOutlined,
 } from '@ant-design/icons';
 import PageHeader from '../../components/PageHeader';
+import CopyText from '../../components/CopyText';
+import ListEmpty from '../../components/ListEmpty';
 import { apiKeyApi } from '../../services/api';
+import { getErrorMessage } from '../../utils/errors';
+import { usePageActivation } from '../../hooks/usePageActivation';
+import { formatDateTime } from '../../utils/datetime';
 
 interface OpenApiOptionItem {
   code: string;
@@ -97,25 +103,13 @@ const methodColorMap: Record<string, string> = {
   PATCH: 'purple',
 };
 
-const getErrorMessage = (error: unknown, fallback: string): string => {
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const messageText = (error as { response?: { data?: { message?: string } } }).response?.data?.message;
-    if (messageText) {
-      return messageText;
-    }
-  }
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return fallback;
-};
-
 const ApiKeyManagerTab: React.FC = () => {
   const [queryForm] = Form.useForm<QueryValues>();
   const [editForm] = Form.useForm<FormValues>();
   const selectedOpenApiCodes = Form.useWatch('openApiCodes', editForm) ?? [];
 
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [items, setItems] = useState<AppKeyItem[]>([]);
@@ -129,11 +123,13 @@ const ApiKeyManagerTab: React.FC = () => {
   const [createdResult, setCreatedResult] = useState<AppKeyCreatedResult | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [statusPendingId, setStatusPendingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const findOpenApiOption = (code: string): OpenApiOptionItem | undefined =>
     openApiOptions.find((item) => item.code === code);
 
-  const fetchList = async () => {
+  const fetchList = useCallback(async () => {
     setLoading(true);
     try {
       const response = await apiKeyApi.list({
@@ -145,12 +141,15 @@ const ApiKeyManagerTab: React.FC = () => {
       const page = (response.data?.data ?? {}) as { records?: AppKeyItem[]; total?: number };
       setItems(page.records ?? []);
       setTotal(page.total ?? 0);
+      setLoadError(null);
     } catch (error) {
-      message.error(getErrorMessage(error, '加载 AppKey 列表失败'));
+      setLoadError(getErrorMessage(error, '加载 AppKey 列表失败'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters, pageNum, pageSize]);
+
+  usePageActivation(() => { void fetchList(); });
 
   const fetchOpenApiOptions = async () => {
     setOptionsLoading(true);
@@ -166,7 +165,7 @@ const ApiKeyManagerTab: React.FC = () => {
 
   useEffect(() => {
     void fetchList();
-  }, [pageNum, pageSize, filters]);
+  }, [fetchList]);
 
   useEffect(() => {
     void fetchOpenApiOptions();
@@ -212,10 +211,16 @@ const ApiKeyManagerTab: React.FC = () => {
   };
 
   const handleSubmit = async () => {
+    let values: FormValues;
     try {
-      const values = await editForm.validateFields();
-      setSubmitting(true);
+      values = await editForm.validateFields();
+    } catch {
+      // 表单校验失败时 antd 已在字段下方给出提示，无需额外弹窗。
+      return;
+    }
 
+    setSubmitting(true);
+    try {
       const payload = {
         name: values.name.trim(),
         description: values.description?.trim() || undefined,
@@ -243,25 +248,42 @@ const ApiKeyManagerTab: React.FC = () => {
     }
   };
 
-  const handleToggleStatus = async (record: AppKeyItem) => {
+  const handleToggleStatus = (record: AppKeyItem) => {
     const nextStatus = record.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
-    try {
-      await apiKeyApi.updateStatus(record.id, nextStatus);
-      message.success(nextStatus === 'ACTIVE' ? 'AppKey 已启用' : 'AppKey 已停用');
-      await fetchList();
-    } catch (error) {
-      message.error(getErrorMessage(error, '更新 AppKey 状态失败'));
-    }
+    const disabling = nextStatus === 'DISABLED';
+    Modal.confirm({
+      title: disabling ? `停用 AppKey「${record.name}」？` : `启用 AppKey「${record.name}」？`,
+      content: disabling
+        ? '停用后，已对接系统使用该 Access Key 的调用会立即失败，需要重新启用后才能恢复。'
+        : '启用后，已对接系统可以立即恢复使用该 Access Key 调用已授权的 OpenAPI。',
+      okText: disabling ? '确认停用' : '确认启用',
+      cancelText: '取消',
+      okButtonProps: disabling ? { danger: true } : undefined,
+      onOk: async () => {
+        setStatusPendingId(record.id);
+        try {
+          await apiKeyApi.updateStatus(record.id, nextStatus);
+          message.success(nextStatus === 'ACTIVE' ? 'AppKey 已启用' : 'AppKey 已停用');
+          await fetchList();
+        } catch (error) {
+          message.error(getErrorMessage(error, '更新 AppKey 状态失败'));
+          throw error;
+        } finally {
+          setStatusPendingId(null);
+        }
+      },
+    });
   };
 
   const handleDelete = (record: AppKeyItem) => {
     Modal.confirm({
       title: '确认删除 AppKey',
-      content: `删除 ${record.name}（${record.accessKey}）后，该凭证将立即失效且不可恢复。`,
+      content: `删除「${record.name}」（${record.accessKey}）后，该凭证会立即失效且不可恢复，已对接系统将无法继续调用。`,
       okText: '删除',
       cancelText: '取消',
       okButtonProps: { danger: true },
       onOk: async () => {
+        setDeletingId(record.id);
         try {
           await apiKeyApi.delete(record.id);
           message.success('AppKey 已删除');
@@ -269,8 +291,21 @@ const ApiKeyManagerTab: React.FC = () => {
         } catch (error) {
           message.error(getErrorMessage(error, '删除 AppKey 失败'));
           throw error;
+        } finally {
+          setDeletingId(null);
         }
       },
+    });
+  };
+
+  const confirmCloseCreatedResult = () => {
+    Modal.confirm({
+      title: '确认已保存 Secret Key？',
+      content: '关闭后无法再次查看该 Secret Key。请确认已复制 Access Key 与 Secret Key，否则只能删除后重新创建。',
+      okText: '已保存，关闭',
+      cancelText: '返回查看',
+      okButtonProps: { danger: true },
+      onOk: () => setCreatedResult(null),
     });
   };
 
@@ -293,26 +328,22 @@ const ApiKeyManagerTab: React.FC = () => {
   };
 
   const columns: ColumnsType<AppKeyItem> = [
-    { title: '名称', dataIndex: 'name', width: 180 },
+    { title: '名称', dataIndex: 'name', width: 180, fixed: 'left', ellipsis: true },
     {
       title: 'Access Key',
       dataIndex: 'accessKey',
-      width: 260,
-      render: (value: string) => (
-        <Typography.Text code copyable={{ text: value }}>
-          {value}
-        </Typography.Text>
-      ),
+      width: 300,
+      render: (value: string) => <CopyText text={value} ellipsis />,
     },
     {
       title: '授权 OpenAPI',
       dataIndex: 'openApiCodes',
-      width: 320,
+      width: 300,
       render: (value: string[]) => renderOpenApiTags(value),
     },
     {
       title: '限流',
-      width: 220,
+      width: 200,
       render: (_value: unknown, record) => (
         <Space direction="vertical" size={0}>
           <Typography.Text>{record.rateLimitPerMin} 次/分钟</Typography.Text>
@@ -334,20 +365,25 @@ const ApiKeyManagerTab: React.FC = () => {
       title: '过期时间',
       dataIndex: 'expireAt',
       width: 180,
-      render: (value?: string) => value || '永不过期',
+      render: (value?: string) => (value ? formatDateTime(value) : '永不过期'),
     },
     {
       title: '最近使用',
       dataIndex: 'lastUsedAt',
       width: 180,
-      render: (value?: string) => value || '-',
+      render: (value?: string) => (value ? formatDateTime(value) : '-'),
     },
-    { title: '创建时间', dataIndex: 'createdAt', width: 180 },
+    {
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      width: 180,
+      render: (value?: string) => (value ? formatDateTime(value) : '-'),
+    },
     {
       title: '操作',
       key: 'action',
       fixed: 'right',
-      width: 220,
+      width: 240,
       render: (_value: unknown, record) => (
         <Space size="small">
           <Button
@@ -368,11 +404,18 @@ const ApiKeyManagerTab: React.FC = () => {
             type="link"
             size="small"
             icon={record.status === 'ACTIVE' ? <StopOutlined /> : <CheckCircleOutlined />}
-            onClick={() => void handleToggleStatus(record)}
+            loading={statusPendingId === record.id}
+            onClick={() => handleToggleStatus(record)}
           >
             {record.status === 'ACTIVE' ? '停用' : '启用'}
           </Button>
-          <Button type="link" size="small" danger onClick={() => handleDelete(record)}>
+          <Button
+            type="link"
+            size="small"
+            danger
+            loading={deletingId === record.id}
+            onClick={() => handleDelete(record)}
+          >
             删除
           </Button>
         </Space>
@@ -394,7 +437,7 @@ const ApiKeyManagerTab: React.FC = () => {
                 </Tag>
                 <Tag color="blue">{option?.serviceCode || '-'}</Tag>
               </Space>
-              <Typography.Text code>{option?.gatewayPath || code}</Typography.Text>
+              <CopyText text={option?.gatewayPath || code} />
             </Space>
           </Card>
         );
@@ -419,6 +462,21 @@ const ApiKeyManagerTab: React.FC = () => {
           </Space>
         )}
       />
+
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="AppKey 列表加载失败"
+          description={loadError}
+          action={(
+            <Button size="small" onClick={() => void fetchList()} loading={loading}>
+              重试
+            </Button>
+          )}
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
 
       <Card>
         <Form form={queryForm} layout="inline" onFinish={() => void handleSearch()}>
@@ -450,12 +508,23 @@ const ApiKeyManagerTab: React.FC = () => {
           loading={loading}
           dataSource={items}
           columns={columns}
-          scroll={{ x: 1760 }}
+          scroll={{ x: 1960 }}
+          locale={{
+            emptyText: (
+              <ListEmpty
+                hasFilters={Boolean(filters.keyword || filters.status)}
+                onClearFilters={handleReset}
+                emptyText="暂无 AppKey，请先新建"
+                filteredText="没有符合当前筛选条件的 AppKey"
+              />
+            ),
+          }}
           pagination={{
             current: pageNum,
             pageSize,
             total,
             showSizeChanger: true,
+            showTotal: (count) => `共 ${count} 条`,
             onChange: (nextPage, nextPageSize) => {
               setPageNum(nextPage);
               setPageSize(nextPageSize);
@@ -483,7 +552,7 @@ const ApiKeyManagerTab: React.FC = () => {
         <Form form={editForm} layout="vertical">
           <Card size="small" style={{ marginBottom: 16 }}>
             <Typography.Text type="secondary">
-              Secret Key 只会在创建成功时展示一次。
+              Secret Key 只会在创建成功时展示一次，创建后请立即复制保存。
             </Typography.Text>
           </Card>
 
@@ -565,9 +634,7 @@ const ApiKeyManagerTab: React.FC = () => {
             <Descriptions column={1} bordered>
               <Descriptions.Item label="名称">{detailRecord.name}</Descriptions.Item>
               <Descriptions.Item label="Access Key">
-                <Typography.Text code copyable={{ text: detailRecord.accessKey }}>
-                  {detailRecord.accessKey}
-                </Typography.Text>
+                <CopyText text={detailRecord.accessKey} />
               </Descriptions.Item>
               <Descriptions.Item label="状态">
                 <Tag color={statusColorMap[detailRecord.status] ?? 'default'}>
@@ -575,11 +642,17 @@ const ApiKeyManagerTab: React.FC = () => {
                 </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="说明">{detailRecord.description || '-'}</Descriptions.Item>
-              <Descriptions.Item label="每分钟调用上限">{detailRecord.rateLimitPerMin}</Descriptions.Item>
-              <Descriptions.Item label="每日调用上限">{detailRecord.rateLimitPerDay}</Descriptions.Item>
-              <Descriptions.Item label="过期时间">{detailRecord.expireAt || '永不过期'}</Descriptions.Item>
-              <Descriptions.Item label="最近使用">{detailRecord.lastUsedAt || '-'}</Descriptions.Item>
-              <Descriptions.Item label="创建时间">{detailRecord.createdAt || '-'}</Descriptions.Item>
+              <Descriptions.Item label="每分钟调用上限">{detailRecord.rateLimitPerMin} 次</Descriptions.Item>
+              <Descriptions.Item label="每日调用上限">{detailRecord.rateLimitPerDay} 次</Descriptions.Item>
+              <Descriptions.Item label="过期时间">
+                {detailRecord.expireAt ? formatDateTime(detailRecord.expireAt) : '永不过期'}
+              </Descriptions.Item>
+              <Descriptions.Item label="最近使用">
+                {detailRecord.lastUsedAt ? formatDateTime(detailRecord.lastUsedAt) : '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="创建时间">
+                {detailRecord.createdAt ? formatDateTime(detailRecord.createdAt) : '-'}
+              </Descriptions.Item>
             </Descriptions>
 
             <Card size="small" title="已授权 OpenAPI">
@@ -589,12 +662,16 @@ const ApiKeyManagerTab: React.FC = () => {
         ) : null}
       </Drawer>
 
+      {/* Secret Key 只返回一次：禁用 Esc、点击遮罩与右上角关闭，关闭前必须二次确认。 */}
       <Modal
         open={!!createdResult}
         title="AppKey 创建成功"
-        onCancel={() => setCreatedResult(null)}
+        closable={false}
+        maskClosable={false}
+        keyboard={false}
+        width={640}
         footer={[
-          <Button key="ok" type="primary" onClick={() => setCreatedResult(null)}>
+          <Button key="ok" type="primary" onClick={confirmCloseCreatedResult}>
             我已保存
           </Button>,
         ]}
@@ -602,20 +679,16 @@ const ApiKeyManagerTab: React.FC = () => {
         {createdResult ? (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
             <Typography.Text type="danger">
-              Secret Key 只会展示这一次，请立即复制并妥善保管。后续调用请用它在本地计算 HMAC-SHA256 签名，
-              不要把 Secret Key 放到请求头或请求体里。
+              Secret Key 只会展示这一次，请立即复制并妥善保管。关闭后无法再次查看，只能删除后重新创建。
+              后续调用请用它在本地计算 HMAC-SHA256 签名，不要把 Secret Key 放到请求头或请求体里。
             </Typography.Text>
             <Descriptions column={1} bordered size="small">
               <Descriptions.Item label="名称">{createdResult.name}</Descriptions.Item>
               <Descriptions.Item label="Access Key">
-                <Typography.Text code copyable={{ text: createdResult.accessKey }}>
-                  {createdResult.accessKey}
-                </Typography.Text>
+                <CopyText text={createdResult.accessKey} />
               </Descriptions.Item>
               <Descriptions.Item label="Secret Key">
-                <Typography.Text code copyable={{ text: createdResult.secretKey }}>
-                  {createdResult.secretKey}
-                </Typography.Text>
+                <CopyText text={createdResult.secretKey} />
               </Descriptions.Item>
             </Descriptions>
           </Space>

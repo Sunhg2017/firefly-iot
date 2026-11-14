@@ -1,10 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Drawer, Form, Input, Select, Space, Table, Tag, Typography, message, Modal } from 'antd';
-import { DeleteOutlined, PlusOutlined, TeamOutlined } from '@ant-design/icons';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Button, Card, Drawer, Form, Input, Modal, Select, Space, Table, Tag, Typography, message } from 'antd';
+import { DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
+import ListEmpty from '../../components/ListEmpty';
 import { alarmRecipientGroupApi, userApi } from '../../services/api';
 import useAuthStore from '../../store/useAuthStore';
+import { useConfirmDiscard, useDirtyGuard } from '../../hooks/useDirtyGuard';
+import { getErrorMessage } from '../../utils/errors';
+import { formatDateTime } from '../../utils/datetime';
 import { ALARM_TEXT } from './alarmText';
 
 const { TextArea } = Input;
@@ -35,14 +39,26 @@ const AlarmRecipientGroupPage: React.FC = () => {
   const [data, setData] = useState<RecipientGroupRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
   const [keyword, setKeyword] = useState('');
+  const [keywordInput, setKeywordInput] = useState('');
   const [open, setOpen] = useState(false);
   const [editingCode, setEditingCode] = useState<string | null>(null);
   const [userOptions, setUserOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [loadingCode, setLoadingCode] = useState<string | null>(null);
+  const [userLoadError, setUserLoadError] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
   const [form] = Form.useForm<RecipientGroupFormValues>();
+  const confirmDiscard = useConfirmDiscard();
+  const submittingRef = useRef(false);
+  const editingRequestRef = useRef(false);
 
   const canManage = hasPermission('alarm:update');
+  const hasFilters = Boolean(keyword);
+
+  useDirtyGuard(open && dirty);
 
   const fetchData = async () => {
     setLoading(true);
@@ -51,11 +67,14 @@ const AlarmRecipientGroupPage: React.FC = () => {
         ...params,
         keyword: keyword || undefined,
       });
-      const page = res.data.data;
-      setData(page.records || []);
-      setTotal(page.total || 0);
-    } catch {
-      message.error(ALARM_TEXT.loadRecipientGroupError);
+      const page = res.data.data as { records?: RecipientGroupRecord[]; total?: number } | undefined;
+      setData(page?.records || []);
+      setTotal(page?.total || 0);
+      setLoadError(null);
+    } catch (error) {
+      setLoadError(getErrorMessage(error, ALARM_TEXT.loadRecipientGroupError));
+      setData([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -71,34 +90,54 @@ const AlarmRecipientGroupPage: React.FC = () => {
           label: item.realName ? `${item.realName} (@${item.username})` : item.username,
         })),
       );
-    } catch {
-      message.error(ALARM_TEXT.loadNotifyOptionsError);
+      setUserLoadError(null);
+    } catch (error) {
+      const errorMessage = getErrorMessage(error, ALARM_TEXT.loadRecipientUsersError);
+      setUserLoadError(errorMessage);
+      message.error(errorMessage);
     }
   };
 
   useEffect(() => {
     void fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.pageNum, params.pageSize, keyword]);
 
   useEffect(() => {
     void loadUsers();
   }, []);
 
-  const stats = useMemo(
-    () => ({
-      groupCount: total,
-      memberCount: data.reduce((sum, item) => sum + (item.memberCount || 0), 0),
-    }),
-    [data, total],
-  );
+  const closeDrawer = () => {
+    if (submittingRef.current) {
+      return;
+    }
+    setOpen(false);
+    setEditingCode(null);
+    setDirty(false);
+    form.resetFields();
+  };
+
+  const requestCloseDrawer = () => {
+    if (submittingRef.current) {
+      return;
+    }
+    confirmDiscard(open && form.isFieldsTouched(), closeDrawer);
+  };
 
   const openCreate = () => {
     setEditingCode(null);
+    form.resetFields();
     form.setFieldsValue({ name: '', description: '', memberUsernames: [] });
+    setDirty(false);
     setOpen(true);
   };
 
   const openEdit = async (record: RecipientGroupRecord) => {
+    if (editingRequestRef.current) {
+      return;
+    }
+    editingRequestRef.current = true;
+    setLoadingCode(record.code);
     try {
       const res = await alarmRecipientGroupApi.get(record.code);
       const detail = res.data.data as RecipientGroupRecord;
@@ -108,13 +147,22 @@ const AlarmRecipientGroupPage: React.FC = () => {
         description: detail.description,
         memberUsernames: detail.memberUsernames || [],
       });
+      setDirty(false);
       setOpen(true);
-    } catch {
-      message.error(ALARM_TEXT.loadRecipientGroupError);
+    } catch (error) {
+      message.error(getErrorMessage(error, ALARM_TEXT.loadRecipientGroupError));
+    } finally {
+      editingRequestRef.current = false;
+      setLoadingCode(null);
     }
   };
 
   const handleSubmit = async (values: RecipientGroupFormValues) => {
+    if (submittingRef.current) {
+      return;
+    }
+    submittingRef.current = true;
+    setSubmitting(true);
     try {
       const payload = {
         name: values.name,
@@ -130,10 +178,16 @@ const AlarmRecipientGroupPage: React.FC = () => {
       }
       setOpen(false);
       setEditingCode(null);
+      setDirty(false);
       form.resetFields();
       await fetchData();
-    } catch {
-      message.error(editingCode ? ALARM_TEXT.updateRecipientGroupError : ALARM_TEXT.createRecipientGroupError);
+    } catch (error) {
+      message.error(
+        getErrorMessage(error, editingCode ? ALARM_TEXT.updateRecipientGroupError : ALARM_TEXT.createRecipientGroupError),
+      );
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -141,16 +195,24 @@ const AlarmRecipientGroupPage: React.FC = () => {
     Modal.confirm({
       title: ALARM_TEXT.deleteRecipientGroupTitle,
       content: `${ALARM_TEXT.deleteRecipientGroupMessagePrefix}${record.name}${ALARM_TEXT.deleteRecipientGroupMessageSuffix}`,
+      okText: ALARM_TEXT.remove,
+      okButtonProps: { danger: true },
       onOk: async () => {
         try {
           await alarmRecipientGroupApi.delete(record.code);
           message.success(ALARM_TEXT.deleteRecipientGroupSuccess);
           await fetchData();
-        } catch {
-          message.error(ALARM_TEXT.deleteRecipientGroupError);
+        } catch (error) {
+          message.error(getErrorMessage(error, ALARM_TEXT.deleteRecipientGroupError));
         }
       },
     });
+  };
+
+  const clearFilters = () => {
+    setKeyword('');
+    setKeywordInput('');
+    setParams((current) => ({ ...current, pageNum: 1 }));
   };
 
   const columns: ColumnsType<RecipientGroupRecord> = [
@@ -159,9 +221,13 @@ const AlarmRecipientGroupPage: React.FC = () => {
       dataIndex: 'name',
       width: 220,
       render: (value: string, record: RecipientGroupRecord) => (
-        <Space direction="vertical" size={2}>
-          <Typography.Text strong>{value}</Typography.Text>
-          <Typography.Text type="secondary">{record.description || '-'}</Typography.Text>
+        <Space direction="vertical" size={2} style={{ maxWidth: '100%' }}>
+          <Typography.Text strong ellipsis={{ tooltip: value }}>
+            {value}
+          </Typography.Text>
+          <Typography.Text type="secondary" ellipsis={{ tooltip: record.description }}>
+            {record.description || '-'}
+          </Typography.Text>
         </Space>
       ),
     },
@@ -189,10 +255,10 @@ const AlarmRecipientGroupPage: React.FC = () => {
       },
     },
     {
-      title: ALARM_TEXT.updatedAt || '更新时间',
+      title: ALARM_TEXT.updatedAt,
       dataIndex: 'updatedAt',
       width: 180,
-      render: (value?: string) => value || '-',
+      render: (value?: string) => formatDateTime(value),
     },
     {
       title: ALARM_TEXT.action,
@@ -201,10 +267,23 @@ const AlarmRecipientGroupPage: React.FC = () => {
       render: (_: unknown, record: RecipientGroupRecord) =>
         canManage ? (
           <Space>
-            <Button type="link" size="small" onClick={() => void openEdit(record)}>
+            <Button
+              type="link"
+              size="small"
+              loading={loadingCode === record.code}
+              disabled={Boolean(loadingCode)}
+              onClick={() => void openEdit(record)}
+            >
               {ALARM_TEXT.edit}
             </Button>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>
+            <Button
+              type="link"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              disabled={Boolean(loadingCode)}
+              onClick={() => handleDelete(record)}
+            >
               {ALARM_TEXT.remove}
             </Button>
           </Space>
@@ -230,40 +309,63 @@ const AlarmRecipientGroupPage: React.FC = () => {
 
       <Space direction="vertical" size={16} style={{ width: '100%' }}>
         <Card style={{ borderRadius: 12 }}>
-          <Space size={32}>
-            <Space>
-              <TeamOutlined style={{ color: '#1677ff' }} />
-              <span>{`${ALARM_TEXT.recipientGroupTitle}：${stats.groupCount}`}</span>
-            </Space>
-            <Space>
-              <TeamOutlined style={{ color: '#13a8a8' }} />
-              <span>{`${ALARM_TEXT.recipientGroupMembers}：${stats.memberCount}`}</span>
-            </Space>
-          </Space>
-        </Card>
-
-        <Card style={{ borderRadius: 12 }}>
           <Space wrap>
             <Input.Search
+              value={keywordInput}
               allowClear
               enterButton="查询"
               placeholder={ALARM_TEXT.recipientGroupSearch}
               style={{ width: 260 }}
+              onChange={(event) => {
+                const nextKeyword = event.target.value;
+                setKeywordInput(nextKeyword);
+                if (!nextKeyword) {
+                  setKeyword('');
+                  setParams((current) => ({ ...current, pageNum: 1 }));
+                }
+              }}
               onSearch={(value) => {
-                setKeyword(value);
+                setKeyword(value.trim());
                 setParams((current) => ({ ...current, pageNum: 1 }));
               }}
             />
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void fetchData()}>
+              {ALARM_TEXT.refresh}
+            </Button>
+            {hasFilters && <Button onClick={clearFilters}>{ALARM_TEXT.clearFilters}</Button>}
           </Space>
         </Card>
 
         <Card style={{ borderRadius: 12 }}>
+          {loadError ? (
+            <Alert
+              type="error"
+              showIcon
+              message={ALARM_TEXT.loadRecipientGroupError}
+              description={loadError}
+              action={
+                <Button size="small" onClick={() => void fetchData()}>
+                  {ALARM_TEXT.retry}
+                </Button>
+              }
+              style={{ marginBottom: 16 }}
+            />
+          ) : null}
           <Table
             rowKey="code"
             columns={columns}
             dataSource={data}
             loading={loading}
-            locale={{ emptyText: ALARM_TEXT.recipientGroupEmpty }}
+            locale={{
+              emptyText: loadError ? null : (
+                <ListEmpty
+                  hasFilters={hasFilters}
+                  emptyText={ALARM_TEXT.recipientGroupEmpty}
+                  filteredText={ALARM_TEXT.recipientGroupEmptyFiltered}
+                  onClearFilters={clearFilters}
+                />
+              ),
+            }}
             scroll={{ x: 1080 }}
             pagination={{
               current: params.pageNum,
@@ -280,29 +382,29 @@ const AlarmRecipientGroupPage: React.FC = () => {
       <Drawer
         title={editingCode ? ALARM_TEXT.editRecipientGroup : ALARM_TEXT.createRecipientGroup}
         open={open}
-        onClose={() => {
-          setOpen(false);
-          setEditingCode(null);
-        }}
+        onClose={requestCloseDrawer}
         width={720}
         destroyOnClose
+        closable={!submitting}
+        maskClosable={!submitting}
+        keyboard={!submitting}
         footer={
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button
-              onClick={() => {
-                setOpen(false);
-                setEditingCode(null);
-              }}
-            >
+            <Button onClick={closeDrawer} disabled={submitting}>
               {ALARM_TEXT.close}
             </Button>
-            <Button type="primary" onClick={() => form.submit()}>
-              {editingCode ? ALARM_TEXT.edit : ALARM_TEXT.createRecipientGroup}
+            <Button type="primary" loading={submitting} disabled={submitting} onClick={() => form.submit()}>
+              {editingCode ? ALARM_TEXT.save : ALARM_TEXT.createRecipientGroup}
             </Button>
           </Space>
         }
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit}>
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSubmit}
+          onValuesChange={() => setDirty((previous) => (previous ? previous : true))}
+        >
           <Form.Item
             name="name"
             label={ALARM_TEXT.recipientGroupName}
@@ -313,7 +415,11 @@ const AlarmRecipientGroupPage: React.FC = () => {
           <Form.Item name="description" label={ALARM_TEXT.recipientGroupDescriptionLabel}>
             <TextArea rows={3} maxLength={500} placeholder={ALARM_TEXT.recipientGroupDescriptionPlaceholder} />
           </Form.Item>
-          <Form.Item name="memberUsernames" label={ALARM_TEXT.recipientGroupMembers}>
+          <Form.Item
+            name="memberUsernames"
+            label={ALARM_TEXT.recipientGroupMembers}
+            extra={ALARM_TEXT.recipientGroupMembersHint}
+          >
             <Select
               mode="multiple"
               allowClear
@@ -324,6 +430,20 @@ const AlarmRecipientGroupPage: React.FC = () => {
               notFoundContent={ALARM_TEXT.noSelectableUsers}
             />
           </Form.Item>
+          {userLoadError ? (
+            <Alert
+              type="warning"
+              showIcon
+              message={ALARM_TEXT.loadRecipientUsersError}
+              description={userLoadError}
+              action={
+                <Button size="small" onClick={() => void loadUsers()}>
+                  {ALARM_TEXT.retry}
+                </Button>
+              }
+              style={{ marginTop: -8, marginBottom: 16 }}
+            />
+          ) : null}
         </Form>
       </Drawer>
     </div>

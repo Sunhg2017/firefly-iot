@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button, Form, Input, Space, Tabs, Typography, message } from 'antd';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Alert, Button, Form, Input, Space, Tabs, Typography, message } from 'antd';
 import {
   DeploymentUnitOutlined,
   MessageOutlined,
@@ -13,6 +13,8 @@ import {
 import useAuthStore from '../../store/useAuthStore';
 import { getUserHomePath } from '../../config/workspaceRoutes';
 import { authApi } from '../../services/api';
+import { getErrorMessage } from '../../utils/errors';
+import { consumeSessionExpired } from '../../utils/authStorage';
 
 const { Text, Title } = Typography;
 
@@ -29,19 +31,35 @@ const loginInputStyle: React.CSSProperties = {
   background: '#ffffff',
 };
 
+/** Only same-origin absolute paths may be used as a post-login target. */
+function normalizeRedirect(raw: string | null): string | null {
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//')) {
+    return null;
+  }
+  return raw;
+}
+
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login, isAuthenticated, user } = useAuthStore();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('password');
   const [oauthLoadingProvider, setOauthLoadingProvider] = useState<string | null>(null);
   const [oauthProviders, setOauthProviders] = useState<OauthLoginProvider[]>([]);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(() => (
+    searchParams.get('expired') === '1' || consumeSessionExpired()
+  ));
+
+  const redirectPath = normalizeRedirect(searchParams.get('redirect'));
+  const targetPath = redirectPath ?? getUserHomePath(user);
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate(getUserHomePath(user), { replace: true });
+      navigate(targetPath, { replace: true });
     }
-  }, [isAuthenticated, navigate, user]);
+  }, [isAuthenticated, navigate, targetPath]);
 
   useEffect(() => {
     const loadOauthProviders = async () => {
@@ -70,14 +88,13 @@ const LoginPage: React.FC = () => {
 
   const handlePasswordLogin = async (values: { username: string; password: string }) => {
     setLoading(true);
+    setLoginError(null);
     try {
       await login('PASSWORD', { username: values.username, password: values.password });
-      message.success('登录成功');
       const currentUser = useAuthStore.getState().user;
-      navigate(getUserHomePath(currentUser));
+      navigate(normalizeRedirect(searchParams.get('redirect')) ?? getUserHomePath(currentUser), { replace: true });
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string } } };
-      message.error(error.response?.data?.message || '登录失败');
+      setLoginError(getErrorMessage(err, '登录失败，请检查账号和密码'));
     } finally {
       setLoading(false);
     }
@@ -85,14 +102,13 @@ const LoginPage: React.FC = () => {
 
   const handleSmsLogin = async (values: { phone: string; smsCode: string }) => {
     setLoading(true);
+    setLoginError(null);
     try {
       await login('SMS', { phone: values.phone, smsCode: values.smsCode });
-      message.success('登录成功');
       const currentUser = useAuthStore.getState().user;
-      navigate(getUserHomePath(currentUser));
+      navigate(normalizeRedirect(searchParams.get('redirect')) ?? getUserHomePath(currentUser), { replace: true });
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string } } };
-      message.error(error.response?.data?.message || '登录失败');
+      setLoginError(getErrorMessage(err, '验证码登录失败，请检查手机号和验证码'));
     } finally {
       setLoading(false);
     }
@@ -103,26 +119,31 @@ const LoginPage: React.FC = () => {
       key: 'password',
       label: '账号密码登录',
       children: (
-        <Form onFinish={handlePasswordLogin} size="large" autoComplete="off">
+        <Form onFinish={handlePasswordLogin} size="large">
           <Form.Item name="username" rules={[{ required: true, message: '请输入用户名' }]}>
             <Input
-              prefix={<UserOutlined style={{ color: '#94a3b8' }} />}
+              prefix={<UserOutlined style={{ color: '#64748b' }} />}
               placeholder="请输入用户名"
+              autoComplete="username"
               style={loginInputStyle}
             />
           </Form.Item>
           <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
             <Input.Password
-              prefix={<LockOutlined style={{ color: '#94a3b8' }} />}
+              prefix={<LockOutlined style={{ color: '#64748b' }} />}
               placeholder="请输入密码"
+              autoComplete="current-password"
               style={loginInputStyle}
             />
           </Form.Item>
-          <Form.Item style={{ marginBottom: 0 }}>
+          <Form.Item style={{ marginBottom: 8 }}>
             <Button type="primary" htmlType="submit" loading={loading} block style={{ height: 48, fontSize: 15, fontWeight: 600 }}>
               登录并进入控制台
             </Button>
           </Form.Item>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            忘记密码请联系平台管理员重置，或使用已开通的第三方账号登录。
+          </Typography.Text>
         </Form>
       ),
     },
@@ -130,18 +151,26 @@ const LoginPage: React.FC = () => {
       key: 'sms',
       label: '手机号登录',
       children: (
-        <Form onFinish={handleSmsLogin} size="large" autoComplete="off">
-          <Form.Item name="phone" rules={[{ required: true, message: '请输入手机号' }]}>
+        <Form onFinish={handleSmsLogin} size="large">
+          <Form.Item
+            name="phone"
+            rules={[
+              { required: true, message: '请输入手机号' },
+              { pattern: /^1[3-9]\d{9}$/, message: '请输入 11 位有效手机号' },
+            ]}
+          >
             <Input
-              prefix={<MobileOutlined style={{ color: '#94a3b8' }} />}
+              prefix={<MobileOutlined style={{ color: '#64748b' }} />}
               placeholder="请输入手机号"
+              autoComplete="tel"
               style={loginInputStyle}
             />
           </Form.Item>
           <Form.Item name="smsCode" rules={[{ required: true, message: '请输入验证码' }]}>
             <Input
-              prefix={<SafetyCertificateOutlined style={{ color: '#94a3b8' }} />}
+              prefix={<SafetyCertificateOutlined style={{ color: '#64748b' }} />}
               placeholder="请输入验证码"
+              autoComplete="one-time-code"
               style={loginInputStyle}
             />
           </Form.Item>
@@ -170,7 +199,7 @@ const LoginPage: React.FC = () => {
       }
       window.location.href = authorizeUrl;
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '拉起第三方登录失败');
+      message.error(getErrorMessage(error, '拉起第三方登录失败'));
       setOauthLoadingProvider(null);
     }
   };
@@ -259,6 +288,27 @@ const LoginPage: React.FC = () => {
                     登录控制台
                   </Title>
                 </div>
+
+                {sessionExpired ? (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    closable
+                    message="登录状态已过期"
+                    description="为保障账号安全，请重新登录后继续操作。"
+                    onClose={() => setSessionExpired(false)}
+                  />
+                ) : null}
+
+                {loginError ? (
+                  <Alert
+                    type="error"
+                    showIcon
+                    closable
+                    message={loginError}
+                    onClose={() => setLoginError(null)}
+                  />
+                ) : null}
 
                 <Tabs className="login-page-tabs" activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
 

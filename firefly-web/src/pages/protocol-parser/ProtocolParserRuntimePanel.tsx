@@ -1,7 +1,14 @@
 import React from 'react';
-import { Button, Card, Col, Empty, Row, Space, Statistic, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Col, Row, Space, Statistic, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { ReloadOutlined, SyncOutlined } from '@ant-design/icons';
+import {
+  PauseCircleOutlined,
+  PlayCircleOutlined,
+  ReloadOutlined,
+  SyncOutlined,
+} from '@ant-design/icons';
+import ListEmpty from '../../components/ListEmpty';
+import { formatDateTime } from '../../utils/datetime';
 
 export interface RuntimeMetrics {
   parseHandledCount?: number;
@@ -48,6 +55,13 @@ interface ProtocolParserRuntimePanelProps {
   metrics: RuntimeMetrics | null;
   plugins: RuntimePlugin[];
   catalog: RuntimePluginCatalogItem[];
+  /** Last runtime fetch failure; rendered with an inline retry instead of a transient toast only. */
+  error?: string | null;
+  /** Requires protocol-parser:publish: reloading swaps every plugin class for running traffic. */
+  canReload: boolean;
+  lastUpdatedAt?: Date | null;
+  autoRefreshPaused?: boolean;
+  onToggleAutoRefresh?: () => void;
   onRefresh: () => void;
   onReload: () => void;
 }
@@ -58,6 +72,11 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
   metrics,
   plugins,
   catalog,
+  error,
+  canReload,
+  lastUpdatedAt,
+  autoRefreshPaused,
+  onToggleAutoRefresh,
   onRefresh,
   onReload,
 }) => {
@@ -154,17 +173,51 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
     <Card
       title="运行时"
       extra={
-        <Space>
+        <Space wrap>
+          <Typography.Text type="secondary">
+            上次更新 {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : '-'}
+          </Typography.Text>
+          <Button
+            icon={autoRefreshPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
+            onClick={onToggleAutoRefresh}
+            disabled={!onToggleAutoRefresh}
+          >
+            {autoRefreshPaused ? '恢复自动刷新' : '暂停自动刷新'}
+          </Button>
           <Button icon={<SyncOutlined />} onClick={onRefresh} loading={loading}>
             刷新
           </Button>
-          <Button type="primary" icon={<ReloadOutlined />} onClick={onReload} loading={reloading}>
-            重载插件
-          </Button>
+          <Tooltip title={canReload ? undefined : '没有 protocol-parser:publish 权限，无法重载插件'}>
+            <span>
+              <Button
+                type="primary"
+                icon={<ReloadOutlined />}
+                onClick={onReload}
+                loading={reloading}
+                disabled={!canReload}
+              >
+                重载插件
+              </Button>
+            </span>
+          </Tooltip>
         </Space>
       }
       style={{ marginBottom: 16, borderRadius: 16 }}
     >
+      {error ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="运行时状态加载失败"
+          description={error}
+          action={
+            <Button size="small" loading={loading} onClick={onRefresh}>
+              重试
+            </Button>
+          }
+        />
+      ) : null}
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={12} md={6}>
           <Card size="small">
@@ -202,7 +255,7 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
               columns={pluginColumns}
               dataSource={plugins}
               pagination={false}
-              locale={{ emptyText: <Empty description="暂无运行时插件" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+              locale={{ emptyText: <ListEmpty compact emptyText="暂无运行时插件" /> }}
               scroll={{ x: 720 }}
             />
           </Card>
@@ -220,7 +273,7 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
               columns={catalogColumns}
               dataSource={catalog}
               pagination={false}
-              locale={{ emptyText: <Empty description="暂无目录项" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+              locale={{ emptyText: <ListEmpty compact emptyText="暂无目录项" /> }}
               scroll={{ x: 720 }}
             />
           </Card>
@@ -239,7 +292,7 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
                 ))}
               </Space>
             ) : (
-              <Empty description="暂无解析计数" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <ListEmpty compact emptyText="暂无解析计数" />
             )}
           </Card>
         </Col>
@@ -254,7 +307,7 @@ const ProtocolParserRuntimePanel: React.FC<ProtocolParserRuntimePanelProps> = ({
                 ))}
               </Space>
             ) : (
-              <Empty description="暂无编码计数" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <ListEmpty compact emptyText="暂无编码计数" />
             )}
           </Card>
         </Col>

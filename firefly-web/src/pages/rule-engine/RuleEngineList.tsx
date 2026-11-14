@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   AutoComplete,
   Button,
   Card,
@@ -14,6 +15,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from 'antd';
@@ -29,8 +31,13 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
+import ListEmpty from '../../components/ListEmpty';
 import { projectApi, ruleApi } from '../../services/api';
+import { useRemoteOptions, type RemoteOption } from '../../components/EntitySelect';
 import { formatDateTime } from '../../utils/datetime';
+import { getErrorMessage } from '../../utils/errors';
+import { useConfirmDiscard, useDirtyGuard } from '../../hooks/useDirtyGuard';
+import { usePageActivation } from '../../hooks/usePageActivation';
 
 const { Paragraph, Text } = Typography;
 const { TextArea } = Input;
@@ -310,9 +317,76 @@ function normalizeActions(actions: RuleActionRecord[] | undefined): RuleActionRe
   });
 }
 
+interface RemoteProjectSelectProps {
+  value?: number;
+  onChange?: (value?: number) => void;
+  pinnedLabel?: string;
+  placeholder?: string;
+  style?: React.CSSProperties;
+}
+
+/** 项目单选：服务端关键字搜索，编辑回填时用 pinnedLabel 兜底显示名称。 */
+const RemoteProjectSelect: React.FC<RemoteProjectSelectProps> = ({ value, onChange, pinnedLabel, placeholder, style }) => {
+  const { options, loading, onSearch } = useRemoteOptions<ProjectOption>(
+    async (keyword) => {
+      try {
+        const res = await projectApi.list({ pageNum: 1, pageSize: 20, keyword: keyword || undefined });
+        return (res.data.data?.records ?? []) as ProjectOption[];
+      } catch (error) {
+        message.error(getErrorMessage(error, '搜索项目失败'));
+        throw error;
+      }
+    },
+    (item) => ({ value: item.id, label: buildProjectLabel(item) }),
+  );
+  const [labelCache, setLabelCache] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    if (options.length === 0) {
+      return;
+    }
+    setLabelCache((current) => {
+      const next = { ...current };
+      options.forEach((item) => {
+        next[item.value] = item.label;
+      });
+      return next;
+    });
+  }, [options]);
+
+  useEffect(() => {
+    if (value && pinnedLabel) {
+      setLabelCache((current) => (current[value] === pinnedLabel ? current : { ...current, [value]: pinnedLabel }));
+    }
+  }, [pinnedLabel, value]);
+
+  const mergedOptions = useMemo<RemoteOption[]>(() => {
+    const known = new Set(options.map((item) => item.value));
+    const missing = value != null && !known.has(value) ? [value] : [];
+    return [...options, ...missing.map((id) => ({ value: id, label: labelCache[id] ?? '已选项' }))];
+  }, [labelCache, options, value]);
+
+  return (
+    <Select
+      allowClear
+      showSearch
+      filterOption={false}
+      onSearch={onSearch}
+      options={mergedOptions}
+      loading={loading}
+      value={value}
+      onChange={(next) => onChange?.(next)}
+      placeholder={placeholder ?? '搜索并选择项目（名称或编码）'}
+      style={style}
+      notFoundContent={loading ? '项目搜索中...' : '未找到匹配项目，换个关键字试试'}
+    />
+  );
+};
+
 const RuleEngineList: React.FC = () => {
   const [data, setData] = useState<RuleRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
@@ -322,22 +396,21 @@ const RuleEngineList: React.FC = () => {
   const [filters, setFilters] = useState<RuleListFilters>({ keyword: '' });
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [form] = Form.useForm<RuleFormValues>();
+  const [formDirty, setFormDirty] = useState(false);
+  const [editLoadingId, setEditLoadingId] = useState<number | null>(null);
+  const [pendingRows, setPendingRows] = useState<Set<string>>(new Set());
+  const pendingRowsRef = useRef<Set<string>>(new Set());
+
+  useDirtyGuard(drawerMode !== null && formDirty);
+  const confirmDiscard = useConfirmDiscard();
 
   const watchedSourcePattern = Form.useWatch('sourcePattern', form);
+  const watchedProjectId = Form.useWatch('projectId', form) as number | undefined;
   const watchedMatchCondition = Form.useWatch('matchCondition', form);
   const watchedOutputExpr = Form.useWatch('outputExpr', form);
 
   const projectLabelMap = useMemo(
     () => new Map(projects.map((project) => [project.id, buildProjectLabel(project)])),
-    [projects],
-  );
-
-  const projectOptions = useMemo(
-    () =>
-      projects.map((project) => ({
-        value: project.id,
-        label: buildProjectLabel(project),
-      })),
     [projects],
   );
 
@@ -403,17 +476,41 @@ const RuleEngineList: React.FC = () => {
     };
   }, [derivedRecords]);
 
-  const loadProjects = async () => {
-    try {
-      const res = await projectApi.list({ pageNum: 1, pageSize: 500 });
-      setProjects(res.data.data?.records || []);
-    } catch {
-      setProjects([]);
+  const projectRequestRef = useRef<Set<number>>(new Set());
+
+  // 规则列表只返回 projectId；项目名称按需补查，避免为展示名称预加载全部项目。
+  const ensureProjectLabels = (ids: number[]) => {
+    const missing = Array.from(new Set(ids.filter((id) => Number.isInteger(id) && id > 0)))
+      .filter((id) => !projectRequestRef.current.has(id));
+    if (missing.length === 0) {
+      return;
     }
+    missing.forEach((id) => projectRequestRef.current.add(id));
+    void Promise.all(missing.map(async (id) => {
+      try {
+        const res = await projectApi.get(id);
+        const record = res.data.data as ProjectOption | null;
+        return record?.id ? record : null;
+      } catch {
+        projectRequestRef.current.delete(id);
+        return null;
+      }
+    })).then((records) => {
+      const found = records.filter((item): item is ProjectOption => item !== null);
+      if (found.length === 0) {
+        return;
+      }
+      setProjects((current) => {
+        const merged = new Map(current.map((item) => [item.id, item]));
+        found.forEach((item) => merged.set(item.id, item));
+        return Array.from(merged.values());
+      });
+    });
   };
 
   const loadRules = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await ruleApi.list({
         ...params,
@@ -421,23 +518,41 @@ const RuleEngineList: React.FC = () => {
         status: filters.status,
         projectId: filters.projectId,
       });
-      const page = res.data.data;
-      setData(page.records || []);
+      const page = res.data.data as { records?: RuleRecord[]; total?: number };
+      const records = page.records || [];
+      setData(records);
       setTotal(page.total || 0);
-    } catch {
-      message.error('加载规则列表失败');
+      ensureProjectLabels(records.map((item) => item.projectId ?? 0));
+    } catch (error) {
+      setData([]);
+      setTotal(0);
+      setLoadError(getErrorMessage(error, '加载规则列表失败'));
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    void loadProjects();
-  }, []);
-
-  useEffect(() => {
     void loadRules();
   }, [filters, params.pageNum, params.pageSize]);
+
+  usePageActivation(() => {
+    void loadRules();
+  });
+
+  const runRowAction = async (key: string, task: () => Promise<void>) => {
+    if (pendingRowsRef.current.has(key)) {
+      return;
+    }
+    pendingRowsRef.current.add(key);
+    setPendingRows(new Set(pendingRowsRef.current));
+    try {
+      await task();
+    } finally {
+      pendingRowsRef.current.delete(key);
+      setPendingRows(new Set(pendingRowsRef.current));
+    }
+  };
 
   const applyFilters = () => {
     setFilters({
@@ -455,31 +570,40 @@ const RuleEngineList: React.FC = () => {
   };
 
   const openCreateDrawer = () => {
-    setDrawerMode('create');
-    setEditingId(null);
     form.resetFields();
     form.setFieldsValue({ outputExpr: '*', actions: [] });
+    setFormDirty(false);
+    setEditingId(null);
+    setDrawerMode('create');
   };
 
   const closeDrawer = () => {
-    setDrawerMode(null);
-    setEditingId(null);
-    form.resetFields();
+    confirmDiscard(formDirty, () => {
+      setDrawerMode(null);
+      setEditingId(null);
+      setFormDirty(false);
+      form.resetFields();
+    });
   };
 
   const openEditDrawer = async (record: RuleRecord) => {
-    setDrawerMode('edit');
-    setEditingId(record.id);
+    if (editLoadingId != null) {
+      return;
+    }
+    setEditLoadingId(record.id);
     try {
+      // 详情加载成功后再打开抽屉，避免抽屉短暂展示上一条规则的数据。
       const res = await ruleApi.get(record.id);
       const detail = res.data.data as RuleRecord;
       const parsedExpression = parseRuleExpression(detail.sqlExpr);
+      ensureProjectLabels([detail.projectId ?? 0]);
+      form.resetFields();
       form.setFieldsValue({
         name: detail.name,
-        description: detail.description,
-        projectId: detail.projectId,
+        description: detail.description ?? undefined,
+        projectId: detail.projectId ?? undefined,
         sourcePattern: parsedExpression.sourcePattern,
-        matchCondition: parsedExpression.whereClause,
+        matchCondition: parsedExpression.whereClause || undefined,
         outputExpr: parsedExpression.selectClause || '*',
         actions: (detail.actions || []).map((action) => ({
           ...action,
@@ -487,10 +611,13 @@ const RuleEngineList: React.FC = () => {
           actionConfig: formatJsonForEditor(action.actionConfig),
         })),
       });
-    } catch {
-      message.error('加载规则详情失败');
-      setDrawerMode(null);
-      setEditingId(null);
+      setFormDirty(false);
+      setEditingId(detail.id ?? record.id);
+      setDrawerMode('edit');
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载规则详情失败'));
+    } finally {
+      setEditLoadingId(null);
     }
   };
 
@@ -507,6 +634,7 @@ const RuleEngineList: React.FC = () => {
       actionConfig: getActionTemplate(actionType),
     };
     form.setFieldsValue({ actions: nextActions });
+    setFormDirty(true);
   };
 
   const handleActionTypeChange = (index: number, actionType: RuleActionType) => {
@@ -525,6 +653,9 @@ const RuleEngineList: React.FC = () => {
   };
 
   const handleSubmit = async (values: RuleFormValues) => {
+    if (submitting) {
+      return;
+    }
     const sqlExpr = buildRuleExpression(values);
     if (!sqlExpr) {
       message.error('请填写消息来源');
@@ -535,7 +666,7 @@ const RuleEngineList: React.FC = () => {
     try {
       actions = normalizeActions(values.actions);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '动作配置校验失败');
+      message.error(getErrorMessage(error, '动作配置校验失败'));
       return;
     }
 
@@ -561,43 +692,51 @@ const RuleEngineList: React.FC = () => {
         await ruleApi.create(payload);
         message.success('规则已创建');
       }
-      closeDrawer();
-      void loadRules();
-    } catch {
-      message.error(drawerMode === 'edit' ? '更新失败' : '创建失败');
+      setDrawerMode(null);
+      setEditingId(null);
+      setFormDirty(false);
+      form.resetFields();
+      await loadRules();
+    } catch (error) {
+      message.error(getErrorMessage(error, drawerMode === 'edit' ? '更新规则失败' : '创建规则失败'));
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleToggle = async (record: RuleRecord) => {
-    try {
-      if (record.status === 'ENABLED') {
-        await ruleApi.disable(record.id);
-        message.success('规则已停用');
-      } else {
-        await ruleApi.enable(record.id);
-        message.success('规则已启用');
+    await runRowAction(`toggle:${record.id}`, async () => {
+      try {
+        if (record.status === 'ENABLED') {
+          await ruleApi.disable(record.id);
+          message.success('规则已停用');
+        } else {
+          await ruleApi.enable(record.id);
+          message.success('规则已启用');
+        }
+        await loadRules();
+      } catch (error) {
+        message.error(getErrorMessage(error, record.status === 'ENABLED' ? '停用规则失败' : '启用规则失败'));
       }
-      void loadRules();
-    } catch {
-      message.error('状态更新失败');
-    }
+    });
   };
 
   const handleDelete = (record: RuleRecord) => {
     Modal.confirm({
       title: '确认删除规则',
       content: `删除后不可恢复，确认删除“${record.name}”？`,
-      onOk: async () => {
+      okText: '删除',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: () => runRowAction(`delete:${record.id}`, async () => {
         try {
           await ruleApi.delete(record.id);
           message.success('规则已删除');
-          void loadRules();
-        } catch {
-          message.error('删除失败');
+          await loadRules();
+        } catch (error) {
+          message.error(getErrorMessage(error, '删除规则失败'));
         }
-      },
+      }),
     });
   };
 
@@ -613,12 +752,12 @@ const RuleEngineList: React.FC = () => {
             <Tag color={statusMeta[record.status].color}>{statusMeta[record.status].label}</Tag>
           </div>
           {record.description ? (
-            <Paragraph ellipsis={{ rows: 2 }} type="secondary" style={{ marginBottom: 8 }}>
+            <Paragraph ellipsis={{ rows: 2, tooltip: record.description }} type="secondary" style={{ marginBottom: 8 }}>
               {record.description}
             </Paragraph>
           ) : null}
           <Tag bordered={false} className="rule-engine-soft-tag">
-            {record.projectId ? projectLabelMap.get(record.projectId) || `项目 ${record.projectId}` : '全部项目'}
+            {record.projectId ? projectLabelMap.get(record.projectId) || '未知项目' : '全部项目'}
           </Tag>
         </div>
       ),
@@ -631,7 +770,7 @@ const RuleEngineList: React.FC = () => {
           <Tag color="processing" style={{ marginBottom: 8 }}>
             {getSourceKind(record.parsedExpression.sourcePattern)}
           </Tag>
-          <Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>
+          <Paragraph ellipsis={{ rows: 2, tooltip: record.parsedExpression.sourcePattern || undefined }} style={{ marginBottom: 0 }}>
             {record.parsedExpression.sourcePattern || '未识别来源'}
           </Paragraph>
         </div>
@@ -644,13 +783,13 @@ const RuleEngineList: React.FC = () => {
         <div className="rule-engine-list-cell">
           <div className="rule-engine-list-cell__group">
             <Text type="secondary">条件</Text>
-            <Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>
+            <Paragraph ellipsis={{ rows: 2, tooltip: record.parsedExpression.whereClause || undefined }} style={{ marginBottom: 0 }}>
               {record.parsedExpression.whereClause || '命中来源后直接执行'}
             </Paragraph>
           </div>
           <div className="rule-engine-list-cell__group">
             <Text type="secondary">输出</Text>
-            <Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>
+            <Paragraph ellipsis={{ rows: 2, tooltip: getOutputSummary(record.parsedExpression) }} style={{ marginBottom: 0 }}>
               {getOutputSummary(record.parsedExpression)}
             </Paragraph>
           </div>
@@ -671,7 +810,7 @@ const RuleEngineList: React.FC = () => {
             {!record.actions?.length ? <Tag>未配置动作</Tag> : null}
           </Space>
           {(record.actions || []).slice(0, 2).map((action, index) => (
-            <Paragraph key={`${record.id}-summary-${index}`} ellipsis={{ rows: 1 }} type="secondary" style={{ marginBottom: 4 }}>
+            <Paragraph key={`${record.id}-summary-${index}`} ellipsis={{ rows: 1, tooltip: getActionSummary(action) }} type="secondary" style={{ marginBottom: 4 }}>
               {getActionSummary(action)}
             </Paragraph>
           ))}
@@ -705,20 +844,38 @@ const RuleEngineList: React.FC = () => {
       fixed: 'right',
       render: (_: unknown, record) => (
         <Space size={0} wrap>
-          <Button type="link" size="small" onClick={() => void openEditDrawer(record)}>
+          <Button
+            type="link"
+            size="small"
+            loading={editLoadingId === record.id}
+            onClick={() => void openEditDrawer(record)}
+          >
             编辑
           </Button>
           <Button
             type="link"
             size="small"
             icon={record.status === 'ENABLED' ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+            loading={pendingRows.has(`toggle:${record.id}`)}
             onClick={() => void handleToggle(record)}
           >
             {record.status === 'ENABLED' ? '停用' : '启用'}
           </Button>
-          <Button type="link" size="small" danger icon={<DeleteOutlined />} disabled={record.status === 'ENABLED'} onClick={() => handleDelete(record)}>
-            删除
-          </Button>
+          <Tooltip title={record.status === 'ENABLED' ? '请先停用后再删除' : '删除规则'}>
+            <span style={{ display: 'inline-block', cursor: record.status === 'ENABLED' ? 'not-allowed' : undefined }}>
+              <Button
+                type="link"
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                disabled={record.status === 'ENABLED'}
+                loading={pendingRows.has(`delete:${record.id}`)}
+                onClick={() => handleDelete(record)}
+              >
+                删除
+              </Button>
+            </span>
+          </Tooltip>
         </Space>
       ),
     },
@@ -741,7 +898,7 @@ const RuleEngineList: React.FC = () => {
             <ApartmentOutlined />
           </div>
           <div>
-            <div className="rule-engine-overview-card__label">消息来源</div>
+            <div className="rule-engine-overview-card__label">当前页消息来源</div>
             <div className="rule-engine-overview-card__value">{stats.sourceCount}</div>
             <div className="rule-engine-overview-card__caption">
               {stats.sourcePreview.length ? stats.sourcePreview.join(' · ') : '暂无已配置来源'}
@@ -753,11 +910,11 @@ const RuleEngineList: React.FC = () => {
             <BranchesOutlined />
           </div>
           <div>
-            <div className="rule-engine-overview-card__label">生效规则</div>
-            <div className="rule-engine-overview-card__value">
-              {stats.enabled}/{total}
+            <div className="rule-engine-overview-card__label">当前页生效</div>
+            <div className="rule-engine-overview-card__value">{stats.enabled}</div>
+            <div className="rule-engine-overview-card__caption">
+              当前页 {derivedRecords.length} 条 / 全部 {total} 条
             </div>
-            <div className="rule-engine-overview-card__caption">累计命中 {stats.totalTriggers} 次</div>
           </div>
         </div>
         <div className="rule-engine-overview-card">
@@ -765,7 +922,7 @@ const RuleEngineList: React.FC = () => {
             <SendOutlined />
           </div>
           <div>
-            <div className="rule-engine-overview-card__label">执行动作</div>
+            <div className="rule-engine-overview-card__label">当前页动作</div>
             <div className="rule-engine-overview-card__value">{stats.totalActions}</div>
             <div className="rule-engine-overview-card__caption">
               {stats.actionPreview.length ? stats.actionPreview.join(' / ') : '暂无动作编排'}
@@ -777,7 +934,7 @@ const RuleEngineList: React.FC = () => {
             <CheckCircleOutlined />
           </div>
           <div>
-            <div className="rule-engine-overview-card__label">最近结果</div>
+            <div className="rule-engine-overview-card__label">当前页成功率</div>
             <div className="rule-engine-overview-card__value">{stats.successRate}%</div>
             <div className="rule-engine-overview-card__caption">
               {stats.latestTriggerTime ? `最近触发 ${formatDateTime(stats.latestTriggerTime)}` : '暂无触发记录'}
@@ -812,17 +969,16 @@ const RuleEngineList: React.FC = () => {
               setDraftFilters((current) => ({ ...current, status: value }));
             }}
           />
-          <Select
-            className="ff-query-field"
-            allowClear
-            placeholder="项目范围"
-            style={{ width: 220 }}
-            options={projectOptions}
-            value={draftFilters.projectId}
-            onChange={(value) => {
-              setDraftFilters((current) => ({ ...current, projectId: value }));
-            }}
-          />
+          <div className="ff-query-field" style={{ width: 220 }}>
+            <RemoteProjectSelect
+              style={{ width: '100%' }}
+              placeholder="搜索并选择项目（名称或编码）"
+              value={draftFilters.projectId}
+              onChange={(value) => {
+                setDraftFilters((current) => ({ ...current, projectId: value }));
+              }}
+            />
+          </div>
           <div className="ff-query-actions">
             <Button onClick={resetFilters}>重置</Button>
             <Button type="primary" onClick={applyFilters}>查询</Button>
@@ -831,12 +987,31 @@ const RuleEngineList: React.FC = () => {
       </Card>
 
       <Card>
+        {loadError ? (
+          <Alert
+            type="error"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="加载规则列表失败"
+            description={loadError}
+            action={<Button size="small" danger onClick={() => void loadRules()}>重试</Button>}
+          />
+        ) : null}
         <Table
           rowKey="id"
           columns={columns}
           dataSource={derivedRecords}
           loading={loading}
           scroll={{ x: 1600 }}
+          locale={{
+            emptyText: (
+              <ListEmpty
+                hasFilters={Boolean(filters.keyword || filters.status || filters.projectId)}
+                emptyText="暂无联动规则"
+                onClearFilters={resetFilters}
+              />
+            ),
+          }}
           pagination={{
             current: params.pageNum,
             pageSize: params.pageSize,
@@ -853,6 +1028,7 @@ const RuleEngineList: React.FC = () => {
         open={drawerMode !== null}
         onClose={closeDrawer}
         destroyOnClose
+        maskClosable={false}
         width={920}
         footer={
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
@@ -863,7 +1039,7 @@ const RuleEngineList: React.FC = () => {
           </Space>
         }
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit}>
+        <Form form={form} layout="vertical" onFinish={handleSubmit} onValuesChange={() => setFormDirty(true)}>
           <div className="rule-engine-drawer-section">
             <div className="rule-engine-drawer-section__title">基本信息</div>
             <Row gutter={[16, 0]}>
@@ -874,7 +1050,10 @@ const RuleEngineList: React.FC = () => {
               </Col>
               <Col span={12}>
                 <Form.Item name="projectId" label="项目范围">
-                  <Select allowClear placeholder="不选则作用于全部项目" options={projectOptions} />
+                  <RemoteProjectSelect
+                    placeholder="搜索并选择项目（名称或编码），不选则作用于全部项目"
+                    pinnedLabel={watchedProjectId ? projectLabelMap.get(watchedProjectId) : undefined}
+                  />
                 </Form.Item>
               </Col>
             </Row>
@@ -936,7 +1115,7 @@ const RuleEngineList: React.FC = () => {
                             <Form.Item {...restField} name={[name, 'enabled']} valuePropName="checked" initialValue={true} style={{ marginBottom: 0 }}>
                               <Switch checkedChildren="启用" unCheckedChildren="停用" />
                             </Form.Item>
-                            <Button type="text" danger onClick={() => remove(name)}>
+                            <Button type="text" danger onClick={() => { remove(name); setFormDirty(true); }}>
                               删除
                             </Button>
                           </Space>
@@ -979,7 +1158,7 @@ const RuleEngineList: React.FC = () => {
                       </div>
                     );
                   })}
-                  <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add({ enabled: true })}>
+                  <Button type="dashed" block icon={<PlusOutlined />} onClick={() => { add({ enabled: true }); setFormDirty(true); }}>
                     添加动作
                   </Button>
                 </>

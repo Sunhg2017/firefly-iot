@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import {
   Alert,
@@ -9,12 +10,14 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Row,
   Segmented,
   Select,
   Space,
   Tag,
   Typography,
+  message,
 } from 'antd';
 import type { FormInstance } from 'antd/es/form';
 import { ALARM_TEXT } from './alarmText';
@@ -41,6 +44,9 @@ import {
   type AlarmRuleLevel,
 } from './alarmCondition';
 import { describeAlarmNotifyConfig, type AlarmNotificationMethod } from './alarmNotify';
+import { deviceApi, productApi, projectApi } from '../../services/api';
+import { getErrorMessage } from '../../utils/errors';
+import { useRemoteOptions, type RemoteOption } from '../../components/EntitySelect';
 
 const { TextArea } = Input;
 
@@ -49,6 +55,87 @@ export interface AlarmScopeOption {
   label: string;
   projectId?: number;
   productId?: number;
+}
+
+interface ProjectScopeRecord {
+  id: number;
+  code?: string;
+  name?: string;
+}
+
+interface ProductScopeRecord {
+  id: number;
+  name?: string;
+  productKey?: string;
+}
+
+interface DeviceScopeRecord {
+  id: number;
+  deviceName?: string;
+  nickname?: string;
+}
+
+interface RemoteScopeSelectProps<T> {
+  value?: number;
+  onChange?: (value?: number) => void;
+  pinnedLabel?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  loader: (keyword: string) => Promise<T[]>;
+  toOption: (item: T) => RemoteOption;
+}
+
+/**
+ * 告警范围单选：按 keyword 走服务端搜索；父级变化时由调用方以 key 重新挂载，
+ * 保证产品/设备候选始终按项目、productId 收敛。
+ */
+function RemoteScopeSelect<T>({ value, onChange, pinnedLabel, placeholder, disabled, loader, toOption }: RemoteScopeSelectProps<T>) {
+  const { options, loading, onSearch } = useRemoteOptions(loader, toOption);
+  const [labelCache, setLabelCache] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    if (options.length === 0) {
+      return;
+    }
+    setLabelCache((current) => {
+      const next = { ...current };
+      options.forEach((item) => {
+        next[item.value] = item.label;
+      });
+      return next;
+    });
+  }, [options]);
+
+  useEffect(() => {
+    if (value && pinnedLabel) {
+      setLabelCache((current) => (current[value] === pinnedLabel ? current : { ...current, [value]: pinnedLabel }));
+    }
+  }, [pinnedLabel, value]);
+
+  const mergedOptions = useMemo<RemoteOption[]>(() => {
+    const known = new Set(options.map((item) => item.value));
+    const missing = value != null && !known.has(value) ? [value] : [];
+    return [
+      ...options,
+      ...missing.map((id) => ({ value: id, label: labelCache[id] ?? '已选项' })),
+    ];
+  }, [labelCache, options, value]);
+
+  return (
+    <Select
+      allowClear
+      showSearch
+      filterOption={false}
+      onSearch={onSearch}
+      options={mergedOptions}
+      loading={loading}
+      value={value}
+      disabled={disabled}
+      onChange={(next) => onChange?.(next)}
+      placeholder={placeholder}
+      notFoundContent={loading ? '搜索中...' : '未找到匹配项，换个关键字试试'}
+    />
+  );
 }
 
 export interface AlarmMetricOption {
@@ -81,6 +168,13 @@ interface Props {
   productOptions: AlarmScopeOption[];
   deviceOptions: AlarmScopeOption[];
   metricOptions: AlarmMetricOption[];
+  /** True while the thing-model properties are being loaded for the selected product. */
+  metricLoading?: boolean;
+  /** True once the thing-model request for the selected product has finished. */
+  metricLoaded?: boolean;
+  /** Set when the thing-model request failed; the form then offers a retry instead of "no properties". */
+  metricError?: string;
+  onRetryMetric?: () => void;
   metricLabelMap: Record<string, string>;
   notificationMethodOptions: AlarmNotificationMethodOption[];
   recipientGroupOptions: AlarmRecipientGroupOption[];
@@ -95,6 +189,7 @@ interface ConditionEditorProps {
   conditionIndex: number;
   canRemove: boolean;
   metricOptions: AlarmMetricOption[];
+  metricLoading?: boolean;
   metricLabelMap: Record<string, string>;
   onRemove: () => void;
 }
@@ -104,6 +199,7 @@ interface RuleGroupEditorProps {
   groupIndex: number;
   canRemove: boolean;
   metricOptions: AlarmMetricOption[];
+  metricLoading?: boolean;
   metricLabelMap: Record<string, string>;
   onRemove: () => void;
 }
@@ -112,19 +208,6 @@ const LEVEL_ACCENTS: Record<AlarmRuleLevel, { border: string; background: string
   CRITICAL: { border: '#ffccc7', background: 'rgba(255, 77, 79, 0.08)', tag: 'red' },
   WARNING: { border: '#ffe7ba', background: 'rgba(250, 173, 20, 0.1)', tag: 'orange' },
   INFO: { border: '#bae0ff', background: 'rgba(22, 119, 255, 0.08)', tag: 'blue' },
-};
-
-const OVERVIEW_CARD_STYLE: React.CSSProperties = {
-  borderRadius: 12,
-  border: '1px solid #e5e6eb',
-  background: '#fafcff',
-  height: '100%',
-};
-
-const STEP_PANEL_STYLE: React.CSSProperties = {
-  borderRadius: 12,
-  border: '1px solid #e5e6eb',
-  background: '#ffffff',
 };
 
 const getConditionTypeHint = (conditionType: AlarmConditionType): string => {
@@ -155,20 +238,56 @@ const resetConditionMetrics = (form: FormInstance, groups: AlarmRuleGroupFormVal
   });
 };
 
-const OverviewStat: React.FC<{ title: string; value: string; color: string }> = ({ title, value, color }) => (
-  <div
-    style={{
-      padding: '14px 16px',
-      borderRadius: 12,
-      background: '#fff',
-      border: '1px solid #eef1f5',
-      height: '100%',
-    }}
-  >
-    <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 6 }}>{title}</div>
-    <div style={{ fontSize: 24, fontWeight: 700, color }}>{value}</div>
-  </div>
-);
+/**
+ * Single-select metric picker that still accepts identifiers missing from the thing model.
+ *
+ * A plain Select would silently force users to abandon a metric when the product has no
+ * properties yet; a tags-mode Select would let them pick several. Instead the currently
+ * typed keyword is offered as a "custom identifier" option so one value can be chosen and
+ * the rule can still be saved.
+ */
+const MetricSelect: React.FC<{
+  id?: string;
+  value?: string;
+  onChange?: (value?: string) => void;
+  options: AlarmMetricOption[];
+  loading?: boolean;
+  placeholder?: string;
+}> = ({ id, value, onChange, options, loading, placeholder }) => {
+  const [keyword, setKeyword] = useState('');
+  const mergedOptions = useMemo(() => {
+    const nextOptions = [...options];
+    if (value && !nextOptions.some((item) => item.value === value)) {
+      nextOptions.unshift({ value, label: value });
+    }
+    const trimmedKeyword = keyword.trim();
+    if (trimmedKeyword && !nextOptions.some((item) => item.value === trimmedKeyword)) {
+      nextOptions.push({ value: trimmedKeyword, label: `使用自定义标识“${trimmedKeyword}”` });
+    }
+    return nextOptions;
+  }, [keyword, options, value]);
+
+  return (
+    <Select
+      id={id}
+      allowClear
+      showSearch
+      value={value}
+      onChange={(next?: string) => onChange?.(next)}
+      onSearch={setKeyword}
+      onDropdownVisibleChange={(visible) => {
+        if (!visible) {
+          setKeyword('');
+        }
+      }}
+      optionFilterProp="label"
+      options={mergedOptions}
+      placeholder={placeholder}
+      loading={loading}
+      notFoundContent={loading ? '加载物模型属性中…' : ALARM_TEXT.noMetricMatched}
+    />
+  );
+};
 
 const ConditionEditor: React.FC<ConditionEditorProps> = ({
   form,
@@ -176,11 +295,11 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
   conditionIndex,
   canRemove,
   metricOptions,
+  metricLoading,
   metricLabelMap,
   onRemove,
 }) => {
   const path = ['ruleGroups', groupIndex, 'conditions', conditionIndex] as const;
-  const productId = Form.useWatch('productId', form) as number | undefined;
   const conditionType =
     (Form.useWatch([...path, 'conditionType'], form) as AlarmConditionItemFormValues['conditionType']) ||
     DEFAULT_ALARM_CONDITION_ITEM.conditionType;
@@ -217,16 +336,6 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
         {getConditionTypeHint(conditionType)}
       </Typography.Paragraph>
 
-      {!productId && conditionType !== 'CUSTOM' && (
-        <Alert
-          type="warning"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message={ALARM_TEXT.metricSelectRecommended}
-          description={ALARM_TEXT.metricSelectRecommendedDesc}
-        />
-      )}
-
       <Row gutter={12}>
         <Col xs={24} md={12}>
           <Form.Item
@@ -236,27 +345,16 @@ const ConditionEditor: React.FC<ConditionEditorProps> = ({
           >
             {conditionType === 'CUSTOM' ? (
               <Input disabled placeholder={ALARM_TEXT.customExpressionMetricHint} />
-            ) : metricOptions.length > 0 ? (
-              <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                options={metricOptions}
-                placeholder={ALARM_TEXT.metricPlaceholder}
-                notFoundContent={ALARM_TEXT.noMetricOptions}
-              />
             ) : (
-              <Input placeholder={ALARM_TEXT.metricPlaceholder} />
+              <MetricSelect
+                options={metricOptions}
+                loading={metricLoading}
+                placeholder={ALARM_TEXT.metricPlaceholder}
+              />
             )}
           </Form.Item>
         </Col>
       </Row>
-
-      {conditionType !== 'CUSTOM' && (
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-          {ALARM_TEXT.propertyHint}
-        </Typography.Paragraph>
-      )}
 
       <Card
         size="small"
@@ -411,6 +509,7 @@ const RuleGroupEditor: React.FC<RuleGroupEditorProps> = ({
   groupIndex,
   canRemove,
   metricOptions,
+  metricLoading,
   metricLabelMap,
   onRemove,
 }) => {
@@ -422,7 +521,10 @@ const RuleGroupEditor: React.FC<RuleGroupEditorProps> = ({
   const conditionCount = ruleGroup.conditions?.length || 1;
   const level = (ruleGroup.level || DEFAULT_ALARM_RULE_GROUP.level) as AlarmRuleLevel;
   const levelLabel = getLevelLabel(level);
-  const groupPreview = useMemo(() => describeAlarmConditionValues({ ruleGroups: [ruleGroup] }, metricLabelMap), [metricLabelMap, ruleGroup]);
+  const groupPreview = useMemo(
+    () => describeAlarmConditionValues({ ruleGroups: [ruleGroup] }, metricLabelMap),
+    [metricLabelMap, ruleGroup],
+  );
   const levelAccent = LEVEL_ACCENTS[level];
 
   return (
@@ -449,68 +551,52 @@ const RuleGroupEditor: React.FC<RuleGroupEditorProps> = ({
       }}
     >
       <Row gutter={[12, 12]} style={{ marginBottom: 8 }}>
-        <Col xs={24} lg={8}>
-          <Card size="small" title={ALARM_TEXT.stepChooseLevel} style={STEP_PANEL_STYLE}>
-            <Form.Item
-              name={[groupIndex, 'level']}
-              label={ALARM_TEXT.ruleGroupLevel}
-              rules={[{ required: true, message: ALARM_TEXT.levelRequired }]}
-              style={{ marginBottom: 10 }}
-            >
-              <Segmented block options={LEVEL_OPTIONS} />
-            </Form.Item>
-            <Typography.Text type="secondary">{ALARM_TEXT.levelStepHint}</Typography.Text>
-          </Card>
+        <Col xs={24} lg={12}>
+          <Form.Item
+            name={[groupIndex, 'level']}
+            label={ALARM_TEXT.ruleGroupLevel}
+            rules={[{ required: true, message: ALARM_TEXT.levelRequired }]}
+            style={{ marginBottom: 8 }}
+          >
+            <Segmented block options={LEVEL_OPTIONS} />
+          </Form.Item>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {ALARM_TEXT.levelStepHint}
+          </Typography.Text>
         </Col>
-        <Col xs={24} lg={8}>
-          <Card size="small" title={ALARM_TEXT.stepChooseTrigger} style={STEP_PANEL_STYLE}>
+        <Col xs={24} lg={12}>
+          <Form.Item
+            name={[groupIndex, 'triggerMode']}
+            label={ALARM_TEXT.triggerMode}
+            rules={[{ required: true, message: ALARM_TEXT.triggerModeRequired }]}
+            style={{ marginBottom: 8 }}
+          >
+            <Segmented block options={TRIGGER_MODE_OPTIONS} />
+          </Form.Item>
+          {triggerMode === 'AT_LEAST' ? (
             <Form.Item
-              name={[groupIndex, 'triggerMode']}
-              label={ALARM_TEXT.triggerMode}
-              rules={[{ required: true, message: ALARM_TEXT.triggerModeRequired }]}
-              style={{ marginBottom: 10 }}
+              name={[groupIndex, 'matchCount']}
+              label={ALARM_TEXT.matchCount}
+              rules={[{ required: true, message: ALARM_TEXT.matchCountRequired }]}
+              style={{ marginBottom: 4 }}
             >
-              <Segmented block options={TRIGGER_MODE_OPTIONS} />
-            </Form.Item>
-            <Typography.Text type="secondary">{ALARM_TEXT.triggerModeHint}</Typography.Text>
-          </Card>
-        </Col>
-        <Col xs={24} lg={8}>
-          <Card size="small" title={ALARM_TEXT.stepReviewStrategy} style={STEP_PANEL_STYLE}>
-            {triggerMode === 'AT_LEAST' ? (
-              <Form.Item
-                name={[groupIndex, 'matchCount']}
-                label={ALARM_TEXT.matchCount}
-                rules={[{ required: true, message: ALARM_TEXT.matchCountRequired }]}
-                style={{ marginBottom: 10 }}
-              >
-                <InputNumber
-                  style={{ width: '100%' }}
-                  min={1}
-                  max={conditionCount}
-                  placeholder={ALARM_TEXT.matchCountPlaceholder}
-                />
-              </Form.Item>
-            ) : (
-              <Alert
-                type="info"
-                showIcon
-                message={ALARM_TEXT.triggerModeDescription}
-                description={getAlarmTriggerModeLabel(triggerMode)}
-                style={{ marginBottom: 10 }}
+              <InputNumber
+                style={{ width: '100%' }}
+                min={1}
+                max={conditionCount}
+                placeholder={ALARM_TEXT.matchCountPlaceholder}
               />
-            )}
-            <Typography.Text type="secondary">{ALARM_TEXT.strategyStepHint}</Typography.Text>
-          </Card>
+            </Form.Item>
+          ) : null}
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {ALARM_TEXT.triggerModeHint}
+          </Typography.Text>
         </Col>
       </Row>
 
       <Divider orientation="left" style={{ marginTop: 8 }}>
         {ALARM_TEXT.stepConfigureConditions}
       </Divider>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-        {ALARM_TEXT.groupConditionHint}
-      </Typography.Paragraph>
 
       <Form.List name={[groupIndex, 'conditions']}>
         {(fields, { add, remove }) => (
@@ -523,6 +609,7 @@ const RuleGroupEditor: React.FC<RuleGroupEditorProps> = ({
                 conditionIndex={field.name}
                 canRemove={fields.length > 1}
                 metricOptions={metricOptions}
+                metricLoading={metricLoading}
                 metricLabelMap={metricLabelMap}
                 onRemove={() => remove(field.name)}
               />
@@ -550,6 +637,10 @@ const AlarmRuleForm: React.FC<Props> = ({
   productOptions,
   deviceOptions,
   metricOptions,
+  metricLoading = false,
+  metricLoaded = false,
+  metricError,
+  onRetryMetric,
   metricLabelMap,
   notificationMethodOptions,
   recipientGroupOptions,
@@ -557,35 +648,30 @@ const AlarmRuleForm: React.FC<Props> = ({
   currentStep,
   showEnabled = false,
 }) => {
+  const navigate = useNavigate();
   const projectId = Form.useWatch('projectId', form) as number | undefined;
   const productId = Form.useWatch('productId', form) as number | undefined;
-  const notifyChannels = (Form.useWatch('notifyChannels', form) as AlarmNotificationMethod[] | undefined) || [];
-  const recipientGroupCodes = (Form.useWatch('recipientGroupCodes', form) as string[] | undefined) || [];
-  const recipientUsernames = (Form.useWatch('recipientUsernames', form) as string[] | undefined) || [];
+  const deviceId = Form.useWatch('deviceId', form) as number | undefined;
+  const notifyChannelsValue = Form.useWatch('notifyChannels', form) as AlarmNotificationMethod[] | undefined;
+  const recipientGroupCodesValue = Form.useWatch('recipientGroupCodes', form) as string[] | undefined;
+  const recipientUsernamesValue = Form.useWatch('recipientUsernames', form) as string[] | undefined;
+  const notifyChannels = useMemo(() => notifyChannelsValue || [], [notifyChannelsValue]);
+  const recipientGroupCodes = useMemo(() => recipientGroupCodesValue || [], [recipientGroupCodesValue]);
+  const recipientUsernames = useMemo(() => recipientUsernamesValue || [], [recipientUsernamesValue]);
   const watchedValues = (Form.useWatch([], form) || {}) as AlarmRuleGroupFormValues & {
     ruleGroups?: AlarmRuleGroupFormValues[];
   };
   const ruleGroups = watchedValues.ruleGroups || DEFAULT_ALARM_CONDITION_VALUES.ruleGroups;
   const conditionTotal = ruleGroups.reduce((sum, item) => sum + (item.conditions?.length || 0), 0);
-
-  const filteredProductOptions = useMemo(
-    () => productOptions.filter((item) => !projectId || !item.projectId || item.projectId === projectId),
-    [productOptions, projectId],
+  const selectedMetricCount = ruleGroups.reduce(
+    (sum, group) =>
+      sum + (group.conditions || []).filter((item) => item.conditionType !== 'CUSTOM' && Boolean(item.metricKey)).length,
+    0,
   );
 
-  const filteredDeviceOptions = useMemo(
-    () =>
-      deviceOptions.filter((item) => {
-        if (projectId && item.projectId && item.projectId !== projectId) {
-          return false;
-        }
-        if (productId && item.productId && item.productId !== productId) {
-          return false;
-        }
-        return true;
-      }),
-    [deviceOptions, productId, projectId],
-  );
+  const projectPinnedLabel = projectOptions.find((item) => item.value === projectId)?.label;
+  const productPinnedLabel = productOptions.find((item) => item.value === productId)?.label;
+  const devicePinnedLabel = deviceOptions.find((item) => item.value === deviceId)?.label;
 
   const previewText = useMemo(() => describeAlarmConditionValues({ ruleGroups }, metricLabelMap), [metricLabelMap, ruleGroups]);
   const primaryLevel = useMemo(
@@ -614,74 +700,57 @@ const AlarmRuleForm: React.FC<Props> = ({
     [notifyChannels, recipientGroupCodes, recipientUsernames, recipientGroupLabelMap, recipientUserLabelMap],
   );
 
-  const overviewCard = (
-    <Card
-      style={{ borderRadius: 14, border: '1px solid #dbeafe', background: 'linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)' }}
-    >
-      <Space direction="vertical" size={16} style={{ width: '100%' }}>
-        <div>
-          <Typography.Title level={5} style={{ marginBottom: 6 }}>
-            {ALARM_TEXT.setupGuideTitle}
-          </Typography.Title>
-          <Typography.Text type="secondary">{ALARM_TEXT.setupGuideDescription}</Typography.Text>
-        </div>
+  // Switching project/product invalidates every selected metric (and any device under it).
+  // Ask first so a long ruleset is never emptied by a single select change.
+  const handleProjectChange = (nextProjectId?: number) => {
+    if (nextProjectId === projectId) {
+      return;
+    }
+    const previousProjectId = projectId;
+    const applyChange = () => {
+      form.setFieldValue('productId', undefined);
+      form.setFieldValue('deviceId', undefined);
+      resetConditionMetrics(form, ruleGroups);
+    };
+    if (selectedMetricCount > 0) {
+      Modal.confirm({
+        title: '切换项目将清空已选指标',
+        content: `已选的 ${selectedMetricCount} 条条件指标将被清空，需要重新选择。是否继续切换？`,
+        okText: '继续切换',
+        cancelText: '取消',
+        okButtonProps: { danger: true },
+        onOk: applyChange,
+        onCancel: () => form.setFieldValue('projectId', previousProjectId),
+      });
+      return;
+    }
+    form.setFieldValue('productId', undefined);
+    form.setFieldValue('deviceId', undefined);
+  };
 
-        <Row gutter={[12, 12]}>
-          <Col xs={24} md={12} xl={6}>
-            <Card size="small" style={OVERVIEW_CARD_STYLE}>
-              <Typography.Text strong>{ALARM_TEXT.setupGuideBasic}</Typography.Text>
-              <Typography.Paragraph type="secondary" style={{ margin: '8px 0 0' }}>
-                {ALARM_TEXT.setupGuideBasicDesc}
-              </Typography.Paragraph>
-            </Card>
-          </Col>
-          <Col xs={24} md={12} xl={6}>
-            <Card size="small" style={OVERVIEW_CARD_STYLE}>
-              <Typography.Text strong>{ALARM_TEXT.setupGuideScope}</Typography.Text>
-              <Typography.Paragraph type="secondary" style={{ margin: '8px 0 0' }}>
-                {ALARM_TEXT.setupGuideScopeDesc}
-              </Typography.Paragraph>
-            </Card>
-          </Col>
-          <Col xs={24} md={12} xl={6}>
-            <Card size="small" style={OVERVIEW_CARD_STYLE}>
-              <Typography.Text strong>{ALARM_TEXT.setupGuideBlocks}</Typography.Text>
-              <Typography.Paragraph type="secondary" style={{ margin: '8px 0 0' }}>
-                {ALARM_TEXT.setupGuideBlocksDesc}
-              </Typography.Paragraph>
-            </Card>
-          </Col>
-          <Col xs={24} md={12} xl={6}>
-            <Card size="small" style={OVERVIEW_CARD_STYLE}>
-              <Typography.Text strong>{ALARM_TEXT.setupGuideNotify}</Typography.Text>
-              <Typography.Paragraph type="secondary" style={{ margin: '8px 0 0' }}>
-                {ALARM_TEXT.setupGuideNotifyDesc}
-              </Typography.Paragraph>
-            </Card>
-          </Col>
-        </Row>
-
-        <Row gutter={[12, 12]}>
-          <Col xs={24} md={6}>
-            <OverviewStat title={ALARM_TEXT.configuredGroupCount} value={String(ruleGroups.length)} color="#1677ff" />
-          </Col>
-          <Col xs={24} md={6}>
-            <OverviewStat title={ALARM_TEXT.configuredConditionCount} value={String(conditionTotal)} color="#13a8a8" />
-          </Col>
-          <Col xs={24} md={6}>
-            <OverviewStat
-              title={ALARM_TEXT.configuredNotifyMethodCount}
-              value={String(notifyChannels.length)}
-              color="#7c3aed"
-            />
-          </Col>
-          <Col xs={24} md={6}>
-            <OverviewStat title={ALARM_TEXT.primaryLevel} value={primaryLevel} color="#cf1322" />
-          </Col>
-        </Row>
-      </Space>
-    </Card>
-  );
+  const handleProductChange = (nextProductId?: number) => {
+    if (nextProductId === productId) {
+      return;
+    }
+    const previousProductId = productId;
+    const applyChange = () => {
+      form.setFieldValue('deviceId', undefined);
+      resetConditionMetrics(form, ruleGroups);
+    };
+    if (selectedMetricCount > 0) {
+      Modal.confirm({
+        title: '切换产品将清空已选指标',
+        content: `已选的 ${selectedMetricCount} 条条件指标将被清空，需要重新选择。是否继续切换？`,
+        okText: '继续切换',
+        cancelText: '取消',
+        okButtonProps: { danger: true },
+        onOk: applyChange,
+        onCancel: () => form.setFieldValue('productId', previousProductId),
+      });
+      return;
+    }
+    form.setFieldValue('deviceId', undefined);
+  };
 
   const basicSection = (
     <Card title={ALARM_TEXT.basicCardTitle} style={{ borderRadius: 14 }}>
@@ -712,32 +781,55 @@ const AlarmRuleForm: React.FC<Props> = ({
       <Row gutter={12}>
         <Col xs={24} md={12}>
           <Form.Item name="projectId" label={ALARM_TEXT.project}>
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              options={projectOptions}
-              placeholder={ALARM_TEXT.projectPlaceholder}
-              onChange={() => {
-                form.setFieldValue('productId', undefined);
-                form.setFieldValue('deviceId', undefined);
-                resetConditionMetrics(form, ruleGroups);
+            <RemoteScopeSelect<ProjectScopeRecord>
+              value={projectId}
+              onChange={handleProjectChange}
+              pinnedLabel={projectPinnedLabel}
+              placeholder="搜索并选择项目（名称或编码），可不限"
+              loader={async (keyword) => {
+                try {
+                  const res = await projectApi.list({ pageNum: 1, pageSize: 20, keyword: keyword || undefined });
+                  return (res.data.data?.records ?? []) as ProjectScopeRecord[];
+                } catch (error) {
+                  message.error(getErrorMessage(error, '搜索项目失败'));
+                  throw error;
+                }
               }}
+              toOption={(item) => ({
+                value: item.id,
+                label: item.code ? `${item.code} / ${item.name || item.code}` : item.name || String(item.id),
+              })}
             />
           </Form.Item>
         </Col>
         <Col xs={24} md={12}>
           <Form.Item name="productId" label={ALARM_TEXT.product}>
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              options={filteredProductOptions}
-              placeholder={ALARM_TEXT.productPlaceholder}
-              onChange={() => {
-                form.setFieldValue('deviceId', undefined);
-                resetConditionMetrics(form, ruleGroups);
+            <RemoteScopeSelect<ProductScopeRecord>
+              key={`product-${projectId ?? 'all'}`}
+              value={productId}
+              onChange={handleProductChange}
+              pinnedLabel={productPinnedLabel}
+              placeholder="搜索并选择产品（名称或 productKey）"
+              loader={async (keyword) => {
+                try {
+                  const res = await productApi.list({
+                    pageNum: 1,
+                    pageSize: 20,
+                    keyword: keyword || undefined,
+                    projectId,
+                  });
+                  return (res.data.data?.records ?? []) as ProductScopeRecord[];
+                } catch (error) {
+                  message.error(getErrorMessage(error, '搜索产品失败'));
+                  throw error;
+                }
               }}
+              toOption={(item) => ({
+                value: item.id,
+                label: item.productKey
+                  ? `${item.name || item.productKey} (${item.productKey})`
+                  : item.name || String(item.id),
+              })}
             />
           </Form.Item>
         </Col>
@@ -746,12 +838,32 @@ const AlarmRuleForm: React.FC<Props> = ({
       <Row gutter={12}>
         <Col xs={24} md={12}>
           <Form.Item name="deviceId" label={ALARM_TEXT.device}>
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              options={filteredDeviceOptions}
-              placeholder={ALARM_TEXT.devicePlaceholder}
+            <RemoteScopeSelect<DeviceScopeRecord>
+              key={`device-${projectId ?? 'all'}-${productId ?? 'all'}`}
+              value={deviceId}
+              pinnedLabel={devicePinnedLabel}
+              placeholder="搜索并选择设备（名称或别名），可不选"
+              loader={async (keyword) => {
+                try {
+                  const res = await deviceApi.list({
+                    pageNum: 1,
+                    pageSize: 20,
+                    keyword: keyword || undefined,
+                    projectId,
+                    productId,
+                  });
+                  return (res.data.data?.records ?? []) as DeviceScopeRecord[];
+                } catch (error) {
+                  message.error(getErrorMessage(error, '搜索设备失败'));
+                  throw error;
+                }
+              }}
+              toOption={(item) => ({
+                value: item.id,
+                label: item.nickname
+                  ? `${item.nickname} (${item.deviceName || item.id})`
+                  : item.deviceName || String(item.id),
+              })}
             />
           </Form.Item>
         </Col>
@@ -793,6 +905,57 @@ const AlarmRuleForm: React.FC<Props> = ({
             {ALARM_TEXT.multipleConditionHint}
           </Typography.Paragraph>
 
+          {!productId ? (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={ALARM_TEXT.metricSelectRecommended}
+              description={ALARM_TEXT.metricSelectRecommendedDesc}
+            />
+          ) : null}
+          {metricError ? (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={ALARM_TEXT.loadThingModelError}
+              description={metricError}
+              action={
+                onRetryMetric ? (
+                  <Button size="small" onClick={onRetryMetric}>
+                    {ALARM_TEXT.retry}
+                  </Button>
+                ) : null
+              }
+            />
+          ) : null}
+          {productId && !metricError && !metricLoading && metricLoaded && metricOptions.length === 0 ? (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={ALARM_TEXT.noMetricOptionsHint}
+              action={
+                <Space size={8}>
+                  <Button size="small" onClick={() => navigate('/product')}>
+                    {ALARM_TEXT.goThingModel}
+                  </Button>
+                  {onRetryMetric ? (
+                    <Button size="small" onClick={onRetryMetric}>
+                      {ALARM_TEXT.refreshMetrics}
+                    </Button>
+                  ) : null}
+                </Space>
+              }
+            />
+          ) : null}
+          {productId && metricOptions.length > 0 ? (
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+              {ALARM_TEXT.propertyHint}
+            </Typography.Paragraph>
+          ) : null}
+
           {fields.map((field) => (
             <RuleGroupEditor
               key={field.key}
@@ -800,6 +963,7 @@ const AlarmRuleForm: React.FC<Props> = ({
               groupIndex={field.name}
               canRemove={fields.length > 1}
               metricOptions={metricOptions}
+              metricLoading={metricLoading}
               metricLabelMap={metricLabelMap}
               onRemove={() => remove(field.name)}
             />
@@ -811,9 +975,6 @@ const AlarmRuleForm: React.FC<Props> = ({
 
   const notifySection = (
     <Card title={ALARM_TEXT.notifyCardTitle} style={{ borderRadius: 14 }}>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-        {ALARM_TEXT.notificationMethodHint}
-      </Typography.Paragraph>
       <Row gutter={[12, 12]}>
         <Col xs={24} lg={12}>
           <Form.Item name="notifyChannels" label={ALARM_TEXT.notificationMethod}>
@@ -847,9 +1008,6 @@ const AlarmRuleForm: React.FC<Props> = ({
               placeholder={ALARM_TEXT.recipientGroupPlaceholder}
             />
           </Form.Item>
-          <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
-            {ALARM_TEXT.recipientGroupHint}
-          </Typography.Paragraph>
         </Col>
       </Row>
       <Row gutter={[12, 12]}>
@@ -865,9 +1023,6 @@ const AlarmRuleForm: React.FC<Props> = ({
               notFoundContent={ALARM_TEXT.noSelectableUsers}
             />
           </Form.Item>
-          <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
-            {ALARM_TEXT.recipientUsersHint}
-          </Typography.Paragraph>
         </Col>
         <Col xs={24} lg={12}>
           <Alert
@@ -912,7 +1067,11 @@ const AlarmRuleForm: React.FC<Props> = ({
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      {overviewCard}
+      {currentStep === 'groups' ? (
+        <Typography.Text type="secondary">
+          {`当前 ${ruleGroups.length} 个等级块，共 ${conditionTotal} 条条件，规则主级别：${primaryLevel}`}
+        </Typography.Text>
+      ) : null}
       {currentStep === 'basic' && basicSection}
       {currentStep === 'scope' && scopeSection}
       {currentStep === 'groups' && ruleGroupSection}

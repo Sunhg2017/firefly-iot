@@ -1,6 +1,7 @@
-import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  AutoComplete,
   Button,
   Card,
   Col,
@@ -19,6 +20,7 @@ import {
   Table,
   Tag,
   Tabs,
+  Tooltip,
   Typography,
   message,
 } from 'antd';
@@ -37,8 +39,15 @@ import {
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
-import { productApi, protocolParserApi, tenantSelfApi, deviceApi } from '../../services/api';
+import CopyText from '../../components/CopyText';
+import ListEmpty from '../../components/ListEmpty';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import { useConfirmDiscard, useDirtyGuard } from '../../hooks/useDirtyGuard';
+import { productApi, protocolParserApi, tenantSelfApi, deviceApi, tcpUdpApi, websocketApi } from '../../services/api';
+import { ProductSelect } from '../../components/EntitySelect';
 import useAuthStore from '../../store/useAuthStore';
+import { formatDateTime } from '../../utils/datetime';
+import { getErrorMessage, getErrorStatus } from '../../utils/errors';
 import { PROTOCOL_PARSER_TEMPLATES, ProtocolParserTemplate } from './parserTemplates';
 import ProtocolParserRuntimePanel, {
   RuntimeMetrics,
@@ -55,6 +64,7 @@ import {
 const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
 const LazyCodeEditorField = React.lazy(() => import('../../components/CodeEditorField'));
+const LazyJsonEditorField = React.lazy(() => import('../../components/JsonEditorField'));
 
 interface ProtocolCodeEditorProps {
   language: 'json' | 'javascript';
@@ -103,6 +113,75 @@ const ProtocolCodeEditor: React.FC<ProtocolCodeEditorProps> = ({
     />
   </Suspense>
 );
+
+interface ProtocolJsonEditorProps {
+  path: string;
+  height?: number;
+  hint?: string;
+  value?: string;
+  onChange?: (value: string) => void;
+}
+
+/**
+ * Lazy JSON editor for debug payload/headers.
+ * It uses the shared JsonEditorField (format + inline JSON validation) while keeping Monaco out
+ * of the page chunk, matching the lazy loading used by the other code editors on this page.
+ */
+const ProtocolJsonEditor: React.FC<ProtocolJsonEditorProps> = ({ height = 160, ...rest }) => (
+  <Suspense
+    fallback={
+      <div
+        style={{
+          minHeight: height,
+          border: '1px solid #d9d9d9',
+          borderRadius: 8,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#fafafa',
+        }}
+      >
+        <Text type="secondary">编辑器加载中...</Text>
+      </div>
+    }
+  >
+    <LazyJsonEditorField height={height} {...rest} />
+  </Suspense>
+);
+
+const CODE_BLOCK_STYLE: React.CSSProperties = {
+  margin: 0,
+  padding: 12,
+  borderRadius: 8,
+  background: '#111827',
+  color: '#f9fafb',
+  overflow: 'auto',
+  fontSize: 12,
+};
+
+/**
+ * Read-only code block with an explicit copy action.
+ * Long parsed payloads / scripts are otherwise impossible to move into tickets or other tools.
+ */
+const CopyableCodeBlock: React.FC<{ text: string; label?: string; maxHeight?: number }> = ({
+  text,
+  label,
+  maxHeight = 260,
+}) => (
+  <div>
+    <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 4 }}>
+      {label ? <Text type="secondary" style={{ fontSize: 12 }}>{label}</Text> : <span />}
+      <CopyText text={text}>
+        <span style={{ fontSize: 12 }}>复制</span>
+      </CopyText>
+    </Space>
+    <pre style={{ ...CODE_BLOCK_STYLE, maxHeight }}>{text}</pre>
+  </div>
+);
+
+/** Order-independent snapshot so programmatic key ordering never looks like an unsaved edit. */
+const buildValuesSnapshot = (values: Record<string, unknown>) =>
+  JSON.stringify(Object.keys(values).sort().map((key) => [key, values[key]]));
 
 interface ProductOption {
   id: number;
@@ -204,6 +283,27 @@ interface EncodeDebugResult {
   headers?: Record<string, string>;
   costMs?: number;
   errorMessage?: string;
+}
+
+/** Session candidate shown in the debug drawers; sourced from the TCP/UDP and WebSocket session APIs. */
+interface DebugSessionOption {
+  sessionId: string;
+  transport: string;
+  remoteAddress?: string;
+  deviceName?: string;
+}
+
+interface RawTcpSession {
+  sessionId?: string;
+  protocol?: string;
+  remoteAddress?: string;
+  binding?: { deviceName?: string | null } | null;
+}
+
+interface RawWebSocketSession {
+  sessionId?: string;
+  remoteAddress?: string;
+  deviceName?: string | null;
 }
 
 interface EditorFormValues {
@@ -418,23 +518,23 @@ const DEFAULT_EDITOR_VALUES: EditorFormValues = {
 const EDITOR_STEPS = [
   {
     title: '模板与作用域',
-    description: '先选择模板、作用域和产品范围。',
+    description: '产品级必须选择产品；租户默认级适用于当前租户全部产品。',
   },
   {
     title: '协议与匹配',
-    description: '配置协议、方向、匹配规则和拆帧方式。',
+    description: '匹配规则决定哪些报文进入该规则，拆帧配置决定报文如何分帧。',
   },
   {
     title: '解析实现',
-    description: '配置解析 JSON、可视化流和脚本或插件。',
+    description: '脚本模式下脚本内容必填；插件模式下插件 ID 必填。',
   },
   {
     title: '发布策略',
-    description: '配置生效范围与灰度发布方式。',
+    description: '灰度配置决定规则对哪些设备生效。',
   },
   {
     title: '预览确认',
-    description: '确认关键配置后再保存规则。',
+    description: '确认关键配置后保存；保存后仍需发布才会对线上报文生效。',
   },
 ] as const;
 
@@ -518,19 +618,6 @@ const DEFAULT_DOWNLINK_DEBUG_VALUES: DownlinkDebugFormValues = {
   sessionId: '',
   remoteAddress: '',
   payloadText: JSON.stringify({ payload: { power: true } }, null, 2),
-};
-
-const getErrorMessage = (error: unknown, fallback: string) => {
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const response = (error as { response?: { data?: { message?: string } } }).response;
-    if (response?.data?.message) {
-      return response.data.message;
-    }
-  }
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return fallback;
 };
 
 const trimOptional = (value?: string) => {
@@ -926,6 +1013,12 @@ const isSameJsonObjectText = (left?: string, right?: string) => {
   return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
 };
 
+/** `{}` is the generated starting point, not user content, so presets may replace it without asking. */
+const isBlankOrEmptyJson = (raw?: string) => {
+  const source = (raw || '').trim();
+  return source === '' || isSameJsonObjectText(source, '{}');
+};
+
 const normalizeVisualConfigSafely = (raw: string | undefined, direction: VisualFlowDirection) => {
   try {
     return normalizeVisualConfigText(raw || '{}', direction);
@@ -990,7 +1083,6 @@ const ProtocolParserPage: React.FC = () => {
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
   const [currentTenant, setCurrentTenant] = useState<TenantOption | null>(null);
   const [loading, setLoading] = useState(false);
-  const [productLoading, setProductLoading] = useState(false);
   const [pageNum, setPageNum] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
@@ -1026,6 +1118,17 @@ const ProtocolParserPage: React.FC = () => {
   const [versionLoading, setVersionLoading] = useState(false);
   const [versionRecord, setVersionRecord] = useState<ProtocolParserRecord | null>(null);
   const [versionItems, setVersionItems] = useState<ProtocolParserVersionRecord[]>([]);
+  const [versionError, setVersionError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [runtimeUpdatedAt, setRuntimeUpdatedAt] = useState<Date | null>(null);
+  const [statusTogglingId, setStatusTogglingId] = useState<number | null>(null);
+  const [isEditorDirty, setIsEditorDirty] = useState(false);
+  const [debugSessions, setDebugSessions] = useState<DebugSessionOption[]>([]);
+  const [debugSessionLoading, setDebugSessionLoading] = useState(false);
+  const [deviceOptionsError, setDeviceOptionsError] = useState<string | null>(null);
+  const editorBaselineRef = useRef<string | null>(null);
+  const runtimeFetchingRef = useRef(false);
 
   const [editorForm] = Form.useForm<EditorFormValues>();
   const [uplinkDebugForm] = Form.useForm<UplinkDebugFormValues>();
@@ -1052,9 +1155,12 @@ const ProtocolParserPage: React.FC = () => {
   const currentEditorProductId = Form.useWatch('productId', editorForm);
   const currentUplinkTransport = Form.useWatch('transport', uplinkDebugForm) || DEFAULT_EDITOR_VALUES.transport;
   const currentDownlinkProductId = Form.useWatch('productId', downlinkDebugForm);
-  const currentDownlinkDeviceName = Form.useWatch('deviceName', downlinkDebugForm);
+  const currentUplinkDebugProductId = Form.useWatch('productId', uplinkDebugForm);
   const currentDownlinkMessageType =
     Form.useWatch('messageType', downlinkDebugForm) || DEFAULT_DOWNLINK_DEBUG_VALUES.messageType;
+  const currentUplinkPayload = Form.useWatch('payload', uplinkDebugForm) || '';
+  const currentUplinkHeadersText = Form.useWatch('headersText', uplinkDebugForm) || '';
+  const currentDownlinkPayloadText = Form.useWatch('payloadText', downlinkDebugForm) || '';
   const currentFullscreenEditorMeta = fullscreenEditorField ? CODE_EDITOR_FIELD_META[fullscreenEditorField] : undefined;
   const currentFullscreenEditorValue =
     fullscreenEditorField === 'matchRuleJson'
@@ -1077,14 +1183,17 @@ const ProtocolParserPage: React.FC = () => {
   const canPublish = hasPermission('protocol-parser:publish');
   const canRead = hasPermission('protocol-parser:read');
 
+  const confirmDiscard = useConfirmDiscard();
+
+  // Register unsaved editor content with the tab-close guard and protect mask/ESC/取消.
+  useDirtyGuard(editorOpen && isEditorDirty);
+
   const productMap = useMemo(() => new Map(products.map((item) => [item.id, item])), [products]);
   const selectedProduct = filters.productId ? productMap.get(filters.productId) : undefined;
   const currentEditorProduct = currentEditorProductId ? productMap.get(currentEditorProductId) : undefined;
+  const uplinkDebugProduct = currentUplinkDebugProductId ? productMap.get(currentUplinkDebugProductId) : undefined;
+  const downlinkDebugProduct = currentDownlinkProductId ? productMap.get(currentDownlinkProductId) : undefined;
   const currentTenantLabel = currentTenant?.displayName || currentTenant?.name || '当前租户';
-  const productOptions = useMemo(
-    () => products.map((item) => ({ value: item.id, label: `${item.name} (${item.productKey})` })),
-    [products],
-  );
   const templateOptions = useMemo(
     () => PROTOCOL_PARSER_TEMPLATES.map((item) => ({ value: item.key, label: item.label })),
     [],
@@ -1185,15 +1294,22 @@ const ProtocolParserPage: React.FC = () => {
       ),
     [currentPluginId, currentRecord?.pluginVersion, runtimeCatalog, runtimePlugins],
   );
-  const downlinkDeviceOptions = useMemo(() => {
-    const visibleDevices = currentDownlinkProductId
-      ? deviceOptions.filter((item) => item.productId === currentDownlinkProductId)
-      : deviceOptions;
-    return visibleDevices.map((item) => ({
-      value: item.deviceName,
-      label: item.deviceName,
-    }));
-  }, [currentDownlinkProductId, deviceOptions]);
+  const downlinkDeviceOptions = useMemo(
+    () => deviceOptions.map((item) => ({ value: item.deviceName, label: item.deviceName })),
+    [deviceOptions],
+  );
+  const debugSessionIdOptions = useMemo(
+    () =>
+      debugSessions.map((item) => ({
+        value: item.sessionId,
+        label: [item.transport, item.deviceName, item.remoteAddress, item.sessionId].filter(Boolean).join(' · '),
+      })),
+    [debugSessions],
+  );
+  const debugRemoteAddressOptions = useMemo(
+    () => buildStringOptions(debugSessions.map((item) => item.remoteAddress)),
+    [debugSessions],
+  );
 
   const stats = useMemo(
     () => ({
@@ -1204,14 +1320,8 @@ const ProtocolParserPage: React.FC = () => {
     }),
     [records],
   );
-  const overviewItems = useMemo(
-    () => [
-      { title: '已启用', value: stats.enabled, color: '#16a34a' },
-      { title: '草稿', value: stats.drafts, color: '#2563eb' },
-      { title: '下行规则', value: stats.downlink, color: '#c2410c' },
-      { title: '租户默认', value: stats.tenantDefault, color: '#7c3aed' },
-    ],
-    [stats],
+  const hasActiveListFilters = Boolean(
+    filters.productId || trimOptional(filters.protocol) || trimOptional(filters.transport) || filters.status,
   );
 
   const editorBusinessIdentifiers = useMemo(() => {
@@ -1399,33 +1509,108 @@ const ProtocolParserPage: React.FC = () => {
     return product ? `${product.name} (${product.productKey})` : '产品规则';
   };
 
-  const fetchProducts = async () => {
-    setProductLoading(true);
-    try {
-      const response = await productApi.list({ pageNum: 1, pageSize: 500 });
-      const page = response.data.data as { records?: ProductOption[] };
-      setProducts(page.records || []);
-    } catch (error) {
-      message.error(getErrorMessage(error, '加载产品列表失败'));
-    } finally {
-      setProductLoading(false);
-    }
-  };
+  // 产品以 keyword 远程搜索；本页仍需要 productKey 参与业务编码，因此缓存已加载/已选产品的详情。
+  const productsRef = useRef<Map<number, ProductOption>>(new Map());
+  const productRequestRef = useRef<Set<number>>(new Set());
 
-  const fetchDevices = async () => {
-    try {
-      const response = await deviceApi.list({ pageSize: 500 });
-      const page = response.data.data as { records?: DeviceOption[] };
-      setDeviceOptions(
-        (page.records || []).map((d: DeviceOption) => ({
-          productId: d.productId,
-          deviceName: d.deviceName,
-        })),
-      );
-    } catch {
-      // ignore
+  const mergeProducts = useCallback((records: ProductOption[]) => {
+    if (records.length === 0) {
+      return;
     }
-  };
+    const merged = new Map(productsRef.current);
+    records.forEach((item) => merged.set(item.id, item));
+    productsRef.current = merged;
+    setProducts(Array.from(merged.values()));
+  }, []);
+
+  const resolveProduct = useCallback(async (id?: number): Promise<ProductOption | undefined> => {
+    if (!id) {
+      return undefined;
+    }
+    const cached = productsRef.current.get(id);
+    if (cached) {
+      return cached;
+    }
+    try {
+      const response = await productApi.get(id);
+      const record = response.data.data as ProductOption | null;
+      if (record?.id) {
+        mergeProducts([record]);
+        return record;
+      }
+    } catch {
+      // 产品详情只用于补齐 productKey；补查失败时保留原 productId，由提交校验兜底。
+    }
+    return undefined;
+  }, [mergeProducts]);
+
+  const ensureProductLabels = useCallback((ids: Array<number | undefined | null>) => {
+    const missing = Array.from(new Set(
+      ids.filter((id): id is number => typeof id === 'number' && id > 0),
+    )).filter((id) => !productsRef.current.has(id) && !productRequestRef.current.has(id));
+    if (missing.length === 0) {
+      return;
+    }
+    missing.forEach((id) => productRequestRef.current.add(id));
+    void Promise.all(missing.map(async (id) => {
+      try {
+        const response = await productApi.get(id);
+        const record = response.data.data as ProductOption | null;
+        return record?.id ? record : null;
+      } catch {
+        productRequestRef.current.delete(id);
+        return null;
+      }
+    })).then((records) => {
+      mergeProducts(records.filter((item): item is ProductOption => item !== null));
+    });
+  }, [mergeProducts]);
+
+  const downlinkDeviceTimerRef = useRef<number | null>(null);
+  const downlinkDeviceRequestRef = useRef(0);
+  const [downlinkDeviceLoading, setDownlinkDeviceLoading] = useState(false);
+
+  const searchDownlinkDevices = useCallback(async (keyword: string, productId?: number) => {
+    const requestId = downlinkDeviceRequestRef.current + 1;
+    downlinkDeviceRequestRef.current = requestId;
+    setDownlinkDeviceLoading(true);
+    try {
+      const response = await deviceApi.list({
+        pageNum: 1,
+        pageSize: 20,
+        keyword: keyword.trim() || undefined,
+        productId,
+      });
+      const records = ((response.data.data?.records || []) as Array<{ productId?: number; deviceName?: string }>)
+        .filter((item) => Boolean(item.deviceName));
+      if (requestId !== downlinkDeviceRequestRef.current) {
+        return;
+      }
+      setDeviceOptions(records.map((item) => ({
+        productId: item.productId,
+        deviceName: String(item.deviceName),
+      })));
+      setDeviceOptionsError(null);
+    } catch (error) {
+      // 搜索失败保留上一次候选，避免已选设备名称被清空；错误在字段下方提示并可重试。
+      if (requestId === downlinkDeviceRequestRef.current) {
+        setDeviceOptionsError(getErrorMessage(error, '加载设备候选失败，可稍后重试'));
+      }
+    } finally {
+      if (requestId === downlinkDeviceRequestRef.current) {
+        setDownlinkDeviceLoading(false);
+      }
+    }
+  }, []);
+
+  const handleDownlinkDeviceSearch = useCallback((keyword: string) => {
+    if (downlinkDeviceTimerRef.current) {
+      window.clearTimeout(downlinkDeviceTimerRef.current);
+    }
+    downlinkDeviceTimerRef.current = window.setTimeout(() => {
+      void searchDownlinkDevices(keyword, currentDownlinkProductId);
+    }, 300);
+  }, [currentDownlinkProductId, searchDownlinkDevices]);
 
   const fetchCurrentTenant = async () => {
     try {
@@ -1448,19 +1633,25 @@ const ProtocolParserPage: React.FC = () => {
         status: filters.status,
       });
       const page = response.data.data as { records?: ProtocolParserRecord[]; total?: number };
-      setRecords(page.records || []);
+      const records = page.records || [];
+      setRecords(records);
       setTotal(page.total || 0);
+      setListError(null);
+      ensureProductLabels(records.map((item) => item.productId));
     } catch (error) {
-      message.error(getErrorMessage(error, '加载协议解析规则失败'));
+      const errorText = getErrorMessage(error, '加载协议解析规则失败');
+      setListError(errorText);
+      message.error(errorText);
     } finally {
       setLoading(false);
     }
   };
 
   const fetchRuntime = async () => {
-    if (!canRead) {
+    if (!canRead || runtimeFetchingRef.current) {
       return;
     }
+    runtimeFetchingRef.current = true;
     setRuntimeLoading(true);
     try {
       const [metricsResponse, pluginsResponse, catalogResponse] = await Promise.all([
@@ -1471,22 +1662,112 @@ const ProtocolParserPage: React.FC = () => {
       setRuntimeMetrics((metricsResponse.data.data || null) as RuntimeMetrics | null);
       setRuntimePlugins((pluginsResponse.data.data || []) as RuntimePlugin[]);
       setRuntimeCatalog((catalogResponse.data.data || []) as RuntimePluginCatalogItem[]);
+      setRuntimeError(null);
+      setRuntimeUpdatedAt(new Date());
     } catch (error) {
-      message.error(getErrorMessage(error, '加载运行时状态失败'));
+      const errorText = getErrorMessage(error, '加载运行时状态失败');
+      setRuntimeError(errorText);
+      // The console polls every 30s; only the first failure needs a toast, later ones stay inline.
+      if (!runtimeError) {
+        message.error(errorText);
+      }
     } finally {
+      runtimeFetchingRef.current = false;
       setRuntimeLoading(false);
     }
   };
 
+  /** Session candidates come from the TCP/UDP and WebSocket consoles; MQTT/HTTP sessions stay manually typed. */
+  const fetchDebugSessions = async () => {
+    setDebugSessionLoading(true);
+    try {
+      const results = await Promise.allSettled([tcpUdpApi.listTcpSessions(), websocketApi.listSessions()]);
+      const nextSessions: DebugSessionOption[] = [];
+      if (results[0].status === 'fulfilled') {
+        const rawSessions = results[0].value.data?.data as unknown;
+        if (Array.isArray(rawSessions)) {
+          rawSessions.forEach((item) => {
+            const session = item as RawTcpSession;
+            if (!session.sessionId) {
+              return;
+            }
+            nextSessions.push({
+              sessionId: session.sessionId,
+              transport: session.protocol || 'TCP',
+              remoteAddress: session.remoteAddress,
+              deviceName: session.binding?.deviceName || undefined,
+            });
+          });
+        }
+      }
+      if (results[1].status === 'fulfilled') {
+        const rawSessions = results[1].value.data?.data as unknown;
+        if (Array.isArray(rawSessions)) {
+          rawSessions.forEach((item) => {
+            const session = item as RawWebSocketSession;
+            if (!session.sessionId) {
+              return;
+            }
+            nextSessions.push({
+              sessionId: session.sessionId,
+              transport: 'WEBSOCKET',
+              remoteAddress: session.remoteAddress,
+              deviceName: session.deviceName || undefined,
+            });
+          });
+        }
+      }
+      setDebugSessions(nextSessions);
+      const firstRejection = results.find((item) => item.status === 'rejected');
+      const rejectionStatus =
+        firstRejection && firstRejection.status === 'rejected' ? getErrorStatus(firstRejection.reason) : undefined;
+      // Missing connector read permission is expected here; the fields still accept manual input.
+      if (results.every((item) => item.status === 'rejected') && rejectionStatus !== 401 && rejectionStatus !== 403) {
+        message.warning(
+          firstRejection && firstRejection.status === 'rejected'
+            ? getErrorMessage(firstRejection.reason, '会话候选加载失败，可手动填写会话 ID')
+            : '会话候选加载失败，可手动填写会话 ID',
+        );
+      }
+    } finally {
+      setDebugSessionLoading(false);
+    }
+  };
+
+  // Poll the runtime console only while its tab is open; the hook also pauses polling in
+  // background tabs and never overlaps a slow request with the next tick.
+  const runtimeAutoRefresh = useAutoRefresh(fetchRuntime, {
+    intervalMs: 30000,
+    enabled: canRead && mainTabKey === 'runtime',
+    immediate: false,
+  });
+
   useEffect(() => {
     void fetchCurrentTenant();
-    void fetchProducts();
-    void fetchDevices();
-  }, []);
+    if (initialProductId) {
+      void resolveProduct(initialProductId);
+    }
+  }, [initialProductId, resolveProduct]);
 
   useEffect(() => {
     void fetchData();
   }, [filters, pageNum, pageSize]);
+
+  useEffect(() => {
+    if (!uplinkDebugOpen && !downlinkDebugOpen) {
+      return;
+    }
+    void fetchDebugSessions();
+  }, [downlinkDebugOpen, uplinkDebugOpen]);
+
+  // Entering the runtime tab shows fresh metrics immediately instead of waiting for the next tick.
+  const refreshRuntime = runtimeAutoRefresh.refresh;
+  useEffect(() => {
+    if (mainTabKey !== 'runtime') {
+      return;
+    }
+    void refreshRuntime();
+  }, [mainTabKey, refreshRuntime]);
 
   const applyFilters = () => {
     setFilters({
@@ -1661,16 +1942,6 @@ const ProtocolParserPage: React.FC = () => {
   ]);
 
   useEffect(() => {
-    if (!currentDownlinkDeviceName) {
-      return;
-    }
-    const stillVisible = downlinkDeviceOptions.some((item) => item.value === currentDownlinkDeviceName);
-    if (!stillVisible) {
-      downlinkDebugForm.setFieldsValue({ deviceName: undefined });
-    }
-  }, [currentDownlinkDeviceName, downlinkDebugForm, downlinkDeviceOptions]);
-
-  useEffect(() => {
     if (currentParserMode !== 'SCRIPT' && fullscreenEditorField === 'scriptContent') {
       setFullscreenEditorField(null);
     }
@@ -1690,7 +1961,52 @@ const ProtocolParserPage: React.FC = () => {
     }
   }, [currentParserMode, currentPluginId, editorForm, pluginVersionOptions]);
 
+  // Snapshot right after the open-time defaults and derived identifiers settle, so merely
+  // opening the drawer never looks dirty; every later comparison is against this snapshot.
+  useEffect(() => {
+    if (!editorOpen) {
+      editorBaselineRef.current = null;
+      setIsEditorDirty(false);
+      return;
+    }
+    editorBaselineRef.current = buildValuesSnapshot(
+      editorForm.getFieldsValue(true) as unknown as Record<string, unknown>,
+    );
+    setIsEditorDirty(false);
+  }, [editorForm, editorOpen]);
+
+  const setEditorDirtyFromForm = () => {
+    if (!editorBaselineRef.current) {
+      setIsEditorDirty(true);
+      return;
+    }
+    const currentSnapshot = buildValuesSnapshot(
+      editorForm.getFieldsValue(true) as unknown as Record<string, unknown>,
+    );
+    setIsEditorDirty(currentSnapshot !== editorBaselineRef.current);
+  };
+
+  // Programmatic fills bypass Form.onValuesChange (antd setFieldsValue does not emit it),
+  // so every button/preset that writes editor fields has to recompute the dirty state explicitly.
+  const applyEditorValues = (patch: Partial<EditorFormValues>) => {
+    editorForm.setFieldsValue(patch);
+    setEditorDirtyFromForm();
+  };
+
+  const confirmOverwriteEditor = (content: string, action: () => void) => {
+    Modal.confirm({
+      title: '将覆盖当前内容，是否继续？',
+      content,
+      okText: '覆盖',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: action,
+    });
+  };
+
   const closeEditorModal = () => {
+    setIsEditorDirty(false);
+    editorBaselineRef.current = null;
     setEditorOpen(false);
     setFullscreenEditorField(null);
     setCurrentRecord(null);
@@ -1699,35 +2015,66 @@ const ProtocolParserPage: React.FC = () => {
     setEditorMaxStepIndex(0);
   };
 
+  const handleCloseEditor = () => {
+    confirmDiscard(isEditorDirty, closeEditorModal);
+  };
+
   const applyTemplate = (template?: ProtocolParserTemplate) => {
     if (!template) {
       message.warning('请先选择模板');
       return;
     }
     const visualConfigJson = defaultVisualConfigForDirection(template.direction as VisualFlowDirection);
-    editorForm.setFieldsValue({
-      protocol: template.protocol,
-      transport: template.transport,
-      direction: template.direction as 'UPLINK' | 'DOWNLINK',
-      parserMode: template.parserMode as 'SCRIPT' | 'PLUGIN',
-      frameMode: template.frameMode,
-      matchRuleJson: template.matchRuleJson,
-      frameConfigJson: template.frameConfigJson,
-      parserConfigJson: injectBusinessIdentifiersIntoJson(template.parserConfigJson, editorBusinessIdentifiers),
-      visualConfigJson,
-      scriptLanguage: template.scriptLanguage,
-      scriptContent: template.scriptContent,
-      timeoutMs: template.timeoutMs,
-      errorPolicy: template.errorPolicy,
-    });
-    message.success(`已应用模板：${template.label}`);
+    const applyValues = () => {
+      setSelectedTemplateKey(template.key);
+      applyEditorValues({
+        protocol: template.protocol,
+        transport: template.transport,
+        direction: template.direction as 'UPLINK' | 'DOWNLINK',
+        parserMode: template.parserMode as 'SCRIPT' | 'PLUGIN',
+        frameMode: template.frameMode,
+        matchRuleJson: template.matchRuleJson,
+        frameConfigJson: template.frameConfigJson,
+        parserConfigJson: injectBusinessIdentifiersIntoJson(template.parserConfigJson, editorBusinessIdentifiers),
+        visualConfigJson,
+        scriptLanguage: template.scriptLanguage,
+        scriptContent: template.scriptContent,
+        timeoutMs: template.timeoutMs,
+        errorPolicy: template.errorPolicy,
+      });
+      message.success(`已应用模板：${template.label}`);
+    };
+    // A template rewrites the whole protocol/parse configuration. First-time selection on a
+    // pristine create form stays one click; editing an existing rule or changing an already
+    // modified form always asks before replacing the current content.
+    if (!isEditorDirty && editorMode === 'create') {
+      applyValues();
+      return;
+    }
+    confirmOverwriteEditor(
+      `应用模板「${template.label}」会覆盖当前协议、匹配规则、解析配置与脚本，明确后才会生效。`,
+      applyValues,
+    );
   };
 
   const applyEditorJsonPreset = (
     field: 'matchRuleJson' | 'frameConfigJson' | 'parserConfigJson' | 'visualConfigJson' | 'releaseConfigJson',
     value: string,
   ) => {
-    editorForm.setFieldsValue({ [field]: value } as Partial<EditorFormValues>);
+    const currentValue = ((editorForm.getFieldValue(field) as string | undefined) || '').trim();
+    const applyValue = () => applyEditorValues({ [field]: value } as Partial<EditorFormValues>);
+    if (isBlankOrEmptyJson(currentValue)) {
+      applyValue();
+      return;
+    }
+    if (isSameJsonObjectText(currentValue, value)) {
+      message.info(`「${JSON_FIELD_LABELS[field]}」与所选预设一致，无需覆盖`);
+      return;
+    }
+    confirmOverwriteEditor(
+      `「${JSON_FIELD_LABELS[field]}」已有内容，覆盖后原内容将丢失。`,
+      applyValue,
+    );
   };
 
   const formatEditorJsonFields = (fields: JsonEditorField[]) => {
@@ -1744,6 +2091,7 @@ const ProtocolParserPage: React.FC = () => {
         return;
       }
     }
+    // Formatting only rewrites whitespace, so it should not trigger the unsaved-changes guard.
     editorForm.setFieldsValue(nextValues);
     message.success(`已格式化${fields.map((field) => JSON_FIELD_LABELS[field]).join('、')}`);
   };
@@ -1756,7 +2104,7 @@ const ProtocolParserPage: React.FC = () => {
     if (!fullscreenEditorField) {
       return;
     }
-    editorForm.setFieldsValue({ [fullscreenEditorField]: value } as Partial<EditorFormValues>);
+    applyEditorValues({ [fullscreenEditorField]: value } as Partial<EditorFormValues>);
   };
 
   const handleFormatFullscreenEditor = () => {
@@ -1800,7 +2148,32 @@ const ProtocolParserPage: React.FC = () => {
   };
 
   const applyRecommendedEditorValue = (field: CodeEditorFieldName) => {
-    editorForm.setFieldsValue({ [field]: getRecommendedEditorValue(field) } as Partial<EditorFormValues>);
+    const currentValue = ((editorForm.getFieldValue(field) as string | undefined) || '').trim();
+    const recommendedValue = getRecommendedEditorValue(field);
+    const applyValue = () => applyEditorValues({ [field]: recommendedValue } as Partial<EditorFormValues>);
+
+    if (field === 'scriptContent') {
+      if (!currentValue) {
+        applyValue();
+        return;
+      }
+      if (currentValue === recommendedValue.trim()) {
+        message.info('当前脚本已与推荐骨架一致');
+        return;
+      }
+      confirmOverwriteEditor('「脚本内容」已有内容，覆盖后原脚本将丢失。', applyValue);
+      return;
+    }
+
+    if (isBlankOrEmptyJson(currentValue)) {
+      applyValue();
+      return;
+    }
+    if (isSameJsonObjectText(currentValue, recommendedValue)) {
+      message.info(`「${JSON_FIELD_LABELS[field]}」已是推荐值，无需覆盖`);
+      return;
+    }
+    confirmOverwriteEditor(`「${JSON_FIELD_LABELS[field]}」已有内容，覆盖后原内容将丢失。`, applyValue);
   };
 
   const handleRegenerateScriptFromVisual = () => {
@@ -1808,16 +2181,39 @@ const ProtocolParserPage: React.FC = () => {
       const direction = (editorForm.getFieldValue('direction') || 'UPLINK') as VisualFlowDirection;
       const rawVisualConfig = (editorForm.getFieldValue('visualConfigJson') || '{}') as string;
       const normalizedVisualConfig = normalizeVisualConfigText(rawVisualConfig, direction);
-      editorForm.setFieldsValue({
-        parserMode: 'SCRIPT',
-        scriptLanguage: 'JS',
-        visualConfigJson: normalizedVisualConfig,
-        scriptContent: buildScriptFromVisualConfig(normalizedVisualConfig, direction),
-      });
-      message.success('已按当前可视化配置重建脚本');
+      const nextScript = buildScriptFromVisualConfig(normalizedVisualConfig, direction);
+      const applyValues = () => {
+        applyEditorValues({
+          parserMode: 'SCRIPT',
+          scriptLanguage: 'JS',
+          visualConfigJson: normalizedVisualConfig,
+          scriptContent: nextScript,
+        });
+        message.success('已按当前可视化配置重建脚本');
+      };
+      const currentScript = ((editorForm.getFieldValue('scriptContent') as string | undefined) || '').trim();
+      if (!currentScript || currentScript === nextScript.trim()) {
+        applyValues();
+        return;
+      }
+      confirmOverwriteEditor('重建会覆盖当前脚本内容，是否继续？', applyValues);
     } catch (error) {
       message.error(getErrorMessage(error, '按当前可视化配置重建脚本失败'));
     }
+  };
+
+  const applyReleasePreset = (mode: 'ALL' | 'DEVICE_LIST' | 'HASH_PERCENT') => {
+    const nextConfig = releaseModePreset(mode);
+    const currentConfig = ((editorForm.getFieldValue('releaseConfigJson') as string | undefined) || '').trim();
+    const applyValues = () => applyEditorValues({ releaseMode: mode, releaseConfigJson: nextConfig });
+    if (isBlankOrEmptyJson(currentConfig) || isSameJsonObjectText(currentConfig, nextConfig)) {
+      applyValues();
+      return;
+    }
+    confirmOverwriteEditor(
+      `「灰度配置」已有内容，切换为「${findOptionLabel(RELEASE_MODE_OPTIONS, mode)}」会覆盖当前配置。`,
+      applyValues,
+    );
   };
 
   const validateJsonObjectRule = (field: JsonEditorField) => async (_: unknown, value?: string) => {
@@ -1965,9 +2361,9 @@ const ProtocolParserPage: React.FC = () => {
     });
   };
 
-  const openCreateModal = () => {
+  const openCreateModal = async () => {
     const createScopeType = filters.productId ? 'PRODUCT' : DEFAULT_EDITOR_VALUES.scopeType;
-    const defaultProduct = filters.productId ? productMap.get(filters.productId) : undefined;
+    const defaultProduct = await resolveProduct(filters.productId);
     const createBusinessIdentifiers: BusinessIdentifierPatch = {};
     if (currentTenant?.code) {
       createBusinessIdentifiers.tenantCode = currentTenant.code;
@@ -2001,7 +2397,7 @@ const ProtocolParserPage: React.FC = () => {
     try {
       const response = await protocolParserApi.get(record.id);
       const detail = response.data.data as ProtocolParserRecord;
-      const detailProduct = detail.productId ? productMap.get(detail.productId) : undefined;
+      const detailProduct = await resolveProduct(detail.productId ?? undefined);
       const detailBusinessIdentifiers: BusinessIdentifierPatch = {};
       if (currentTenant?.code) {
         detailBusinessIdentifiers.tenantCode = currentTenant.code;
@@ -2052,7 +2448,7 @@ const ProtocolParserPage: React.FC = () => {
     }
   };
 
-  const buildEditorPayload = (values: EditorFormValues) => {
+  const buildEditorPayload = async (values: EditorFormValues) => {
     if (values.scopeType === 'PRODUCT' && !values.productId) {
       throw new Error('产品级规则必须选择产品');
     }
@@ -2063,7 +2459,7 @@ const ProtocolParserPage: React.FC = () => {
       throw new Error('插件模式必须填写插件 ID');
     }
 
-    const payloadProduct = values.productId ? productMap.get(values.productId) : undefined;
+    const payloadProduct = await resolveProduct(values.productId);
     const payloadBusinessIdentifiers: BusinessIdentifierPatch = {};
     if (currentTenant?.code) {
       payloadBusinessIdentifiers.tenantCode = currentTenant.code;
@@ -2101,7 +2497,7 @@ const ProtocolParserPage: React.FC = () => {
   const handleSubmitEditor = async (values: EditorFormValues) => {
     setSubmitting(true);
     try {
-      const payload = buildEditorPayload(values);
+      const payload = await buildEditorPayload(values);
       if (editorMode === 'create') {
         await protocolParserApi.create(payload);
         message.success('协议解析规则已创建');
@@ -2152,6 +2548,7 @@ const ProtocolParserPage: React.FC = () => {
       topic: defaultTopicByTransport(record.transport, 'DOWNLINK'),
       payloadText: buildDownlinkPayloadExample(DEFAULT_DOWNLINK_DEBUG_VALUES.messageType),
     });
+    void searchDownlinkDevices('', record.productId || filters.productId);
     setDownlinkDebugOpen(true);
   };
 
@@ -2221,13 +2618,16 @@ const ProtocolParserPage: React.FC = () => {
 
   const fetchVersions = async (record: ProtocolParserRecord) => {
     setVersionLoading(true);
+    setVersionError(null);
     try {
       const response = await protocolParserApi.versions(record.id);
       const items = (response.data.data || []) as ProtocolParserVersionRecord[];
       setVersionItems(items);
       return items;
     } catch (error) {
-      message.error(getErrorMessage(error, '加载版本历史失败'));
+      const errorText = getErrorMessage(error, '加载版本历史失败');
+      setVersionError(errorText);
+      message.error(errorText);
       return [];
     } finally {
       setVersionLoading(false);
@@ -2236,6 +2636,8 @@ const ProtocolParserPage: React.FC = () => {
 
   const openVersionModal = async (record: ProtocolParserRecord) => {
     setVersionRecord(record);
+    setVersionItems([]);
+    setVersionError(null);
     setVersionOpen(true);
     await fetchVersions(record);
   };
@@ -2267,6 +2669,8 @@ const ProtocolParserPage: React.FC = () => {
 
   const openRollbackModal = async (record: ProtocolParserRecord) => {
     setRollbackRecord(record);
+    setVersionItems([]);
+    setVersionError(null);
     rollbackForm.resetFields();
     setRollbackOpen(true);
     const items = await fetchVersions(record);
@@ -2283,7 +2687,7 @@ const ProtocolParserPage: React.FC = () => {
     setRollbackSubmitting(true);
     try {
       await protocolParserApi.rollback(rollbackRecord.id, values.version);
-      message.success('协议解析规则已回滚');
+      message.success(`已回滚到 v${values.version}，回滚结果立即生效`);
       setRollbackOpen(false);
       setRollbackRecord(null);
       void fetchData();
@@ -2295,33 +2699,88 @@ const ProtocolParserPage: React.FC = () => {
     }
   };
 
-  const handleToggleStatus = async (record: ProtocolParserRecord) => {
+  const performToggleStatus = async (record: ProtocolParserRecord) => {
+    const disabling = record.status === 'ENABLED';
+    setStatusTogglingId(record.id);
     try {
-      if (record.status === 'ENABLED') {
+      if (disabling) {
         await protocolParserApi.disable(record.id);
-        message.success('协议解析规则已停用');
+        message.success('规则已停用，命中该规则的报文将按兜底策略处理');
       } else {
         await protocolParserApi.enable(record.id);
-        message.success('协议解析规则已启用');
+        message.success('规则已启用，符合匹配条件的报文将使用该规则解析');
       }
       void fetchData();
       void fetchRuntime();
     } catch (error) {
-      message.error(getErrorMessage(error, '切换规则状态失败'));
+      message.error(getErrorMessage(error, disabling ? '停用协议解析规则失败' : '启用协议解析规则失败'));
+    } finally {
+      setStatusTogglingId(null);
     }
   };
 
-  const handleReloadPlugins = async () => {
-    setRuntimeReloading(true);
-    try {
-      await protocolParserApi.reloadRuntimePlugins();
-      message.success('运行时插件已重载');
-      await fetchRuntime();
-    } catch (error) {
-      message.error(getErrorMessage(error, '重载运行时插件失败'));
-    } finally {
-      setRuntimeReloading(false);
+  const handleToggleStatus = (record: ProtocolParserRecord) => {
+    if (statusTogglingId !== null) {
+      return;
     }
+    const disabling = record.status === 'ENABLED';
+    Modal.confirm({
+      title: disabling ? '停用该协议解析规则？' : '启用该协议解析规则？',
+      width: 560,
+      content: (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Text>
+            {disabling
+              ? '停用后规则立即退出匹配，命中该规则的报文会按异常策略处理，可能导致线上解析失败。'
+              : '启用后规则立即参与匹配，符合匹配条件的报文会使用该规则解析。'}
+          </Text>
+          <Descriptions size="small" column={1} bordered>
+            <Descriptions.Item label="生效范围">{describeRecordScope(record)}</Descriptions.Item>
+            <Descriptions.Item label="发布范围">
+              {findOptionLabel(RELEASE_MODE_OPTIONS, record.releaseMode || 'ALL')}（{formatReleaseSummary(record)}）
+            </Descriptions.Item>
+            <Descriptions.Item label="异常策略">
+              {findOptionLabel(ERROR_POLICY_OPTIONS, record.errorPolicy || 'ERROR')}
+            </Descriptions.Item>
+            <Descriptions.Item label="版本">
+              已发布 {record.publishedVersion ? `v${record.publishedVersion}` : '未发布'}
+            </Descriptions.Item>
+          </Descriptions>
+        </Space>
+      ),
+      okText: disabling ? '确认停用' : '确认启用',
+      cancelText: '取消',
+      okButtonProps: { danger: disabling },
+      onOk: () => performToggleStatus(record),
+    });
+  };
+
+  const handleReloadPlugins = () => {
+    if (!canPublish) {
+      message.warning('没有重载插件的权限（需要 protocol-parser:publish）');
+      return;
+    }
+    if (runtimeReloading) {
+      return;
+    }
+    Modal.confirm({
+      title: '重载运行时插件？',
+      content: '重载会刷新所有插件类，正在处理的报文可能短暂失败；完成后会自动刷新运行时状态。',
+      okText: '确认重载',
+      cancelText: '取消',
+      onOk: async () => {
+        setRuntimeReloading(true);
+        try {
+          await protocolParserApi.reloadRuntimePlugins();
+          message.success('运行时插件已重载');
+          await fetchRuntime();
+        } catch (error) {
+          message.error(getErrorMessage(error, '重载运行时插件失败'));
+        } finally {
+          setRuntimeReloading(false);
+        }
+      },
+    });
   };
 
   const versionColumns: ColumnsType<ProtocolParserVersionRecord> = [
@@ -2346,7 +2805,7 @@ const ProtocolParserPage: React.FC = () => {
       title: '创建时间',
       dataIndex: 'createdAt',
       width: 180,
-      render: (value?: string) => value || '-',
+      render: (value?: string) => formatDateTime(value),
     },
   ];
 
@@ -2449,7 +2908,7 @@ const ProtocolParserPage: React.FC = () => {
       title: '更新时间',
       dataIndex: 'updatedAt',
       width: 180,
-      render: (value?: string) => value || '-',
+      render: (value?: string) => formatDateTime(value),
     },
     {
       title: '操作',
@@ -2489,8 +2948,10 @@ const ProtocolParserPage: React.FC = () => {
             <Button
               type="link"
               size="small"
+              loading={statusTogglingId === record.id}
+              disabled={statusTogglingId !== null && statusTogglingId !== record.id}
               icon={record.status === 'ENABLED' ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
-              onClick={() => void handleToggleStatus(record)}
+              onClick={() => handleToggleStatus(record)}
             >
               {record.status === 'ENABLED' ? '停用' : '启用'}
             </Button>
@@ -2510,39 +2971,13 @@ const ProtocolParserPage: React.FC = () => {
             : `共 ${total} 条规则，覆盖产品级与租户默认级规则${currentTenant?.code ? `，当前租户 ${currentTenantLabel} (${currentTenant.code})` : ''}`
         }
         extra={
-          <Space wrap>
-            {canCreate ? (
-              <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
-                新建规则
-              </Button>
-            ) : null}
-            <Button icon={<ApiOutlined />} onClick={() => void fetchData()}>
-              刷新规则
+          canCreate ? (
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => void openCreateModal()}>
+              新建规则
             </Button>
-          </Space>
+          ) : null
         }
       />
-
-      <Card title="页面总览" size="small" style={{ marginBottom: 16, borderRadius: 16 }}>
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <Space wrap>
-            <Tag color="blue">{currentTenant?.code ? `${currentTenantLabel} (${currentTenant.code})` : currentTenantLabel}</Tag>
-            {selectedProduct ? <Tag color="gold">{`${selectedProduct.name} (${selectedProduct.productKey})`}</Tag> : <Tag>当前查看全部产品</Tag>}
-            <Tag color="green">规则总数 {total}</Tag>
-            <Tag>{`已加载插件 ${runtimePlugins.length}`}</Tag>
-          </Space>
-          <Row gutter={[12, 12]}>
-            {overviewItems.map((item) => (
-              <Col xs={12} md={6} key={item.title}>
-                <Card size="small" style={{ borderRadius: 14, background: '#fafafa' }}>
-                  <Text type="secondary">{item.title}</Text>
-                  <div style={{ fontSize: 28, fontWeight: 700, color: item.color }}>{item.value}</div>
-                </Card>
-              </Col>
-            ))}
-          </Row>
-        </Space>
-      </Card>
 
       <Tabs
         activeKey={mainTabKey}
@@ -2555,126 +2990,163 @@ const ProtocolParserPage: React.FC = () => {
       />
 
       {mainTabKey === 'rules' ? (
-        <Card title="筛选条件" size="small" className="ff-query-card" style={{ marginBottom: 16, borderRadius: 16 }}>
-          <div className="ff-query-bar">
-            <div className="ff-query-field" style={{ width: 240 }}>
-              <Select
-                allowClear
-                showSearch
-                loading={productLoading}
-                value={draftFilters.productId}
-                style={{ width: '100%' }}
-                placeholder="按产品筛选"
-                options={productOptions}
-                optionFilterProp="label"
-                onChange={(value) => {
-                  setDraftFilters((current) => ({ ...current, productId: value }));
-                }}
-              />
-            </div>
-            <div className="ff-query-field" style={{ width: 180 }}>
-              <Select
-                allowClear
-                showSearch
-                value={draftFilters.protocol}
-                style={{ width: '100%' }}
-                placeholder="协议"
-                options={protocolOptions}
-                optionFilterProp="label"
-                onChange={(value) => {
-                  setDraftFilters((current) => ({ ...current, protocol: value }));
-                }}
-              />
-            </div>
-            <div className="ff-query-field" style={{ width: 180 }}>
-              <Select
-                allowClear
-                showSearch
-                value={draftFilters.transport}
-                style={{ width: '100%' }}
-                placeholder="传输方式"
-                options={transportOptions}
-                optionFilterProp="label"
-                onChange={(value) => {
-                  setDraftFilters((current) => ({ ...current, transport: value }));
-                }}
-              />
-            </div>
-            <div className="ff-query-field" style={{ width: 150 }}>
-              <Select
-                allowClear
-                value={draftFilters.status}
-                style={{ width: '100%' }}
-                placeholder="状态"
-                options={Object.entries(STATUS_META).map(([value, meta]) => ({ value, label: meta.label }))}
-                onChange={(value) => {
-                  setDraftFilters((current) => ({ ...current, status: value }));
-                }}
-              />
-            </div>
-            <div className="ff-query-actions">
-              <Space wrap>
-                <Button type="primary" onClick={applyFilters}>
-                  查询
-                </Button>
-                <Button
-                  onClick={() => {
-                    resetFilters();
+        <>
+          <Space wrap size={[8, 8]} style={{ marginBottom: 12 }}>
+            <Tag color="green">本页已启用 {stats.enabled}</Tag>
+            <Tag color="blue">本页草稿 {stats.drafts}</Tag>
+            <Tag color="orange">本页下行 {stats.downlink}</Tag>
+            <Tag color="purple">本页租户默认 {stats.tenantDefault}</Tag>
+            <Tag>已加载插件 {runtimePlugins.length}</Tag>
+          </Space>
+          <Card title="筛选条件" size="small" className="ff-query-card" style={{ marginBottom: 16, borderRadius: 16 }}>
+            <div className="ff-query-bar">
+              <div className="ff-query-field" style={{ width: 240 }}>
+                <ProductSelect
+                  style={{ width: '100%' }}
+                  placeholder="搜索并选择产品（名称或 productKey）"
+                  value={draftFilters.productId}
+                  pinnedLabel={selectedProduct ? `${selectedProduct.name} (${selectedProduct.productKey})` : undefined}
+                  onChange={(value) => {
+                    setDraftFilters((current) => ({ ...current, productId: value }));
+                    void ensureProductLabels([value]);
                   }}
-                >
-                  重置
-                </Button>
-                <Button icon={<ApiOutlined />} onClick={() => void fetchData()}>
-                  刷新规则
-                </Button>
-              </Space>
+                />
+              </div>
+              <div className="ff-query-field" style={{ width: 180 }}>
+                <Select
+                  allowClear
+                  showSearch
+                  value={draftFilters.protocol}
+                  style={{ width: '100%' }}
+                  placeholder="协议"
+                  options={protocolOptions}
+                  optionFilterProp="label"
+                  onChange={(value) => {
+                    setDraftFilters((current) => ({ ...current, protocol: value }));
+                  }}
+                />
+              </div>
+              <div className="ff-query-field" style={{ width: 180 }}>
+                <Select
+                  allowClear
+                  showSearch
+                  value={draftFilters.transport}
+                  style={{ width: '100%' }}
+                  placeholder="传输方式"
+                  options={transportOptions}
+                  optionFilterProp="label"
+                  onChange={(value) => {
+                    setDraftFilters((current) => ({ ...current, transport: value }));
+                  }}
+                />
+              </div>
+              <div className="ff-query-field" style={{ width: 150 }}>
+                <Select
+                  allowClear
+                  value={draftFilters.status}
+                  style={{ width: '100%' }}
+                  placeholder="状态"
+                  options={Object.entries(STATUS_META).map(([value, meta]) => ({ value, label: meta.label }))}
+                  onChange={(value) => {
+                    setDraftFilters((current) => ({ ...current, status: value }));
+                  }}
+                />
+              </div>
+              <div className="ff-query-actions">
+                <Space wrap>
+                  <Button type="primary" onClick={applyFilters}>
+                    查询
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      resetFilters();
+                    }}
+                  >
+                    重置
+                  </Button>
+                  <Button icon={<ApiOutlined />} loading={loading} onClick={() => void fetchData()}>
+                    刷新规则
+                  </Button>
+                </Space>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        </>
       ) : null}
 
-      {mainTabKey === 'runtime' ? <ProtocolParserRuntimePanel
-        loading={runtimeLoading}
-        reloading={runtimeReloading}
-        metrics={runtimeMetrics}
-        plugins={runtimePlugins}
-        catalog={runtimeCatalog}
-        onRefresh={() => void fetchRuntime()}
-        onReload={() => void handleReloadPlugins()}
-      /> : null}
-
-      {mainTabKey === 'rules' ? <Card title="规则列表" size="small" style={{ borderRadius: 16 }}>
-        <Table
-          rowKey="id"
-          loading={loading}
-          columns={columns}
-          dataSource={records}
-          scroll={{ x: 1700 }}
-          locale={{ emptyText: <Empty description="暂无协议解析规则" /> }}
-          pagination={{
-            current: pageNum,
-            pageSize,
-            total,
-            showSizeChanger: true,
-            showTotal: (count) => `共 ${count} 条`,
-            onChange: (nextPage, nextPageSize) => {
-              setPageNum(nextPage);
-              setPageSize(nextPageSize);
-            },
-          }}
+      {mainTabKey === 'runtime' ? (
+        <ProtocolParserRuntimePanel
+          loading={runtimeLoading}
+          reloading={runtimeReloading}
+          metrics={runtimeMetrics}
+          plugins={runtimePlugins}
+          catalog={runtimeCatalog}
+          error={runtimeError}
+          canReload={canPublish}
+          lastUpdatedAt={runtimeUpdatedAt}
+          autoRefreshPaused={runtimeAutoRefresh.paused}
+          onToggleAutoRefresh={runtimeAutoRefresh.togglePaused}
+          onRefresh={() => void runtimeAutoRefresh.refresh()}
+          onReload={handleReloadPlugins}
         />
-      </Card> : null}
+      ) : null}
+
+      {mainTabKey === 'rules' ? (
+        <Card title="规则列表" size="small" style={{ borderRadius: 16 }}>
+          {listError ? (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="规则列表加载失败"
+              description={listError}
+              action={
+                <Button size="small" onClick={() => void fetchData()}>
+                  重试
+                </Button>
+              }
+            />
+          ) : null}
+          <Table
+            rowKey="id"
+            loading={loading}
+            columns={columns}
+            dataSource={records}
+            scroll={{ x: 1700 }}
+            locale={{
+              emptyText: (
+                <ListEmpty
+                  hasFilters={hasActiveListFilters}
+                  emptyText="暂无协议解析规则"
+                  filteredText="没有符合当前筛选条件的规则"
+                  onClearFilters={resetFilters}
+                />
+              ),
+            }}
+            pagination={{
+              current: pageNum,
+              pageSize,
+              total,
+              showSizeChanger: true,
+              showTotal: (count) => `共 ${count} 条`,
+              onChange: (nextPage, nextPageSize) => {
+                setPageNum(nextPage);
+                setPageSize(nextPageSize);
+              },
+            }}
+          />
+        </Card>
+      ) : null}
 
       <Drawer
         title={editorMode === 'create' ? '新建协议解析规则' : '编辑协议解析规则'}
         open={editorOpen}
         width={1280}
-        destroyOnClose
-        onClose={closeEditorModal}
+        onClose={handleCloseEditor}
         styles={{ body: { paddingBottom: 24 } }}
         footer={
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button onClick={closeEditorModal}>取消</Button>
+            <Button onClick={handleCloseEditor}>取消</Button>
             {editorStepIndex > 0 ? <Button onClick={() => moveToEditorStep(editorStepIndex - 1)}>上一步</Button> : null}
             {isLastEditorStep ? (
               <Button type="primary" loading={submitting} onClick={() => editorForm.submit()}>
@@ -2688,19 +3160,18 @@ const ProtocolParserPage: React.FC = () => {
           </Space>
         }
       >
-        <Form form={editorForm} layout="vertical" onFinish={handleSubmitEditor}>
+        <Form
+          form={editorForm}
+          layout="vertical"
+          onValuesChange={setEditorDirtyFromForm}
+          onFinish={handleSubmitEditor}
+        >
           <Steps
             current={editorStepIndex}
             items={editorStepItems}
             onChange={(step) => void handleEditorStepChange(step)}
             size="small"
             style={{ marginBottom: 16 }}
-          />
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 16 }}
-            message={EDITOR_STEPS[editorStepIndex].description}
           />
           <Row gutter={[16, 16]} align="top">
             <Col xs={24} xl={16}>
@@ -2713,26 +3184,46 @@ const ProtocolParserPage: React.FC = () => {
                   <Select
                     allowClear
                     showSearch
-                    placeholder="选择解析模板"
+                    placeholder="选择解析模板（选中即应用）"
                     value={selectedTemplateKey}
                     options={templateOptions}
                     optionFilterProp="label"
-                    onChange={(value) => setSelectedTemplateKey(value)}
+                    optionRender={(option) => {
+                      const template = PROTOCOL_PARSER_TEMPLATES.find((item) => item.key === String(option.value));
+                      if (!template) {
+                        return option.label;
+                      }
+                      return (
+                        <Space direction="vertical" size={0} style={{ maxWidth: 420 }}>
+                          <Text strong>{template.label}</Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>{template.description}</Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>提示：{template.tip}</Text>
+                        </Space>
+                      );
+                    }}
+                    onChange={(value?: string) => {
+                      const template = PROTOCOL_PARSER_TEMPLATES.find((item) => item.key === value);
+                      if (template) {
+                        // Selecting a template applies it immediately; the explicit 应用模板
+                        // button stays as a re-apply shortcut after later manual edits.
+                        applyTemplate(template);
+                        return;
+                      }
+                      setSelectedTemplateKey(undefined);
+                    }}
                   />
                 </Form.Item>
                 <Space wrap style={{ marginTop: 12 }}>
                   {quickTemplates.map((item) => (
-                    <Button
-                      key={item.key}
-                      size="small"
-                      type={selectedTemplateKey === item.key ? 'primary' : 'default'}
-                      onClick={() => {
-                        setSelectedTemplateKey(item.key);
-                        applyTemplate(item);
-                      }}
-                    >
-                      {item.label}
-                    </Button>
+                    <Tooltip key={item.key} title={`${item.description} ${item.tip}`}>
+                      <Button
+                        size="small"
+                        type={selectedTemplateKey === item.key ? 'primary' : 'default'}
+                        onClick={() => applyTemplate(item)}
+                      >
+                        {item.label}
+                      </Button>
+                    </Tooltip>
                   ))}
                 </Space>
               </Col>
@@ -2748,11 +3239,15 @@ const ProtocolParserPage: React.FC = () => {
                         <Tag key={tag}>{tag}</Tag>
                       ))}
                     </Space>
+                    <Text type="secondary">{selectedTemplate.description}</Text>
+                    <Text type="secondary">提示：{selectedTemplate.tip}</Text>
                     <Space wrap>
                       <Button onClick={() => applyTemplate(selectedTemplate)}>应用模板</Button>
                     </Space>
                   </Space>
-                ) : null}
+                ) : (
+                  <Text type="secondary">选择模板后会立即填充协议、匹配规则、解析配置与脚本，可随后逐步修改。</Text>
+                )}
               </Col>
             </Row>
           </Card>
@@ -2778,14 +3273,14 @@ const ProtocolParserPage: React.FC = () => {
                   },
                 ]}
               >
-                <Select
-                  allowClear
-                  showSearch
+                <ProductSelect
                   disabled={currentScopeType === 'TENANT'}
-                  placeholder={currentScopeType === 'TENANT' ? '租户默认级规则无需选择产品' : '选择产品'}
-                  options={productOptions}
-                  optionFilterProp="label"
-                  onChange={handleEditorProductChange}
+                  placeholder={currentScopeType === 'TENANT' ? '租户默认级规则无需选择产品' : '搜索并选择产品（名称或 productKey）'}
+                  pinnedLabel={currentEditorProduct ? `${currentEditorProduct.name} (${currentEditorProduct.productKey})` : undefined}
+                  onChange={(value) => {
+                    handleEditorProductChange();
+                    void ensureProductLabels([value]);
+                  }}
                 />
               </Form.Item>
             </Col>
@@ -3131,6 +3626,9 @@ const ProtocolParserPage: React.FC = () => {
                     <Button size="small" onClick={handleRegenerateScriptFromVisual}>
                       按可视化重建
                     </Button>
+                    <CopyText text={currentScriptContent}>
+                      <span style={{ fontSize: 12 }}>复制脚本</span>
+                    </CopyText>
                     <Button
                       size="small"
                       icon={<FullscreenOutlined />}
@@ -3175,7 +3673,7 @@ const ProtocolParserPage: React.FC = () => {
                   showSearch
                   options={pluginVersionOptions}
                   optionFilterProp="label"
-                  placeholder="优先使用检测到的版本"
+                  placeholder="默认自动选择检测到的版本"
                 />
               </Form.Item>
             </>
@@ -3187,30 +3685,10 @@ const ProtocolParserPage: React.FC = () => {
             title="灰度发布"
             extra={
               <Space wrap>
-                <Button onClick={() => editorForm.setFieldsValue({ releaseMode: 'ALL', releaseConfigJson: '{}' })}>
-                  全量发布
-                </Button>
-                <Button
-                  onClick={() =>
-                    editorForm.setFieldsValue({
-                      releaseMode: 'DEVICE_LIST',
-                      releaseConfigJson: releaseModePreset('DEVICE_LIST'),
-                    })
-                  }
-                >
-                  设备名单
-                </Button>
-                <Button
-                  onClick={() =>
-                    editorForm.setFieldsValue({
-                      releaseMode: 'HASH_PERCENT',
-                      releaseConfigJson: releaseModePreset('HASH_PERCENT'),
-                    })
-                  }
-                >
-                  灰度 10%
-                </Button>
-                <Button onClick={() => editorForm.setFieldsValue({ releaseConfigJson: releaseModePreset(currentReleaseMode) })}>
+                <Button onClick={() => applyReleasePreset('ALL')}>全量发布</Button>
+                <Button onClick={() => applyReleasePreset('DEVICE_LIST')}>设备名单</Button>
+                <Button onClick={() => applyReleasePreset('HASH_PERCENT')}>灰度 10%</Button>
+                <Button onClick={() => applyEditorJsonPreset('releaseConfigJson', releaseModePreset(currentReleaseMode))}>
                   按当前模式填充
                 </Button>
               </Space>
@@ -3296,11 +3774,9 @@ const ProtocolParserPage: React.FC = () => {
                     }
                     style={{ borderRadius: 12 }}
                   >
-                    <TextArea
-                      readOnly
-                      value={(editorForm.getFieldValue('matchRuleJson') as string) || '{}'}
-                      autoSize={{ minRows: 6, maxRows: 12 }}
-                      style={{ fontFamily: 'monospace' }}
+                    <CopyableCodeBlock
+                      text={(editorForm.getFieldValue('matchRuleJson') as string) || '{}'}
+                      maxHeight={220}
                     />
                   </Card>
                 </Col>
@@ -3318,11 +3794,9 @@ const ProtocolParserPage: React.FC = () => {
                     }
                     style={{ borderRadius: 12 }}
                   >
-                    <TextArea
-                      readOnly
-                      value={(editorForm.getFieldValue('frameConfigJson') as string) || '{}'}
-                      autoSize={{ minRows: 6, maxRows: 12 }}
-                      style={{ fontFamily: 'monospace' }}
+                    <CopyableCodeBlock
+                      text={(editorForm.getFieldValue('frameConfigJson') as string) || '{}'}
+                      maxHeight={220}
                     />
                   </Card>
                 </Col>
@@ -3340,11 +3814,9 @@ const ProtocolParserPage: React.FC = () => {
                     }
                     style={{ borderRadius: 12 }}
                   >
-                    <TextArea
-                      readOnly
-                      value={(editorForm.getFieldValue('parserConfigJson') as string) || '{}'}
-                      autoSize={{ minRows: 6, maxRows: 12 }}
-                      style={{ fontFamily: 'monospace' }}
+                    <CopyableCodeBlock
+                      text={(editorForm.getFieldValue('parserConfigJson') as string) || '{}'}
+                      maxHeight={220}
                     />
                   </Card>
                 </Col>
@@ -3362,11 +3834,9 @@ const ProtocolParserPage: React.FC = () => {
                     }
                     style={{ borderRadius: 12 }}
                   >
-                    <TextArea
-                      readOnly
-                      value={(editorForm.getFieldValue('visualConfigJson') as string) || '{}'}
-                      autoSize={{ minRows: 6, maxRows: 12 }}
-                      style={{ fontFamily: 'monospace' }}
+                    <CopyableCodeBlock
+                      text={(editorForm.getFieldValue('visualConfigJson') as string) || '{}'}
+                      maxHeight={220}
                     />
                   </Card>
                 </Col>
@@ -3389,11 +3859,9 @@ const ProtocolParserPage: React.FC = () => {
                     style={{ borderRadius: 12 }}
                   >
                     {currentParserMode === 'SCRIPT' ? (
-                      <TextArea
-                        readOnly
-                        value={(editorForm.getFieldValue('scriptContent') as string) || ''}
-                        autoSize={{ minRows: 8, maxRows: 16 }}
-                        style={{ fontFamily: 'monospace' }}
+                      <CopyableCodeBlock
+                        text={(editorForm.getFieldValue('scriptContent') as string) || ''}
+                        maxHeight={320}
                       />
                     ) : (
                       <Descriptions size="small" column={1}>
@@ -3421,11 +3889,9 @@ const ProtocolParserPage: React.FC = () => {
                     }
                     style={{ borderRadius: 12 }}
                   >
-                    <TextArea
-                      readOnly
-                      value={(editorForm.getFieldValue('releaseConfigJson') as string) || '{}'}
-                      autoSize={{ minRows: 8, maxRows: 16 }}
-                      style={{ fontFamily: 'monospace' }}
+                    <CopyableCodeBlock
+                      text={(editorForm.getFieldValue('releaseConfigJson') as string) || '{}'}
+                      maxHeight={280}
                     />
                   </Card>
                 </Col>
@@ -3560,7 +4026,7 @@ const ProtocolParserPage: React.FC = () => {
         title={currentFullscreenEditorMeta ? `${currentFullscreenEditorMeta.label}全屏编辑` : '代码全屏编辑'}
         open={Boolean(fullscreenEditorField)}
         width="96vw"
-        destroyOnClose={false}
+        destroyOnHidden={false}
         onCancel={() => setFullscreenEditorField(null)}
         footer={
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
@@ -3576,6 +4042,9 @@ const ProtocolParserPage: React.FC = () => {
                 <Button onClick={handleFormatFullscreenEditor}>格式化 JSON</Button>
               </>
             ) : null}
+            <CopyText text={currentFullscreenEditorValue}>
+              <span style={{ fontSize: 12 }}>复制内容</span>
+            </CopyText>
             <Button onClick={() => setFullscreenEditorField(null)}>关闭</Button>
           </Space>
         }
@@ -3596,7 +4065,7 @@ const ProtocolParserPage: React.FC = () => {
         title={debugRecord ? `上行调试 · ${describeRecordScope(debugRecord)}` : '上行调试'}
         open={uplinkDebugOpen}
         width={960}
-        destroyOnClose
+        destroyOnHidden
         onClose={() => setUplinkDebugOpen(false)}
         styles={{ body: { paddingBottom: 24 } }}
         footer={
@@ -3609,21 +4078,13 @@ const ProtocolParserPage: React.FC = () => {
         }
       >
         <Form form={uplinkDebugForm} layout="vertical" preserve={false} onFinish={handleUplinkDebug}>
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 16 }}
-            message="优先使用下拉和示例填充，通常只需选择传输方式并准备载荷即可完成上行调试。"
-          />
           <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item name="productId" label="调试产品">
-                <Select
-                  allowClear
-                  showSearch
-                  options={productOptions}
-                  optionFilterProp="label"
-                  placeholder="租户默认级规则调试时请选择产品"
+                <ProductSelect
+                  placeholder="搜索并选择产品（名称或 productKey）"
+                  pinnedLabel={uplinkDebugProduct ? `${uplinkDebugProduct.name} (${uplinkDebugProduct.productKey})` : undefined}
+                  onChange={(value) => void ensureProductLabels([value])}
                 />
               </Form.Item>
             </Col>
@@ -3661,22 +4122,48 @@ const ProtocolParserPage: React.FC = () => {
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="sessionId" label="会话 ID">
-                <Input />
+              <Form.Item
+                name="sessionId"
+                label="会话 ID"
+                extra={
+                  <Button size="small" loading={debugSessionLoading} onClick={() => void fetchDebugSessions()}>
+                    刷新会话候选
+                  </Button>
+                }
+              >
+                <AutoComplete
+                  allowClear
+                  options={debugSessionIdOptions}
+                  placeholder="可搜索 TCP/WebSocket 在线会话，也可手动填写"
+                  filterOption={(inputValue, option) =>
+                    String(option?.label ?? option?.value ?? '')
+                      .toLowerCase()
+                      .includes(inputValue.toLowerCase())
+                  }
+                />
               </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item name="remoteAddress" label="远端地址">
-                <Input placeholder="10.0.0.10:9000" />
+                <AutoComplete
+                  allowClear
+                  options={debugRemoteAddressOptions}
+                  placeholder="可从在线会话中选择，也可手动填写 IP:端口"
+                  filterOption={(inputValue, option) =>
+                    String(option?.value ?? '')
+                      .toLowerCase()
+                      .includes(inputValue.toLowerCase())
+                  }
+                />
               </Form.Item>
             </Col>
             <Col xs={24} md={16}>
               <Alert
                 type="warning"
                 showIcon
-                message="请确认载荷中包含可识别设备的字段，调试时会自动匹配设备。"
+                message="载荷需包含可识别设备的字段，否则调试会因无法匹配设备而失败。"
               />
             </Col>
           </Row>
@@ -3691,6 +4178,9 @@ const ProtocolParserPage: React.FC = () => {
                 <Button size="small" onClick={() => fillUplinkDebugPayload('HEX')}>
                   填充 HEX 示例
                 </Button>
+                <CopyText text={currentUplinkPayload}>
+                  <span style={{ fontSize: 12 }}>复制载荷</span>
+                </CopyText>
               </Space>
             }
             rules={[{ required: true, message: '请输入载荷' }]}
@@ -3717,10 +4207,13 @@ const ProtocolParserPage: React.FC = () => {
                 <Button size="small" onClick={() => uplinkDebugForm.setFieldsValue({ headersText: '{}' })}>
                   清空请求头
                 </Button>
+                <CopyText text={currentUplinkHeadersText}>
+                  <span style={{ fontSize: 12 }}>复制请求头</span>
+                </CopyText>
               </Space>
             }
           >
-            <TextArea rows={6} style={{ fontFamily: 'monospace' }} />
+            <ProtocolJsonEditor height={140} path="file:///protocol-parser/debug-uplink-headers.json" hint="JSON 对象，可为空" />
           </Form.Item>
         </Form>
 
@@ -3741,10 +4234,16 @@ const ProtocolParserPage: React.FC = () => {
               {debugResult.identity ? (
                 <Descriptions bordered size="small" column={2}>
                   <Descriptions.Item label="识别模式">{debugResult.identity.mode || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="产品 Key">{debugResult.identity.productKey || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="设备名称">{debugResult.identity.deviceName || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="产品 Key">
+                    <CopyText text={debugResult.identity.productKey} />
+                  </Descriptions.Item>
+                  <Descriptions.Item label="设备名称">
+                    <CopyText text={debugResult.identity.deviceName} />
+                  </Descriptions.Item>
                   <Descriptions.Item label="标识类型">{debugResult.identity.locatorType || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="标识值">{debugResult.identity.locatorValue || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="标识值">
+                    <CopyText text={debugResult.identity.locatorValue} />
+                  </Descriptions.Item>
                 </Descriptions>
               ) : null}
 
@@ -3755,29 +4254,21 @@ const ProtocolParserPage: React.FC = () => {
                     {debugResult.messages.map((item, index) => (
                       <Card key={`${item.messageId || 'msg'}-${index}`} size="small">
                         <Descriptions bordered size="small" column={2}>
-                          <Descriptions.Item label="消息 ID">{item.messageId || '-'}</Descriptions.Item>
+                          <Descriptions.Item label="消息 ID">
+                            <CopyText text={item.messageId} />
+                          </Descriptions.Item>
                           <Descriptions.Item label="类型">{item.type || '-'}</Descriptions.Item>
                           <Descriptions.Item label="主题" span={2}>
-                            {item.topic || '-'}
+                            <CopyText text={item.topic} ellipsis />
                           </Descriptions.Item>
-                          <Descriptions.Item label="设备名称">{item.deviceName || '-'}</Descriptions.Item>
+                          <Descriptions.Item label="设备名称">
+                            <CopyText text={item.deviceName} />
+                          </Descriptions.Item>
                           <Descriptions.Item label="时间戳">{item.timestamp || '-'}</Descriptions.Item>
                         </Descriptions>
-                        <Paragraph style={{ marginTop: 12, marginBottom: 0 }}>
-                          <pre
-                            style={{
-                              margin: 0,
-                              padding: 12,
-                              borderRadius: 8,
-                              background: '#111827',
-                              color: '#f9fafb',
-                              overflow: 'auto',
-                              fontSize: 12,
-                            }}
-                          >
-                            {formatJson(item.payload)}
-                          </pre>
-                        </Paragraph>
+                        <div style={{ marginTop: 12 }}>
+                          <CopyableCodeBlock text={formatJson(item.payload)} label="输出报文载荷" />
+                        </div>
                       </Card>
                     ))}
                   </Space>
@@ -3794,7 +4285,7 @@ const ProtocolParserPage: React.FC = () => {
         title={debugRecord ? `下行编码测试 · ${describeRecordScope(debugRecord)}` : '下行编码测试'}
         open={downlinkDebugOpen}
         width={920}
-        destroyOnClose
+        destroyOnHidden
         onClose={() => setDownlinkDebugOpen(false)}
         styles={{ body: { paddingBottom: 24 } }}
         footer={
@@ -3807,22 +4298,17 @@ const ProtocolParserPage: React.FC = () => {
         }
       >
         <Form form={downlinkDebugForm} layout="vertical" preserve={false} onFinish={handleDownlinkDebug}>
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 16 }}
-            message="优先选择主题和消息类型，再一键填充示例载荷，可以快速验证下行编码结果。"
-          />
           <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item name="productId" label="调试产品">
-                <Select
-                  allowClear
-                  showSearch
-                  options={productOptions}
-                  optionFilterProp="label"
-                  placeholder="租户默认级规则调试时请选择产品"
-                  onChange={() => downlinkDebugForm.setFieldsValue({ deviceName: undefined })}
+                <ProductSelect
+                  placeholder="搜索并选择产品（名称或 productKey）"
+                  pinnedLabel={downlinkDebugProduct ? `${downlinkDebugProduct.name} (${downlinkDebugProduct.productKey})` : undefined}
+                  onChange={(value) => {
+                    downlinkDebugForm.setFieldsValue({ deviceName: undefined });
+                    void ensureProductLabels([value]);
+                    void searchDownlinkDevices('', value);
+                  }}
                 />
               </Form.Item>
             </Col>
@@ -3844,31 +4330,65 @@ const ProtocolParserPage: React.FC = () => {
           </Row>
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item name="deviceName" label="设备名称">
+              <Form.Item
+                name="deviceName"
+                label="设备名称"
+                extra={
+                  deviceOptionsError ? (
+                    <Space size={4} wrap>
+                      <Text type="warning">{deviceOptionsError}</Text>
+                      <Button size="small" onClick={() => void searchDownlinkDevices('', currentDownlinkProductId)}>
+                        重试
+                      </Button>
+                    </Space>
+                  ) : undefined
+                }
+              >
                 <Select
-                  placeholder={currentDownlinkProductId ? '请选择设备名称' : '可先选择产品再选择设备'}
+                  placeholder={currentDownlinkProductId ? '搜索并选择设备（输入设备名称）' : '可先选择产品再选择设备'}
                   allowClear
                   showSearch
-                  optionFilterProp="label"
+                  filterOption={false}
+                  onSearch={handleDownlinkDeviceSearch}
+                  loading={downlinkDeviceLoading}
                   options={downlinkDeviceOptions}
+                  notFoundContent={downlinkDeviceLoading ? '设备搜索中...' : '未找到匹配设备，换个关键字试试'}
                 />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
               <Form.Item name="sessionId" label="会话 ID">
-                <Input />
+                <AutoComplete
+                  allowClear
+                  options={debugSessionIdOptions}
+                  placeholder="可搜索 TCP/WebSocket 在线会话，也可手动填写"
+                  filterOption={(inputValue, option) =>
+                    String(option?.label ?? option?.value ?? '')
+                      .toLowerCase()
+                      .includes(inputValue.toLowerCase())
+                  }
+                />
               </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col xs={24} md={12}>
               <Form.Item name="remoteAddress" label="远端地址">
-                <Input placeholder="10.0.0.10:9000" />
+                <AutoComplete
+                  allowClear
+                  options={debugRemoteAddressOptions}
+                  placeholder="可从在线会话中选择，也可手动填写 IP:端口"
+                  filterOption={(inputValue, option) =>
+                    String(option?.value ?? '')
+                      .toLowerCase()
+                      .includes(inputValue.toLowerCase())
+                  }
+                />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
               <Form.Item name="headersText" label="请求头 JSON">
-                <TextArea rows={4} style={{ fontFamily: 'monospace' }} />
+                <ProtocolJsonEditor height={140} path="file:///protocol-parser/debug-downlink-headers.json" hint="JSON 对象，可为空" />
               </Form.Item>
             </Col>
           </Row>
@@ -3883,11 +4403,14 @@ const ProtocolParserPage: React.FC = () => {
                 <Button size="small" onClick={() => fillDownlinkDebugPayload('SERVICE_INVOKE')}>
                   服务调用示例
                 </Button>
+                <CopyText text={currentDownlinkPayloadText}>
+                  <span style={{ fontSize: 12 }}>复制载荷</span>
+                </CopyText>
               </Space>
             }
             rules={[{ required: true, message: '请输入载荷 JSON' }]}
           >
-            <TextArea rows={8} style={{ fontFamily: 'monospace' }} />
+            <ProtocolJsonEditor height={220} path="file:///protocol-parser/debug-downlink-payload.json" />
           </Form.Item>
         </Form>
 
@@ -3905,54 +4428,24 @@ const ProtocolParserPage: React.FC = () => {
                 }
               />
               <Descriptions bordered size="small" column={2}>
-                <Descriptions.Item label="主题">{encodeResult.topic || '-'}</Descriptions.Item>
+                <Descriptions.Item label="主题">
+                  <CopyText text={encodeResult.topic} />
+                </Descriptions.Item>
                 <Descriptions.Item label="编码">{encodeResult.payloadEncoding || '-'}</Descriptions.Item>
               </Descriptions>
               {encodeResult.payloadText ? (
-                <div>
-                  <Text strong>文本载荷</Text>
-                  <Paragraph>
-                    <pre
-                      style={{
-                        margin: 0,
-                        padding: 12,
-                        borderRadius: 8,
-                        background: '#111827',
-                        color: '#f9fafb',
-                        overflow: 'auto',
-                        fontSize: 12,
-                      }}
-                    >
-                      {encodeResult.payloadText}
-                    </pre>
-                  </Paragraph>
-                </div>
+                <CopyableCodeBlock text={encodeResult.payloadText} label="文本载荷" />
               ) : null}
               {encodeResult.payloadHex ? (
                 <div>
                   <Text strong>十六进制载荷</Text>
-                  <Paragraph copyable={{ text: encodeResult.payloadHex }}>{encodeResult.payloadHex}</Paragraph>
+                  <Paragraph style={{ marginBottom: 0 }}>
+                    <CopyText text={encodeResult.payloadHex} />
+                  </Paragraph>
                 </div>
               ) : null}
               {encodeResult.headers ? (
-                <div>
-                  <Text strong>请求头</Text>
-                  <Paragraph>
-                    <pre
-                      style={{
-                        margin: 0,
-                        padding: 12,
-                        borderRadius: 8,
-                        background: '#111827',
-                        color: '#f9fafb',
-                        overflow: 'auto',
-                        fontSize: 12,
-                      }}
-                    >
-                      {formatJson(encodeResult.headers)}
-                    </pre>
-                  </Paragraph>
-                </div>
+                <CopyableCodeBlock text={formatJson(encodeResult.headers)} label="请求头" />
               ) : null}
             </Space>
           </Card>
@@ -3969,8 +4462,23 @@ const ProtocolParserPage: React.FC = () => {
           setVersionOpen(false);
           setVersionRecord(null);
           setVersionItems([]);
+          setVersionError(null);
         }}
       >
+        {versionError ? (
+          <Alert
+            type="error"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="版本历史加载失败"
+            description={versionError}
+            action={
+              <Button size="small" loading={versionLoading} onClick={() => versionRecord && void fetchVersions(versionRecord)}>
+                重试
+              </Button>
+            }
+          />
+        ) : null}
         <Table
           rowKey="id"
           size="small"
@@ -3978,7 +4486,7 @@ const ProtocolParserPage: React.FC = () => {
           columns={versionColumns}
           dataSource={versionItems}
           pagination={false}
-          locale={{ emptyText: <Empty description="暂无版本历史" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+          locale={{ emptyText: <ListEmpty compact emptyText="暂无版本历史" /> }}
         />
       </Modal>
 
@@ -3987,6 +4495,8 @@ const ProtocolParserPage: React.FC = () => {
         open={publishOpen}
         destroyOnHidden
         confirmLoading={publishSubmitting}
+        okText="确认发布"
+        cancelText="取消"
         onCancel={() => {
           setPublishOpen(false);
           setPublishRecord(null);
@@ -3998,8 +4508,21 @@ const ProtocolParserPage: React.FC = () => {
             type="info"
             showIcon
             style={{ marginBottom: 16 }}
-            message="发布后会刷新连接器运行时缓存，并让当前草稿版本正式生效。"
+            message="发布后草稿版本立即生效并刷新连接器运行时缓存，命中该规则的报文将改用新版本解析。"
           />
+          {publishRecord ? (
+            <Descriptions size="small" column={1} bordered style={{ marginBottom: 16 }}>
+              <Descriptions.Item label="生效范围">{describeRecordScope(publishRecord)}</Descriptions.Item>
+              <Descriptions.Item label="发布范围">
+                {findOptionLabel(RELEASE_MODE_OPTIONS, publishRecord.releaseMode || 'ALL')}（
+                {formatReleaseSummary(publishRecord)}）
+              </Descriptions.Item>
+              <Descriptions.Item label="版本变化">
+                草稿 v{publishRecord.currentVersion || 1}
+                {publishRecord.publishedVersion ? ` → 替换已发布 v${publishRecord.publishedVersion}` : ' → 首次发布'}
+              </Descriptions.Item>
+            </Descriptions>
+          ) : null}
           <Form.Item name="changeLog" label="变更说明">
             <TextArea rows={5} maxLength={500} showCount placeholder="描述本次发布的变更内容" />
           </Form.Item>
@@ -4011,6 +4534,8 @@ const ProtocolParserPage: React.FC = () => {
         open={rollbackOpen}
         destroyOnHidden
         confirmLoading={rollbackSubmitting}
+        okText="确认回滚"
+        cancelText="取消"
         onCancel={() => {
           setRollbackOpen(false);
           setRollbackRecord(null);
@@ -4021,12 +4546,37 @@ const ProtocolParserPage: React.FC = () => {
           <Alert
             type="warning"
             showIcon
-            style={{ marginBottom: 16 }}
-            message="回滚会恢复历史快照，并基于该快照生成新的工作草稿版本。"
+            style={{ marginBottom: 12 }}
+            message="回滚会恢复所选历史快照并立即生效，正在使用当前版本解析的报文将改按回滚版本处理。"
             description={
-              rollbackRecord?.publishedVersion ? `当前已发布版本：v${rollbackRecord.publishedVersion}` : '当前尚未发布任何版本'
+              rollbackRecord?.publishedVersion
+                ? `当前已发布版本：v${rollbackRecord.publishedVersion}`
+                : '当前尚未发布任何版本'
             }
           />
+          {rollbackRecord ? (
+            <Descriptions size="small" column={1} bordered style={{ marginBottom: 16 }}>
+              <Descriptions.Item label="生效范围">{describeRecordScope(rollbackRecord)}</Descriptions.Item>
+              <Descriptions.Item label="发布范围">
+                {findOptionLabel(RELEASE_MODE_OPTIONS, rollbackRecord.releaseMode || 'ALL')}（
+                {formatReleaseSummary(rollbackRecord)}）
+              </Descriptions.Item>
+            </Descriptions>
+          ) : null}
+          {versionError ? (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="版本历史加载失败"
+              description={versionError}
+              action={
+                <Button size="small" loading={versionLoading} onClick={() => rollbackRecord && void fetchVersions(rollbackRecord)}>
+                  重试
+                </Button>
+              }
+            />
+          ) : null}
           <Form.Item name="version" label="目标版本" rules={[{ required: true, message: '请选择目标版本' }]}>
             <Select loading={versionLoading} placeholder="选择历史版本" options={rollbackVersionOptions} />
           </Form.Item>

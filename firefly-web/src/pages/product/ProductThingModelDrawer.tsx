@@ -36,6 +36,10 @@ import {
   UploadOutlined,
 } from '@ant-design/icons';
 import * as XLSX from 'xlsx';
+import JsonEditorField from '../../components/JsonEditorField';
+import CopyText from '../../components/CopyText';
+import { useConfirmDiscard, useDirtyGuard } from '../../hooks/useDirtyGuard';
+import { getErrorMessage } from '../../utils/errors';
 import { asyncTaskApi, fileApi, productApi } from '../../services/api';
 
 type SectionKey = 'properties' | 'events' | 'services';
@@ -896,16 +900,6 @@ const PARAMETER_IMPORT_TEMPLATE_ROWS: SpreadsheetTemplateRow[] = [
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const response = (error as { response?: { data?: { message?: string } } }).response;
-    if (response?.data?.message) {
-      return response.data.message;
-    }
-  }
-  return fallback;
-};
-
 const getSectionConfig = (section: SectionKey) =>
   SECTION_CONFIGS.find((item) => item.key === section) || SECTION_CONFIGS[0];
 
@@ -984,7 +978,7 @@ const parseThingModelText = (rawText: string): ThingModelParseResult => {
   } catch (error) {
     return {
       root: null,
-      error: error instanceof Error ? error.message : '物模型 JSON 解析失败',
+      error: getErrorMessage(error, '物模型 JSON 解析失败'),
     };
   }
 };
@@ -1579,6 +1573,11 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
   const sheetImportInputRef = useRef<HTMLInputElement | null>(null);
   const [sheetImportTarget, setSheetImportTarget] = useState<SheetImportTarget | null>(null);
   const [importingProgress, setImportingProgress] = useState<number | null>(null);
+  const [templateDownloading, setTemplateDownloading] = useState<'property' | 'parameter' | null>(null);
+  const [jsonTouched, setJsonTouched] = useState(false);
+  const mountedRef = useRef(true);
+  const importPollIdRef = useRef(0);
+  const confirmDiscard = useConfirmDiscard();
   const isPublished = product?.status === 'PUBLISHED';
   const itemEditorFormValues = useMemo(
     () => (itemEditor ? itemToFormValues(itemEditor.section, itemEditor.original) : undefined),
@@ -1592,6 +1591,34 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
     () => Object.keys(draftModel).filter((key) => !SECTION_CONFIGS.some((section) => section.key === key)),
     [draftModel],
   );
+
+  // Draft-vs-baseline comparison drives every discard guard. Invalid JSON edits are tracked separately
+  // because they never reach draftModel but still represent unsaved work.
+  const dirty = useMemo(
+    () => JSON.stringify(draftModel) !== JSON.stringify(baselineModel) || (jsonTouched && jsonError !== null),
+    [baselineModel, draftModel, jsonError, jsonTouched],
+  );
+
+  useDirtyGuard(open && dirty);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      // Bump the poll token so an in-flight import loop stops touching state after unmount.
+      importPollIdRef.current += 1;
+    };
+  }, []);
+
+  const isImportRunActive = (runId: number) => mountedRef.current && importPollIdRef.current === runId;
+
+  const requestClose = () => {
+    const hasItemDraft = Boolean(itemEditor && itemForm.isFieldsTouched());
+    confirmDiscard(dirty || hasItemDraft, onClose, {
+      title: '放弃未保存的物模型修改？',
+      content: '关闭后本次对属性、事件、服务、高级 JSON 或正在编辑的物模型项的修改将丢失，且无法恢复。',
+    });
+  };
 
   const isPublishedLockedItem = (section: SectionKey, index: number) =>
     Boolean(isPublished && index < baselineModel[section].length);
@@ -1658,6 +1685,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
       setTemplateLibraryOpen(false);
       setDraggingItem(null);
       setDragOverItem(null);
+      setJsonTouched(false);
 
       if (parsed.error) {
         message.warning('当前物模型 JSON 无法解析，请先在高级 JSON 中修复后再使用可视化编辑');
@@ -1669,6 +1697,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
       setRawThingModel(DEFAULT_THING_MODEL_TEXT);
       setJsonError(null);
       setEditorMode('visual');
+      setJsonTouched(false);
     } finally {
       setLoading(false);
     }
@@ -1684,6 +1713,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
 
   const handleJsonChange = (value: string) => {
     setRawThingModel(value);
+    setJsonTouched(true);
     const parsed = parseThingModelText(value);
     if (parsed.root) {
       setDraftModel(parsed.root);
@@ -1713,10 +1743,41 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
     syncDraftModel(parsed.root);
   };
 
-  const handleResetTemplate = () => {
+  const applyResetTemplate = () => {
     syncDraftModel(DEFAULT_THING_MODEL);
     setEditorMode('visual');
     setActiveSection('properties');
+    setJsonTouched(false);
+  };
+
+  const handleResetTemplate = () => {
+    if (!dirty) {
+      applyResetTemplate();
+      return;
+    }
+    Modal.confirm({
+      title: '重置模板将丢弃未保存修改',
+      content: '当前草稿会被默认模板覆盖，未保存的属性、事件和服务修改将丢失，且无法恢复。',
+      okText: '丢弃修改并重置',
+      okButtonProps: { danger: true },
+      cancelText: '继续编辑',
+      onOk: applyResetTemplate,
+    });
+  };
+
+  const handleReload = () => {
+    if (!dirty) {
+      void loadThingModel();
+      return;
+    }
+    Modal.confirm({
+      title: '重新加载将丢弃未保存修改',
+      content: '重新加载会以服务端最新物模型覆盖当前草稿，未保存的修改将丢失，且无法恢复。',
+      okText: '丢弃修改并重新加载',
+      okButtonProps: { danger: true },
+      cancelText: '继续编辑',
+      onOk: () => void loadThingModel(),
+    });
   };
 
   const handleSave = async () => {
@@ -1736,6 +1797,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
       await productApi.updateThingModel(product.id, payload);
       syncDraftModel(parsed.root);
       setBaselineModel(parsed.root);
+      setJsonTouched(false);
       message.success('物模型保存成功');
     } catch (error) {
       message.error(getErrorMessage(error, '物模型保存失败'));
@@ -1765,8 +1827,27 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
     message.success('物模型已导出');
   };
 
+  const confirmOverwriteDraft = (action: () => void, title: string, content: string) => {
+    if (!dirty) {
+      action();
+      return;
+    }
+    Modal.confirm({
+      title,
+      content,
+      okText: '丢弃修改并继续',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: action,
+    });
+  };
+
   const handleTriggerImport = () => {
-    importInputRef.current?.click();
+    confirmOverwriteDraft(
+      () => importInputRef.current?.click(),
+      '导入将覆盖未保存修改',
+      '导入 JSON 会替换当前物模型草稿，未保存的属性、事件和服务修改将丢失。',
+    );
   };
 
   const handleImportThingModel = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1793,26 +1874,66 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
       setEditorMode('visual');
       setActiveSection('properties');
       message.success(`已导入物模型文件：${file.name}`);
-    } catch {
-      message.error('读取导入文件失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '读取导入文件失败'));
     }
   };
 
   const handleTriggerSheetImport = (target: SheetImportTarget) => {
-    setSheetImportTarget(target);
-    sheetImportInputRef.current?.click();
+    const openPicker = () => {
+      setSheetImportTarget(target);
+      sheetImportInputRef.current?.click();
+    };
+    if (target.kind === 'properties') {
+      confirmOverwriteDraft(
+        openPicker,
+        '导入属性清单将覆盖未保存修改',
+        '导入完成后会用服务端结果刷新当前物模型，未保存的修改将丢失。',
+      );
+      return;
+    }
+    openPicker();
   };
 
-  const handleDownloadPropertyTemplate = () => {
-    const fileName = `${product?.productKey || 'thing-model'}-property-import-template.xlsx`;
-    downloadSpreadsheetTemplate(fileName, 'properties', PROPERTY_IMPORT_TEMPLATE_ROWS);
-    message.success('属性导入模板已下载');
+  const handleDownloadPropertyTemplate = async () => {
+    if (templateDownloading) {
+      return;
+    }
+    setTemplateDownloading('property');
+    try {
+      // Yield once so the button can render its loading state before the synchronous workbook write.
+      await new Promise<void>((resolve) => { window.setTimeout(resolve, 0); });
+      const fileName = `${product?.productKey || 'thing-model'}-property-import-template.xlsx`;
+      downloadSpreadsheetTemplate(fileName, 'properties', PROPERTY_IMPORT_TEMPLATE_ROWS);
+      message.success('属性导入模板已下载');
+    } catch (error) {
+      message.error(getErrorMessage(error, '下载属性导入模板失败'));
+    } finally {
+      setTemplateDownloading(null);
+    }
   };
 
-  const handleDownloadParameterTemplate = () => {
-    const fileName = `${product?.productKey || 'thing-model'}-parameter-import-template.xlsx`;
-    downloadSpreadsheetTemplate(fileName, 'parameters', PARAMETER_IMPORT_TEMPLATE_ROWS);
-    message.success('参数导入模板已下载');
+  const handleDownloadParameterTemplate = async () => {
+    if (templateDownloading) {
+      return;
+    }
+    setTemplateDownloading('parameter');
+    try {
+      await new Promise<void>((resolve) => { window.setTimeout(resolve, 0); });
+      const fileName = `${product?.productKey || 'thing-model'}-parameter-import-template.xlsx`;
+      downloadSpreadsheetTemplate(fileName, 'parameters', PARAMETER_IMPORT_TEMPLATE_ROWS);
+      message.success('参数导入模板已下载');
+    } catch (error) {
+      message.error(getErrorMessage(error, '下载参数导入模板失败'));
+    } finally {
+      setTemplateDownloading(null);
+    }
+  };
+
+  const cancelImportPolling = () => {
+    importPollIdRef.current += 1;
+    setImportingProgress(null);
+    message.info('已停止等待导入结果；任务仍在后台继续，可在任务中心查看结果。');
   };
 
   const handleSheetImportChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1824,6 +1945,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
     if (!file || !currentTarget || !product?.id) {
       return;
     }
+    const productId = product.id;
 
     const lowerName = file.name.toLowerCase();
     if (!lowerName.endsWith('.xlsx') && !lowerName.endsWith('.xls') && !lowerName.endsWith('.csv')) {
@@ -1831,13 +1953,22 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
       return;
     }
 
+    // Every import run owns a token; cancelling or unmounting invalidates it, so late responses
+    // cannot write progress or data into a closed/other drawer.
+    const runId = importPollIdRef.current + 1;
+    importPollIdRef.current = runId;
+    const isActive = () => isImportRunActive(runId);
+
     // For properties import, use async backend processing (Rule 9)
     if (currentTarget.kind === 'properties') {
       try {
         setImportingProgress(0);
-        
+
         // Step 1: Upload file to MinIO
         const uploadRes = await fileApi.upload(file, 'thing-model-import');
+        if (!isActive()) {
+          return;
+        }
         const fileKey = uploadRes.data.data?.fileKey || uploadRes.data.data?.objectName;
         if (!fileKey) {
           throw new Error('上传文件失败');
@@ -1846,54 +1977,73 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
 
         // Step 2: Register async import task
         const fileFormat = lowerName.endsWith('.csv') ? 'CSV' : 'XLSX';
-        const importRes = await productApi.importThingModel(product.id, {
+        const importRes = await productApi.importThingModel(productId, {
           fileKey,
           fileFormat,
           importType: 'PROPERTIES',
         });
+        if (!isActive()) {
+          return;
+        }
         const taskId = importRes.data.data as number;
         setImportingProgress(30);
 
         // Step 3: Poll task status
-        const pollTask = async () => {
-          let attempts = 0;
-          const maxAttempts = 120;
-          while (attempts < maxAttempts) {
-            const res = await asyncTaskApi.get(taskId);
-            const task = res.data.data as { status: string; progress?: number; errorMessage?: string };
-            if (task.status === 'COMPLETED' || task.status === 'SUCCESS') {
-              setImportingProgress(100);
-              // Refresh thing model from backend
-              setTimeout(async () => {
-                try {
-                  const tmRes = await productApi.getThingModel(product.id);
-                  const parsed = parseThingModelText(tmRes.data.data || '{}');
-                  if (parsed.root) {
-                    syncDraftModel(parsed.root);
-                  }
-                } catch {
-                  // ignore
-                }
-                setImportingProgress(null);
-              }, 500);
-              message.success('属性导入完成！');
-              return;
-            }
-            if (task.status === 'FAILED') {
-              throw new Error(task.errorMessage || '导入失败');
-            }
-            if (task.progress !== undefined) {
-              setImportingProgress(Math.max(30, Math.min(95, task.progress)));
-            }
-            attempts += 1;
-            await new Promise((resolve) => setTimeout(resolve, 2000));
+        let attempts = 0;
+        const maxAttempts = 120;
+        let completed = false;
+        while (attempts < maxAttempts) {
+          if (!isActive()) {
+            return;
           }
+          const res = await asyncTaskApi.get(taskId);
+          if (!isActive()) {
+            return;
+          }
+          const task = res.data.data as { status: string; progress?: number; errorMessage?: string };
+          if (task.status === 'COMPLETED' || task.status === 'SUCCESS') {
+            completed = true;
+            break;
+          }
+          if (task.status === 'FAILED') {
+            throw new Error(task.errorMessage || '导入失败');
+          }
+          if (task.status === 'CANCELLED') {
+            throw new Error('属性导入任务已取消');
+          }
+          if (task.progress !== undefined) {
+            setImportingProgress(Math.max(30, Math.min(95, task.progress)));
+          }
+          attempts += 1;
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+        if (!completed) {
           throw new Error('任务超时，请在任务中心查看');
-        };
-        await pollTask();
-      } catch (error) {
-        message.error(error instanceof Error ? error.message : '导入失败');
+        }
+
+        setImportingProgress(100);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        if (!isActive()) {
+          return;
+        }
+        // Refresh the saved model and baseline so the imported rows are not treated as unsaved edits.
+        const tmRes = await productApi.getThingModel(productId);
+        if (!isActive()) {
+          return;
+        }
+        const parsed = parseThingModelText(tmRes.data.data || '{}');
+        if (parsed.root) {
+          syncDraftModel(parsed.root);
+          setBaselineModel(parsed.root);
+          setJsonTouched(false);
+        }
         setImportingProgress(null);
+        message.success('属性导入完成');
+      } catch (error) {
+        if (isActive()) {
+          message.error(getErrorMessage(error, '导入属性清单失败'));
+          setImportingProgress(null);
+        }
       }
       return;
     }
@@ -1901,6 +2051,9 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
     // 参数清单改由后端解析，浏览器不再解析导入文件
     try {
       const uploadRes = await fileApi.upload(file, 'thing-model-import');
+      if (!isActive()) {
+        return;
+      }
       const fileKey = uploadRes.data.data?.fileKey || uploadRes.data.data?.objectName;
       if (!fileKey) {
         throw new Error('上传文件失败');
@@ -1908,7 +2061,10 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
       const fileFormat = lowerName.endsWith('.csv') ? 'CSV' : 'XLSX';
       // 参数清单解析改走异步任务中心：注册任务后轮询进度，再按 taskId 读取解析结果。
       setImportingProgress(20);
-      const parseRes = await productApi.parseParameterRows(product.id, { fileKey, fileFormat });
+      const parseRes = await productApi.parseParameterRows(productId, { fileKey, fileFormat });
+      if (!isActive()) {
+        return;
+      }
       const parseTaskId = parseRes.data.data as number;
       setImportingProgress(30);
 
@@ -1916,7 +2072,13 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
       let attempts = 0;
       const maxAttempts = 120;
       while (attempts < maxAttempts) {
+        if (!isActive()) {
+          return;
+        }
         const taskRes = await asyncTaskApi.get(parseTaskId);
+        if (!isActive()) {
+          return;
+        }
         const task = taskRes.data.data as { status: string; progress?: number; errorMessage?: string };
         if (task.status === 'COMPLETED' || task.status === 'SUCCESS') {
           parseCompleted = true;
@@ -1937,7 +2099,10 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
       if (!parseCompleted) {
         throw new Error('参数清单解析超时，请在任务中心查看');
       }
-      const rowsRes = await productApi.getThingModelParseResult(product.id, parseTaskId);
+      const rowsRes = await productApi.getThingModelParseResult(productId, parseTaskId);
+      if (!isActive()) {
+        return;
+      }
       const rows = (rowsRes.data.data || []) as Record<string, unknown>[];
       setImportingProgress(null);
       if (rows.length === 0) {
@@ -1959,7 +2124,10 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
         message.success(`已导入 ${importedParameters.length} 条参数清单`);
       }
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '导入参数清单失败');
+      if (isActive()) {
+        message.error(getErrorMessage(error, '导入参数清单失败'));
+        setImportingProgress(null);
+      }
     }
   };
 
@@ -1988,9 +2156,25 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
     });
   };
 
-  const closeItemEditor = () => {
-    setItemEditor(null);
-    itemForm.resetFields();
+  const closeItemEditor = (force = false) => {
+    const reset = () => {
+      setItemEditor(null);
+      itemForm.resetFields();
+    };
+    if (!force && itemForm.isFieldsTouched()) {
+      Modal.confirm({
+        title: '放弃未保存的物模型项？',
+        content: '当前物模型项的填写内容尚未保存，关闭后无法恢复。',
+        okText: '放弃修改',
+        okButtonProps: { danger: true },
+        cancelText: '继续编辑',
+        // The item editor drawer sits at zIndex 1300; keep the confirm above it.
+        zIndex: 1400,
+        onOk: reset,
+      });
+      return;
+    }
+    reset();
   };
 
   const handleDeleteItem = (section: SectionKey, index: number) => {
@@ -2031,12 +2215,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
     });
   };
 
-  const mergeTemplateModel = (template: TemplateDefinition, replaceSections: boolean) => {
-    if (replaceSections && isPublished) {
-      message.warning('已发布产品仅允许追加模板，不允许覆盖现有物模型');
-      return;
-    }
-
+  const applyTemplateModel = (template: TemplateDefinition, replaceSections: boolean) => {
     const nextRoot: ThingModelRoot = {
       ...draftModel,
       properties: replaceSections ? [] : [...draftModel.properties],
@@ -2056,6 +2235,27 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
     setActiveSection('properties');
     setTemplateLibraryOpen(false);
     message.success(replaceSections ? `已应用模板“${template.name}”` : `已追加模板“${template.name}”`);
+  };
+
+  const mergeTemplateModel = (template: TemplateDefinition, replaceSections: boolean) => {
+    if (replaceSections && isPublished) {
+      message.warning('已发布产品仅允许追加模板，不允许覆盖现有物模型');
+      return;
+    }
+
+    if (replaceSections && dirty) {
+      Modal.confirm({
+        title: '覆盖当前物模型？',
+        content: '覆盖会清空当前属性、事件和服务，未保存的修改将丢失，且无法恢复。',
+        okText: '丢弃修改并覆盖',
+        okButtonProps: { danger: true },
+        cancelText: '取消',
+        onOk: () => applyTemplateModel(template, true),
+      });
+      return;
+    }
+
+    applyTemplateModel(template, replaceSections);
   };
 
   const handleDragStart = (section: SectionKey, index: number) => {
@@ -2135,11 +2335,11 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
         [itemEditor.section]: nextItems,
       });
 
-      closeItemEditor();
+      closeItemEditor(true);
       message.success(itemEditor.index === null ? '物模型项已新增' : '物模型项已更新');
     } catch (error) {
       if (error instanceof Error) {
-        message.error(error.message);
+        message.error(getErrorMessage(error, '保存物模型项失败'));
       }
     }
   };
@@ -2152,10 +2352,16 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
           title={title}
           extra={
             <Space wrap size={4}>
-              <Button type="link" icon={<DownloadOutlined />} onClick={handleDownloadParameterTemplate}>
+              <Button
+                type="link"
+                icon={<DownloadOutlined />}
+                loading={templateDownloading === 'parameter'}
+                disabled={templateDownloading !== null && templateDownloading !== 'parameter'}
+                onClick={() => void handleDownloadParameterTemplate()}
+              >
                 下载模板
               </Button>
-              <Button type="link" icon={<UploadOutlined />} onClick={() => handleTriggerSheetImport({ kind: 'parameters', fieldName })}>
+              <Button type="link" icon={<UploadOutlined />} onClick={() => handleTriggerSheetImport({ kind: 'parameters', fieldName })} disabled={importingProgress !== null}>
                 导入清单
               </Button>
               <Dropdown
@@ -2465,17 +2671,22 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
             <Typography.Title level={5} style={{ margin: 0 }}>
               {config.title}列表
             </Typography.Title>
-            <Typography.Text type="secondary">
-              {isPublished
-                ? `当前产品已发布，前 ${baselineCount} 项已锁定，只允许在末尾新增。`
-                : '通过表单维护常用字段，支持拖拽排序和模板快速生成。'}
-            </Typography.Text>
+            {isPublished ? (
+              <Typography.Text type="secondary">
+                当前产品已发布，前 {baselineCount} 项已锁定，只允许在末尾新增。
+              </Typography.Text>
+            ) : null}
           </div>
           <Space wrap>
             <Button onClick={() => setTemplateLibraryOpen(true)}>模板库</Button>
             {section === 'properties' ? (
               <>
-                <Button icon={<DownloadOutlined />} onClick={handleDownloadPropertyTemplate}>
+                <Button
+                  icon={<DownloadOutlined />}
+                  loading={templateDownloading === 'property'}
+                  disabled={templateDownloading !== null && templateDownloading !== 'property'}
+                  onClick={() => void handleDownloadPropertyTemplate()}
+                >
                   下载属性模板
                 </Button>
                 <Button icon={<UploadOutlined />} onClick={() => handleTriggerSheetImport({ kind: 'properties' })} disabled={importingProgress !== null}>
@@ -2498,7 +2709,10 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
         {importingProgress !== null && (
           <Card size="small" style={{ marginTop: 12, marginBottom: 12 }}>
             <Progress percent={importingProgress} status={importingProgress === 100 ? 'success' : 'active'} />
-            <Typography.Text type="secondary">正在异步导入属性清单，请稍候...</Typography.Text>
+            <Space wrap>
+              <Typography.Text type="secondary">正在等待后台导入/解析任务，请稍候。任务会继续在后台执行。</Typography.Text>
+              <Button size="small" onClick={cancelImportPolling}>停止等待</Button>
+            </Space>
           </Card>
         )}
 
@@ -2638,24 +2852,24 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
       <Drawer
         title={product ? `物模型管理 - ${product.name}` : '物模型管理'}
         open={open}
-        onClose={onClose}
+        onClose={requestClose}
         width={1080}
         destroyOnClose
         extra={
           <Space wrap>
-            <Button icon={<UploadOutlined />} onClick={handleTriggerImport}>
+            <Button icon={<UploadOutlined />} onClick={handleTriggerImport} disabled={importingProgress !== null}>
               导入
             </Button>
             <Button icon={<DownloadOutlined />} onClick={handleExportThingModel}>
               导出
             </Button>
-            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadThingModel()}>
-              重新加载
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={handleReload}>
+              重新加载（丢弃修改）
             </Button>
             <Button icon={<CodeOutlined />} onClick={handleFormat}>
               格式化
             </Button>
-            <Button onClick={handleResetTemplate}>重置模板</Button>
+            <Button onClick={handleResetTemplate}>重置模板（丢弃修改）</Button>
             <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={() => void handleSave()}>
               保存物模型
             </Button>
@@ -2667,9 +2881,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
             <Descriptions bordered size="small" column={2}>
               <Descriptions.Item label="产品名称">{product.name}</Descriptions.Item>
               <Descriptions.Item label="ProductKey">
-                <Typography.Text copyable code>
-                  {product.productKey}
-                </Typography.Text>
+                <CopyText text={product.productKey} />
               </Descriptions.Item>
               <Descriptions.Item label="状态">
                 <Tag color={product.status === 'PUBLISHED' ? 'success' : 'processing'}>
@@ -2682,15 +2894,13 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
               <Descriptions.Item label="接入协议">{product.protocol}</Descriptions.Item>
             </Descriptions>
 
-            <Alert
-              type={product.status === 'PUBLISHED' ? 'warning' : 'info'}
-              showIcon
-              message={
-                product.status === 'PUBLISHED'
-                  ? '当前产品已发布，既有物模型项仅可查看和复制，新增内容会追加在末尾，旧项不允许编辑、删除或重排。'
-                  : '优先使用可视化表单维护属性、事件、服务；支持参数模板快速插入，也支持整份物模型 JSON 导入导出。'
-              }
-            />
+            {product.status === 'PUBLISHED' ? (
+              <Alert
+                type="warning"
+                showIcon
+                message="当前产品已发布，既有物模型项仅可查看和复制，新增内容会追加在末尾，旧项不允许编辑、删除或重排。"
+              />
+            ) : null}
 
             {extraRootKeys.length > 0 ? (
               <Alert
@@ -2737,13 +2947,13 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
                     <Space direction="vertical" size={16} style={{ width: '100%' }}>
                       {jsonError ? <Alert type="error" showIcon message={jsonError} /> : null}
                       <Card title="物模型 JSON" size="small">
-                        <Input.TextArea
+                        <JsonEditorField
                           value={rawThingModel}
-                          onChange={(event) => handleJsonChange(event.target.value)}
-                          autoSize={{ minRows: 22, maxRows: 30 }}
-                          spellCheck={false}
-                          style={{ fontFamily: 'Consolas, Monaco, monospace' }}
-                          placeholder={DEFAULT_THING_MODEL_TEXT}
+                          onChange={handleJsonChange}
+                          height={520}
+                          path="thing-model.json"
+                          hint="保存前需保证 JSON 可解析；也可使用上方“格式化”整理缩进。"
+                          templates={[{ key: 'default', label: '默认物模型', value: DEFAULT_THING_MODEL_TEXT }]}
                         />
                       </Card>
                     </Space>
@@ -2766,10 +2976,10 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
         destroyOnClose
         forceRender
         zIndex={1300}
-        onClose={closeItemEditor}
+        onClose={() => closeItemEditor()}
         extra={
           <Space>
-            <Button onClick={closeItemEditor}>取消</Button>
+            <Button onClick={() => closeItemEditor()}>取消</Button>
             <Button type="primary" onClick={() => void handleSubmitItem()}>
               {itemEditor?.index === null ? '新增' : '保存'}
             </Button>
@@ -2831,7 +3041,7 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
             message={
               isPublished
                 ? '已发布产品只允许把模板内容追加到当前物模型末尾，不允许覆盖现有定义。'
-                : '可直接使用模板快速生成一套物模型，也可以只把模板追加到现有模型。'
+                : '模板只会修改当前未保存草稿，点击“保存物模型”后才会写入产品。'
             }
           />
 

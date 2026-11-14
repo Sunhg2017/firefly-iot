@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Suspense } from 'react';
 import {
   Button,
   Card,
   Col,
-  Empty,
   Form,
   Input,
   Drawer,
@@ -17,6 +16,7 @@ import {
   Spin,
   Table,
   Tag,
+  Tooltip,
   Typography,
   Upload,
   message,
@@ -42,6 +42,11 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
+import CopyText from '../../components/CopyText';
+import ListEmpty from '../../components/ListEmpty';
+import { usePageActivation } from '../../hooks/usePageActivation';
+import { formatDateTime } from '../../utils/datetime';
+import { getErrorMessage } from '../../utils/errors';
 import { productApi } from '../../services/api';
 import useAuthStore from '../../store/useAuthStore';
 
@@ -235,16 +240,6 @@ const DEFAULT_FORM_VALUES: ProductFormValues = {
 };
 const EMPTY_PRODUCT_FILTERS: ProductListFilters = { keyword: '' };
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const response = (error as { response?: { data?: { message?: string } } }).response;
-    if (response?.data?.message) {
-      return response.data.message;
-    }
-  }
-  return fallback;
-};
-
 const trimOptionalValue = (value?: string) => {
   if (value === undefined) {
     return undefined;
@@ -398,6 +393,8 @@ const ProductList: React.FC = () => {
   const [editingProduct, setEditingProduct] = useState<ProductRecord | null>(null);
   const [createUploading, setCreateUploading] = useState(false);
   const [editUploading, setEditUploading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [updating, setUpdating] = useState(false);
   const [draftFilters, setDraftFilters] = useState<ProductListFilters>(EMPTY_PRODUCT_FILTERS);
   const [filters, setFilters] = useState<ProductListFilters>(EMPTY_PRODUCT_FILTERS);
   const [thingModelProduct, setThingModelProduct] = useState<ProductRecord | null>(null);
@@ -413,7 +410,7 @@ const ProductList: React.FC = () => {
   const createProtocolOptions = useMemo(() => getProtocolOptionsByCategory(createCategory), [createCategory]);
   const editProtocolOptions = useMemo(() => getProtocolOptionsByCategory(editCategory), [editCategory]);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const res = await productApi.list({
@@ -431,11 +428,16 @@ const ProductList: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters, params]);
 
   useEffect(() => {
     void fetchData();
-  }, [filters, params.pageNum, params.pageSize]);
+  }, [fetchData]);
+
+  const handleActivate = useCallback(() => {
+    void fetchData();
+  }, [fetchData]);
+  usePageActivation(handleActivate);
 
   const applyFilters = () => {
     setFilters({
@@ -501,50 +503,6 @@ const ProductList: React.FC = () => {
     }
   }, [editCategory, editForm]);
 
-  const stats = useMemo(
-    () => ({
-      currentPageCount: data.length,
-      publishedCount: data.filter((item) => item.status === 'PUBLISHED').length,
-      developmentCount: data.filter((item) => item.status === 'DEVELOPMENT').length,
-      totalDevices: data.reduce((sum, item) => sum + (item.deviceCount || 0), 0),
-    }),
-    [data],
-  );
-
-  const overviewItems = useMemo(
-    () => [
-      {
-        title: '筛选结果',
-        value: stats.currentPageCount,
-        hint: '当前页产品数',
-        color: '#2563eb',
-        background: 'linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%)',
-      },
-      {
-        title: '已发布',
-        value: stats.publishedCount,
-        hint: '可正式接入',
-        color: '#16a34a',
-        background: 'linear-gradient(135deg, #ecfdf5 0%, #f7fee7 100%)',
-      },
-      {
-        title: '开发中',
-        value: stats.developmentCount,
-        hint: '待完善或待发布',
-        color: '#ea580c',
-        background: 'linear-gradient(135deg, #fff7ed 0%, #fffaf0 100%)',
-      },
-      {
-        title: '关联设备',
-        value: stats.totalDevices,
-        hint: '当前页设备总量',
-        color: '#7c3aed',
-        background: 'linear-gradient(135deg, #f5f3ff 0%, #faf5ff 100%)',
-      },
-    ],
-    [stats.currentPageCount, stats.publishedCount, stats.developmentCount, stats.totalDevices],
-  );
-
   const activeFilterTags = useMemo(() => {
     const tags: Array<{ key: string; label: string }> = [];
 
@@ -608,13 +566,16 @@ const ProductList: React.FC = () => {
   };
 
   const handleCreate = async (values: ProductFormValues) => {
+    setCreating(true);
     try {
       await productApi.create(buildProductPayload(values));
       message.success('产品创建成功');
       closeCreateModal();
-      void fetchData();
+      await fetchData();
     } catch (error) {
       message.error(getErrorMessage(error, '产品创建失败'));
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -637,13 +598,16 @@ const ProductList: React.FC = () => {
       return;
     }
 
+    setUpdating(true);
     try {
       await productApi.update(editingId, buildProductPayload(values));
       message.success('产品更新成功');
       closeEditModal();
-      void fetchData();
+      await fetchData();
     } catch (error) {
       message.error(getErrorMessage(error, '产品更新失败'));
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -657,7 +621,7 @@ const ProductList: React.FC = () => {
         try {
           await productApi.publish(record.id);
           message.success('产品已发布');
-          void fetchData();
+          await fetchData();
         } catch (error) {
           message.error(getErrorMessage(error, '产品发布失败'));
         }
@@ -668,7 +632,7 @@ const ProductList: React.FC = () => {
   const handleDelete = (record: ProductRecord) => {
     Modal.confirm({
       title: '确认删除产品？',
-      content: `删除后无法恢复，确认删除“${record.name}”吗？`,
+      content: `删除后无法恢复，确认删除“${record.name}”吗？已关联设备的产品需先解绑设备。`,
       okText: '确认删除',
       okButtonProps: { danger: true },
       cancelText: '取消',
@@ -676,7 +640,7 @@ const ProductList: React.FC = () => {
         try {
           await productApi.delete(record.id);
           message.success('产品已删除');
-          void fetchData();
+          await fetchData();
         } catch (error) {
           message.error(getErrorMessage(error, '产品删除失败'));
         }
@@ -750,7 +714,7 @@ const ProductList: React.FC = () => {
         gap: 4,
       }}
     >
-      <span style={{ fontSize: 11, color: '#94a3b8' }}>{label}</span>
+      <span style={{ fontSize: 12, color: '#64748b' }}>{label}</span>
       <span
         style={{
           fontSize: 13,
@@ -828,16 +792,20 @@ const ProductList: React.FC = () => {
           </Button>
         ) : null}
         {record.status !== 'PUBLISHED' ? (
-          <Button
-            type="link"
-            size="small"
-            danger
-            icon={<DeleteOutlined />}
-            disabled={record.deviceCount > 0}
-            onClick={() => handleDelete(record)}
-          >
-            删除
-          </Button>
+          <Tooltip title={record.deviceCount > 0 ? `该产品已关联 ${record.deviceCount} 台设备，请先解绑后再删除` : undefined}>
+            <span>
+              <Button
+                type="link"
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                disabled={record.deviceCount > 0}
+                onClick={() => handleDelete(record)}
+              >
+                删除
+              </Button>
+            </span>
+          </Tooltip>
         ) : null}
       </Space>
     );
@@ -873,11 +841,7 @@ const ProductList: React.FC = () => {
       title: 'ProductKey',
       dataIndex: 'productKey',
       width: 220,
-      render: (value: string) => (
-        <Typography.Text copyable={{ text: value }} code>
-          {value}
-        </Typography.Text>
-      ),
+      render: (value: string) => <CopyText text={value} ellipsis />,
     },
     {
       title: '分类',
@@ -919,6 +883,7 @@ const ProductList: React.FC = () => {
       title: '创建时间',
       dataIndex: 'createdAt',
       width: 180,
+      render: (value?: string) => formatDateTime(value),
     },
     {
       title: '操作',
@@ -1040,6 +1005,7 @@ const ProductList: React.FC = () => {
     <div>
       <PageHeader
         title="产品接入"
+        description={`共 ${total} 个产品`}
         extra={
           <Space>
             <Segmented
@@ -1063,50 +1029,6 @@ const ProductList: React.FC = () => {
           </Space>
         }
       />
-
-      <Card
-        title="页面总览"
-        size="small"
-        style={{
-          borderRadius: 18,
-          marginBottom: 16,
-          border: 'none',
-          boxShadow: '0 8px 28px rgba(15,23,42,0.05)',
-        }}
-      >
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <Row gutter={[12, 12]}>
-            {overviewItems.map((item) => (
-              <Col xs={12} md={6} key={item.title}>
-                <div
-                  style={{
-                    padding: '16px 18px',
-                    borderRadius: 16,
-                    background: item.background,
-                    border: '1px solid rgba(148,163,184,0.14)',
-                  }}
-                >
-                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>{item.title}</div>
-                  <div style={{ fontSize: 28, lineHeight: 1.1, fontWeight: 700, color: item.color }}>{item.value}</div>
-                  <div style={{ marginTop: 6, fontSize: 12, color: '#475569' }}>{item.hint}</div>
-                </div>
-              </Col>
-            ))}
-          </Row>
-          <Space wrap>
-            <Tag color="blue">总产品 {total}</Tag>
-            {activeFilterTags.length > 0 ? (
-              activeFilterTags.map((item) => (
-                <Tag key={item.key} color="default">
-                  {item.label}
-                </Tag>
-              ))
-            ) : (
-              <Tag>当前未启用筛选条件</Tag>
-            )}
-          </Space>
-        </Space>
-      </Card>
 
       <Card
         title="筛选条件"
@@ -1167,6 +1089,17 @@ const ProductList: React.FC = () => {
               <Button type="primary" onClick={applyFilters}>查询</Button>
             </div>
           </div>
+          <Space wrap>
+            {activeFilterTags.length > 0 ? (
+              activeFilterTags.map((item) => (
+                <Tag key={item.key} color="default">
+                  {item.label}
+                </Tag>
+              ))
+            ) : (
+              <Tag>当前未启用筛选条件</Tag>
+            )}
+          </Space>
         </Space>
       </Card>
 
@@ -1236,12 +1169,7 @@ const ProductList: React.FC = () => {
                           <Typography.Title level={5} style={{ margin: 0, fontSize: 18, lineHeight: 1.35 }}>
                             {record.name}
                           </Typography.Title>
-                          <Typography.Text
-                            copyable={{ text: record.productKey }}
-                            style={{ display: 'block', marginTop: 6, fontSize: 12, color: '#64748b' }}
-                          >
-                            {record.productKey}
-                          </Typography.Text>
+                          <CopyText text={record.productKey} ellipsis style={{ display: 'flex', marginTop: 6, fontSize: 12, color: '#64748b' }} />
                           {record.model ? (
                             <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4, fontSize: 12 }}>
                               型号 {record.model}
@@ -1285,14 +1213,14 @@ const ProductList: React.FC = () => {
                               alignItems: 'center',
                             }}
                           >
-                            <span style={{ fontSize: 11, color: '#94a3b8' }}>产品说明</span>
-                            <span style={{ fontSize: 11, color: '#94a3b8' }}>创建于 {record.createdAt}</span>
+                            <span style={{ fontSize: 12, color: '#64748b' }}>产品说明</span>
+                            <span style={{ fontSize: 12, color: '#64748b' }}>创建于 {formatDateTime(record.createdAt)}</span>
                           </div>
                           <Typography.Paragraph
                             ellipsis={{ rows: 2 }}
                             style={{ margin: 0, fontSize: 12, color: '#475569' }}
                           >
-                            {record.description || '暂未补充产品说明，可在编辑页完善产品用途、场景与安装信息。'}
+                            {record.description || '可在“编辑”中补充产品说明'}
                           </Typography.Paragraph>
                         </div>
                       </div>
@@ -1332,7 +1260,11 @@ const ProductList: React.FC = () => {
                 boxShadow: '0 6px 24px rgba(15,23,42,0.04)',
               }}
             >
-              <Empty description="暂无产品数据" />
+              <ListEmpty
+                hasFilters={activeFilterTags.length > 0}
+                emptyText="暂无产品，点击右上角“新建产品”开始创建"
+                onClearFilters={resetFilters}
+              />
             </Card>
           )}
         </Spin>
@@ -1350,6 +1282,15 @@ const ProductList: React.FC = () => {
             dataSource={data}
             loading={loading}
             scroll={{ x: 1820 }}
+            locale={{
+              emptyText: (
+                <ListEmpty
+                  hasFilters={activeFilterTags.length > 0}
+                  emptyText="暂无产品，点击右上角“新建产品”开始创建"
+                  onClearFilters={resetFilters}
+                />
+              ),
+            }}
             pagination={{
               current: params.pageNum,
               pageSize: params.pageSize,
@@ -1368,17 +1309,12 @@ const ProductList: React.FC = () => {
         width={760}
         forceRender
         destroyOnClose
-        afterOpenChange={(visible) => {
-          if (visible && editingProduct) {
-            populateEditForm(editingProduct);
-          }
-        }}
         onClose={closeCreateModal}
         styles={{ body: { paddingBottom: 24 } }}
         footer={
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button onClick={closeCreateModal}>取消</Button>
-            <Button type="primary" onClick={() => createForm.submit()}>创建产品</Button>
+            <Button onClick={closeCreateModal} disabled={creating}>取消</Button>
+            <Button type="primary" loading={creating} onClick={() => createForm.submit()}>创建产品</Button>
           </Space>
         }
       >
@@ -1402,8 +1338,8 @@ const ProductList: React.FC = () => {
         styles={{ body: { paddingBottom: 24 } }}
         footer={
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button onClick={closeEditModal}>取消</Button>
-            <Button type="primary" onClick={() => editForm.submit()}>保存修改</Button>
+            <Button onClick={closeEditModal} disabled={updating}>取消</Button>
+            <Button type="primary" loading={updating} onClick={() => editForm.submit()}>保存修改</Button>
           </Space>
         }
       >

@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
   Button,
   Card,
   Descriptions,
@@ -10,8 +11,6 @@ import {
   Space,
   Table,
   Tag,
-  Typography,
-  message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -19,7 +18,12 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import PageHeader from '../../components/PageHeader';
+import CopyText from '../../components/CopyText';
+import ListEmpty from '../../components/ListEmpty';
 import { openApiApi } from '../../services/api';
+import { getErrorMessage } from '../../utils/errors';
+import { usePageActivation } from '../../hooks/usePageActivation';
+import { formatDateTime } from '../../utils/datetime';
 
 interface OpenApiItem {
   code: string;
@@ -52,13 +56,6 @@ const serviceCodeOptions = [
   { value: 'CONNECTOR', label: 'CONNECTOR' },
 ];
 
-const getErrorMessage = (error: unknown, fallback: string): string => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return fallback;
-};
-
 const methodColorMap: Record<string, string> = {
   GET: 'blue',
   POST: 'green',
@@ -71,6 +68,7 @@ const OpenApiPage: React.FC = () => {
   const [queryForm] = Form.useForm<OpenApiQueryValues>();
 
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [items, setItems] = useState<OpenApiItem[]>([]);
   const [total, setTotal] = useState(0);
   const [pageNum, setPageNum] = useState(1);
@@ -79,7 +77,7 @@ const OpenApiPage: React.FC = () => {
   const [detailRecord, setDetailRecord] = useState<OpenApiItem | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const res = await openApiApi.list({
@@ -95,16 +93,19 @@ const OpenApiPage: React.FC = () => {
       const page = (res.data?.data ?? {}) as { records?: OpenApiItem[]; total?: number };
       setItems(page.records ?? []);
       setTotal(page.total ?? 0);
+      setLoadError(null);
     } catch (error) {
-      message.error(getErrorMessage(error, '加载 OpenAPI 列表失败'));
+      setLoadError(getErrorMessage(error, '加载 OpenAPI 列表失败'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters, pageNum, pageSize]);
+
+  usePageActivation(() => { void fetchData(); });
 
   useEffect(() => {
     void fetchData();
-  }, [pageNum, pageSize, filters]);
+  }, [fetchData]);
 
   const handleSearch = async () => {
     const values = await queryForm.validateFields();
@@ -127,9 +128,10 @@ const OpenApiPage: React.FC = () => {
       title: '编码',
       dataIndex: 'code',
       width: 220,
-      render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
+      fixed: 'left',
+      render: (value: string) => <CopyText text={value} ellipsis />,
     },
-    { title: '名称', dataIndex: 'name', width: 180 },
+    { title: '名称', dataIndex: 'name', width: 180, ellipsis: true },
     {
       title: '服务',
       dataIndex: 'serviceCode',
@@ -142,27 +144,38 @@ const OpenApiPage: React.FC = () => {
       width: 100,
       render: (value: string) => <Tag color={methodColorMap[value] ?? 'default'}>{value}</Tag>,
     },
-    { title: '下游路径', dataIndex: 'pathPattern', width: 240 },
-    {
-      title: '外部网关路径',
-      dataIndex: 'gatewayPath',
-      width: 320,
-      render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
-    },
-    {
-      title: '透传权限',
-      dataIndex: 'permissionCode',
-      width: 180,
-      render: (value?: string) => (value ? <Typography.Text code>{value}</Typography.Text> : '-'),
-    },
     {
       title: '状态',
       dataIndex: 'enabled',
       width: 100,
       render: (value: boolean) => <Tag color={value ? 'success' : 'default'}>{value ? '启用' : '停用'}</Tag>,
     },
+    {
+      title: '外部网关路径',
+      dataIndex: 'gatewayPath',
+      width: 320,
+      render: (value: string) => (value ? <CopyText text={value} ellipsis /> : '-'),
+    },
+    {
+      title: '下游路径',
+      dataIndex: 'pathPattern',
+      width: 220,
+      ellipsis: true,
+      render: (value: string) => value || '-',
+    },
+    {
+      title: '透传权限',
+      dataIndex: 'permissionCode',
+      width: 200,
+      render: (value?: string) => (value ? <CopyText text={value} ellipsis /> : '-'),
+    },
     { title: '排序', dataIndex: 'sortOrder', width: 90 },
-    { title: '同步时间', dataIndex: 'updatedAt', width: 180 },
+    {
+      title: '同步时间',
+      dataIndex: 'updatedAt',
+      width: 180,
+      render: (value?: string) => (value ? formatDateTime(value) : '-'),
+    },
     {
       title: '操作',
       key: 'action',
@@ -189,11 +202,27 @@ const OpenApiPage: React.FC = () => {
       <PageHeader
         title="OpenAPI 管理"
         extra={(
-          <Button icon={<ReloadOutlined />} onClick={() => void fetchData()}>
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void fetchData()}>
             刷新
           </Button>
         )}
       />
+
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="OpenAPI 列表加载失败"
+          description={loadError}
+          action={(
+            <Button size="small" onClick={() => void fetchData()} loading={loading}>
+              重试
+            </Button>
+          )}
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
+
       <Card>
         <Form form={queryForm} layout="inline" onFinish={() => void handleSearch()}>
           <Form.Item name="keyword" label="关键字">
@@ -227,12 +256,23 @@ const OpenApiPage: React.FC = () => {
           loading={loading}
           dataSource={items}
           columns={columns}
-          scroll={{ x: 1860 }}
+          scroll={{ x: 1940 }}
+          locale={{
+            emptyText: (
+              <ListEmpty
+                hasFilters={Boolean(filters.keyword || filters.serviceCode || filters.enabled)}
+                onClearFilters={handleReset}
+                emptyText="暂无 OpenAPI 记录"
+                filteredText="没有符合当前筛选条件的 OpenAPI"
+              />
+            ),
+          }}
           pagination={{
             current: pageNum,
             pageSize,
             total,
             showSizeChanger: true,
+            showTotal: (count) => `共 ${count} 条`,
             onChange: (nextPage, nextPageSize) => {
               setPageNum(nextPage);
               setPageSize(nextPageSize);
@@ -252,7 +292,7 @@ const OpenApiPage: React.FC = () => {
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
             <Descriptions column={1} bordered>
               <Descriptions.Item label="编码">
-                <Typography.Text code>{detailRecord.code}</Typography.Text>
+                <CopyText text={detailRecord.code} />
               </Descriptions.Item>
               <Descriptions.Item label="名称">{detailRecord.name}</Descriptions.Item>
               <Descriptions.Item label="所属服务">
@@ -261,12 +301,12 @@ const OpenApiPage: React.FC = () => {
               <Descriptions.Item label="HTTP 方法">
                 <Tag color={methodColorMap[detailRecord.httpMethod] ?? 'default'}>{detailRecord.httpMethod}</Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="下游路径">{detailRecord.pathPattern}</Descriptions.Item>
+              <Descriptions.Item label="下游路径">{detailRecord.pathPattern || '-'}</Descriptions.Item>
               <Descriptions.Item label="外部网关路径">
-                <Typography.Text code>{detailRecord.gatewayPath}</Typography.Text>
+                {detailRecord.gatewayPath ? <CopyText text={detailRecord.gatewayPath} /> : '-'}
               </Descriptions.Item>
               <Descriptions.Item label="透传权限">
-                {detailRecord.permissionCode ? <Typography.Text code>{detailRecord.permissionCode}</Typography.Text> : '-'}
+                {detailRecord.permissionCode ? <CopyText text={detailRecord.permissionCode} /> : '-'}
               </Descriptions.Item>
               <Descriptions.Item label="状态">
                 <Tag color={detailRecord.enabled ? 'success' : 'default'}>
@@ -275,8 +315,12 @@ const OpenApiPage: React.FC = () => {
               </Descriptions.Item>
               <Descriptions.Item label="排序值">{detailRecord.sortOrder}</Descriptions.Item>
               <Descriptions.Item label="说明">{detailRecord.description || '-'}</Descriptions.Item>
-              <Descriptions.Item label="创建时间">{detailRecord.createdAt || '-'}</Descriptions.Item>
-              <Descriptions.Item label="同步时间">{detailRecord.updatedAt || '-'}</Descriptions.Item>
+              <Descriptions.Item label="创建时间">
+                {detailRecord.createdAt ? formatDateTime(detailRecord.createdAt) : '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="同步时间">
+                {detailRecord.updatedAt ? formatDateTime(detailRecord.updatedAt) : '-'}
+              </Descriptions.Item>
             </Descriptions>
           </Space>
         ) : null}

@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Badge, Popover, List, Typography, Button, Space, Tabs, Empty, Tag, message } from 'antd';
-import { BellOutlined, CheckOutlined } from '@ant-design/icons';
+import { Alert, Badge, Button, Empty, List, Popover, Space, Tabs, Tag, Typography, message } from 'antd';
+import { BellOutlined, CheckOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { inAppMessageApi } from '../services/api';
 import useAuthStore from '../store/useAuthStore';
+import { getErrorMessage } from '../utils/errors';
+import { formatDateTime } from '../utils/datetime';
 
 interface InAppMessage {
   id: number;
@@ -22,6 +24,12 @@ const levelColorMap: Record<string, string> = {
   ERROR: 'red',
 };
 
+const levelLabelMap: Record<string, string> = {
+  INFO: '提示',
+  WARNING: '警告',
+  ERROR: '严重',
+};
+
 const NotificationDropdown: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -29,6 +37,7 @@ const NotificationDropdown: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [messages, setMessages] = useState<InAppMessage[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('unread');
 
   const fetchUnreadCount = useCallback(async () => {
@@ -36,42 +45,52 @@ const NotificationDropdown: React.FC = () => {
       const res = await inAppMessageApi.unreadCount();
       setUnreadCount(res.data.data ?? 0);
     } catch {
-      // ignore
+      // Badge polling is best-effort; the panel surfaces an error with a retry action.
     }
   }, []);
 
   const fetchMessages = useCallback(async (isRead: boolean) => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await inAppMessageApi.list({ pageNum: 1, pageSize: 10, isRead });
       setMessages(res.data.data?.records ?? []);
-    } catch {
+    } catch (error) {
       setMessages([]);
+      setLoadError(getErrorMessage(error, '加载站内信失败'));
     } finally {
       setLoading(false);
     }
   }, []);
 
+  const reloadActiveTab = useCallback(() => {
+    void fetchMessages(activeTab === 'unread' ? false : true);
+    void fetchUnreadCount();
+  }, [activeTab, fetchMessages, fetchUnreadCount]);
+
   useEffect(() => {
-    fetchUnreadCount();
-    const timer = setInterval(fetchUnreadCount, 30000);
-    return () => clearInterval(timer);
+    void fetchUnreadCount();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void fetchUnreadCount();
+      }
+    }, 30000);
+    return () => window.clearInterval(timer);
   }, [fetchUnreadCount]);
 
   useEffect(() => {
     if (open) {
-      fetchMessages(activeTab === 'unread' ? false : true);
+      void fetchMessages(activeTab === 'unread' ? false : true);
     }
-  }, [open, activeTab, fetchMessages]);
+  }, [activeTab, fetchMessages, open]);
 
   const handleMarkAsRead = async (id: number) => {
     try {
       await inAppMessageApi.markAsRead(id);
       message.success('已标记为已读');
-      fetchMessages(false);
-      fetchUnreadCount();
-    } catch {
-      message.error('操作失败');
+      reloadActiveTab();
+    } catch (error) {
+      message.error(getErrorMessage(error, '标记已读失败'));
     }
   };
 
@@ -79,10 +98,9 @@ const NotificationDropdown: React.FC = () => {
     try {
       await inAppMessageApi.markAllAsRead();
       message.success('已全部标记为已读');
-      fetchMessages(false);
-      fetchUnreadCount();
-    } catch {
-      message.error('操作失败');
+      reloadActiveTab();
+    } catch (error) {
+      message.error(getErrorMessage(error, '全部标记已读失败'));
     }
   };
 
@@ -97,41 +115,41 @@ const NotificationDropdown: React.FC = () => {
                 type="link"
                 size="small"
                 icon={<CheckOutlined />}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleMarkAsRead(item.id);
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleMarkAsRead(item.id);
                 }}
               >
-                已读
+                标为已读
               </Button>,
             ]
           : undefined
       }
     >
       <List.Item.Meta
-        title={
+        title={(
           <Space size={4}>
             <Tag color={levelColorMap[item.level] || 'default'} style={{ marginRight: 0 }}>
-              {item.level}
+              {levelLabelMap[item.level] || item.level || '提示'}
             </Tag>
             <Typography.Text strong={!item.isRead} style={{ fontSize: 13 }}>
               {item.title}
             </Typography.Text>
           </Space>
-        }
-        description={
+        )}
+        description={(
           <div>
             <Typography.Paragraph
-              ellipsis={{ rows: 2 }}
-              style={{ marginBottom: 4, fontSize: 12, color: '#666' }}
+              ellipsis={{ rows: 2, tooltip: item.content }}
+              style={{ marginBottom: 4, fontSize: 12, color: '#475569' }}
             >
               {item.content}
             </Typography.Paragraph>
-            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-              {item.createdAt}
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {formatDateTime(item.createdAt)}
             </Typography.Text>
           </div>
-        }
+        )}
       />
     </List.Item>
   );
@@ -140,12 +158,31 @@ const NotificationDropdown: React.FC = () => {
     <div style={{ width: 380 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px 12px', borderBottom: '1px solid #f1f5f9' }}>
         <Typography.Text strong style={{ fontSize: 15, color: '#0f172a' }}>站内信</Typography.Text>
-        {activeTab === 'unread' && unreadCount > 0 && (
-          <Button type="link" size="small" onClick={handleMarkAllAsRead}>
-            全部已读
-          </Button>
-        )}
+        <Space size={4}>
+          <Button
+            type="text"
+            size="small"
+            icon={<ReloadOutlined />}
+            aria-label="刷新站内信"
+            onClick={reloadActiveTab}
+            loading={loading}
+          />
+          {activeTab === 'unread' && unreadCount > 0 ? (
+            <Button type="link" size="small" onClick={() => void handleMarkAllAsRead()}>
+              全部已读
+            </Button>
+          ) : null}
+        </Space>
       </div>
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginTop: 12 }}
+          message={loadError}
+          action={<Button size="small" onClick={reloadActiveTab}>重试</Button>}
+        />
+      ) : null}
       <Tabs
         activeKey={activeTab}
         onChange={setActiveTab}
@@ -207,6 +244,8 @@ const NotificationDropdown: React.FC = () => {
         type="button"
         className={open ? 'layout-header-quick-action layout-header-quick-action--active' : 'layout-header-quick-action'}
         aria-label="站内信"
+        aria-haspopup="dialog"
+        aria-expanded={open}
       >
         <Badge count={unreadCount} size="small" offset={[-2, 2]}>
           <span className="layout-header-quick-action__icon">

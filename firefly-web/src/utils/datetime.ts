@@ -40,3 +40,29 @@ export function normalizeDateTimeStrings<T>(value: T): T {
 
   return value;
 }
+
+/**
+ * Converts a picker value (string/Date/number) to the ISO-8601 instant the backend expects.
+ * Range pickers must not submit locale-formatted strings: the server would interpret them in
+ * an unknown timezone and return the wrong window.
+ */
+export function toIsoDateTime(value: string | number | Date | null | undefined): string | undefined {
+  if (value == null || value === '') {
+    return undefined;
+  }
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed.toISOString() : undefined;
+}
+
+/**
+ * Formats a local picker value for backend `LocalDateTime` fields (no timezone offset).
+ * Spring's default Jackson setup parses LocalDateTime from `YYYY-MM-DDTHH:mm:ss`; an ISO
+ * string with `Z` would be rejected (or silently shifted), so audit/log queries must use this.
+ */
+export function toLocalDateTimeString(value: string | number | Date | null | undefined): string | undefined {
+  if (value == null || value === '') {
+    return undefined;
+  }
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed.format('YYYY-MM-DDTHH:mm:ss') : undefined;
+}

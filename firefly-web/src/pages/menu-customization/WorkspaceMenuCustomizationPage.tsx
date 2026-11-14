@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Card,
@@ -8,7 +8,7 @@ import {
   Form,
   Input,
   InputNumber,
-  Popconfirm,
+  Modal,
   Row,
   Select,
   Space,
@@ -21,8 +21,12 @@ import {
 import { EditOutlined, ReloadOutlined, UndoOutlined } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
 import PageHeader from '../../components/PageHeader';
+import ListEmpty from '../../components/ListEmpty';
+import { useConfirmDiscard, useDirtyGuard } from '../../hooks/useDirtyGuard';
+import { usePageActivation } from '../../hooks/usePageActivation';
 import { workspaceMenuCustomizationApi } from '../../services/api';
 import useAuthStore from '../../store/useAuthStore';
+import { getErrorMessage } from '../../utils/errors';
 
 interface PermissionOption {
   permissionCode: string;
@@ -51,13 +55,6 @@ interface FormValues {
 
 const ROOT_MENU_KEY = '__ROOT__';
 const MENU_TREE_REFRESH_EVENT = 'firefly:menu-tree-refresh';
-
-const getErrorMessage = (error: unknown, fallback: string): string => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return fallback;
-};
 
 const findNode = (nodes: MenuNode[], menuKey?: string | null): MenuNode | null => {
   if (!menuKey) {
@@ -135,8 +132,28 @@ const WorkspaceMenuCustomizationPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerDirty, setDrawerDirty] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetSubmitting, setResetSubmitting] = useState(false);
   const [menuTree, setMenuTree] = useState<MenuNode[]>([]);
   const [selectedMenuKey, setSelectedMenuKey] = useState<string | null>(null);
+
+  const confirmDiscard = useConfirmDiscard();
+  useDirtyGuard(drawerOpen && drawerDirty);
+  // 布局在切换页签时会广播激活事件；忽略与首次挂载同一轮触发的事件，避免刚打开页面就请求两次。
+  const activationReadyRef = useRef(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      activationReadyRef.current = true;
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  usePageActivation(() => {
+    if (!activationReadyRef.current) {
+      return;
+    }
+    void loadMenuTree();
+  });
 
   const selectedNode = useMemo(() => findNode(menuTree, selectedMenuKey), [menuTree, selectedMenuKey]);
   const currentWorkspaceLabel = useMemo(
@@ -144,6 +161,7 @@ const WorkspaceMenuCustomizationPage: React.FC = () => {
     [user?.userType],
   );
   const parentOptions = useMemo(() => {
+    // 编辑时排除当前节点及全部子孙，防止把父级设成自己或自己的下级。
     const excludedKeys = collectDescendantKeys(selectedNode);
     return [{ value: ROOT_MENU_KEY, label: '顶级目录' }, ...flattenGroupOptions(menuTree, excludedKeys)];
   }, [menuTree, selectedNode]);
@@ -171,8 +189,8 @@ const WorkspaceMenuCustomizationPage: React.FC = () => {
     void loadMenuTree();
   }, []);
 
-  const openDrawer = () => {
-    if (!selectedNode) {
+  useEffect(() => {
+    if (!drawerOpen || !selectedNode) {
       return;
     }
     form.setFieldsValue({
@@ -180,7 +198,22 @@ const WorkspaceMenuCustomizationPage: React.FC = () => {
       parentMenuKey: selectedNode.parentMenuKey ?? ROOT_MENU_KEY,
       sortOrder: selectedNode.sortOrder ?? 0,
     });
+  }, [drawerOpen, form, selectedNode]);
+
+  const openDrawer = () => {
+    if (!selectedNode) {
+      return;
+    }
+    setDrawerDirty(false);
+    form.resetFields();
     setDrawerOpen(true);
+  };
+
+  const closeDrawer = () => {
+    confirmDiscard(drawerDirty, () => {
+      setDrawerOpen(false);
+      setDrawerDirty(false);
+    });
   };
 
   const handleSubmit = async () => {
@@ -198,6 +231,7 @@ const WorkspaceMenuCustomizationPage: React.FC = () => {
       const nextTree = (response.data?.data ?? []) as MenuNode[];
       setMenuTree(nextTree);
       setSelectedMenuKey(selectedNode.menuKey);
+      setDrawerDirty(false);
       setDrawerOpen(false);
       window.dispatchEvent(new Event(MENU_TREE_REFRESH_EVENT));
       message.success('菜单配置已更新');
@@ -211,19 +245,24 @@ const WorkspaceMenuCustomizationPage: React.FC = () => {
     }
   };
 
-  const handleReset = async () => {
+  const handleConfirmReset = async () => {
     if (!selectedNode) {
       return;
     }
     try {
+      setResetSubmitting(true);
       const response = await workspaceMenuCustomizationApi.resetCurrentMenu(selectedNode.menuKey);
       const nextTree = (response.data?.data ?? []) as MenuNode[];
       setMenuTree(nextTree);
       setSelectedMenuKey(selectedNode.menuKey);
+      setResetOpen(false);
       window.dispatchEvent(new Event(MENU_TREE_REFRESH_EVENT));
       message.success('已恢复默认菜单配置');
     } catch (error) {
+      // 失败时保留弹窗，用户可以直接重试。
       message.error(getErrorMessage(error, '恢复默认菜单配置失败'));
+    } finally {
+      setResetSubmitting(false);
     }
   };
 
@@ -233,7 +272,7 @@ const WorkspaceMenuCustomizationPage: React.FC = () => {
         title="菜单配置"
         extra={(
           <Space>
-            <Button icon={<ReloadOutlined />} onClick={() => void loadMenuTree()}>
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadMenuTree()}>
               刷新
             </Button>
             {selectedNode && canUpdate ? (
@@ -261,7 +300,7 @@ const WorkspaceMenuCustomizationPage: React.FC = () => {
                 onSelect={(keys) => setSelectedMenuKey((keys[0] as string) || null)}
               />
             ) : (
-              <Empty description="当前空间暂无可配置菜单" />
+              <ListEmpty emptyText="当前空间暂无可配置菜单" />
             )}
           </Card>
         </Col>
@@ -274,13 +313,9 @@ const WorkspaceMenuCustomizationPage: React.FC = () => {
                 <Button icon={<EditOutlined />} onClick={openDrawer}>
                   编辑
                 </Button>
-                <Popconfirm
-                  title="确认恢复默认菜单配置？"
-                  description="恢复后会回到系统基础菜单的默认名称、层级和排序。"
-                  onConfirm={() => void handleReset()}
-                >
-                  <Button icon={<UndoOutlined />}>恢复默认</Button>
-                </Popconfirm>
+                <Button icon={<UndoOutlined />} onClick={() => setResetOpen(true)}>
+                  恢复默认
+                </Button>
               </Space>
             ) : null}
           >
@@ -345,17 +380,21 @@ const WorkspaceMenuCustomizationPage: React.FC = () => {
         open={drawerOpen}
         width={640}
         title={selectedNode ? `编辑菜单 - ${selectedNode.label}` : '编辑菜单'}
-        onClose={() => setDrawerOpen(false)}
+        onClose={closeDrawer}
         footer={(
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button onClick={() => setDrawerOpen(false)}>取消</Button>
+            <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" loading={saving} onClick={() => void handleSubmit()}>
               保存
             </Button>
           </Space>
         )}
       >
-        <Form form={form} layout="vertical" preserve={false}>
+        <Form
+          form={form}
+          layout="vertical"
+          onValuesChange={() => setDrawerDirty(true)}
+        >
           <Form.Item
             name="label"
             label="菜单名称"
@@ -368,13 +407,46 @@ const WorkspaceMenuCustomizationPage: React.FC = () => {
             label="父级目录"
             rules={[{ required: true, message: '请选择父级目录' }]}
           >
-            <Select options={parentOptions} />
+            <Select
+              showSearch
+              optionFilterProp="label"
+              options={parentOptions}
+              placeholder="输入目录名称搜索"
+            />
           </Form.Item>
           <Form.Item name="sortOrder" label="排序">
             <InputNumber min={0} precision={0} style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </Drawer>
+
+      <Modal
+        open={resetOpen}
+        title="恢复默认菜单配置"
+        okText="恢复默认"
+        cancelText="取消"
+        confirmLoading={resetSubmitting}
+        maskClosable={!resetSubmitting}
+        onCancel={() => {
+          if (!resetSubmitting) {
+            setResetOpen(false);
+          }
+        }}
+        onOk={() => void handleConfirmReset()}
+        destroyOnClose
+      >
+        {selectedNode ? (
+          <Space direction="vertical" size={8}>
+            <Typography.Text>
+              确认恢复菜单 <Typography.Text strong>{selectedNode.label}</Typography.Text>（{selectedNode.menuKey}）的默认配置？
+            </Typography.Text>
+            <Typography.Text>
+              恢复后会回到系统基础菜单的默认名称、父级层级和排序，当前空间的本地修改将被覆盖且无法撤销。
+            </Typography.Text>
+            <Typography.Text type="secondary">菜单本身及其权限绑定不会被删除。</Typography.Text>
+          </Space>
+        ) : null}
+      </Modal>
     </div>
   );
 };

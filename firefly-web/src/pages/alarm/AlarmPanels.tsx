@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Badge,
   Button,
   Card,
   Col,
+  Descriptions,
   Drawer,
   Form,
   Input,
@@ -14,6 +16,7 @@ import {
   Steps,
   Table,
   Tag,
+  Typography,
   message,
 } from 'antd';
 import type { FormInstance } from 'antd/es/form';
@@ -23,8 +26,12 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   DeleteOutlined,
+  EyeOutlined,
   FireOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
   PlusOutlined,
+  ReloadOutlined,
   SafetyCertificateOutlined,
   ToolOutlined,
   WarningOutlined,
@@ -40,6 +47,12 @@ import {
   userApi,
 } from '../../services/api';
 import useAuthStore from '../../store/useAuthStore';
+import CopyText from '../../components/CopyText';
+import ListEmpty from '../../components/ListEmpty';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import { useConfirmDiscard, useDirtyGuard } from '../../hooks/useDirtyGuard';
+import { getErrorMessage } from '../../utils/errors';
+import { formatDateTime } from '../../utils/datetime';
 import { ALARM_LEVEL_LABELS, ALARM_STATUS_LABELS, ALARM_TEXT } from './alarmText';
 import AlarmRuleForm, {
   type AlarmMetricOption,
@@ -143,6 +156,22 @@ interface RecipientUserRecord {
   email?: string;
 }
 
+interface UserDetailRecord {
+  username?: string;
+  realName?: string;
+}
+
+interface AlarmDetailExtras {
+  ruleName?: string;
+  productName?: string;
+  deviceName?: string;
+  confirmedByName?: string;
+  processedByName?: string;
+}
+
+type AlarmStatusKey = 'TRIGGERED' | 'CONFIRMED' | 'PROCESSED' | 'CLOSED';
+type RowAction = 'confirm' | 'close';
+
 const levelColors: Record<string, string> = {
   CRITICAL: 'red',
   WARNING: 'orange',
@@ -179,14 +208,19 @@ interface AlarmRuleFormValues extends Record<string, unknown> {
 interface AlarmRuleDrawerStepConfig {
   key: AlarmRuleFormStep;
   title: string;
+  description: string;
 }
 
 const ALARM_RULE_DRAWER_STEPS = (showEnabled: boolean): AlarmRuleDrawerStepConfig[] => [
-  { key: 'basic', title: ALARM_TEXT.basicCardTitle },
-  { key: 'scope', title: ALARM_TEXT.scopeCardTitle },
-  { key: 'groups', title: ALARM_TEXT.ruleGroupList },
-  { key: 'notify', title: ALARM_TEXT.notifyCardTitle },
-  { key: 'preview', title: showEnabled ? `${ALARM_TEXT.preview} / ${ALARM_TEXT.status}` : ALARM_TEXT.preview },
+  { key: 'basic', title: ALARM_TEXT.basicCardTitle, description: '填写规则名称和说明' },
+  { key: 'scope', title: ALARM_TEXT.scopeCardTitle, description: '选择项目、产品、设备' },
+  { key: 'groups', title: ALARM_TEXT.ruleGroupList, description: '配置级别、触发语义和条件' },
+  { key: 'notify', title: ALARM_TEXT.notifyCardTitle, description: '选择通知方式与接收对象' },
+  {
+    key: 'preview',
+    title: showEnabled ? `${ALARM_TEXT.preview} / ${ALARM_TEXT.status}` : ALARM_TEXT.preview,
+    description: showEnabled ? '核对内容后提交' : '核对规则内容',
+  },
 ];
 
 const getConditionValidationPaths = (
@@ -273,11 +307,22 @@ const validateNotifyRecipients = (form: FormInstance<AlarmRuleFormValues>) => {
     form.setFields([
       { name: ['recipientGroupCodes'], errors: error },
       { name: ['recipientUsernames'], errors: error },
+      { name: ['notifyChannels'], errors: [] },
+    ]);
+    return false;
+  }
+
+  if (notifyChannels.length === 0 && hasRecipients) {
+    form.setFields([
+      { name: ['notifyChannels'], errors: [ALARM_TEXT.notificationMethodRequired] },
+      { name: ['recipientGroupCodes'], errors: [] },
+      { name: ['recipientUsernames'], errors: [] },
     ]);
     return false;
   }
 
   form.setFields([
+    { name: ['notifyChannels'], errors: [] },
     { name: ['recipientGroupCodes'], errors: [] },
     { name: ['recipientUsernames'], errors: [] },
   ]);
@@ -331,6 +376,12 @@ const buildDeviceOption = (item: DeviceRecord): AlarmScopeOption => ({
   productId: item.productId,
 });
 
+const mergeScopeOptions = (current: AlarmScopeOption[], incoming: AlarmScopeOption[]): AlarmScopeOption[] => {
+  const mapped = new Map(current.map((item) => [item.value, item]));
+  incoming.forEach((item) => mapped.set(item.value, item));
+  return Array.from(mapped.values());
+};
+
 const parseThingModelMetricOptions = (rawText: unknown): AlarmMetricOption[] => {
   if (typeof rawText !== 'string' || !rawText.trim()) {
     return [];
@@ -357,9 +408,20 @@ const parseThingModelMetricOptions = (rawText: unknown): AlarmMetricOption[] => 
   }
 };
 
+const readPageTotal = (res: { data?: { data?: { total?: number } } }): number => res.data?.data?.total ?? 0;
+
+// Detail drawers resolve display names on demand; one missing lookup must not hide the record.
+const resolveOptional = async <T,>(loader: () => Promise<T | undefined>): Promise<T | undefined> => {
+  try {
+    return await loader();
+  } catch {
+    return undefined;
+  }
+};
+
 const MiniStat: React.FC<{
   title: string;
-  value: number;
+  value: React.ReactNode;
   icon: React.ReactNode;
   color: string;
   bg: string;
@@ -397,6 +459,9 @@ export const AlarmRulesPanel: React.FC = () => {
   const [data, setData] = useState<AlarmRuleRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
+  const [globalStats, setGlobalStats] = useState<{ total: number; enabled: number; disabled: number } | null>(null);
+  const [statsError, setStatsError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -409,6 +474,7 @@ export const AlarmRulesPanel: React.FC = () => {
   const [editForm] = Form.useForm<AlarmRuleFormValues>();
   const [filterLevel, setFilterLevel] = useState<string | undefined>();
   const [keyword, setKeyword] = useState('');
+  const [keywordInput, setKeywordInput] = useState('');
   const [projectOptions, setProjectOptions] = useState<AlarmScopeOption[]>([]);
   const [productOptions, setProductOptions] = useState<AlarmScopeOption[]>([]);
   const [deviceOptions, setDeviceOptions] = useState<AlarmScopeOption[]>([]);
@@ -417,12 +483,22 @@ export const AlarmRulesPanel: React.FC = () => {
   const [recipientUserOptions, setRecipientUserOptions] = useState<AlarmRecipientUserOption[]>([]);
   const [metricOptionsMap, setMetricOptionsMap] = useState<Record<number, AlarmMetricOption[]>>({});
   const [metricLoadingMap, setMetricLoadingMap] = useState<Record<number, boolean>>({});
+  const [metricErrorMap, setMetricErrorMap] = useState<Record<number, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [createTouched, setCreateTouched] = useState(false);
+  const [editTouched, setEditTouched] = useState(false);
+  const submittingRef = useRef(false);
+  const listRequestIdRef = useRef(0);
+  const confirmDiscard = useConfirmDiscard();
 
   const canCreate = hasPermission('alarm:create');
   const canUpdate = hasPermission('alarm:update');
   const canDelete = hasPermission('alarm:delete');
   const createProductId = Form.useWatch('productId', createForm) as number | undefined;
   const editProductId = Form.useWatch('productId', editForm) as number | undefined;
+  const hasFilters = Boolean(keyword || filterLevel);
+
+  useDirtyGuard((createOpen && createTouched) || (editOpen && editTouched));
 
   const projectLabelMap = useMemo(
     () => Object.fromEntries(projectOptions.map((item) => [String(item.value), item.label])),
@@ -459,15 +535,31 @@ export const AlarmRulesPanel: React.FC = () => {
 
   const closeCreateDrawer = () => {
     setCreateOpen(false);
+    setCreateTouched(false);
     resetCreateDrawerState();
     createForm.resetFields();
   };
 
   const closeEditDrawer = () => {
     setEditOpen(false);
+    setEditTouched(false);
     setEditingId(null);
     resetEditDrawerState();
     editForm.resetFields();
+  };
+
+  const requestCloseCreateDrawer = () => {
+    if (submittingRef.current) {
+      return;
+    }
+    confirmDiscard(createOpen && createForm.isFieldsTouched(), closeCreateDrawer);
+  };
+
+  const requestCloseEditDrawer = () => {
+    if (submittingRef.current) {
+      return;
+    }
+    confirmDiscard(editOpen && editForm.isFieldsTouched(), closeEditDrawer);
   };
 
   const handleStepNext = async (
@@ -497,25 +589,81 @@ export const AlarmRulesPanel: React.FC = () => {
     message.warning('请先按步骤完成当前配置，再进入后续模块。');
   };
 
-  const loadScopeOptions = async () => {
-    try {
-      const [projectRes, productRes, deviceRes] = await Promise.all([
-        projectApi.list({ pageNum: 1, pageSize: 500 }),
-        productApi.list({ pageNum: 1, pageSize: 500 }),
-        deviceApi.list({ pageNum: 1, pageSize: 500 }),
-      ]);
+  const scopeRequestRef = useRef({
+    project: new Set<number>(),
+    product: new Set<number>(),
+    device: new Set<number>(),
+  });
 
-      const projectRecords = (projectRes.data.data?.records || []) as ProjectRecord[];
-      const productRecords = (productRes.data.data?.records || []) as ProductRecord[];
-      const deviceRecords = (deviceRes.data.data?.records || []) as DeviceRecord[];
+  // 规则列表只返回 projectId/productId/deviceId；范围名称按需补查，避免预加载 500 条后出现盲区。
+  const ensureScopeLabels = useCallback((records: AlarmRuleRecord[]) => {
+    const idsOf = (values: Array<number | undefined>) => Array.from(new Set(
+      values.filter((id): id is number => typeof id === 'number' && id > 0),
+    ));
 
-      setProjectOptions(projectRecords.map(buildProjectOption));
-      setProductOptions(productRecords.map(buildProductOption));
-      setDeviceOptions(deviceRecords.map(buildDeviceOption));
-    } catch {
-      message.error(ALARM_TEXT.loadScopeError);
+    const missingProjects = idsOf(records.map((item) => item.projectId))
+      .filter((id) => !scopeRequestRef.current.project.has(id));
+    if (missingProjects.length > 0) {
+      missingProjects.forEach((id) => scopeRequestRef.current.project.add(id));
+      void Promise.all(missingProjects.map(async (id) => {
+        try {
+          const res = await projectApi.get(id);
+          const record = res.data.data as ProjectRecord | null;
+          return record?.id ? buildProjectOption(record) : null;
+        } catch {
+          scopeRequestRef.current.project.delete(id);
+          return null;
+        }
+      })).then((options) => {
+        const found = options.filter((item): item is AlarmScopeOption => item !== null);
+        if (found.length > 0) {
+          setProjectOptions((current) => mergeScopeOptions(current, found));
+        }
+      });
     }
-  };
+
+    const missingProducts = idsOf(records.map((item) => item.productId))
+      .filter((id) => !scopeRequestRef.current.product.has(id));
+    if (missingProducts.length > 0) {
+      missingProducts.forEach((id) => scopeRequestRef.current.product.add(id));
+      void Promise.all(missingProducts.map(async (id) => {
+        try {
+          const res = await productApi.get(id);
+          const record = res.data.data as ProductRecord | null;
+          return record?.id ? buildProductOption(record) : null;
+        } catch {
+          scopeRequestRef.current.product.delete(id);
+          return null;
+        }
+      })).then((options) => {
+        const found = options.filter((item): item is AlarmScopeOption => item !== null);
+        if (found.length > 0) {
+          setProductOptions((current) => mergeScopeOptions(current, found));
+        }
+      });
+    }
+
+    const missingDevices = idsOf(records.map((item) => item.deviceId))
+      .filter((id) => !scopeRequestRef.current.device.has(id));
+    if (missingDevices.length > 0) {
+      missingDevices.forEach((id) => scopeRequestRef.current.device.add(id));
+      void Promise.all(missingDevices.map(async (id) => {
+        try {
+          const res = await deviceApi.get(id);
+          const record = res.data.data as DeviceRecord | null;
+          return record?.id ? buildDeviceOption(record) : null;
+        } catch {
+          scopeRequestRef.current.device.delete(id);
+          return null;
+        }
+      })).then((options) => {
+        const found = options.filter((item): item is AlarmScopeOption => item !== null);
+        if (found.length > 0) {
+          setDeviceOptions((current) => mergeScopeOptions(current, found));
+        }
+      });
+    }
+  }, []);
 
   const loadNotifyOptions = async () => {
     try {
@@ -549,33 +697,66 @@ export const AlarmRulesPanel: React.FC = () => {
           label: item.realName ? `${item.realName} (@${item.username})` : item.username,
         })),
       );
-    } catch {
-      message.error(ALARM_TEXT.loadNotifyOptionsError);
+    } catch (error) {
+      message.error(getErrorMessage(error, ALARM_TEXT.loadNotifyOptionsError));
     }
   };
 
-  const ensureMetricOptions = async (productId?: number) => {
-    if (!productId || metricOptionsMap[productId] || metricLoadingMap[productId]) {
+  const metricRequestRef = useRef<Set<number>>(new Set());
+
+  const ensureMetricOptions = async (productId?: number, force = false) => {
+    if (!productId || metricRequestRef.current.has(productId)) {
+      return;
+    }
+    if (!force && metricOptionsMap[productId] !== undefined) {
       return;
     }
 
+    metricRequestRef.current.add(productId);
     setMetricLoadingMap((current) => ({ ...current, [productId]: true }));
     try {
       const res = await productApi.getThingModel(productId);
       const nextOptions = parseThingModelMetricOptions(res.data.data);
       setMetricOptionsMap((current) => ({ ...current, [productId]: nextOptions }));
-    } catch {
-      message.error(ALARM_TEXT.loadThingModelError);
+      setMetricErrorMap((current) => {
+        const next = { ...current };
+        delete next[productId];
+        return next;
+      });
+    } catch (error) {
+      const errorMessage = getErrorMessage(error, ALARM_TEXT.loadThingModelError);
+      message.error(errorMessage);
       setMetricOptionsMap((current) => ({ ...current, [productId]: [] }));
+      setMetricErrorMap((current) => ({ ...current, [productId]: errorMessage }));
     } finally {
+      metricRequestRef.current.delete(productId);
       setMetricLoadingMap((current) => ({ ...current, [productId]: false }));
     }
+  };
+
+  const reloadMetricOptions = (productId?: number) => {
+    if (!productId) {
+      return;
+    }
+    setMetricOptionsMap((current) => {
+      const next = { ...current };
+      delete next[productId];
+      return next;
+    });
+    setMetricErrorMap((current) => {
+      const next = { ...current };
+      delete next[productId];
+      return next;
+    });
+    void ensureMetricOptions(productId, true);
   };
 
   const getMetricLabelMap = (productId?: number) =>
     Object.fromEntries((productId ? metricOptionsMap[productId] || [] : []).map((item) => [item.value, item.label]));
 
-  const fetchData = async () => {
+  const fetchList = async () => {
+    const requestId = listRequestIdRef.current + 1;
+    listRequestIdRef.current = requestId;
     setLoading(true);
     try {
       const res = await alarmRuleApi.list({
@@ -583,35 +764,77 @@ export const AlarmRulesPanel: React.FC = () => {
         keyword: keyword || undefined,
         level: filterLevel,
       });
-      const page = res.data.data;
-      setData(page.records || []);
-      setTotal(page.total || 0);
-    } catch {
-      message.error(ALARM_TEXT.loadRuleError);
+      if (requestId !== listRequestIdRef.current) {
+        return;
+      }
+      const page = res.data.data as { records?: AlarmRuleRecord[]; total?: number } | undefined;
+      const records = page?.records || [];
+      setData(records);
+      setTotal(page?.total || 0);
+      setLoadError(null);
+      ensureScopeLabels(records);
+    } catch (error) {
+      if (requestId === listRequestIdRef.current) {
+        setLoadError(getErrorMessage(error, ALARM_TEXT.loadRuleError));
+        setData([]);
+        setTotal(0);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === listRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
+  // The list API can already filter by enabled, so global counters come from three
+  // page-size-1 queries instead of pretending the current page represents the tenant.
+  const fetchGlobalStats = async () => {
+    try {
+      const [allRes, enabledRes, disabledRes] = await Promise.all([
+        alarmRuleApi.list({ pageNum: 1, pageSize: 1 }),
+        alarmRuleApi.list({ pageNum: 1, pageSize: 1, enabled: true }),
+        alarmRuleApi.list({ pageNum: 1, pageSize: 1, enabled: false }),
+      ]);
+      setGlobalStats({
+        total: readPageTotal(allRes),
+        enabled: readPageTotal(enabledRes),
+        disabled: readPageTotal(disabledRes),
+      });
+      setStatsError(null);
+    } catch (error) {
+      setGlobalStats(null);
+      setStatsError(getErrorMessage(error, ALARM_TEXT.statsLoadFailed));
+    }
+  };
+
+  const refreshAll = async () => {
+    await Promise.all([fetchList(), fetchGlobalStats()]);
+  };
+
   useEffect(() => {
-    void fetchData();
+    void fetchList();
+    // Filters and pagination are the only inputs of fetchList; the function identity is not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.pageNum, params.pageSize, filterLevel, keyword]);
 
   useEffect(() => {
-    void loadScopeOptions();
     void loadNotifyOptions();
+    void fetchGlobalStats();
+    // Option lists and global counters only need to load once per page activation.
   }, []);
 
   useEffect(() => {
     if (createOpen && createProductId) {
       void ensureMetricOptions(createProductId);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createOpen, createProductId]);
 
   useEffect(() => {
     if (editOpen && editProductId) {
       void ensureMetricOptions(editProductId);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editOpen, editProductId]);
 
   useEffect(() => {
@@ -620,16 +843,8 @@ export const AlarmRulesPanel: React.FC = () => {
         void ensureMetricOptions(item.productId);
       }
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
-
-  const ruleStats = useMemo(
-    () => ({
-      total,
-      enabled: data.filter((item) => item.enabled).length,
-      disabled: data.filter((item) => !item.enabled).length,
-    }),
-    [data, total],
-  );
 
   const buildRulePayload = (values: Record<string, unknown>) => ({
     name: values.name,
@@ -644,14 +859,23 @@ export const AlarmRulesPanel: React.FC = () => {
   });
 
   const handleCreate = async (values: Record<string, unknown>) => {
+    if (submittingRef.current) {
+      return;
+    }
+    submittingRef.current = true;
+    setSubmitting(true);
     try {
-      const { enabled: _enabled, ...payload } = buildRulePayload(values);
+      const payload = { ...buildRulePayload(values) } as Record<string, unknown>;
+      delete payload.enabled;
       await alarmRuleApi.create(payload);
       message.success(ALARM_TEXT.createRuleSuccess);
       closeCreateDrawer();
-      await fetchData();
+      await refreshAll();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : ALARM_TEXT.createRuleError);
+      message.error(getErrorMessage(error, ALARM_TEXT.createRuleError));
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -674,20 +898,26 @@ export const AlarmRulesPanel: React.FC = () => {
       void ensureMetricOptions(record.productId);
     }
     resetEditDrawerState();
+    setEditTouched(false);
     setEditOpen(true);
   };
 
   const handleUpdate = async (values: Record<string, unknown>) => {
-    if (!editingId) {
+    if (!editingId || submittingRef.current) {
       return;
     }
+    submittingRef.current = true;
+    setSubmitting(true);
     try {
       await alarmRuleApi.update(editingId, buildRulePayload(values));
       message.success(ALARM_TEXT.updateRuleSuccess);
       closeEditDrawer();
-      await fetchData();
+      await refreshAll();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : ALARM_TEXT.updateRuleError);
+      message.error(getErrorMessage(error, ALARM_TEXT.updateRuleError));
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -695,16 +925,25 @@ export const AlarmRulesPanel: React.FC = () => {
     Modal.confirm({
       title: ALARM_TEXT.deleteRuleTitle,
       content: `${ALARM_TEXT.deleteRuleMessagePrefix}${record.name}${ALARM_TEXT.deleteRuleMessageSuffix}`,
+      okText: ALARM_TEXT.remove,
+      okButtonProps: { danger: true },
       onOk: async () => {
         try {
           await alarmRuleApi.delete(record.id);
           message.success(ALARM_TEXT.deleteRuleSuccess);
-          await fetchData();
-        } catch {
-          message.error(ALARM_TEXT.deleteRuleError);
+          await refreshAll();
+        } catch (error) {
+          message.error(getErrorMessage(error, ALARM_TEXT.deleteRuleError));
         }
       },
     });
+  };
+
+  const clearFilters = () => {
+    setKeyword('');
+    setKeywordInput('');
+    setFilterLevel(undefined);
+    setParams((current) => ({ ...current, pageNum: 1 }));
   };
 
   const renderScope = (record: AlarmRuleRecord) => {
@@ -734,11 +973,12 @@ export const AlarmRulesPanel: React.FC = () => {
       title: ALARM_TEXT.ruleName,
       dataIndex: 'name',
       width: 220,
-      ellipsis: true,
       render: (value: string, record: AlarmRuleRecord) => (
-        <Space direction="vertical" size={2}>
-          <span>{value}</span>
-          <span style={{ color: '#8c8c8c', fontSize: 12 }}>{record.description || '-'}</span>
+        <Space direction="vertical" size={2} style={{ maxWidth: '100%' }}>
+          <Typography.Text ellipsis={{ tooltip: value }}>{value}</Typography.Text>
+          <Typography.Text type="secondary" ellipsis={{ tooltip: record.description }} style={{ fontSize: 12 }}>
+            {record.description || '-'}
+          </Typography.Text>
         </Space>
       ),
     },
@@ -806,16 +1046,23 @@ export const AlarmRulesPanel: React.FC = () => {
     {
       title: ALARM_TEXT.receiverColumn,
       width: 260,
-      render: (_: unknown, record: AlarmRuleRecord) =>
-        describeAlarmNotifyConfig(record.notifyConfig, recipientGroupLabelMap, recipientUserLabelMap),
+      render: (_: unknown, record: AlarmRuleRecord) => {
+        const receiverText = describeAlarmNotifyConfig(
+          record.notifyConfig,
+          recipientGroupLabelMap,
+          recipientUserLabelMap,
+        );
+        return <CopyText text={receiverText} ellipsis style={{ width: '100%' }} />;
+      },
     },
     {
       title: ALARM_TEXT.condition,
       dataIndex: 'conditionExpr',
       width: 360,
-      ellipsis: true,
-      render: (value: string, record: AlarmRuleRecord) =>
-        describeAlarmConditionExpr(value, getMetricLabelMap(record.productId)),
+      render: (value: string, record: AlarmRuleRecord) => {
+        const conditionText = describeAlarmConditionExpr(value, getMetricLabelMap(record.productId));
+        return <CopyText text={conditionText} ellipsis style={{ width: '100%' }} />;
+      },
     },
     {
       title: ALARM_TEXT.status,
@@ -827,7 +1074,12 @@ export const AlarmRulesPanel: React.FC = () => {
         </Tag>
       ),
     },
-    { title: ALARM_TEXT.createdAt, dataIndex: 'createdAt', width: 180 },
+    {
+      title: ALARM_TEXT.createdAt,
+      dataIndex: 'createdAt',
+      width: 180,
+      render: (value: string) => formatDateTime(value),
+    },
     {
       title: ALARM_TEXT.action,
       width: 180,
@@ -868,19 +1120,27 @@ export const AlarmRulesPanel: React.FC = () => {
     setMaxStepIndex: React.Dispatch<React.SetStateAction<number>>,
     onClose: () => void,
     submitLabel: string,
+    isSubmitting: boolean,
   ) => {
     const isLastStep = currentStepIndex >= steps.length - 1;
 
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Button onClick={onClose}>{ALARM_TEXT.close}</Button>
+        <Button onClick={onClose} disabled={isSubmitting}>
+          {ALARM_TEXT.close}
+        </Button>
         <Space>
-          <Button disabled={currentStepIndex === 0} onClick={() => setCurrentStepIndex((current) => Math.max(current - 1, 0))}>
+          <Button
+            disabled={currentStepIndex === 0 || isSubmitting}
+            onClick={() => setCurrentStepIndex((current) => Math.max(current - 1, 0))}
+          >
             上一步
           </Button>
           {isLastStep ? (
             <Button
               type="primary"
+              loading={isSubmitting}
+              disabled={isSubmitting}
               onClick={() => {
                 if (validateNotifyRecipients(form)) {
                   form.submit();
@@ -892,7 +1152,12 @@ export const AlarmRulesPanel: React.FC = () => {
           ) : (
             <Button
               type="primary"
-              onClick={() => void handleStepNext(form, steps, currentStepIndex, setCurrentStepIndex, setMaxStepIndex)}
+              disabled={isSubmitting}
+              onClick={() => {
+                void handleStepNext(form, steps, currentStepIndex, setCurrentStepIndex, setMaxStepIndex).catch(
+                  () => undefined,
+                );
+              }}
             >
               下一步
             </Button>
@@ -907,8 +1172,8 @@ export const AlarmRulesPanel: React.FC = () => {
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={8}>
           <MiniStat
-            title={ALARM_TEXT.totalRules}
-            value={ruleStats.total}
+            title={`${ALARM_TEXT.totalRules}${ALARM_TEXT.allScopeSuffix}`}
+            value={globalStats ? globalStats.total : '-'}
             icon={<SafetyCertificateOutlined />}
             color="#4f46e5"
             bg="rgba(79,70,229,0.08)"
@@ -916,8 +1181,8 @@ export const AlarmRulesPanel: React.FC = () => {
         </Col>
         <Col xs={8}>
           <MiniStat
-            title={ALARM_TEXT.enabledRules}
-            value={ruleStats.enabled}
+            title={`${ALARM_TEXT.enabledRules}${ALARM_TEXT.allScopeSuffix}`}
+            value={globalStats ? globalStats.enabled : '-'}
             icon={<CheckCircleOutlined />}
             color="#10b981"
             bg="rgba(16,185,129,0.08)"
@@ -925,14 +1190,29 @@ export const AlarmRulesPanel: React.FC = () => {
         </Col>
         <Col xs={8}>
           <MiniStat
-            title={ALARM_TEXT.disabledRules}
-            value={ruleStats.disabled}
+            title={`${ALARM_TEXT.disabledRules}${ALARM_TEXT.allScopeSuffix}`}
+            value={globalStats ? globalStats.disabled : '-'}
             icon={<CloseCircleOutlined />}
             color="#8c8c8c"
             bg="rgba(140,140,140,0.08)"
           />
         </Col>
       </Row>
+
+      {statsError ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={ALARM_TEXT.statsLoadFailed}
+          description={statsError}
+          action={
+            <Button size="small" onClick={() => void fetchGlobalStats()}>
+              {ALARM_TEXT.retry}
+            </Button>
+          }
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
 
       <Card
         bodyStyle={{ padding: '12px 16px' }}
@@ -945,16 +1225,26 @@ export const AlarmRulesPanel: React.FC = () => {
       >
         <Space wrap>
           <Input.Search
+            value={keywordInput}
             placeholder={ALARM_TEXT.searchRule}
             allowClear
             enterButton="查询"
             style={{ width: 220 }}
+            onChange={(event) => {
+              const nextKeyword = event.target.value;
+              setKeywordInput(nextKeyword);
+              if (!nextKeyword) {
+                setKeyword('');
+                setParams((current) => ({ ...current, pageNum: 1 }));
+              }
+            }}
             onSearch={(value) => {
-              setKeyword(value);
+              setKeyword(value.trim());
               setParams((current) => ({ ...current, pageNum: 1 }));
             }}
           />
           <Select
+            value={filterLevel}
             placeholder={ALARM_TEXT.levelPlaceholder}
             allowClear
             style={{ width: 140 }}
@@ -968,6 +1258,10 @@ export const AlarmRulesPanel: React.FC = () => {
               setParams((current) => ({ ...current, pageNum: 1 }));
             }}
           />
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void refreshAll()}>
+            {ALARM_TEXT.refresh}
+          </Button>
+          {hasFilters && <Button onClick={clearFilters}>{ALARM_TEXT.clearFilters}</Button>}
           {canCreate && (
             <Button
               type="primary"
@@ -976,6 +1270,7 @@ export const AlarmRulesPanel: React.FC = () => {
                 createForm.resetFields();
                 createForm.setFieldsValue(DEFAULT_RULE_FORM_VALUES);
                 resetCreateDrawerState();
+                setCreateTouched(false);
                 setCreateOpen(true);
               }}
             >
@@ -986,27 +1281,42 @@ export const AlarmRulesPanel: React.FC = () => {
       </Card>
 
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <div style={{ marginBottom: 16 }}>
-          <Space align="start" size={12}>
-            <AlertOutlined style={{ color: '#1677ff', fontSize: 18, marginTop: 4 }} />
-            <div>
-              <div style={{ fontWeight: 600 }}>{ALARM_TEXT.conditionTypeSummary}</div>
-              <div style={{ color: '#8c8c8c', fontSize: 13 }}>{ALARM_TEXT.conditionTypeDescription}</div>
-            </div>
-          </Space>
-        </div>
+        {loadError ? (
+          <Alert
+            type="error"
+            showIcon
+            message={ALARM_TEXT.loadRuleError}
+            description={loadError}
+            action={
+              <Button size="small" onClick={() => void fetchList()}>
+                {ALARM_TEXT.retry}
+              </Button>
+            }
+            style={{ marginBottom: 16 }}
+          />
+        ) : null}
         <Table
           rowKey="id"
           columns={columns}
           dataSource={data}
           loading={loading}
-          scroll={{ x: 1820 }}
+          scroll={{ x: 1980 }}
+          locale={{
+            emptyText: loadError ? null : (
+              <ListEmpty
+                hasFilters={hasFilters}
+                emptyText={ALARM_TEXT.emptyRule}
+                filteredText={ALARM_TEXT.filteredRule}
+                onClearFilters={clearFilters}
+              />
+            ),
+          }}
           pagination={{
             current: params.pageNum,
             pageSize: params.pageSize,
             total,
             showSizeChanger: true,
-            showTotal: (count: number) => `\u5171 ${count} ${ALARM_TEXT.countSuffix}`,
+            showTotal: (count: number) => `共 ${count} ${ALARM_TEXT.countSuffix}`,
             onChange: (page: number, size: number) => setParams({ pageNum: page, pageSize: size }),
           }}
         />
@@ -1015,9 +1325,12 @@ export const AlarmRulesPanel: React.FC = () => {
       <Drawer
         title={ALARM_TEXT.createRuleTitle}
         open={createOpen}
-        onClose={closeCreateDrawer}
+        onClose={requestCloseCreateDrawer}
         destroyOnClose
         width={1120}
+        closable={!submitting}
+        maskClosable={!submitting}
+        keyboard={!submitting}
         styles={{ body: { paddingBottom: 24 } }}
         footer={renderRuleDrawerFooter(
           createForm,
@@ -1025,8 +1338,9 @@ export const AlarmRulesPanel: React.FC = () => {
           createStepIndex,
           setCreateStepIndex,
           setCreateMaxStepIndex,
-          closeCreateDrawer,
+          requestCloseCreateDrawer,
           ALARM_TEXT.createRule,
+          submitting,
         )}
       >
         <div style={{ marginBottom: 20 }}>
@@ -1034,15 +1348,18 @@ export const AlarmRulesPanel: React.FC = () => {
             current={createStepIndex}
             responsive
             items={createDrawerSteps}
-            onChange={(targetStepIndex) =>
-              handleVisitedStepChange(targetStepIndex, createMaxStepIndex, setCreateStepIndex)
-            }
+            onChange={(targetStepIndex) => {
+              if (!submitting) {
+                handleVisitedStepChange(targetStepIndex, createMaxStepIndex, setCreateStepIndex);
+              }
+            }}
           />
         </div>
         <Form
           form={createForm}
           layout="vertical"
           onFinish={handleCreate}
+          onValuesChange={() => setCreateTouched((previous) => (previous ? previous : true))}
           initialValues={DEFAULT_RULE_FORM_VALUES}
         >
           <AlarmRuleForm
@@ -1051,6 +1368,10 @@ export const AlarmRulesPanel: React.FC = () => {
             productOptions={productOptions}
             deviceOptions={deviceOptions}
             metricOptions={createProductId ? metricOptionsMap[createProductId] || [] : []}
+            metricLoading={Boolean(createProductId && metricLoadingMap[createProductId])}
+            metricLoaded={Boolean(createProductId && metricOptionsMap[createProductId] !== undefined)}
+            metricError={createProductId ? metricErrorMap[createProductId] : undefined}
+            onRetryMetric={() => reloadMetricOptions(createProductId)}
             metricLabelMap={getMetricLabelMap(createProductId)}
             notificationMethodOptions={notificationMethodOptions}
             recipientGroupOptions={recipientGroupOptions}
@@ -1063,9 +1384,12 @@ export const AlarmRulesPanel: React.FC = () => {
       <Drawer
         title={ALARM_TEXT.editRuleTitle}
         open={editOpen}
-        onClose={closeEditDrawer}
+        onClose={requestCloseEditDrawer}
         destroyOnClose
         width={1120}
+        closable={!submitting}
+        maskClosable={!submitting}
+        keyboard={!submitting}
         styles={{ body: { paddingBottom: 24 } }}
         footer={renderRuleDrawerFooter(
           editForm,
@@ -1073,8 +1397,9 @@ export const AlarmRulesPanel: React.FC = () => {
           editStepIndex,
           setEditStepIndex,
           setEditMaxStepIndex,
-          closeEditDrawer,
-          ALARM_TEXT.edit,
+          requestCloseEditDrawer,
+          ALARM_TEXT.save,
+          submitting,
         )}
       >
         <div style={{ marginBottom: 20 }}>
@@ -1082,16 +1407,29 @@ export const AlarmRulesPanel: React.FC = () => {
             current={editStepIndex}
             responsive
             items={editDrawerSteps}
-            onChange={(targetStepIndex) => handleVisitedStepChange(targetStepIndex, editMaxStepIndex, setEditStepIndex)}
+            onChange={(targetStepIndex) => {
+              if (!submitting) {
+                handleVisitedStepChange(targetStepIndex, editMaxStepIndex, setEditStepIndex);
+              }
+            }}
           />
         </div>
-        <Form form={editForm} layout="vertical" onFinish={handleUpdate}>
+        <Form
+          form={editForm}
+          layout="vertical"
+          onFinish={handleUpdate}
+          onValuesChange={() => setEditTouched((previous) => (previous ? previous : true))}
+        >
           <AlarmRuleForm
             form={editForm}
             projectOptions={projectOptions}
             productOptions={productOptions}
             deviceOptions={deviceOptions}
             metricOptions={editProductId ? metricOptionsMap[editProductId] || [] : []}
+            metricLoading={Boolean(editProductId && metricLoadingMap[editProductId])}
+            metricLoaded={Boolean(editProductId && metricOptionsMap[editProductId] !== undefined)}
+            metricError={editProductId ? metricErrorMap[editProductId] : undefined}
+            onRetryMetric={() => reloadMetricOptions(editProductId)}
             metricLabelMap={getMetricLabelMap(editProductId)}
             notificationMethodOptions={notificationMethodOptions}
             recipientGroupOptions={recipientGroupOptions}
@@ -1110,18 +1448,39 @@ export const AlarmRecordsPanel: React.FC = () => {
   const [data, setData] = useState<AlarmRecordItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
   const [filterLevel, setFilterLevel] = useState<string | undefined>();
   const [filterStatus, setFilterStatus] = useState<string | undefined>();
   const [keyword, setKeyword] = useState('');
+  const [keywordInput, setKeywordInput] = useState('');
+  const [recordStats, setRecordStats] = useState<Record<AlarmStatusKey, number> | null>(null);
+  const [statsError, setStatsError] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [rowPendingMap, setRowPendingMap] = useState<Record<number, RowAction>>({});
+  const [batchAction, setBatchAction] = useState<RowAction | null>(null);
   const [processOpen, setProcessOpen] = useState(false);
   const [processingId, setProcessingId] = useState<number | null>(null);
+  const [processSubmitting, setProcessSubmitting] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailRecord, setDetailRecord] = useState<AlarmRecordItem | null>(null);
+  const [detailExtras, setDetailExtras] = useState<AlarmDetailExtras>({});
   const [processForm] = Form.useForm();
+  const listRequestIdRef = useRef(0);
+  const rowPendingRef = useRef<Set<number>>(new Set());
+  const batchActionRef = useRef(false);
+  const processSubmittingRef = useRef(false);
+  const detailRequestIdRef = useRef(0);
 
   const canConfirm = hasPermission('alarm:confirm');
   const canProcess = hasPermission('alarm:process');
+  const hasFilters = Boolean(keyword || filterLevel || filterStatus);
 
-  const fetchData = async () => {
+  const fetchList = async () => {
+    const requestId = listRequestIdRef.current + 1;
+    listRequestIdRef.current = requestId;
     setLoading(true);
     try {
       const res = await alarmRecordApi.list({
@@ -1130,110 +1489,376 @@ export const AlarmRecordsPanel: React.FC = () => {
         level: filterLevel,
         status: filterStatus,
       });
-      const page = res.data.data;
-      setData(page.records || []);
-      setTotal(page.total || 0);
-    } catch {
-      message.error(ALARM_TEXT.loadRecordError);
+      if (requestId !== listRequestIdRef.current) {
+        return;
+      }
+      const page = res.data.data as { records?: AlarmRecordItem[]; total?: number } | undefined;
+      setData(page?.records || []);
+      setTotal(page?.total || 0);
+      setLoadError(null);
+      setLastUpdatedAt(new Date());
+    } catch (error) {
+      if (requestId === listRequestIdRef.current) {
+        setLoadError(getErrorMessage(error, ALARM_TEXT.loadRecordError));
+        setData([]);
+        setTotal(0);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === listRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
+  // The record query supports a status filter, so each global counter is an independent
+  // filtered total rather than a count of the current page.
+  const fetchGlobalStats = async () => {
+    const statusKeys: AlarmStatusKey[] = ['TRIGGERED', 'CONFIRMED', 'PROCESSED', 'CLOSED'];
+    try {
+      const responses = await Promise.all(
+        statusKeys.map((status) => alarmRecordApi.list({ pageNum: 1, pageSize: 1, status })),
+      );
+      const [triggered, confirmed, processed, closed] = responses.map(readPageTotal);
+      setRecordStats({ TRIGGERED: triggered, CONFIRMED: confirmed, PROCESSED: processed, CLOSED: closed });
+      setStatsError(null);
+    } catch (error) {
+      setRecordStats(null);
+      setStatsError(getErrorMessage(error, ALARM_TEXT.statsLoadFailed));
+    }
+  };
+
+  const refreshAll = async () => {
+    // fetchList only stamps lastUpdatedAt after a successful list response, so a failed
+    // poll does not make the page look freshly updated.
+    await Promise.all([fetchList(), fetchGlobalStats()]);
+  };
+
+  const { paused, togglePaused, refresh: refreshNow } = useAutoRefresh(refreshAll, {
+    intervalMs: 30000,
+    immediate: false,
+  });
+
   useEffect(() => {
-    void fetchData();
+    // The table is paginated and not using preserveSelectedRowKeys; a stale selection from
+    // another page would make the batch count disagree with the rows the user can see.
+    setSelectedRowKeys([]);
+    void fetchList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.pageNum, params.pageSize, filterLevel, filterStatus, keyword]);
 
-  const recordStats = useMemo(
-    () => ({
-      triggered: data.filter((item) => item.status === 'TRIGGERED').length,
-      confirmed: data.filter((item) => item.status === 'CONFIRMED').length,
-      processed: data.filter((item) => item.status === 'PROCESSED').length,
-      closed: data.filter((item) => item.status === 'CLOSED').length,
-    }),
-    [data],
+  useEffect(() => {
+    void fetchGlobalStats();
+  }, []);
+
+  const selectedRecords = useMemo(
+    () => data.filter((item) => selectedRowKeys.includes(item.id)),
+    [data, selectedRowKeys],
+  );
+  const processingRecord = useMemo(
+    () => data.find((item) => item.id === processingId),
+    [data, processingId],
   );
 
-  const handleConfirm = async (id: number) => {
-    try {
-      await alarmRecordApi.confirm(id);
-      message.success(ALARM_TEXT.confirmSuccess);
-      await fetchData();
-    } catch {
-      message.error(ALARM_TEXT.confirmError);
+  const clearFilters = () => {
+    setKeyword('');
+    setKeywordInput('');
+    setFilterLevel(undefined);
+    setFilterStatus(undefined);
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  };
+
+  const runRowAction = async (id: number, action: RowAction, task: () => Promise<void>) => {
+    if (rowPendingRef.current.has(id)) {
+      return;
     }
+    rowPendingRef.current.add(id);
+    setRowPendingMap((current) => ({ ...current, [id]: action }));
+    try {
+      await task();
+    } finally {
+      rowPendingRef.current.delete(id);
+      setRowPendingMap((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    }
+  };
+
+  const handleConfirm = async (record: AlarmRecordItem) => {
+    await runRowAction(record.id, 'confirm', async () => {
+      try {
+        await alarmRecordApi.confirm(record.id);
+        message.success(ALARM_TEXT.confirmSuccess);
+        await refreshAll();
+      } catch (error) {
+        message.error(getErrorMessage(error, ALARM_TEXT.confirmError));
+      }
+    });
   };
 
   const handleProcess = (id: number) => {
     setProcessingId(id);
+    processForm.resetFields();
     setProcessOpen(true);
   };
 
   const handleProcessSubmit = async (values: Record<string, unknown>) => {
-    if (!processingId) {
+    if (!processingId || processSubmittingRef.current) {
       return;
     }
+    processSubmittingRef.current = true;
+    setProcessSubmitting(true);
     try {
       await alarmRecordApi.process(processingId, values);
       message.success(ALARM_TEXT.processSuccess);
       setProcessOpen(false);
       setProcessingId(null);
       processForm.resetFields();
-      await fetchData();
-    } catch {
-      message.error(ALARM_TEXT.processError);
+      await refreshAll();
+    } catch (error) {
+      message.error(getErrorMessage(error, ALARM_TEXT.processError));
+    } finally {
+      processSubmittingRef.current = false;
+      setProcessSubmitting(false);
     }
   };
 
-  const handleClose = async (id: number) => {
-    try {
-      await alarmRecordApi.close(id);
-      message.success(ALARM_TEXT.closeSuccess);
-      await fetchData();
-    } catch {
-      message.error(ALARM_TEXT.closeError);
+  const handleClose = (record: AlarmRecordItem) => {
+    if (rowPendingRef.current.has(record.id)) {
+      return;
     }
+    Modal.confirm({
+      title: ALARM_TEXT.closeConfirmTitle,
+      content: `${ALARM_TEXT.closeConfirmContentPrefix}${record.title}${ALARM_TEXT.closeConfirmContentSuffix}`,
+      okText: ALARM_TEXT.close,
+      okButtonProps: { danger: true },
+      onOk: () =>
+        runRowAction(record.id, 'close', async () => {
+          try {
+            await alarmRecordApi.close(record.id);
+            message.success(ALARM_TEXT.closeSuccess);
+            await refreshAll();
+          } catch (error) {
+            message.error(getErrorMessage(error, ALARM_TEXT.closeError));
+          }
+        }),
+    });
+  };
+
+  const handleBatch = (action: RowAction) => {
+    if (batchActionRef.current) {
+      return;
+    }
+    const eligible = selectedRecords.filter((record) => {
+      if (rowPendingRef.current.has(record.id)) {
+        return false;
+      }
+      return action === 'confirm' ? record.status === 'TRIGGERED' : record.status !== 'CLOSED';
+    });
+    if (eligible.length === 0) {
+      message.warning(ALARM_TEXT.batchNoEligible);
+      return;
+    }
+    const skippedCount = selectedRecords.length - eligible.length;
+    const isClose = action === 'close';
+    Modal.confirm({
+      title: isClose ? ALARM_TEXT.batchCloseTitle : ALARM_TEXT.batchConfirmTitle,
+      content: isClose
+        ? `将关闭 ${eligible.length} 条告警${skippedCount > 0 ? `，跳过 ${skippedCount} 条当前不可操作的记录` : ''}。关闭后不可再处理。`
+        : `将确认 ${eligible.length} 条告警${skippedCount > 0 ? `，跳过 ${skippedCount} 条当前状态不可确认的记录` : ''}。`,
+      okText: isClose ? ALARM_TEXT.batchClose : ALARM_TEXT.batchConfirm,
+      okButtonProps: isClose ? { danger: true } : undefined,
+      onOk: async () => {
+        if (batchActionRef.current) {
+          return;
+        }
+        batchActionRef.current = true;
+        setBatchAction(action);
+        const failures: Array<{ title: string; reason: string }> = [];
+        let successCount = 0;
+        for (const record of eligible) {
+          try {
+            if (isClose) {
+              await alarmRecordApi.close(record.id);
+            } else {
+              await alarmRecordApi.confirm(record.id);
+            }
+            successCount += 1;
+          } catch (error) {
+            failures.push({
+              title: record.title,
+              reason: getErrorMessage(error, isClose ? ALARM_TEXT.closeError : ALARM_TEXT.confirmError),
+            });
+          }
+        }
+        batchActionRef.current = false;
+        setBatchAction(null);
+        setSelectedRowKeys([]);
+        await refreshAll();
+        if (failures.length > 0) {
+          Modal.error({
+            title: isClose
+              ? `${ALARM_TEXT.batchCloseResultPrefix}${successCount}${ALARM_TEXT.batchResultMiddle}${failures.length}${ALARM_TEXT.batchResultSuffix}`
+              : `${ALARM_TEXT.batchConfirmResultPrefix}${successCount}${ALARM_TEXT.batchResultMiddle}${failures.length}${ALARM_TEXT.batchResultSuffix}`,
+            width: 560,
+            content: (
+              <ul style={{ paddingLeft: 20, marginBottom: 0 }}>
+                {failures.map((failure, failureIndex) => (
+                  <li key={`${failureIndex}-${failure.title}`}>
+                    <Typography.Text strong>{failure.title}</Typography.Text>
+                    <Typography.Text type="secondary">{`：${failure.reason}`}</Typography.Text>
+                  </li>
+                ))}
+              </ul>
+            ),
+          });
+        } else {
+          message.success(
+            isClose
+              ? `${ALARM_TEXT.batchCloseResultPrefix}${successCount}${ALARM_TEXT.batchResultSuffix}`
+              : `${ALARM_TEXT.batchConfirmResultPrefix}${successCount}${ALARM_TEXT.batchResultSuffix}`,
+          );
+        }
+      },
+    });
+  };
+
+  const loadDetailExtras = async (detail: AlarmRecordItem, requestId: number) => {
+    const { alarmRuleId, productId, deviceId, confirmedBy, processedBy } = detail;
+    const [ruleName, productName, deviceName, confirmedByName, processedByName] = await Promise.all([
+      alarmRuleId
+        ? resolveOptional(async () => {
+            const res = await alarmRuleApi.get(alarmRuleId);
+            return (res.data.data as AlarmRuleRecord | undefined)?.name;
+          })
+        : Promise.resolve(undefined),
+      productId
+        ? resolveOptional(async () => {
+            const res = await productApi.get(productId);
+            const product = res.data.data as ProductRecord | undefined;
+            return product?.name || product?.productKey;
+          })
+        : Promise.resolve(undefined),
+      deviceId
+        ? resolveOptional(async () => {
+            const res = await deviceApi.get(deviceId);
+            const device = res.data.data as DeviceRecord | undefined;
+            return device?.nickname ? `${device.nickname}（${device.deviceName || '-'}）` : device?.deviceName;
+          })
+        : Promise.resolve(undefined),
+      confirmedBy
+        ? resolveOptional(async () => {
+            const res = await userApi.get(confirmedBy);
+            const user = res.data.data as UserDetailRecord | undefined;
+            return user?.realName ? `${user.realName}（@${user.username || '-'}）` : user?.username;
+          })
+        : Promise.resolve(undefined),
+      processedBy
+        ? resolveOptional(async () => {
+            const res = await userApi.get(processedBy);
+            const user = res.data.data as UserDetailRecord | undefined;
+            return user?.realName ? `${user.realName}（@${user.username || '-'}）` : user?.username;
+          })
+        : Promise.resolve(undefined),
+    ]);
+    if (requestId === detailRequestIdRef.current) {
+      setDetailExtras({ ruleName, productName, deviceName, confirmedByName, processedByName });
+    }
+  };
+
+  const openDetail = async (record: AlarmRecordItem) => {
+    const requestId = detailRequestIdRef.current + 1;
+    detailRequestIdRef.current = requestId;
+    setDetailOpen(true);
+    setDetailRecord(record);
+    setDetailExtras({});
+    setDetailLoading(true);
+    try {
+      const res = await alarmRecordApi.get(record.id);
+      if (requestId !== detailRequestIdRef.current) {
+        return;
+      }
+      const detail = (res.data.data || record) as AlarmRecordItem;
+      setDetailRecord(detail);
+      setDetailLoading(false);
+      // Names are secondary information: show the record immediately and fill names in place.
+      await loadDetailExtras(detail, requestId);
+    } catch (error) {
+      if (requestId === detailRequestIdRef.current) {
+        message.error(getErrorMessage(error, ALARM_TEXT.loadRecordDetailError));
+      }
+    } finally {
+      if (requestId === detailRequestIdRef.current) {
+        setDetailLoading(false);
+      }
+    }
+  };
+
+  const closeDetail = () => {
+    detailRequestIdRef.current += 1;
+    setDetailOpen(false);
+    setDetailRecord(null);
+    setDetailExtras({});
   };
 
   const columns: ColumnsType<AlarmRecordItem> = [
-    { title: ALARM_TEXT.title, dataIndex: 'title', width: 240, ellipsis: true },
+    {
+      title: ALARM_TEXT.title,
+      dataIndex: 'title',
+      width: 240,
+      render: (value: string) => (
+        <Typography.Text ellipsis={{ tooltip: value }} style={{ maxWidth: 220 }}>
+          {value}
+        </Typography.Text>
+      ),
+    },
+    {
+      title: ALARM_TEXT.content,
+      dataIndex: 'content',
+      width: 260,
+      render: (value?: string) => <CopyText text={value} ellipsis style={{ width: '100%' }} />,
+    },
     {
       title: ALARM_TEXT.level,
       dataIndex: 'level',
       width: 100,
-      render: (value: string) => (
-        <Tag color={levelColors[value]}>{ALARM_LEVEL_LABELS[value] || value}</Tag>
-      ),
+      render: (value: string) => <Tag color={levelColors[value]}>{ALARM_LEVEL_LABELS[value] || value}</Tag>,
     },
     {
       title: ALARM_TEXT.status,
       dataIndex: 'status',
       width: 100,
-      render: (value: string) => (
-        <Tag color={statusColors[value]}>{ALARM_STATUS_LABELS[value] || value}</Tag>
-      ),
+      render: (value: string) => <Tag color={statusColors[value]}>{ALARM_STATUS_LABELS[value] || value}</Tag>,
     },
     {
       title: ALARM_TEXT.triggerValue,
       dataIndex: 'triggerValue',
-      width: 160,
-      ellipsis: true,
-      render: (value?: string) => value || '-',
+      width: 180,
+      render: (value?: string) => <CopyText text={value} ellipsis style={{ width: '100%' }} />,
     },
-    { title: ALARM_TEXT.triggerTime, dataIndex: 'createdAt', width: 180 },
+    {
+      title: ALARM_TEXT.triggerTime,
+      dataIndex: 'createdAt',
+      width: 180,
+      render: (value: string) => formatDateTime(value),
+    },
     {
       title: ALARM_TEXT.processRemark,
       dataIndex: 'processRemark',
       width: 220,
-      ellipsis: true,
-      render: (value?: string) => value || '-',
+      render: (value?: string) => <CopyText text={value} ellipsis style={{ width: '100%' }} />,
     },
     {
       title: ALARM_TEXT.action,
-      width: 260,
+      width: 320,
       fixed: 'right',
       render: (_: unknown, record: AlarmRecordItem) => {
-        const actions: React.ReactNode[] = [];
+        const actions: React.ReactNode[] = [
+          <Button key="detail" type="link" size="small" icon={<EyeOutlined />} onClick={() => void openDetail(record)}>
+            {ALARM_TEXT.detail}
+          </Button>,
+        ];
         if (record.status === 'TRIGGERED' && canConfirm) {
           actions.push(
             <Button
@@ -1241,7 +1866,9 @@ export const AlarmRecordsPanel: React.FC = () => {
               type="link"
               size="small"
               icon={<CheckCircleOutlined />}
-              onClick={() => handleConfirm(record.id)}
+              loading={rowPendingMap[record.id] === 'confirm'}
+              disabled={Boolean(rowPendingMap[record.id])}
+              onClick={() => void handleConfirm(record)}
             >
               {ALARM_TEXT.confirm}
             </Button>,
@@ -1254,6 +1881,7 @@ export const AlarmRecordsPanel: React.FC = () => {
               type="link"
               size="small"
               icon={<ToolOutlined />}
+              disabled={Boolean(rowPendingMap[record.id])}
               onClick={() => handleProcess(record.id)}
             >
               {ALARM_TEXT.process}
@@ -1266,17 +1894,27 @@ export const AlarmRecordsPanel: React.FC = () => {
               key="close"
               type="link"
               size="small"
+              danger
               icon={<CloseCircleOutlined />}
-              onClick={() => handleClose(record.id)}
+              loading={rowPendingMap[record.id] === 'close'}
+              disabled={Boolean(rowPendingMap[record.id])}
+              onClick={() => handleClose(record)}
             >
               {ALARM_TEXT.close}
             </Button>,
           );
         }
-        return actions.length > 0 ? <Space>{actions}</Space> : '-';
+        return actions.length > 0 ? <Space size={0}>{actions}</Space> : '-';
       },
     },
   ];
+
+  const rowSelection = canConfirm || canProcess
+    ? {
+        selectedRowKeys,
+        onChange: (nextKeys: React.Key[]) => setSelectedRowKeys(nextKeys),
+      }
+    : undefined;
 
   return (
     <>
@@ -1284,32 +1922,32 @@ export const AlarmRecordsPanel: React.FC = () => {
         {[
           {
             key: 'triggered',
-            title: ALARM_TEXT.triggered,
-            value: recordStats.triggered,
+            title: `${ALARM_TEXT.triggered}${ALARM_TEXT.allScopeSuffix}`,
+            value: recordStats ? recordStats.TRIGGERED : '-',
             icon: <FireOutlined />,
             color: '#ef4444',
             bg: 'rgba(239,68,68,0.08)',
           },
           {
             key: 'confirmed',
-            title: ALARM_TEXT.confirmed,
-            value: recordStats.confirmed,
+            title: `${ALARM_TEXT.confirmed}${ALARM_TEXT.allScopeSuffix}`,
+            value: recordStats ? recordStats.CONFIRMED : '-',
             icon: <WarningOutlined />,
             color: '#f59e0b',
             bg: 'rgba(245,158,11,0.08)',
           },
           {
             key: 'processed',
-            title: ALARM_TEXT.processed,
-            value: recordStats.processed,
+            title: `${ALARM_TEXT.processed}${ALARM_TEXT.allScopeSuffix}`,
+            value: recordStats ? recordStats.PROCESSED : '-',
             icon: <ToolOutlined />,
             color: '#3b82f6',
             bg: 'rgba(59,130,246,0.08)',
           },
           {
             key: 'closed',
-            title: ALARM_TEXT.closed,
-            value: recordStats.closed,
+            title: `${ALARM_TEXT.closed}${ALARM_TEXT.allScopeSuffix}`,
+            value: recordStats ? recordStats.CLOSED : '-',
             icon: <CheckCircleOutlined />,
             color: '#10b981',
             bg: 'rgba(16,185,129,0.08)',
@@ -1321,6 +1959,21 @@ export const AlarmRecordsPanel: React.FC = () => {
         ))}
       </Row>
 
+      {statsError ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={ALARM_TEXT.statsLoadFailed}
+          description={statsError}
+          action={
+            <Button size="small" onClick={() => void fetchGlobalStats()}>
+              {ALARM_TEXT.retry}
+            </Button>
+          }
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
+
       <Card
         bodyStyle={{ padding: '12px 16px' }}
         style={{
@@ -1330,84 +1983,238 @@ export const AlarmRecordsPanel: React.FC = () => {
           boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
         }}
       >
-        <Space wrap>
-          <Input.Search
-            placeholder={ALARM_TEXT.searchRecord}
-            allowClear
-            enterButton="查询"
-            style={{ width: 220 }}
-            onSearch={(value) => {
-              setKeyword(value);
-              setParams((current) => ({ ...current, pageNum: 1 }));
-            }}
-          />
-          <Select
-            placeholder={ALARM_TEXT.levelPlaceholder}
-            allowClear
-            style={{ width: 140 }}
-            options={[
-              { value: 'CRITICAL', label: ALARM_LEVEL_LABELS.CRITICAL },
-              { value: 'WARNING', label: ALARM_LEVEL_LABELS.WARNING },
-              { value: 'INFO', label: ALARM_LEVEL_LABELS.INFO },
-            ]}
-            onChange={(value) => {
-              setFilterLevel(value);
-              setParams((current) => ({ ...current, pageNum: 1 }));
-            }}
-          />
-          <Select
-            placeholder={ALARM_TEXT.processStatus}
-            allowClear
-            style={{ width: 140 }}
-            options={[
-              { value: 'TRIGGERED', label: ALARM_TEXT.triggered },
-              { value: 'CONFIRMED', label: ALARM_TEXT.confirmed },
-              { value: 'PROCESSED', label: ALARM_TEXT.processed },
-              { value: 'CLOSED', label: ALARM_TEXT.closed },
-            ]}
-            onChange={(value) => {
-              setFilterStatus(value);
-              setParams((current) => ({ ...current, pageNum: 1 }));
-            }}
-          />
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Space wrap>
+            <Input.Search
+              value={keywordInput}
+              placeholder={ALARM_TEXT.searchRecord}
+              allowClear
+              enterButton="查询"
+              style={{ width: 220 }}
+              onChange={(event) => {
+                const nextKeyword = event.target.value;
+                setKeywordInput(nextKeyword);
+                if (!nextKeyword) {
+                  setKeyword('');
+                  setParams((current) => ({ ...current, pageNum: 1 }));
+                }
+              }}
+              onSearch={(value) => {
+                setKeyword(value.trim());
+                setParams((current) => ({ ...current, pageNum: 1 }));
+              }}
+            />
+            <Select
+              value={filterLevel}
+              placeholder={ALARM_TEXT.levelPlaceholder}
+              allowClear
+              style={{ width: 140 }}
+              options={[
+                { value: 'CRITICAL', label: ALARM_LEVEL_LABELS.CRITICAL },
+                { value: 'WARNING', label: ALARM_LEVEL_LABELS.WARNING },
+                { value: 'INFO', label: ALARM_LEVEL_LABELS.INFO },
+              ]}
+              onChange={(value) => {
+                setFilterLevel(value);
+                setParams((current) => ({ ...current, pageNum: 1 }));
+              }}
+            />
+            <Select
+              value={filterStatus}
+              placeholder={ALARM_TEXT.processStatus}
+              allowClear
+              style={{ width: 140 }}
+              options={[
+                { value: 'TRIGGERED', label: ALARM_TEXT.triggered },
+                { value: 'CONFIRMED', label: ALARM_TEXT.confirmed },
+                { value: 'PROCESSED', label: ALARM_TEXT.processed },
+                { value: 'CLOSED', label: ALARM_TEXT.closed },
+              ]}
+              onChange={(value) => {
+                setFilterStatus(value);
+                setParams((current) => ({ ...current, pageNum: 1 }));
+              }}
+            />
+            {hasFilters && <Button onClick={clearFilters}>{ALARM_TEXT.clearFilters}</Button>}
+          </Space>
+
+          <Space wrap>
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void refreshNow()}>
+              {ALARM_TEXT.refresh}
+            </Button>
+            <Button
+              icon={paused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
+              onClick={togglePaused}
+            >
+              {paused ? ALARM_TEXT.resumeAutoRefresh : ALARM_TEXT.pauseAutoRefresh}
+            </Button>
+            <Typography.Text type="secondary">
+              {paused ? ALARM_TEXT.autoRefreshPaused : ALARM_TEXT.autoRefreshRunning}
+            </Typography.Text>
+            <Typography.Text type="secondary">
+              {`${ALARM_TEXT.lastRefreshAt}：${lastUpdatedAt ? formatDateTime(lastUpdatedAt) : '-'}`}
+            </Typography.Text>
+          </Space>
+
+          {selectedRowKeys.length > 0 ? (
+            <Space wrap>
+              <Typography.Text type="secondary">
+                {`${ALARM_TEXT.batchSelectedPrefix}${selectedRowKeys.length}${ALARM_TEXT.batchSelectedSuffix}`}
+              </Typography.Text>
+              {canConfirm && (
+                <Button
+                  loading={batchAction === 'confirm'}
+                  disabled={batchAction !== null}
+                  onClick={() => handleBatch('confirm')}
+                >
+                  {ALARM_TEXT.batchConfirm}
+                </Button>
+              )}
+              {canProcess && (
+                <Button
+                  danger
+                  loading={batchAction === 'close'}
+                  disabled={batchAction !== null}
+                  onClick={() => handleBatch('close')}
+                >
+                  {ALARM_TEXT.batchClose}
+                </Button>
+              )}
+              <Button type="link" onClick={() => setSelectedRowKeys([])}>
+                取消选择
+              </Button>
+            </Space>
+          ) : null}
         </Space>
       </Card>
 
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+        {loadError ? (
+          <Alert
+            type="error"
+            showIcon
+            message={ALARM_TEXT.loadRecordError}
+            description={loadError}
+            action={
+              <Button size="small" onClick={() => void fetchList()}>
+                {ALARM_TEXT.retry}
+              </Button>
+            }
+            style={{ marginBottom: 16 }}
+          />
+        ) : null}
         <Table
           rowKey="id"
+          rowSelection={rowSelection}
           columns={columns}
           dataSource={data}
           loading={loading}
-          scroll={{ x: 1300 }}
+          scroll={{ x: 1780 }}
+          locale={{
+            emptyText: loadError ? null : (
+              <ListEmpty
+                hasFilters={hasFilters}
+                emptyText={ALARM_TEXT.emptyRecord}
+                filteredText={ALARM_TEXT.filteredRecord}
+                onClearFilters={clearFilters}
+              />
+            ),
+          }}
           pagination={{
             current: params.pageNum,
             pageSize: params.pageSize,
             total,
             showSizeChanger: true,
-            showTotal: (count: number) => `\u5171 ${count} ${ALARM_TEXT.countSuffix}`,
+            showTotal: (count: number) => `共 ${count} ${ALARM_TEXT.countSuffix}`,
             onChange: (page: number, size: number) => setParams({ pageNum: page, pageSize: size }),
           }}
         />
       </Card>
 
       <Modal
-        title={ALARM_TEXT.processTitle}
+        title={processingRecord ? `${ALARM_TEXT.processTitle}：${processingRecord.title}` : ALARM_TEXT.processTitle}
         open={processOpen}
         onCancel={() => {
+          if (processSubmitting) {
+            return;
+          }
           setProcessOpen(false);
           setProcessingId(null);
         }}
         onOk={() => processForm.submit()}
+        confirmLoading={processSubmitting}
+        cancelButtonProps={{ disabled: processSubmitting }}
+        closable={!processSubmitting}
+        maskClosable={!processSubmitting}
         destroyOnClose
         width={480}
       >
         <Form form={processForm} layout="vertical" onFinish={handleProcessSubmit}>
           <Form.Item name="processRemark" label={ALARM_TEXT.processRemark}>
-            <TextArea rows={3} placeholder={ALARM_TEXT.processRemarkPlaceholder} />
+            <TextArea rows={3} maxLength={1000} placeholder={ALARM_TEXT.processRemarkPlaceholder} />
           </Form.Item>
         </Form>
       </Modal>
+
+      <Drawer
+        title={ALARM_TEXT.detailTitle}
+        open={detailOpen}
+        onClose={closeDetail}
+        width={720}
+        destroyOnClose
+        loading={detailLoading}
+      >
+        {detailRecord ? (
+          <Descriptions column={2} bordered size="small">
+            <Descriptions.Item label={ALARM_TEXT.title} span={2}>
+              {detailRecord.title}
+            </Descriptions.Item>
+            <Descriptions.Item label={ALARM_TEXT.level}>
+              <Tag color={levelColors[detailRecord.level]}>
+                {ALARM_LEVEL_LABELS[detailRecord.level] || detailRecord.level}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label={ALARM_TEXT.status}>
+              <Tag color={statusColors[detailRecord.status]}>
+                {ALARM_STATUS_LABELS[detailRecord.status] || detailRecord.status}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label={ALARM_TEXT.detailRule}>{detailExtras.ruleName || '-'}</Descriptions.Item>
+            <Descriptions.Item label={ALARM_TEXT.detailDevice}>{detailExtras.deviceName || '-'}</Descriptions.Item>
+            <Descriptions.Item label={ALARM_TEXT.detailProduct}>{detailExtras.productName || '-'}</Descriptions.Item>
+            <Descriptions.Item label={ALARM_TEXT.triggerTime}>
+              {formatDateTime(detailRecord.createdAt)}
+            </Descriptions.Item>
+            <Descriptions.Item label={ALARM_TEXT.detailConfirmedAt}>
+              {formatDateTime(detailRecord.confirmedAt)}
+            </Descriptions.Item>
+            <Descriptions.Item label={ALARM_TEXT.detailConfirmedBy}>
+              {detailExtras.confirmedByName || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={ALARM_TEXT.detailProcessedAt}>
+              {formatDateTime(detailRecord.processedAt)}
+            </Descriptions.Item>
+            <Descriptions.Item label={ALARM_TEXT.detailProcessedBy}>
+              {detailExtras.processedByName || '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label={ALARM_TEXT.triggerValue} span={2}>
+              <CopyText text={detailRecord.triggerValue} />
+            </Descriptions.Item>
+            <Descriptions.Item label={ALARM_TEXT.detailContent} span={2}>
+              <CopyText text={detailRecord.content} style={{ alignItems: 'flex-start' }}>
+                <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{detailRecord.content || '-'}</span>
+              </CopyText>
+            </Descriptions.Item>
+            <Descriptions.Item label={ALARM_TEXT.processRemark} span={2}>
+              <CopyText text={detailRecord.processRemark} style={{ alignItems: 'flex-start' }}>
+                <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                  {detailRecord.processRemark || '-'}
+                </span>
+              </CopyText>
+            </Descriptions.Item>
+          </Descriptions>
+        ) : null}
+      </Drawer>
     </>
   );
 };

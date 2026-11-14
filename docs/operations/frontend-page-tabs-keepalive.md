@@ -77,3 +77,18 @@ npm run build
 - `firefly-web/src/config/workspaceRoutes.ts`
 - `firefly-web/src/config/iconMap.tsx`
 - `firefly-web/src/styles/global.css`
+
+## 7. 2026-11-15 更新：持久化与关闭保护
+
+- 页签保存于 `sessionStorage` 键 `firefly:open-tabs`；异常时可直接删除该键恢复默认。
+- 最后一个页签不可关闭；关闭有未保存修改的页签会二次确认。
+- 页签条右侧下拉可批量关闭其他/全部页签。
+- 页签单行横向滚动，不再换行；保活页面上限 12 个。
+- 切回页签会触发 `firefly:page-activated` 事件，列表页据此刷新。
+- 侧栏折叠状态与菜单展开分组分别保存在 `firefly:sider-collapsed`、`firefly:menu-open-keys`。
+
+排障补充：
+
+- “刷新后页签丢失”：确认浏览器未禁用 sessionStorage，且访问的是同一标签页；隐私模式关闭标签页后会清空。
+- “切回页签后仍显示旧数据”：确认该页面已接入 `usePageActivation`，或使用页面顶部的刷新按钮。
+- “菜单展开状态被重置”：确认 `firefly:menu-open-keys` 未被手动清理；切换空间时会按当前空间菜单重新合并。

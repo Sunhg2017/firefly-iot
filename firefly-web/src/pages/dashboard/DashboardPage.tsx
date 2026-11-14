@@ -1,19 +1,21 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Col, Row, Space, Spin, Table, Tag, Typography } from 'antd';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Button, Card, Col, Row, Space, Spin, Table, Tag, Typography } from 'antd';
 import {
   AlertOutlined,
   AppstoreOutlined,
-  CheckCircleOutlined,
   DisconnectOutlined,
-  HddOutlined,
+  ReloadOutlined,
   ThunderboltOutlined,
   WifiOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
+import ListEmpty from '../../components/ListEmpty';
 import { dashboardApi } from '../../services/api';
+import { getErrorMessage } from '../../utils/errors';
+import { formatDateTime } from '../../utils/datetime';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 const alarmLevelColors: Record<string, string> = {
   CRITICAL: '#dc2626',
@@ -104,34 +106,62 @@ const MetricTile: React.FC<MetricTileProps> = ({
 );
 
 const DashboardPage: React.FC = () => {
-  const [overview, setOverview] = useState<Record<string, number>>({});
+  const [overview, setOverview] = useState<Record<string, number> | null>(null);
   const [recentAlarms, setRecentAlarms] = useState<DashboardRecord[]>([]);
   const [alarmDist, setAlarmDist] = useState<DashboardRecord[]>([]);
   const [deviceByProduct, setDeviceByProduct] = useState<DashboardRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [lastSuccessAt, setLastSuccessAt] = useState<Date | null>(null);
+
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [ovRes, alarmRes, distRes, prodRes] = await Promise.all([
+        dashboardApi.overview(),
+        dashboardApi.recentAlarms(8),
+        dashboardApi.alarmDistribution(),
+        dashboardApi.deviceByProduct(),
+      ]);
+      setOverview((ovRes.data.data ?? {}) as Record<string, number>);
+      setRecentAlarms((alarmRes.data.data ?? []) as DashboardRecord[]);
+      setAlarmDist((distRes.data.data ?? []) as DashboardRecord[]);
+      setDeviceByProduct((prodRes.data.data ?? []) as DashboardRecord[]);
+      setLoadError(null);
+      setLastSuccessAt(new Date());
+    } catch (error) {
+      // 指标失败时不能退化成 0：保留上一次成功数据并展示错误原因，首次失败则渲染错误态。
+      setLoadError(getErrorMessage(error, '加载工作台数据失败'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchAll = async () => {
-      setLoading(true);
-      try {
-        const [ovRes, alarmRes, distRes, prodRes] = await Promise.all([
-          dashboardApi.overview(),
-          dashboardApi.recentAlarms(8),
-          dashboardApi.alarmDistribution(),
-          dashboardApi.deviceByProduct(),
-        ]);
-        setOverview(ovRes.data.data || {});
-        setRecentAlarms(alarmRes.data.data || []);
-        setAlarmDist(distRes.data.data || []);
-        setDeviceByProduct(prodRes.data.data || []);
-      } catch {
-        // ignore
-      } finally {
-        setLoading(false);
-      }
-    };
     void fetchAll();
-  }, []);
+  }, [fetchAll]);
+
+  const retryButton = (
+    <Button size="small" icon={<ReloadOutlined />} loading={loading} onClick={() => void fetchAll()}>
+      重试
+    </Button>
+  );
+
+  const header = (
+    <PageHeader
+      title="工作台"
+      extra={(
+        <Space wrap>
+          <span style={{ fontSize: 12, color: '#64748b' }}>
+            {lastSuccessAt ? `最后更新 ${formatDateTime(lastSuccessAt)}` : '尚未获取到数据'}
+          </span>
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void fetchAll()}>
+            刷新
+          </Button>
+        </Space>
+      )}
+    />
+  );
 
   const alarmColumns: ColumnsType<DashboardRecord> = [
     {
@@ -139,6 +169,7 @@ const DashboardPage: React.FC = () => {
       dataIndex: 'created_at',
       width: 170,
       ellipsis: true,
+      render: (value: unknown) => formatDateTime(value as string | undefined),
     },
     {
       title: '级别',
@@ -149,10 +180,17 @@ const DashboardPage: React.FC = () => {
       ),
     },
     {
-      title: '规则',
+      title: '告警标题',
       dataIndex: 'rule_name',
-      width: 150,
+      width: 200,
       ellipsis: true,
+      render: (value: unknown) => (value ? String(value) : '-'),
+    },
+    {
+      title: '内容',
+      dataIndex: 'message',
+      ellipsis: true,
+      render: (value: unknown) => (value ? String(value) : '-'),
     },
     {
       title: '状态',
@@ -164,30 +202,25 @@ const DashboardPage: React.FC = () => {
         </Tag>
       ),
     },
-    {
-      title: '消息',
-      dataIndex: 'message',
-      ellipsis: true,
-    },
   ];
 
   const onlineRate = useMemo(() => (
-    overview.deviceTotal ? Math.round(((overview.deviceOnline || 0) / overview.deviceTotal) * 100) : 0
-  ), [overview.deviceOnline, overview.deviceTotal]);
+    overview?.deviceTotal ? Math.round(((overview.deviceOnline || 0) / overview.deviceTotal) * 100) : 0
+  ), [overview?.deviceOnline, overview?.deviceTotal]);
 
   const heroMetrics = useMemo(() => ([
-    { label: '设备总数', value: overview.deviceTotal || 0, accent: '#2563eb', tint: '#eff6ff' },
-    { label: '在线设备', value: overview.deviceOnline || 0, accent: '#16a34a', tint: '#f0fdf4' },
-    { label: '待处理告警', value: overview.alarmPending || 0, accent: '#ea580c', tint: '#fff7ed' },
-    { label: '启用规则', value: overview.ruleEnabled || 0, accent: '#7c3aed', tint: '#f5f3ff' },
-  ]), [overview.alarmPending, overview.deviceOnline, overview.deviceTotal, overview.ruleEnabled]);
+    { label: '设备总数', value: overview?.deviceTotal || 0, unit: '台', accent: '#2563eb', tint: '#eff6ff' },
+    { label: '在线设备', value: overview?.deviceOnline || 0, unit: '台', accent: '#16a34a', tint: '#f0fdf4' },
+    { label: '待处理告警', value: overview?.alarmPending || 0, unit: '条', accent: '#ea580c', tint: '#fff7ed' },
+    { label: '启用规则链', value: overview?.ruleEnabled || 0, unit: '条', accent: '#7c3aed', tint: '#f5f3ff' },
+  ]), [overview?.alarmPending, overview?.deviceOnline, overview?.deviceTotal, overview?.ruleEnabled]);
 
   const secondaryMetrics = useMemo(() => ([
     {
       title: '在线率',
       value: onlineRate,
       suffix: '%',
-      description: '当前接入设备的在线占比。',
+      description: '在线设备数 / 设备总数。',
       icon: <WifiOutlined />,
       accent: '#16a34a',
       tint: '#f0fdf4',
@@ -195,8 +228,9 @@ const DashboardPage: React.FC = () => {
     },
     {
       title: '离线设备',
-      value: overview.deviceOffline || 0,
-      description: '当前仍需排查或重连的设备数。',
+      value: overview?.deviceOffline || 0,
+      suffix: '台',
+      description: '设备总数减去在线设备数，包含尚未激活的设备。',
       icon: <DisconnectOutlined />,
       accent: '#dc2626',
       tint: '#fef2f2',
@@ -204,8 +238,9 @@ const DashboardPage: React.FC = () => {
     },
     {
       title: '产品数',
-      value: overview.productTotal || 0,
-      description: '当前已接入并启用的产品模型。',
+      value: overview?.productTotal || 0,
+      suffix: '个',
+      description: '当前租户下的产品总数。',
       icon: <AppstoreOutlined />,
       accent: '#2563eb',
       tint: '#eff6ff',
@@ -213,32 +248,25 @@ const DashboardPage: React.FC = () => {
     },
     {
       title: '今日告警',
-      value: overview.alarmToday || 0,
-      description: '过去 24 小时新增的告警总数。',
+      value: overview?.alarmToday || 0,
+      suffix: '条',
+      description: '今日 0 点以来新增的告警数。',
       icon: <AlertOutlined />,
       accent: '#d97706',
       tint: '#fffbeb',
       border: '#fde68a',
     },
     {
-      title: '规则引擎',
-      value: overview.ruleTotal || 0,
-      description: '规则链、动作和联动能力总量。',
+      title: '规则链',
+      value: overview?.ruleTotal || 0,
+      suffix: '条',
+      description: '当前租户已创建的规则链总数。',
       icon: <ThunderboltOutlined />,
       accent: '#7c3aed',
       tint: '#f5f3ff',
       border: '#ddd6fe',
     },
-    {
-      title: '正常设备',
-      value: Math.max((overview.deviceTotal || 0) - (overview.deviceOffline || 0), 0),
-      description: '当前未处于离线状态的设备数。',
-      icon: <CheckCircleOutlined />,
-      accent: '#0f766e',
-      tint: '#ecfeff',
-      border: '#a5f3fc',
-    },
-  ]), [onlineRate, overview.alarmToday, overview.deviceOffline, overview.deviceTotal, overview.productTotal, overview.ruleTotal]);
+  ]), [onlineRate, overview?.alarmToday, overview?.deviceOffline, overview?.productTotal, overview?.ruleTotal]);
 
   const maxAlarmCount = useMemo(() => (
     Math.max(...alarmDist.map((item) => Number(item.count || 0)), 0)
@@ -247,19 +275,47 @@ const DashboardPage: React.FC = () => {
     Math.max(...deviceByProduct.map((item) => Number(item.device_count || 0)), 0)
   ), [deviceByProduct]);
 
-  if (loading) {
+  if (!overview) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
-        <Spin size="large" />
+      <div className="animate-fade-in">
+        {header}
+        {loadError ? (
+          <Alert
+            type="error"
+            showIcon
+            message="工作台数据加载失败"
+            description={loadError}
+            action={retryButton}
+            style={{ marginBottom: 16 }}
+          />
+        ) : null}
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
+            <Spin size="large" />
+          </div>
+        ) : (
+          <Card style={{ borderRadius: 24 }}>
+            <ListEmpty emptyText={loadError ? '暂无可用指标，请重试' : '暂无可展示的指标数据'} />
+          </Card>
+        )}
       </div>
     );
   }
 
   return (
     <div className="animate-fade-in">
-      <PageHeader
-        title="工作台"
-      />
+      {header}
+
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="工作台数据刷新失败，当前展示的是上一次成功获取的数据"
+          description={loadError}
+          action={retryButton}
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
 
       <Card
         bordered={false}
@@ -271,115 +327,26 @@ const DashboardPage: React.FC = () => {
         }}
         styles={{ body: { padding: 24 } }}
       >
-        <div
-          style={{
-            display: 'grid',
-            gap: 20,
-            gridTemplateColumns: 'minmax(320px, 1.1fr) minmax(0, 1fr)',
-            alignItems: 'stretch',
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 16 }}>
-            <div>
-              <Tag style={{ margin: 0, background: '#eff6ff', borderColor: '#bfdbfe', color: '#1d4ed8' }}>
-                当前平台概览
-              </Tag>
-              <Title level={3} style={{ margin: '14px 0 8px', color: '#0f172a' }}>
-                平台概览
-              </Title>
-            </div>
-
-            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-              {heroMetrics.map((metric) => (
-                <div
-                  key={metric.label}
-                  style={{
-                    padding: '16px 18px',
-                    borderRadius: 20,
-                    border: '1px solid #dbe4ee',
-                    background: '#ffffff',
-                  }}
-                >
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {metric.label}
-                  </Text>
-                  <div style={{ marginTop: 10, fontSize: 28, fontWeight: 700, color: metric.accent }}>
-                    {metric.value}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div
-            style={{
-              borderRadius: 24,
-              border: '1px solid #dbe4ee',
-              background: '#f8fbff',
-              padding: 20,
-            }}
-          >
-            <Space direction="vertical" size={16} style={{ width: '100%' }}>
-              <Text strong style={{ color: '#0f172a', fontSize: 16 }}>
-                当前接入态势
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+          {heroMetrics.map((metric) => (
+            <div
+              key={metric.label}
+              style={{
+                padding: '16px 18px',
+                borderRadius: 20,
+                border: '1px solid #dbe4ee',
+                background: '#ffffff',
+              }}
+            >
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {metric.label}
               </Text>
-              <div style={{ display: 'grid', gap: 12 }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 12,
-                    padding: '14px 16px',
-                    borderRadius: 18,
-                    border: '1px solid #bfdbfe',
-                    background: '#eff6ff',
-                  }}
-                >
-                  <Space size={10}>
-                    <div
-                      style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 14,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: '#ffffff',
-                        color: '#2563eb',
-                        fontSize: 18,
-                      }}
-                    >
-                      <HddOutlined />
-                    </div>
-                    <div>
-                      <Text strong style={{ color: '#0f172a' }}>设备在线率</Text>
-                      <div style={{ marginTop: 4 }}>
-                        <Text type="secondary">在线设备在总设备中的占比。</Text>
-                      </div>
-                    </div>
-                  </Space>
-                  <span style={{ color: '#2563eb', fontSize: 30, fontWeight: 700 }}>{onlineRate}%</span>
-                </div>
-
-                <div
-                  style={{
-                    padding: '14px 16px',
-                    borderRadius: 18,
-                    border: '1px solid #dbe4ee',
-                    background: '#ffffff',
-                  }}
-                >
-                  <Text strong style={{ color: '#0f172a' }}>待处理告警与规则执行</Text>
-                  <div style={{ marginTop: 8 }}>
-                    <Text type="secondary" style={{ lineHeight: 1.8 }}>
-                      当前待处理告警 {overview.alarmPending || 0} 条，已启用规则 {overview.ruleEnabled || 0} 条，可继续从右侧告警表和分布面板查看明细。
-                    </Text>
-                  </div>
-                </div>
+              <div style={{ marginTop: 10, display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                <span style={{ fontSize: 28, fontWeight: 700, color: metric.accent }}>{metric.value}</span>
+                <span style={{ fontSize: 12, color: '#64748b' }}>{metric.unit}</span>
               </div>
-            </Space>
-          </div>
+            </div>
+          ))}
         </div>
       </Card>
 
@@ -395,7 +362,7 @@ const DashboardPage: React.FC = () => {
         <Col xs={24} lg={16}>
           <Card
             title={<span style={{ fontWeight: 700, color: '#0f172a' }}>最近告警</span>}
-            extra={<Text type="secondary">最近 8 条告警记录</Text>}
+            extra={<Text type="secondary">最近 8 条记录</Text>}
             style={{ borderRadius: 24 }}
             styles={{ body: { padding: '8px 0 0' } }}
           >
@@ -406,6 +373,7 @@ const DashboardPage: React.FC = () => {
               pagination={false}
               size="small"
               scroll={{ x: 720 }}
+              locale={{ emptyText: <ListEmpty compact emptyText="最近暂无告警记录" /> }}
             />
           </Card>
         </Col>
@@ -414,11 +382,11 @@ const DashboardPage: React.FC = () => {
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
             <Card
               title={<span style={{ fontWeight: 700, color: '#0f172a' }}>告警级别分布</span>}
-              extra={<Text type="secondary">近 30 天</Text>}
+              extra={<Text type="secondary">近 30 天 · 单位：条</Text>}
               style={{ borderRadius: 24 }}
             >
               {alarmDist.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 24, color: '#94a3b8' }}>暂无数据</div>
+                <ListEmpty compact emptyText="近 30 天暂无告警记录" />
               ) : (
                 <div style={{ padding: '4px 0' }}>
                   {alarmDist.map((item, index) => {
@@ -428,9 +396,9 @@ const DashboardPage: React.FC = () => {
                       <div key={`${level}-${index}`} style={{ marginBottom: 14 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, alignItems: 'center', gap: 10 }}>
                           <Tag color={alarmLevelColors[level]} style={{ margin: 0 }}>
-                            {alarmLevelLabels[level] || level}
+                            {alarmLevelLabels[level] || level || '-'}
                           </Tag>
-                          <span style={{ fontWeight: 700, fontSize: 13, color: '#334155' }}>{count}</span>
+                          <span style={{ fontWeight: 700, fontSize: 13, color: '#334155' }}>{count} 条</span>
                         </div>
                         <div style={{ height: 8, background: '#eef3f8', borderRadius: 999, overflow: 'hidden' }}>
                           <div
@@ -452,21 +420,21 @@ const DashboardPage: React.FC = () => {
 
             <Card
               title={<span style={{ fontWeight: 700, color: '#0f172a' }}>设备产品分布</span>}
-              extra={<Text type="secondary">TOP 10</Text>}
+              extra={<Text type="secondary">TOP 10 · 单位：台</Text>}
               style={{ borderRadius: 24 }}
             >
               {deviceByProduct.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 24, color: '#94a3b8' }}>暂无数据</div>
+                <ListEmpty compact emptyText="暂无设备产品统计数据" />
               ) : (
                 <div style={{ padding: '4px 0' }}>
                   {deviceByProduct.map((item, index) => {
-                    const name = String(item.product_name || '');
+                    const name = String(item.product_name || '-');
                     const count = Number(item.device_count || 0);
                     return (
                       <div key={`${name}-${index}`} style={{ marginBottom: 14 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, alignItems: 'center', gap: 12 }}>
                           <span style={{ fontSize: 13, color: '#475569' }}>{name}</span>
-                          <span style={{ fontWeight: 700, fontSize: 13, color: '#334155' }}>{count}</span>
+                          <span style={{ fontWeight: 700, fontSize: 13, color: '#334155' }}>{count} 台</span>
                         </div>
                         <div style={{ height: 8, background: '#eef3f8', borderRadius: 999, overflow: 'hidden' }}>
                           <div

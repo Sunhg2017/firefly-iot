@@ -6,7 +6,6 @@ import {
   Col,
   Descriptions,
   Drawer,
-  Empty,
   Popconfirm,
   Row,
   Space,
@@ -24,9 +23,15 @@ import {
   SaveOutlined,
 } from '@ant-design/icons';
 import CodeEditorField from '../../components/CodeEditorField';
+import CopyText from '../../components/CopyText';
+import JsonEditorField, { isValidJson } from '../../components/JsonEditorField';
+import ListEmpty from '../../components/ListEmpty';
 import ShadowPanelFullscreenDrawer from '../../components/ShadowPanelFullscreenDrawer';
 import { deviceApi, productApi } from '../../services/api';
+import { useConfirmDiscard, useDirtyGuard } from '../../hooks/useDirtyGuard';
 import { buildDesiredTemplateFromThingModel } from '../../utils/deviceShadowThingModel';
+import { formatDateTime } from '../../utils/datetime';
+import { getErrorMessage } from '../../utils/errors';
 
 const { Paragraph } = Typography;
 
@@ -105,9 +110,13 @@ const DeviceShadowDrawer: React.FC<Props> = ({
   const [loading, setLoading] = useState(false);
   const [editingDesired, setEditingDesired] = useState(false);
   const [prefillingDesired, setPrefillingDesired] = useState(false);
+  const [savingDesired, setSavingDesired] = useState(false);
+  const [clearingDesired, setClearingDesired] = useState(false);
+  const [deletingShadow, setDeletingShadow] = useState(false);
   const [desiredJson, setDesiredJson] = useState('{}');
   const [thingModel, setThingModel] = useState<unknown>(null);
   const [expandedPanelKey, setExpandedPanelKey] = useState<ShadowPanelKey | null>(null);
+  const confirmDiscard = useConfirmDiscard();
 
   const displayName = nickname || deviceName || '未命名设备';
   const productDisplay = productName
@@ -120,9 +129,42 @@ const DeviceShadowDrawer: React.FC<Props> = ({
   const reportedCount = countKeys(shadow?.reported);
   const deltaCount = countKeys(delta);
   const desiredInlineEditorPath = `file:///device-shadow/${deviceName || deviceId || 'unknown'}/desired.json`;
+  // 编辑态下只有内容真正发生变化才需要拦截关闭，避免仅点击“编辑”也被要求确认。
+  const desiredDirty = editingDesired && desiredJson !== formatJson(shadow?.desired);
+  useDirtyGuard(desiredDirty);
 
   const closeExpandedPanel = () => {
     setExpandedPanelKey(null);
+  };
+
+  const handleRequestClose = () => {
+    confirmDiscard(
+      desiredDirty,
+      () => {
+        setEditingDesired(false);
+        setDesiredJson(formatJson(shadow?.desired));
+        closeExpandedPanel();
+        onClose();
+      },
+      {
+        title: '放弃未保存的期望属性修改？',
+        content: '关闭后本次编辑的 desired 内容将丢失，且无法恢复。',
+      },
+    );
+  };
+
+  const handleRefresh = () => {
+    confirmDiscard(
+      desiredDirty,
+      () => {
+        setEditingDesired(false);
+        void fetchShadow();
+      },
+      {
+        title: '放弃未保存的期望属性修改？',
+        content: '刷新会重新加载影子数据，本次编辑的 desired 内容将丢失。',
+      },
+    );
   };
 
   const applyShadowSnapshot = (nextShadow: ShadowData) => {
@@ -138,9 +180,9 @@ const DeviceShadowDrawer: React.FC<Props> = ({
     try {
       const deltaRes = await deviceApi.getDelta(deviceId);
       setDelta((deltaRes.data.data || {}) as Record<string, unknown>);
-    } catch {
+    } catch (error) {
       if (warningMessage) {
-        message.warning(warningMessage);
+        message.warning(getErrorMessage(error, warningMessage));
       }
     }
   };
@@ -201,8 +243,8 @@ const DeviceShadowDrawer: React.FC<Props> = ({
       setDelta((deltaRes.data.data || {}) as Record<string, unknown>);
       // Cache the latest thing model so the card and the nested drawer reuse the same desired draft source.
       setThingModel(thingModelRes?.data?.data ?? null);
-    } catch {
-      message.error('加载设备影子失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载设备影子失败'));
     } finally {
       setLoading(false);
     }
@@ -228,12 +270,12 @@ const DeviceShadowDrawer: React.FC<Props> = ({
       const payload = res.data.data ?? null;
       setThingModel(payload);
       return payload;
-    } catch {
+    } catch (error) {
       if (thingModel) {
-        message.warning('最新物模型加载失败，已按当前缓存的物模型生成 desired 草稿');
+        message.warning(getErrorMessage(error, '最新物模型加载失败，已按当前缓存的物模型生成 desired 草稿'));
         return thingModel;
       }
-      message.warning('加载产品物模型失败，已按当前 desired 打开编辑器');
+      message.warning(getErrorMessage(error, '加载产品物模型失败，已按当前 desired 打开编辑器'));
       return null;
     }
   };
@@ -254,42 +296,59 @@ const DeviceShadowDrawer: React.FC<Props> = ({
   };
 
   const handleUpdateDesired = async () => {
-    if (!deviceId) {
+    if (!deviceId || savingDesired) {
       return;
     }
+    if (!isValidJson(desiredJson)) {
+      message.error('期望属性不是合法的 JSON');
+      return;
+    }
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(desiredJson);
-      const updateRes = await deviceApi.updateDesired(deviceId, parsed);
+      parsed = JSON.parse(desiredJson);
+    } catch (error) {
+      message.error(getErrorMessage(error, '期望属性不是合法的 JSON'));
+      return;
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      message.error('期望属性必须是 JSON 对象');
+      return;
+    }
+    setSavingDesired(true);
+    try {
+      const updateRes = await deviceApi.updateDesired(deviceId, parsed as Record<string, unknown>);
       applyShadowSnapshot(updateRes.data.data as ShadowData);
       message.success('期望属性已更新');
       await refreshDelta('期望属性已更新，但差异刷新失败，请手动点击刷新');
     } catch (error) {
-      if (error instanceof SyntaxError) {
-        message.error('Desired JSON 格式错误');
-        return;
-      }
-      message.error('更新期望属性失败');
+      message.error(getErrorMessage(error, '更新期望属性失败'));
+    } finally {
+      setSavingDesired(false);
     }
   };
 
   const handleClearDesired = async () => {
-    if (!deviceId) {
+    if (!deviceId || clearingDesired) {
       return;
     }
+    setClearingDesired(true);
     try {
       const clearRes = await deviceApi.clearDesired(deviceId);
       applyShadowSnapshot(clearRes.data.data as ShadowData);
       setDelta({});
       message.success('期望属性已清空');
-    } catch {
-      message.error('清空期望属性失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '清空期望属性失败'));
+    } finally {
+      setClearingDesired(false);
     }
   };
 
   const handleDeleteShadow = async () => {
-    if (!deviceId) {
+    if (!deviceId || deletingShadow) {
       return;
     }
+    setDeletingShadow(true);
     try {
       await deviceApi.deleteShadow(deviceId);
       message.success('设备影子已删除');
@@ -298,8 +357,10 @@ const DeviceShadowDrawer: React.FC<Props> = ({
       setDesiredJson('{}');
       setEditingDesired(false);
       closeExpandedPanel();
-    } catch {
-      message.error('删除设备影子失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '删除设备影子失败'));
+    } finally {
+      setDeletingShadow(false);
     }
   };
 
@@ -338,8 +399,23 @@ const DeviceShadowDrawer: React.FC<Props> = ({
     </div>
   );
 
+  const renderDesiredEditor = (height: number, path: string) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
+      <Paragraph style={{ margin: 0, color: '#64748b', minHeight: editorDescriptionMinHeight, lineHeight: 1.6 }}>
+        {desiredEditorDescription}
+      </Paragraph>
+      <JsonEditorField
+        value={desiredJson}
+        onChange={setDesiredJson}
+        height={height}
+        path={path}
+        disabled={!editingDesired}
+      />
+    </div>
+  );
+
   const renderDesiredActions = (includeExpand = false) => (
-    <Space size={8}>
+    <Space size={8} wrap>
       {!editingDesired ? (
         <Button
           size="small"
@@ -351,11 +427,12 @@ const DeviceShadowDrawer: React.FC<Props> = ({
         </Button>
       ) : (
         <>
-          <Button size="small" type="primary" icon={<SaveOutlined />} onClick={() => void handleUpdateDesired()}>
+          <Button size="small" type="primary" icon={<SaveOutlined />} loading={savingDesired} onClick={() => void handleUpdateDesired()}>
             保存
           </Button>
           <Button
             size="small"
+            disabled={savingDesired}
             onClick={() => {
               setEditingDesired(false);
               setDesiredJson(formatJson(shadow?.desired));
@@ -365,12 +442,15 @@ const DeviceShadowDrawer: React.FC<Props> = ({
           </Button>
         </>
       )}
+      <CopyText text={desiredJson}><span>复制</span></CopyText>
       <Popconfirm
-        title="确认清空 desired 吗？"
-        description="清空后设备将不再存在待同步的目标状态。"
-        onConfirm={() => void handleClearDesired()}
+        title="确认清空全部期望属性？"
+        description="清空后设备不会再有新的期望指令，未同步的 desired 修改会丢失；reported 上报属性不受影响，此操作不可恢复。"
+        okText="清空"
+        okButtonProps={{ danger: true }}
+        onConfirm={() => handleClearDesired()}
       >
-        <Button danger size="small" icon={<ClearOutlined />}>
+        <Button danger size="small" icon={<ClearOutlined />} loading={clearingDesired} disabled={editingDesired && savingDesired}>
           清空
         </Button>
       </Popconfirm>
@@ -397,11 +477,20 @@ const DeviceShadowDrawer: React.FC<Props> = ({
     if (expandedPanelKey === 'desired') {
       return renderDesiredActions(false);
     }
+    if (expandedPanelKey === 'reported') {
+      return <CopyText text={formatJson(shadow?.reported)}><span>复制 JSON</span></CopyText>;
+    }
+    if (expandedPanelKey === 'metadata') {
+      return <CopyText text={formatJson(shadow?.metadata)}><span>复制 JSON</span></CopyText>;
+    }
     if (expandedPanelKey === 'delta') {
       return (
-        <Tag color={deltaCount > 0 ? 'warning' : 'success'} style={{ marginInlineEnd: 0 }}>
-          {deltaCount > 0 ? `${deltaCount} 项待同步` : '已同步'}
-        </Tag>
+        <Space size={8}>
+          <CopyText text={formatJson(delta)}><span>复制 JSON</span></CopyText>
+          <Tag color={deltaCount > 0 ? 'warning' : 'success'} style={{ marginInlineEnd: 0 }}>
+            {deltaCount > 0 ? `${deltaCount} 项待同步` : '已同步'}
+          </Tag>
+        </Space>
       );
     }
     return null;
@@ -410,15 +499,7 @@ const DeviceShadowDrawer: React.FC<Props> = ({
   const renderExpandedPanelBody = () => {
     switch (expandedPanelKey) {
       case 'desired':
-        return renderEditorPane({
-          description: desiredEditorDescription,
-          path: `file:///device-shadow/${deviceName || deviceId || 'unknown'}/desired-expanded.json`,
-          value: desiredJson,
-          onChange: setDesiredJson,
-          readOnly: !editingDesired,
-          readOnlyLabel: editingDesired ? undefined : '查看态',
-          height: 640,
-        });
+        return renderDesiredEditor(600, `file:///device-shadow/${deviceName || deviceId || 'unknown'}/desired-expanded.json`);
       case 'reported':
         return renderEditorPane({
           description: reportedEditorDescription,
@@ -471,19 +552,21 @@ const DeviceShadowDrawer: React.FC<Props> = ({
           </Space>
         }
         open={open}
-        onClose={onClose}
+        onClose={handleRequestClose}
         width={860}
         extra={
           <Space>
-            <Button icon={<ReloadOutlined />} size="small" loading={loading} onClick={() => void fetchShadow()}>
+            <Button icon={<ReloadOutlined />} size="small" loading={loading} onClick={handleRefresh}>
               刷新
             </Button>
             <Popconfirm
-              title="确认删除当前影子吗？"
-              description="删除后 desired、reported、metadata 会一起清空。"
-              onConfirm={() => void handleDeleteShadow()}
+              title="确认删除设备影子？"
+              description="删除后 desired、reported、metadata 将全部清空且无法恢复；设备下次上报会重新生成影子。"
+              okText="删除"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => handleDeleteShadow()}
             >
-              <Button danger icon={<DeleteOutlined />} size="small">
+              <Button danger icon={<DeleteOutlined />} size="small" loading={deletingShadow}>
                 删除
               </Button>
             </Popconfirm>
@@ -498,7 +581,7 @@ const DeviceShadowDrawer: React.FC<Props> = ({
       >
         {!shadow && !loading ? (
           <Card style={cardStyle} styles={{ body: { padding: 40 } }}>
-            <Empty description="当前设备还没有影子数据。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            <ListEmpty emptyText="当前设备还没有影子数据；设备上报属性或设置期望属性后会自动生成" />
           </Card>
         ) : null}
 
@@ -534,7 +617,7 @@ const DeviceShadowDrawer: React.FC<Props> = ({
                     {
                       key: 'updatedAt',
                       label: '最近更新时间',
-                      children: shadow.updatedAt || '-',
+                      children: shadow.updatedAt ? formatDateTime(shadow.updatedAt) : '-',
                     },
                     {
                       key: 'sync',
@@ -611,23 +694,19 @@ const DeviceShadowDrawer: React.FC<Props> = ({
                   style={{ ...cardStyle, width: '100%' }}
                   styles={{ body: editorCardBodyStyle }}
                 >
-                  {renderEditorPane({
-                    description: desiredEditorDescription,
-                    // Keep one stable Monaco model so saving does not switch into an empty cached view model.
-                    path: desiredInlineEditorPath,
-                    value: desiredJson,
-                    onChange: setDesiredJson,
-                    readOnly: !editingDesired,
-                    readOnlyLabel: editingDesired ? undefined : '查看态',
-                    height: inlineEditorHeight,
-                  })}
+                  {renderDesiredEditor(inlineEditorHeight, desiredInlineEditorPath)}
                 </Card>
               </Col>
 
               <Col xs={24} xl={12} style={editorColStyle}>
                 <Card
                   title={readOnlyTitle('Reported / 上报属性')}
-                  extra={renderExpandTrigger('reported')}
+                  extra={(
+                    <Space size={8}>
+                      <CopyText text={formatJson(shadow.reported)}><span>复制 JSON</span></CopyText>
+                      {renderExpandTrigger('reported')}
+                    </Space>
+                  )}
                   style={{ ...cardStyle, width: '100%' }}
                   styles={{ body: editorCardBodyStyle }}
                 >
@@ -654,7 +733,12 @@ const DeviceShadowDrawer: React.FC<Props> = ({
                       </Tag>
                     </Space>
                   }
-                  extra={renderExpandTrigger('delta')}
+                  extra={(
+                    <Space size={8}>
+                      <CopyText text={formatJson(delta)}><span>复制 JSON</span></CopyText>
+                      {renderExpandTrigger('delta')}
+                    </Space>
+                  )}
                   style={{ ...cardStyle, width: '100%' }}
                   styles={{ body: editorCardBodyStyle }}
                 >
@@ -672,7 +756,12 @@ const DeviceShadowDrawer: React.FC<Props> = ({
               <Col xs={24} xl={12} style={editorColStyle}>
                 <Card
                   title={readOnlyTitle('Metadata / 元数据')}
-                  extra={renderExpandTrigger('metadata')}
+                  extra={(
+                    <Space size={8}>
+                      <CopyText text={formatJson(shadow.metadata)}><span>复制 JSON</span></CopyText>
+                      {renderExpandTrigger('metadata')}
+                    </Space>
+                  )}
                   style={{ ...cardStyle, width: '100%' }}
                   styles={{ body: editorCardBodyStyle }}
                 >

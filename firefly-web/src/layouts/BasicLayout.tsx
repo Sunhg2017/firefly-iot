@@ -1,14 +1,34 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useOutlet } from 'react-router-dom';
-import { Avatar, Breadcrumb, Dropdown, Form, Input, Layout, Menu, Modal, Spin, Space, Tag, message } from 'antd';
+import {
+  Alert,
+  Avatar,
+  Breadcrumb,
+  Button,
+  Dropdown,
+  Empty,
+  Form,
+  Input,
+  Layout,
+  Menu,
+  Modal,
+  Skeleton,
+  Spin,
+  Space,
+  Tag,
+  Tooltip,
+  message,
+} from 'antd';
 import type { MenuProps } from 'antd';
 import {
   BookOutlined,
   CloseOutlined,
+  DownOutlined,
   LockOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  ReloadOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import NotificationDropdown from '../components/NotificationDropdown';
@@ -26,6 +46,10 @@ import {
   type WorkspaceType,
   WORKSPACE_STORAGE_KEY,
 } from '../config/workspaceRoutes';
+import { getErrorMessage } from '../utils/errors';
+import { clearPathDirty, isPathDirty } from '../utils/dirtyRegistry';
+import { PAGE_ACTIVATED_EVENT } from '../hooks/usePageActivation';
+import { SESSION_EXPIRED_EVENT } from '../utils/request';
 
 type MenuItem = Required<MenuProps>['items'][number];
 type BreadcrumbItem = { title: string; path?: string };
@@ -47,6 +71,11 @@ interface WorkspaceMenuNode {
 const { Header, Sider, Content } = Layout;
 const MENU_TREE_REFRESH_EVENT = 'firefly:menu-tree-refresh';
 const PAGE_TAB_EXCLUDED_PATHS = new Set(['/403']);
+const SIDER_COLLAPSED_KEY = 'firefly:sider-collapsed';
+const MENU_OPEN_KEYS_KEY = 'firefly:menu-open-keys';
+const OPEN_TABS_KEY = 'firefly:open-tabs';
+/** Upper bound for keep-alive pages so long sessions do not retain every visited page (and its Monaco/echarts instances). */
+const MAX_KEEP_ALIVE_PAGES = 12;
 
 function loadWorkspaceCache(): WorkspaceType {
   const cached = localStorage.getItem(WORKSPACE_STORAGE_KEY);
@@ -55,6 +84,60 @@ function loadWorkspaceCache(): WorkspaceType {
 
 function persistWorkspace(workspace: WorkspaceType) {
   localStorage.setItem(WORKSPACE_STORAGE_KEY, workspace);
+}
+
+function readLocal(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeLocal(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Storage may be unavailable; state is still kept in memory for this session.
+  }
+}
+
+function readSessionArray(key: string): string[] {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) {
+      return [];
+    }
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSession(key: string, value: string): void {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
+}
+
+function readCollapsed(): boolean {
+  return readLocal(SIDER_COLLAPSED_KEY) === '1';
+}
+
+function readMenuOpenKeys(): string[] {
+  try {
+    const raw = readLocal(MENU_OPEN_KEYS_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 function buildMenuItems(nodes: WorkspaceMenuNode[]): MenuItem[] {
@@ -145,7 +228,7 @@ const BasicLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const outlet = useOutlet();
-  const { user, logout } = useAuthStore();
+  const { user, logout, clearAuth, fetchMe, meError } = useAuthStore();
   const authorizedMenuPaths = useMemo(
     () => (Array.isArray(user?.authorizedMenuPaths) ? user.authorizedMenuPaths : []),
     [user?.authorizedMenuPaths],
@@ -160,15 +243,20 @@ const BasicLayout: React.FC = () => {
   );
 
   const [workspace, setWorkspace] = useState<WorkspaceType>(loadWorkspaceCache);
-  const [collapsed, setCollapsed] = useState(false);
-  const [menuOpenKeys, setMenuOpenKeys] = useState<string[]>([]);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [menuOpenKeys, setMenuOpenKeys] = useState<string[]>(readMenuOpenKeys);
   const [menuTree, setMenuTree] = useState<WorkspaceMenuNode[]>([]);
   const [menuTreeLoading, setMenuTreeLoading] = useState(false);
-  const [openedTabs, setOpenedTabs] = useState<string[]>([]);
+  const [menuTreeError, setMenuTreeError] = useState<string | null>(null);
+  const [menuReloadToken, setMenuReloadToken] = useState(0);
+  const [openedTabs, setOpenedTabs] = useState<string[]>(() => readSessionArray(OPEN_TABS_KEY));
   const [cachedPages, setCachedPages] = useState<Record<string, React.ReactNode>>({});
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [changePasswordSubmitting, setChangePasswordSubmitting] = useState(false);
   const [changePasswordForm] = Form.useForm<ChangePasswordFormValues>();
+  const menuKeysInitializedRef = useRef(false);
+  const previousPathRef = useRef(location.pathname);
+  const activationDispatchedRef = useRef(false);
 
   const menuItems = useMemo(() => buildMenuItems(menuTree), [menuTree]);
   const openKeys = useMemo(
@@ -240,9 +328,43 @@ const BasicLayout: React.FC = () => {
     displayedTabs.includes(location.pathname) ? location.pathname : undefined
   ), [displayedTabs, location.pathname]);
 
+  // Persist the sider state and the groups the user expanded instead of resetting them on every
+  // route change (which used to collapse whichever second group the user had just opened).
   useEffect(() => {
-    setMenuOpenKeys(openKeys);
-  }, [openKeys]);
+    writeLocal(SIDER_COLLAPSED_KEY, collapsed ? '1' : '0');
+  }, [collapsed]);
+
+  useEffect(() => {
+    writeLocal(MENU_OPEN_KEYS_KEY, JSON.stringify(menuOpenKeys));
+  }, [menuOpenKeys]);
+
+  useEffect(() => {
+    writeSession(OPEN_TABS_KEY, JSON.stringify(openedTabs));
+  }, [openedTabs]);
+
+  useEffect(() => {
+    if (menuKeysInitializedRef.current || menuTree.length === 0) {
+      return;
+    }
+    menuKeysInitializedRef.current = true;
+    if (menuOpenKeys.length === 0 && openKeys.length > 0) {
+      setMenuOpenKeys(openKeys);
+    }
+  }, [menuOpenKeys.length, menuTree.length, openKeys]);
+
+  useEffect(() => {
+    if (previousPathRef.current === location.pathname) {
+      return;
+    }
+    previousPathRef.current = location.pathname;
+    if (openKeys.length === 0) {
+      return;
+    }
+    setMenuOpenKeys((previous) => {
+      const merged = Array.from(new Set([...previous, ...openKeys]));
+      return arePathListsEqual(previous, merged) ? previous : merged;
+    });
+  }, [location.pathname, openKeys]);
 
   useEffect(() => {
     const routeWorkspace = resolveWorkspaceByPath(location.pathname);
@@ -262,15 +384,17 @@ const BasicLayout: React.FC = () => {
 
     const loadMenuTree = async () => {
       setMenuTreeLoading(true);
+      setMenuTreeError(null);
       try {
         const response = await workspaceMenuCustomizationApi.currentTree();
         if (!active) {
           return;
         }
         setMenuTree((response.data?.data ?? []) as WorkspaceMenuNode[]);
-      } catch {
+      } catch (error) {
         if (active) {
           setMenuTree([]);
+          setMenuTreeError(getErrorMessage(error, '加载菜单失败'));
         }
       } finally {
         if (active) {
@@ -289,7 +413,7 @@ const BasicLayout: React.FC = () => {
       active = false;
       window.removeEventListener(MENU_TREE_REFRESH_EVENT, handleRefresh);
     };
-  }, [user?.id, workspace]);
+  }, [user?.id, workspace, menuReloadToken]);
 
   useEffect(() => {
     if (!outlet || !currentPathAccessible || !isPageTabRoute(location.pathname)) {
@@ -301,9 +425,20 @@ const BasicLayout: React.FC = () => {
     ));
 
     // Keep opened business pages mounted after the first visit so local form state survives route switches.
-    setCachedPages((previous) => (
-      previous[location.pathname] ? previous : { ...previous, [location.pathname]: outlet }
-    ));
+    setCachedPages((previous) => {
+      if (previous[location.pathname]) {
+        return previous;
+      }
+      const next: Record<string, React.ReactNode> = { ...previous, [location.pathname]: outlet };
+      const paths = Object.keys(next);
+      if (paths.length > MAX_KEEP_ALIVE_PAGES) {
+        const evictable = paths.find((path) => path !== location.pathname);
+        if (evictable) {
+          delete next[evictable];
+        }
+      }
+      return next;
+    });
   }, [currentPathAccessible, isPageTabRoute, location.pathname, outlet]);
 
   useEffect(() => {
@@ -321,17 +456,39 @@ const BasicLayout: React.FC = () => {
     });
   }, [isTabPathAccessible]);
 
+  // Let keep-alive pages refetch when the user switches back to their tab (data would otherwise be stale).
+  useEffect(() => {
+    if (!activationDispatchedRef.current) {
+      activationDispatchedRef.current = true;
+      return;
+    }
+    window.dispatchEvent(new CustomEvent(PAGE_ACTIVATED_EVENT, { detail: { path: location.pathname } }));
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setOpenedTabs([]);
+      setCachedPages({});
+      try {
+        sessionStorage.removeItem(OPEN_TABS_KEY);
+      } catch {
+        // ignore
+      }
+      // Navigate first so the private route does not bounce to /login and drop the reason.
+      navigate('/login?expired=1', { replace: true });
+      clearAuth();
+      message.warning('登录状态已过期，请重新登录');
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+  }, [clearAuth, navigate]);
+
   const handleMenuClick = ({ key }: { key: string }) => {
     navigate(key);
   };
 
-  const closeTab = useCallback((targetPath: string) => {
-    if (targetPath === '/dashboard') {
-      return;
-    }
-
-    const nextTabs = openedTabs.filter((path) => path !== targetPath);
-    setOpenedTabs(nextTabs);
+  const closeTabNow = useCallback((targetPath: string) => {
+    setOpenedTabs((previous) => previous.filter((path) => path !== targetPath));
     setCachedPages((previous) => {
       if (!previous[targetPath]) {
         return previous;
@@ -340,25 +497,95 @@ const BasicLayout: React.FC = () => {
       delete next[targetPath];
       return next;
     });
+    clearPathDirty(targetPath);
 
     if (location.pathname !== targetPath) {
       return;
     }
 
-    if (nextTabs.length === 0) {
+    const remainingTabs = openedTabs.filter((path) => path !== targetPath);
+    if (remainingTabs.length === 0) {
       navigate(getWorkspaceHomePath(workspace, permissions, authorizedMenuPaths));
       return;
     }
 
     const closingIndex = openedTabs.indexOf(targetPath);
-    const fallbackIndex = Math.min(closingIndex, nextTabs.length - 1);
-    navigate(nextTabs[Math.max(fallbackIndex, 0)]);
+    const fallbackIndex = Math.min(closingIndex, remainingTabs.length - 1);
+    navigate(remainingTabs[Math.max(fallbackIndex, 0)]);
   }, [authorizedMenuPaths, location.pathname, navigate, openedTabs, permissions, workspace]);
+
+  const requestCloseTab = useCallback((targetPath: string) => {
+    if (!isPathDirty(targetPath)) {
+      closeTabNow(targetPath);
+      return;
+    }
+    Modal.confirm({
+      title: '关闭页签',
+      content: '该页签还有未保存的修改，关闭后本次填写的内容将丢失。',
+      okText: '关闭页签',
+      cancelText: '返回页面',
+      okButtonProps: { danger: true },
+      onOk: () => closeTabNow(targetPath),
+    });
+  }, [closeTabNow]);
+
+  const closeOtherTabs = useCallback(() => {
+    const keepPath = location.pathname;
+    const closingPaths = openedTabs.filter((path) => path !== keepPath);
+    if (closingPaths.length === 0) {
+      return;
+    }
+    const dirtyCount = closingPaths.filter((path) => isPathDirty(path)).length;
+    const apply = () => {
+      setOpenedTabs((previous) => previous.filter((path) => path === keepPath));
+      setCachedPages((previous) => (previous[keepPath] ? { [keepPath]: previous[keepPath] } : {}));
+      closingPaths.forEach((path) => clearPathDirty(path));
+    };
+    if (dirtyCount === 0) {
+      apply();
+      return;
+    }
+    Modal.confirm({
+      title: '关闭其他页签',
+      content: `其中 ${dirtyCount} 个页签有未保存的修改，关闭后内容将丢失。`,
+      okText: '关闭其他页签',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: apply,
+    });
+  }, [location.pathname, openedTabs]);
+
+  const closeAllTabs = useCallback(() => {
+    const dirtyCount = openedTabs.filter((path) => isPathDirty(path)).length;
+    const apply = () => {
+      setOpenedTabs([]);
+      setCachedPages({});
+      openedTabs.forEach((path) => clearPathDirty(path));
+      navigate(getWorkspaceHomePath(workspace, permissions, authorizedMenuPaths));
+    };
+    if (dirtyCount === 0) {
+      apply();
+      return;
+    }
+    Modal.confirm({
+      title: '关闭全部页签',
+      content: `其中 ${dirtyCount} 个页签有未保存的修改，关闭后内容将丢失。`,
+      okText: '关闭全部页签',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: apply,
+    });
+  }, [authorizedMenuPaths, navigate, openedTabs, permissions, workspace]);
 
   const handleLogout = async () => {
     await logout();
     setOpenedTabs([]);
     setCachedPages({});
+    try {
+      sessionStorage.removeItem(OPEN_TABS_KEY);
+    } catch {
+      // ignore
+    }
     navigate('/login');
   };
 
@@ -374,8 +601,7 @@ const BasicLayout: React.FC = () => {
       message.success('密码修改成功');
       closeChangePasswordModal();
     } catch (error) {
-      const errorMessage = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      message.error(errorMessage || '密码修改失败');
+      message.error(getErrorMessage(error, '密码修改失败'));
     } finally {
       setChangePasswordSubmitting(false);
     }
@@ -469,6 +695,24 @@ const BasicLayout: React.FC = () => {
             <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Spin size="small" />
             </div>
+          ) : menuTreeError ? (
+            <Alert
+              type="error"
+              showIcon
+              message="菜单加载失败"
+              description={menuTreeError}
+              action={(
+                <Button size="small" icon={<ReloadOutlined />} onClick={() => setMenuReloadToken((token) => token + 1)}>
+                  重试
+                </Button>
+              )}
+            />
+          ) : menuItems.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="当前账号暂无可访问菜单"
+              style={{ marginTop: 32 }}
+            />
           ) : (
             <Menu
               mode="inline"
@@ -504,23 +748,17 @@ const BasicLayout: React.FC = () => {
           }}
         >
           <Space size={16} className="layout-header-left">
-            <div
-              onClick={() => setCollapsed((value) => !value)}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 12,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                color: '#475569',
-                background: '#f8fbff',
-                border: '1px solid #e2e8f0',
-              }}
-            >
-              {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            </div>
+            <Tooltip title={collapsed ? '展开菜单' : '收起菜单'}>
+              <button
+                type="button"
+                className="layout-sider-toggle"
+                aria-label={collapsed ? '展开菜单' : '收起菜单'}
+                aria-expanded={!collapsed}
+                onClick={() => setCollapsed((value) => !value)}
+              >
+                {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              </button>
+            </Tooltip>
             <Tag
               style={{
                 margin: 0,
@@ -538,9 +776,13 @@ const BasicLayout: React.FC = () => {
                 const isLast = index === breadcrumbItems.length - 1;
                 return {
                   title: item.path && !isLast ? (
-                    <span onClick={() => navigate(item.path!)} style={{ cursor: 'pointer', color: '#64748b' }}>
+                    <button
+                      type="button"
+                      className="breadcrumb-link"
+                      onClick={() => navigate(item.path!)}
+                    >
                       {item.title}
-                    </span>
+                    </button>
                   ) : (
                     <span style={{ color: isLast ? '#0f172a' : '#64748b' }}>{item.title}</span>
                   ),
@@ -567,77 +809,118 @@ const BasicLayout: React.FC = () => {
             <AlarmDropdown visible={canViewAlarmDropdown} />
             <ExportCenterDropdown />
             <Dropdown menu={dropdownItems} placement="bottomRight">
-              <div className="layout-user-inline">
+              <button type="button" className="layout-user-inline" aria-label="账户菜单" aria-haspopup="menu">
                 <Avatar icon={<UserOutlined />} src={user?.avatarUrl} />
                 <span className="layout-user-inline__name">
                   {user?.realName || user?.username || '用户'}
                 </span>
-              </div>
+              </button>
             </Dropdown>
           </div>
         </Header>
 
         <Content style={{ margin: 16, minHeight: 360 }}>
+          {meError ? (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="账号信息未完整加载"
+              description={`${meError}。当前展示的是上次登录缓存的权限，可能出现菜单缺失或权限校验失败；请重试或重新登录。`}
+              action={(
+                <Button size="small" onClick={() => void fetchMe()}>
+                  重试
+                </Button>
+              )}
+            />
+          ) : null}
           {displayedTabs.length > 0 ? (
             <div className="page-tabs-shell">
               <div className="page-tabs" role="tablist" aria-label="已打开页面">
                 {displayedTabs.map((path) => {
                   const meta = resolveTabMeta(path);
-                  const closable = path !== '/dashboard';
+                  const closable = displayedTabs.length > 1;
                   const active = path === activeTabKey;
                   return (
-                    <button
-                      key={path}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      className={active ? 'page-tab page-tab--active' : 'page-tab'}
-                      onClick={() => navigate(path)}
-                    >
-                      <span className="page-tab-label">
-                        {meta.icon ? <span className="page-tab-label__icon">{meta.icon}</span> : null}
-                        <span className="page-tab-label__text">{meta.label}</span>
-                      </span>
+                    <div key={path} className={active ? 'page-tab page-tab--active' : 'page-tab'}>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        className="page-tab__main"
+                        onClick={() => navigate(path)}
+                      >
+                        <span className="page-tab-label">
+                          {meta.icon ? <span className="page-tab-label__icon">{meta.icon}</span> : null}
+                          <span className="page-tab-label__text">{meta.label}</span>
+                        </span>
+                      </button>
                       {closable ? (
-                        <span
+                        <button
+                          type="button"
                           className="page-tab__close"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            closeTab(path);
-                          }}
+                          aria-label={`关闭 ${meta.label}`}
+                          onClick={() => requestCloseTab(path)}
                         >
                           <CloseOutlined />
-                        </span>
+                        </button>
                       ) : null}
-                    </button>
+                    </div>
                   );
                 })}
               </div>
+              {displayedTabs.length > 1 ? (
+                <Dropdown
+                  placement="bottomRight"
+                  menu={{
+                    items: [
+                      { key: 'others', label: '关闭其他页签', onClick: closeOtherTabs },
+                      { key: 'all', label: '关闭全部页签', onClick: closeAllTabs },
+                    ],
+                  }}
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<DownOutlined />}
+                    aria-label="页签操作"
+                    className="page-tabs-actions"
+                  />
+                </Dropdown>
+              ) : null}
             </div>
           ) : null}
 
           <div className="page-content-shell">
-            <div className="keep-alive-pages">
-              {renderedKeepAlivePaths.map((path) => {
-                const pageContent = path === location.pathname ? (cachedPages[path] ?? outlet) : cachedPages[path];
-                if (!pageContent) {
-                  return null;
-                }
-                return (
-                  <div
-                    key={path}
-                    className={path === location.pathname && currentPathAccessible && isPageTabRoute(location.pathname)
-                      ? 'keep-alive-page keep-alive-page--active'
-                      : 'keep-alive-page'}
-                  >
-                    {pageContent}
-                  </div>
-                );
-              })}
-            </div>
+            <Suspense
+              fallback={(
+                <div style={{ padding: 8 }}>
+                  <Skeleton active paragraph={{ rows: 8 }} />
+                </div>
+              )}
+            >
+              <div className="keep-alive-pages">
+                {renderedKeepAlivePaths.map((path) => {
+                  const pageContent = path === location.pathname ? (cachedPages[path] ?? outlet) : cachedPages[path];
+                  if (!pageContent) {
+                    return null;
+                  }
+                  return (
+                    <div
+                      key={path}
+                      className={path === location.pathname && currentPathAccessible && isPageTabRoute(location.pathname)
+                        ? 'keep-alive-page keep-alive-page--active'
+                        : 'keep-alive-page'}
+                    >
+                      {pageContent}
+                    </div>
+                  );
+                })}
+              </div>
 
-            {!currentPathAccessible ? <Navigate to="/403" replace /> : null}
-            {currentPathAccessible && !isPageTabRoute(location.pathname) ? outlet : null}
+              {!currentPathAccessible ? <Navigate to="/403" replace /> : null}
+              {currentPathAccessible && !isPageTabRoute(location.pathname) ? outlet : null}
+            </Suspense>
           </div>
         </Content>
       </Layout>
@@ -648,7 +931,7 @@ const BasicLayout: React.FC = () => {
         onOk={() => changePasswordForm.submit()}
         confirmLoading={changePasswordSubmitting}
         destroyOnHidden
-        width={420}
+        width={440}
       >
         <Form<ChangePasswordFormValues>
           form={changePasswordForm}
@@ -666,9 +949,19 @@ const BasicLayout: React.FC = () => {
           <Form.Item
             name="newPassword"
             label="新密码"
+            extra="6-64 位；建议使用 8 位以上，并同时包含大小写字母、数字和符号。"
             rules={[
               { required: true, message: '请输入新密码' },
               { min: 6, message: '新密码至少 6 位' },
+              { max: 64, message: '新密码最多 64 位' },
+              ({ getFieldValue }) => ({
+                validator(_, value: string) {
+                  if (!value || getFieldValue('oldPassword') !== value) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error('新密码不能与当前密码相同'));
+                },
+              }),
             ]}
           >
             <Input.Password placeholder="请输入新密码" autoComplete="new-password" />

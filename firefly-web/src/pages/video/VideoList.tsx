@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -12,6 +13,7 @@ import {
   Row,
   Select,
   Space,
+  Spin,
   Switch,
   Table,
   Tabs,
@@ -36,8 +38,12 @@ import { useSearchParams } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
 import { deviceVideoApi, productApi, videoControlApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
+import CopyText from '../../components/CopyText';
+import ListEmpty from '../../components/ListEmpty';
 import VideoPlayer from '../../components/video/VideoPlayer';
 import PtzControlPanel from '../../components/video/PtzControlPanel';
+import { usePageActivation } from '../../hooks/usePageActivation';
+import { getErrorMessage } from '../../utils/errors';
 
 type EditorMode = 'create' | 'edit';
 interface VideoListProps { embedded?: boolean; }
@@ -197,19 +203,6 @@ const isManagedLocalSourceUrl = (streamMode: string | undefined, sourceUrl?: str
   }
 };
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const response = (error as { response?: { data?: { message?: string } } }).response;
-    if (response?.data?.message) {
-      return response.data.message;
-    }
-  }
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return fallback;
-};
-
 const unwrapBusinessResponse = <T,>(
   response: { data?: { code?: number; message?: string; data?: T } },
   fallback: string,
@@ -292,11 +285,12 @@ const buildEditorPayload = (values: VideoEditorFormValues) => {
   };
 };
 
-const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) => {
+const VideoList: React.FC<VideoListProps> = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const productContext = useMemo(() => parseVideoProductContext(searchParams), [searchParams]);
   const [data, setData] = useState<VideoDeviceRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
   const [editorOpen, setEditorOpen] = useState(false);
@@ -306,6 +300,10 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
   const [editorForm] = Form.useForm<VideoEditorFormValues>();
   const [pendingEditorValues, setPendingEditorValues] = useState<VideoEditorFormValues>(buildEditorInitialValues());
   const [productOptions, setProductOptions] = useState<VideoProductOption[]>([]);
+  const [productCache, setProductCache] = useState<Record<string, VideoProductOption>>({});
+  const [productSearching, setProductSearching] = useState(false);
+  const productSearchTimerRef = useRef<number | null>(null);
+  const productSearchRequestRef = useRef(0);
   const currentEditorProductKey = Form.useWatch('productKey', editorForm);
   const currentEditorStreamMode = Form.useWatch('streamMode', editorForm) || productContext?.protocol || 'GB28181';
   const currentEditorGbDeviceId = Form.useWatch('gbDeviceId', editorForm);
@@ -327,35 +325,74 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
   const [channelLoading, setChannelLoading] = useState(false);
   const [channels, setChannels] = useState<VideoChannelRecord[]>([]);
   const selectedEditorProduct = useMemo(
-    () => productOptions.find((item) => item.productKey === currentEditorProductKey),
-    [currentEditorProductKey, productOptions],
+    () => (currentEditorProductKey ? productCache[currentEditorProductKey] : undefined),
+    [currentEditorProductKey, productCache],
   );
+  const productSelectOptions = useMemo(() => {
+    if (selectedEditorProduct && !productOptions.some((item) => item.productKey === selectedEditorProduct.productKey)) {
+      return [selectedEditorProduct, ...productOptions];
+    }
+    return productOptions;
+  }, [productOptions, selectedEditorProduct]);
   const currentCreateProtocol =
     editorMode === 'create' ? productContext?.protocol || selectedEditorProduct?.protocol : undefined;
   const isCreateProductLocked = editorMode === 'create' && Boolean(productContext);
   const isCreateProtocolLocked = editorMode === 'create' && Boolean(currentCreateProtocol);
 
-  const fetchProductOptions = async () => {
+  const searchProductOptions = useCallback(async (keyword: string) => {
+    const requestId = productSearchRequestRef.current + 1;
+    productSearchRequestRef.current = requestId;
+    setProductSearching(true);
     try {
-      const res = await productApi.list({ pageNum: 1, pageSize: 500, category: 'CAMERA' });
+      const res = await productApi.list({
+        pageNum: 1,
+        pageSize: 20,
+        category: 'CAMERA',
+        keyword: keyword.trim() || undefined,
+      });
       const page = unwrapBusinessResponse<{ records?: Array<Record<string, unknown>> }>(res, '加载产品列表失败');
       const records = (page.records || []) as Array<Record<string, unknown>>;
-      setProductOptions(
-        records
-          .map((item) => ({
-            id: Number(item.id),
-            name: String(item.name || ''),
-            productKey: String(item.productKey || ''),
-            protocol: String(item.protocol || ''),
-          }))
-          .filter((item) => item.id > 0 && item.productKey && VIDEO_PROTOCOL_VALUES.has(item.protocol)),
-      );
-    } catch {
-      setProductOptions([]);
+      const mapped = records
+        .map((item) => ({
+          id: Number(item.id),
+          name: String(item.name || ''),
+          productKey: String(item.productKey || ''),
+          protocol: String(item.protocol || ''),
+        }))
+        .filter((item) => item.id > 0 && item.productKey && VIDEO_PROTOCOL_VALUES.has(item.protocol));
+      if (requestId !== productSearchRequestRef.current) {
+        return;
+      }
+      setProductOptions(mapped);
+      setProductCache((current) => {
+        const next = { ...current };
+        mapped.forEach((item) => {
+          next[item.productKey] = item;
+        });
+        return next;
+      });
+    } catch (error) {
+      if (requestId === productSearchRequestRef.current) {
+        setProductOptions([]);
+        message.error(getErrorMessage(error, '加载摄像头产品选项失败'));
+      }
+    } finally {
+      if (requestId === productSearchRequestRef.current) {
+        setProductSearching(false);
+      }
     }
-  };
+  }, []);
 
-  const fetchData = async () => {
+  const handleProductSearch = useCallback((keyword: string) => {
+    if (productSearchTimerRef.current) {
+      window.clearTimeout(productSearchTimerRef.current);
+    }
+    productSearchTimerRef.current = window.setTimeout(() => {
+      void searchProductOptions(keyword);
+    }, 300);
+  }, [searchProductOptions]);
+
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const res = await deviceVideoApi.list({
@@ -367,20 +404,33 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
       const page = unwrapBusinessResponse<{ records?: VideoDeviceRecord[]; total?: number }>(res, '加载视频设备列表失败');
       setData(page.records || []);
       setTotal(page.total || 0);
+      setLoadError(null);
     } catch (error) {
-      message.error(getErrorMessage(error, '加载视频设备列表失败'));
+      // 失败时保留上一次列表，由顶部 Alert 说明原因并提供重试。
+      setLoadError(getErrorMessage(error, '加载视频设备列表失败'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters, params]);
 
   useEffect(() => {
-    void fetchProductOptions();
-  }, []);
+    // 首屏只取最近 20 个摄像头产品，其余结果由关键字远程搜索补全。
+    void searchProductOptions('');
+    return () => {
+      if (productSearchTimerRef.current) {
+        window.clearTimeout(productSearchTimerRef.current);
+      }
+    };
+  }, [searchProductOptions]);
 
   useEffect(() => {
     void fetchData();
-  }, [filters, params.pageNum, params.pageSize]);
+  }, [fetchData]);
+
+  // 页面被 keep-alive 保留，切回标签时重新拉取，避免展示过期的在线状态。
+  usePageActivation(useCallback(() => {
+    void fetchData();
+  }, [fetchData]));
 
   useEffect(() => {
     if (!productContext?.autoCreate) {
@@ -511,12 +561,20 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
   const handleDelete = (record: VideoDeviceRecord) => {
     Modal.confirm({
       title: '确认删除视频设备？',
-      content: `删除「${record.name}」？关联的通道和流会话将一并删除。`,
+      content: `删除「${record.name}」后不可恢复，关联通道与正在运行的流会话会一并删除，相关播放地址立即失效。`,
+      okText: '删除',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
       onOk: async () => {
-        const response = await deviceVideoApi.delete(record.id);
-        unwrapBusinessResponse(response, '删除视频设备失败');
-        message.success('删除成功');
-        void fetchData();
+        try {
+          const response = await deviceVideoApi.delete(record.id);
+          unwrapBusinessResponse(response, '删除视频设备失败');
+          message.success('视频设备已删除');
+          await fetchData();
+        } catch (error) {
+          message.error(getErrorMessage(error, '删除视频设备失败'));
+          throw error;
+        }
       },
     });
   };
@@ -582,8 +640,9 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
       try {
         const response = await videoControlApi.stopStream(playerDevice.id);
         unwrapBusinessResponse(response, '停止视频流失败');
-      } catch {
-        // ignore close cleanup failure
+      } catch (error) {
+        // 关闭抽屉不能因为清理失败被阻断，但需要提示用户服务端流会话可能仍在运行。
+        message.warning(getErrorMessage(error, '关闭播放器时停止视频流失败，服务端会话可能仍在运行'));
       }
     }
     setPlayerOpen(false);
@@ -712,7 +771,12 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
       width: 80,
       render: (value: string) => <Tag color={statusColors[value]}>{statusLabels[value] || value}</Tag>,
     },
-    { title: 'GB 设备编号', dataIndex: 'gbDeviceId', width: 160, ellipsis: true, render: (value: string) => value || '-' },
+    {
+      title: 'GB 设备编号',
+      dataIndex: 'gbDeviceId',
+      width: 180,
+      render: (value: string) => (value ? <CopyText text={value} ellipsis /> : '-'),
+    },
     { title: 'IP', dataIndex: 'ip', width: 130, render: (value: string) => value || '-' },
     { title: '厂商', dataIndex: 'manufacturer', width: 110, ellipsis: true, render: (value: string) => value || '-' },
     { title: '创建时间', dataIndex: 'createdAt', width: 170 },
@@ -755,7 +819,7 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
     <div>
       <PageHeader
         title="视频设备"
-        description={`共 ${total} 台视频设备，${stats.online} 台在线`}
+        description={`共 ${total} 台视频设备（全部），当前页 ${data.length} 台，其中在线 ${stats.online} 台`}
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreateDrawer}>
             添加设备
@@ -788,12 +852,27 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
         </Card>
       ) : null}
 
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="视频设备列表加载失败，当前展示的是上一次成功获取的数据"
+          description={loadError}
+          action={(
+            <Button size="small" onClick={() => void fetchData()} loading={loading}>
+              重试
+            </Button>
+          )}
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
+
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         {[
-          { title: '设备总数', value: total, icon: <VideoCameraOutlined />, color: '#4f46e5', bg: 'rgba(79,70,229,0.08)' },
-          { title: '在线', value: stats.online, icon: <CheckCircleOutlined />, color: '#10b981', bg: 'rgba(16,185,129,0.08)' },
-          { title: '离线', value: stats.offline, icon: <DisconnectOutlined />, color: '#8c8c8c', bg: 'rgba(140,140,140,0.08)' },
-          { title: 'GB28181', value: stats.gb, icon: <CameraOutlined />, color: '#3b82f6', bg: 'rgba(59,130,246,0.08)' },
+          { title: '设备总数（全部）', value: total, icon: <VideoCameraOutlined />, color: '#4f46e5', bg: 'rgba(79,70,229,0.08)' },
+          { title: '在线（当前页）', value: stats.online, icon: <CheckCircleOutlined />, color: '#10b981', bg: 'rgba(16,185,129,0.08)' },
+          { title: '离线（当前页）', value: stats.offline, icon: <DisconnectOutlined />, color: '#8c8c8c', bg: 'rgba(140,140,140,0.08)' },
+          { title: 'GB28181（当前页）', value: stats.gb, icon: <CameraOutlined />, color: '#3b82f6', bg: 'rgba(59,130,246,0.08)' },
         ].map((item) => (
           <Col xs={12} sm={6} key={item.title}>
             <Card
@@ -879,6 +958,16 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
           dataSource={data}
           loading={loading}
           scroll={{ x: 1640 }}
+          locale={{
+            emptyText: (
+              <ListEmpty
+                hasFilters={Boolean(filters.keyword || filters.streamMode || filters.status)}
+                onClearFilters={resetFilters}
+                emptyText="暂无视频设备，点击右上角「添加设备」创建"
+                filteredText="没有符合当前筛选条件的视频设备"
+              />
+            ),
+          }}
           pagination={{
             current: params.pageNum,
             pageSize: params.pageSize,
@@ -949,10 +1038,13 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
                 >
                   <Select
                     showSearch
-                    placeholder="选择摄像头产品"
+                    filterOption={false}
+                    onSearch={handleProductSearch}
+                    loading={productSearching}
+                    placeholder="搜索并选择摄像头产品（名称或 productKey）"
                     disabled={isCreateProductLocked}
-                    optionFilterProp="label"
-                    options={productOptions.map((item) => ({
+                    notFoundContent={productSearching ? <Spin size="small" /> : '未找到匹配产品，换个关键字试试'}
+                    options={productSelectOptions.map((item) => ({
                       value: item.productKey,
                       label: `${item.name} (${item.productKey})`,
                     }))}
@@ -1159,9 +1251,14 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
           loading={channelLoading}
           dataSource={channels}
           pagination={false}
-          locale={{ emptyText: '暂无通道数据' }}
+          locale={{ emptyText: <ListEmpty compact emptyText="暂无通道数据，GB28181 设备可先执行目录同步" /> }}
           columns={[
-            { title: '通道编号', dataIndex: 'channelId', width: 180, ellipsis: true },
+            {
+              title: '通道编号',
+              dataIndex: 'channelId',
+              width: 180,
+              render: (value: string) => (value ? <CopyText text={value} ellipsis /> : '-'),
+            },
             { title: '通道名称', dataIndex: 'name', width: 180, ellipsis: true, render: (value: string) => value || '-' },
             {
               title: '状态',
@@ -1244,15 +1341,24 @@ const VideoList: React.FC<VideoListProps> = ({ embedded: _embedded = false }) =>
                     <div style={{ fontSize: 13 }}>
                       <p>
                         <strong>FLV：</strong>
-                        <code style={{ wordBreak: 'break-all' }}>{streamInfo.flvUrl}</code>
+                        <CopyText text={streamInfo.flvUrl}>
+                          <code style={{ wordBreak: 'break-all' }}>{streamInfo.flvUrl}</code>
+                        </CopyText>
                       </p>
                       <p>
                         <strong>HLS：</strong>
-                        <code style={{ wordBreak: 'break-all' }}>{streamInfo.hlsUrl}</code>
+                        <CopyText text={streamInfo.hlsUrl}>
+                          <code style={{ wordBreak: 'break-all' }}>{streamInfo.hlsUrl}</code>
+                        </CopyText>
                       </p>
                       <p>
                         <strong>WebRTC：</strong>
-                        <code style={{ wordBreak: 'break-all' }}>{streamInfo.webrtcUrl}</code>
+                        <CopyText text={streamInfo.webrtcUrl}>
+                          <code style={{ wordBreak: 'break-all' }}>{streamInfo.webrtcUrl}</code>
+                        </CopyText>
+                        <span style={{ display: 'block', marginTop: 4, color: '#8c8c8c', fontSize: 12 }}>
+                          WebRTC 播放需要浏览器支持 WebRTC（Chrome、Edge、Safari 新版），不支持时请使用 FLV 或 HLS 地址。
+                        </span>
                       </p>
                     </div>
                   ),

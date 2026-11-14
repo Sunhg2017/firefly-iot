@@ -10,6 +10,29 @@ export interface DynamicRulePayload { matchMode: MatchMode; conditions: Array<Re
 
 export const STATUS_OPTIONS = [{ value: 'INACTIVE', label: '未激活' }, { value: 'ACTIVE', label: '已激活' }, { value: 'DISABLED', label: '已禁用' }];
 export const ONLINE_STATUS_OPTIONS = [{ value: 'ONLINE', label: '在线' }, { value: 'OFFLINE', label: '离线' }, { value: 'UNKNOWN', label: '未知' }];
+
+/** Group member device status labels; raw backend enums must never leak into the table. */
+export const DEVICE_STATUS_META: Record<string, { label: string; color: string }> = {
+  INACTIVE: { label: '未激活', color: 'default' },
+  ACTIVE: { label: '已激活', color: 'success' },
+  DISABLED: { label: '已禁用', color: 'error' },
+};
+
+export const ONLINE_STATUS_META: Record<string, { label: string; color: string }> = {
+  ONLINE: { label: '在线', color: 'success' },
+  OFFLINE: { label: '离线', color: 'default' },
+  UNKNOWN: { label: '未知', color: 'warning' },
+};
+
+export const getDeviceStatusMeta = (status?: string) => {
+  if (!status) return undefined;
+  return DEVICE_STATUS_META[status] || { label: '未知状态', color: 'default' };
+};
+
+export const getOnlineStatusMeta = (status?: string) => {
+  if (!status) return undefined;
+  return ONLINE_STATUS_META[status] || { label: '未知状态', color: 'default' };
+};
 export const TEXT_OPERATOR_OPTIONS = [{ value: 'EQ', label: '等于' }, { value: 'CONTAINS', label: '包含' }, { value: 'PREFIX', label: '前缀匹配' }];
 export const FIELD_OPTIONS = [{ value: 'productKey', label: '产品' }, { value: 'deviceName', label: '设备名称' }, { value: 'nickname', label: '设备别名' }, { value: 'status', label: '设备状态' }, { value: 'onlineStatus', label: '在线状态' }, { value: 'tag', label: '设备标签' }];
 export const DRAWER_STEPS = [{ key: 'basic', title: '基础信息' }, { key: 'rule', title: '匹配规则' }, { key: 'preview', title: '预览确认' }];

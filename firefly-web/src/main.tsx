@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { ConfigProvider, theme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import App from './App';
+import AppErrorBoundary from './components/AppErrorBoundary';
 import './styles/global.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -76,9 +77,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         algorithm: theme.defaultAlgorithm,
       }}
     >
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <AppErrorBoundary>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </AppErrorBoundary>
     </ConfigProvider>
   </React.StrictMode>,
 );

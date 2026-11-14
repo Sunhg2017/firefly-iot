@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppstoreOutlined,
   DeleteOutlined,
@@ -17,7 +17,7 @@ import {
   Form,
   Input,
   InputNumber,
-  Popconfirm,
+  Modal,
   Row,
   Select,
   Space,
@@ -34,8 +34,12 @@ import {
 import type { DataNode } from 'antd/es/tree';
 import iconMap from '../../config/iconMap';
 import PageHeader from '../../components/PageHeader';
+import ListEmpty from '../../components/ListEmpty';
+import { useConfirmDiscard, useDirtyGuard } from '../../hooks/useDirtyGuard';
+import { usePageActivation } from '../../hooks/usePageActivation';
 import { permissionResourceApi, systemMenuPermissionApi } from '../../services/api';
 import useAuthStore from '../../store/useAuthStore';
+import { getErrorMessage } from '../../utils/errors';
 
 type WorkspaceScope = 'PLATFORM' | 'TENANT';
 
@@ -82,22 +86,19 @@ interface MenuFormValues {
 }
 
 const ROOT_MENU_KEY = '__ROOT__';
+const EMPTY_PERMISSION_CODES: string[] = [];
 
 const workspaceLabels: Record<WorkspaceScope, string> = {
   PLATFORM: '系统运维空间',
   TENANT: '租户业务空间',
 };
 
-const getErrorMessage = (error: unknown, fallback: string): string => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return fallback;
-};
-
-const flattenGroupNodes = (nodes: MenuNode[], depth = 0): Array<{ value: string; label: string }> => {
+const flattenGroupNodes = (nodes: MenuNode[], excludedKeys: Set<string>, depth = 0): Array<{ value: string; label: string }> => {
   const result: Array<{ value: string; label: string }> = [];
   nodes.forEach((node) => {
+    if (excludedKeys.has(node.menuKey)) {
+      return;
+    }
     if (node.menuType !== 'PAGE') {
       result.push({
         value: node.menuKey,
@@ -105,9 +106,23 @@ const flattenGroupNodes = (nodes: MenuNode[], depth = 0): Array<{ value: string;
       });
     }
     if (node.children?.length) {
-      result.push(...flattenGroupNodes(node.children, depth + 1));
+      result.push(...flattenGroupNodes(node.children, excludedKeys, depth + 1));
     }
   });
+  return result;
+};
+
+/** 当前节点及其全部子孙的 key；编辑父级时排除它们，避免把父级设成自己的子孙。 */
+const collectDescendantKeys = (node?: MenuNode | null): Set<string> => {
+  const result = new Set<string>();
+  if (!node) {
+    return result;
+  }
+  const walk = (current: MenuNode) => {
+    result.add(current.menuKey);
+    (current.children ?? []).forEach(walk);
+  };
+  walk(node);
   return result;
 };
 
@@ -180,18 +195,40 @@ const SystemMenuPermissionPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerDirty, setDrawerDirty] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [drawerMode, setDrawerMode] = useState<'create' | 'edit'>('create');
+  const [editingNode, setEditingNode] = useState<MenuNode | null>(null);
   const [selectedMenuKey, setSelectedMenuKey] = useState<string | null>(null);
   const [menuTree, setMenuTree] = useState<MenuNode[]>([]);
   const [permissionResources, setPermissionResources] = useState<PermissionResourceItem[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<MenuNode | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
+
+  const confirmDiscard = useConfirmDiscard();
+  useDirtyGuard(drawerOpen && drawerDirty);
+  // 布局在切换页签时会广播激活事件；忽略与首次挂载同一轮触发的事件，避免刚打开页面就请求两次。
+  const activationReadyRef = useRef(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      activationReadyRef.current = true;
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  usePageActivation(() => {
+    if (!activationReadyRef.current) {
+      return;
+    }
+    setReloadToken((current) => current + 1);
+  });
 
   const selectedNode = useMemo(() => findNode(menuTree, selectedMenuKey), [menuTree, selectedMenuKey]);
   const stats = useMemo(() => collectStats(menuTree), [menuTree]);
-  const parentOptions = useMemo(
-    () => [{ value: ROOT_MENU_KEY, label: '顶级目录' }, ...flattenGroupNodes(menuTree)],
-    [menuTree],
-  );
+  const parentOptions = useMemo(() => {
+    const excludedKeys = drawerMode === 'edit' ? collectDescendantKeys(editingNode) : new Set<string>();
+    return [{ value: ROOT_MENU_KEY, label: '顶级目录' }, ...flattenGroupNodes(menuTree, excludedKeys)];
+  }, [drawerMode, editingNode, menuTree]);
   const permissionOptions = useMemo(
     () => permissionResources
       .filter((item) => item.enabled !== false && item.code.includes(':'))
@@ -213,7 +250,7 @@ const SystemMenuPermissionPage: React.FC = () => {
     [],
   );
   const routePath = Form.useWatch('routePath', form);
-  const selectedPermissionCodes = Form.useWatch('permissionCodes', form) ?? [];
+  const selectedPermissionCodes = Form.useWatch('permissionCodes', form) ?? EMPTY_PERMISSION_CODES;
 
   const loadMenuTree = async (scope = workspaceScope) => {
     setLoading(true);
@@ -239,11 +276,13 @@ const SystemMenuPermissionPage: React.FC = () => {
 
   useEffect(() => {
     void loadMenuTree(workspaceScope);
-  }, [workspaceScope]);
+  }, [workspaceScope, reloadToken]);
 
   const openCreateDrawer = (parentMenuKey?: string) => {
     setDrawerMode('create');
+    setEditingNode(null);
     setStepIndex(0);
+    setDrawerDirty(false);
     form.resetFields();
     form.setFieldsValue({
       workspaceScope,
@@ -258,7 +297,10 @@ const SystemMenuPermissionPage: React.FC = () => {
 
   const openEditDrawer = (node: MenuNode) => {
     setDrawerMode('edit');
+    setEditingNode(node);
     setStepIndex(0);
+    setDrawerDirty(false);
+    form.resetFields();
     form.setFieldsValue({
       workspaceScope: node.workspaceScope,
       parentMenuKey: node.parentMenuKey ?? ROOT_MENU_KEY,
@@ -274,24 +316,50 @@ const SystemMenuPermissionPage: React.FC = () => {
     setDrawerOpen(true);
   };
 
-  const handleDelete = async (node: MenuNode) => {
+  const closeDrawer = () => {
+    confirmDiscard(drawerDirty, () => {
+      setDrawerOpen(false);
+      setDrawerDirty(false);
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) {
+      return;
+    }
+    setDeleteSubmitting(true);
     try {
-      await systemMenuPermissionApi.deleteMenu(workspaceScope, node.menuKey);
+      await systemMenuPermissionApi.deleteMenu(deleteTarget.workspaceScope, deleteTarget.menuKey);
       message.success('菜单已删除');
+      setDeleteTarget(null);
       setSelectedMenuKey(null);
       await loadMenuTree(workspaceScope);
     } catch (error) {
       message.error(getErrorMessage(error, '删除菜单失败'));
+    } finally {
+      setDeleteSubmitting(false);
     }
   };
 
   const handleNextStep = async () => {
-    await form.validateFields(['workspaceScope', 'parentMenuKey', 'menuKey', 'label', 'icon', 'sortOrder']);
-    setStepIndex(1);
+    try {
+      await form.validateFields(['workspaceScope', 'parentMenuKey', 'menuKey', 'label', 'icon', 'sortOrder']);
+      setStepIndex(1);
+    } catch (error) {
+      // 校验错误已显示在第一步骤的字段上，无需额外弹提示。
+      if (typeof error === 'object' && error !== null && 'errorFields' in error) {
+        return;
+      }
+      message.error(getErrorMessage(error, '校验菜单信息失败'));
+    }
   };
 
   const handleSubmit = async () => {
+    let menuSaved = false;
+    let savedWorkspaceScope: WorkspaceScope = workspaceScope;
+    let savedMenuKey: string | undefined;
     try {
+      // 两个步骤都保持挂载，最终校验能同时取到菜单信息与权限集合。
       const values = await form.validateFields();
       const payload = {
         workspaceScope: values.workspaceScope,
@@ -304,29 +372,48 @@ const SystemMenuPermissionPage: React.FC = () => {
         visible: values.visible !== false,
         roleCatalogVisible: values.routePath ? values.roleCatalogVisible !== false : false,
       };
+      savedWorkspaceScope = values.workspaceScope;
+      savedMenuKey = values.menuKey?.trim();
 
       setSaving(true);
       if (drawerMode === 'create') {
         await systemMenuPermissionApi.createMenu(payload);
-      } else if (values.menuKey) {
-        await systemMenuPermissionApi.updateMenu(values.workspaceScope, values.menuKey, payload);
+      } else if (savedMenuKey) {
+        await systemMenuPermissionApi.updateMenu(values.workspaceScope, savedMenuKey, payload);
       }
+      menuSaved = true;
 
-      if (values.menuKey) {
-        await systemMenuPermissionApi.replacePermissions(values.menuKey, {
+      if (savedMenuKey) {
+        await systemMenuPermissionApi.replacePermissions(savedMenuKey, {
           workspaceScope: values.workspaceScope,
-          permissionCodes: payload.routePath ? (values.permissionCodes ?? []) : [],
+          permissionCodes: values.routePath ? (values.permissionCodes ?? []) : [],
         });
       }
 
       message.success(drawerMode === 'create' ? '菜单已创建' : '菜单已更新');
+      setDrawerDirty(false);
       setDrawerOpen(false);
       await loadMenuTree(values.workspaceScope);
-      if (values.menuKey) {
-        setSelectedMenuKey(values.menuKey);
+      if (savedMenuKey) {
+        setSelectedMenuKey(savedMenuKey);
       }
     } catch (error) {
       if (typeof error === 'object' && error !== null && 'errorFields' in error) {
+        // 菜单信息在第一步（隐藏面板），校验失败时切回第一步展示错误。
+        setStepIndex(0);
+        message.error('请先补全菜单信息后再保存');
+        return;
+      }
+      if (menuSaved) {
+        // 菜单主体已经写入，权限绑定是第二个请求。此时不能留在抽屉里让用户重试，
+        // 否则“新建”会被重复执行；关闭抽屉并提示到详情里重新绑定即可。
+        message.error(getErrorMessage(error, '菜单已保存，但权限绑定失败，请在菜单详情中重新编辑并保存权限'));
+        setDrawerDirty(false);
+        setDrawerOpen(false);
+        await loadMenuTree(savedWorkspaceScope);
+        if (savedMenuKey) {
+          setSelectedMenuKey(savedMenuKey);
+        }
         return;
       }
       message.error(getErrorMessage(error, '保存系统菜单权限失败'));
@@ -334,6 +421,10 @@ const SystemMenuPermissionPage: React.FC = () => {
       setSaving(false);
     }
   };
+
+  const stepPanelStyle = (step: number): React.CSSProperties => ({
+    display: stepIndex === step ? 'block' : 'none',
+  });
 
   return (
     <div>
@@ -409,7 +500,7 @@ const SystemMenuPermissionPage: React.FC = () => {
                 onSelect={(keys) => setSelectedMenuKey((keys[0] as string) || null)}
               />
             ) : (
-              <Empty description="当前空间还没有菜单配置" />
+              <ListEmpty emptyText="当前空间还没有菜单配置" />
             )}
           </Card>
         </Col>
@@ -422,15 +513,9 @@ const SystemMenuPermissionPage: React.FC = () => {
                 <Button icon={<EditOutlined />} onClick={() => openEditDrawer(selectedNode)}>
                   编辑
                 </Button>
-                <Popconfirm
-                  title="确认删除该菜单及其下级？"
-                  description="删除后会同步清理菜单权限绑定，以及租户已授权菜单记录。"
-                  onConfirm={() => void handleDelete(selectedNode)}
-                >
-                  <Button danger icon={<DeleteOutlined />}>
-                    删除
-                  </Button>
-                </Popconfirm>
+                <Button danger icon={<DeleteOutlined />} onClick={() => setDeleteTarget(selectedNode)}>
+                  删除
+                </Button>
               </Space>
             ) : null}
           >
@@ -500,14 +585,14 @@ const SystemMenuPermissionPage: React.FC = () => {
 
       <Drawer
         destroyOnClose
-        title={drawerMode === 'create' ? '新建基础菜单' : `编辑基础菜单 - ${selectedNode?.label ?? ''}`}
+        title={drawerMode === 'create' ? '新建基础菜单' : `编辑基础菜单 - ${editingNode?.label ?? ''}`}
         open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={closeDrawer}
         width={860}
         styles={{ body: { paddingBottom: 24 } }}
         footer={(
           <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-            <Button onClick={() => setDrawerOpen(false)}>取消</Button>
+            <Button onClick={closeDrawer}>取消</Button>
             <Space>
               {stepIndex > 0 ? (
                 <Button onClick={() => setStepIndex((current) => current - 1)}>
@@ -536,8 +621,9 @@ const SystemMenuPermissionPage: React.FC = () => {
           style={{ marginBottom: 24 }}
         />
 
-        <Form form={form} layout="vertical" preserve={false}>
-          {stepIndex === 0 ? (
+        <Form form={form} layout="vertical" onValuesChange={() => setDrawerDirty(true)}>
+          {/* 步骤面板保持挂载（display 隐藏），否则切到权限步骤后菜单字段会从 store 消失。 */}
+          <div style={stepPanelStyle(0)}>
             <Row gutter={16}>
               <Col span={12}>
                 <Form.Item name="workspaceScope" label="所属空间" rules={[{ required: true, message: '请选择所属空间' }]}>
@@ -549,7 +635,12 @@ const SystemMenuPermissionPage: React.FC = () => {
               </Col>
               <Col span={12}>
                 <Form.Item name="parentMenuKey" label="父级目录" rules={[{ required: true, message: '请选择父级目录' }]}>
-                  <Select options={parentOptions} />
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    options={parentOptions}
+                    placeholder="输入目录名称搜索"
+                  />
                 </Form.Item>
               </Col>
               <Col span={12}>
@@ -603,7 +694,9 @@ const SystemMenuPermissionPage: React.FC = () => {
                 </Space>
               </Col>
             </Row>
-          ) : (
+          </div>
+
+          <div style={stepPanelStyle(1)}>
             <Space direction="vertical" size={16} style={{ width: '100%' }}>
               <Alert
                 type="info"
@@ -638,9 +731,38 @@ const SystemMenuPermissionPage: React.FC = () => {
                 <Empty description="目录节点无需配置权限" image={Empty.PRESENTED_IMAGE_SIMPLE} />
               )}
             </Space>
-          )}
+          </div>
         </Form>
       </Drawer>
+
+      <Modal
+        open={Boolean(deleteTarget)}
+        title="删除菜单"
+        okText="删除"
+        cancelText="取消"
+        okButtonProps={{ danger: true }}
+        confirmLoading={deleteSubmitting}
+        maskClosable={!deleteSubmitting}
+        onCancel={() => {
+          if (!deleteSubmitting) {
+            setDeleteTarget(null);
+          }
+        }}
+        onOk={() => void handleConfirmDelete()}
+        destroyOnClose
+      >
+        {deleteTarget ? (
+          <Space direction="vertical" size={8}>
+            <Typography.Text>
+              确认删除菜单 <Typography.Text strong>{deleteTarget.label}</Typography.Text>（{deleteTarget.menuKey}）及其全部下级？
+            </Typography.Text>
+            <Typography.Text>
+              删除后会同步清理菜单权限绑定，以及租户已授权的菜单记录；已授权该菜单的租户将立即失去对应入口。
+            </Typography.Text>
+            <Typography.Text type="secondary">删除后不可恢复，如需保留请先确认没有租户依赖该菜单。</Typography.Text>
+          </Space>
+        ) : null}
+      </Modal>
     </div>
   );
 };

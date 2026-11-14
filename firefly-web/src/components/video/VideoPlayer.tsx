@@ -1,5 +1,6 @@
-﻿import React, { useEffect, useRef, useCallback } from 'react';
-import { Spin, Alert } from 'antd';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, Button, Spin } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 
 interface VideoPlayerProps {
   url: string;
@@ -32,8 +33,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<FlvPlayer | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
+  const onErrorRef = useRef(onError);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   const destroyPlayer = useCallback(() => {
     if (playerRef.current) {
@@ -43,96 +50,141 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         playerRef.current.detachMediaElement();
         playerRef.current.destroy();
       } catch {
-        // ignore
+        // ignore teardown errors
       }
       playerRef.current = null;
     }
   }, []);
 
+  const reportError = useCallback((msg: string) => {
+    setError(msg);
+    setLoading(false);
+    onErrorRef.current?.(msg);
+  }, []);
+
   useEffect(() => {
-    if (!url || !videoRef.current) return;
+    if (!url || !videoRef.current) {
+      return undefined;
+    }
 
     setLoading(true);
     setError(null);
+    let cancelled = false;
 
     const initPlayer = async () => {
       try {
-        if (type === 'flv') {
-          const flvjs = await import('flv.js');
-          if (!flvjs.default.isSupported()) {
-            const msg = '褰撳墠娴忚鍣ㄤ笉鏀寔 FLV 鎾斁';
-            setError(msg);
-            onError?.(msg);
-            setLoading(false);
-            return;
-          }
-
-          destroyPlayer();
-
-          const player = flvjs.default.createPlayer({
-            type: 'flv',
-            isLive: true,
-            url: url,
-          }, {
-            enableWorker: false,
-            enableStashBuffer: false,
-            stashInitialSize: 128,
-            lazyLoad: false,
-            autoCleanupSourceBuffer: true,
-          });
-
-          player.attachMediaElement(videoRef.current!);
-          player.load();
-
-          player.on(flvjs.default.Events.ERROR, (errorType: string, errorDetail: string) => {
-            const msg = `鎾斁閿欒: ${errorType} - ${errorDetail}`;
-            setError(msg);
-            onError?.(msg);
-          });
-
-          player.on(flvjs.default.Events.LOADING_COMPLETE, () => {
-            setLoading(false);
-          });
-
-          if (autoPlay) {
-            try {
-              await player.play();
-            } catch {
-              // autoplay may be blocked
-            }
-          }
-
-          playerRef.current = player;
-          setLoading(false);
+        if (type !== 'flv') {
+          reportError('当前仅支持 FLV 直播流播放，请检查设备输出格式');
+          return;
         }
-      } catch (e: unknown) {
-        const errorMessage = e instanceof Error ? e.message : String(e);
-        const msg = `鎾斁鍣ㄥ垵濮嬪寲澶辫触: ${errorMessage}`;
-        setError(msg);
-        onError?.(msg);
+
+        const flvjs = await import('flv.js');
+        if (cancelled) {
+          return;
+        }
+        if (!flvjs.default.isSupported()) {
+          reportError('当前浏览器不支持 FLV 播放，请使用 Chrome / Edge 最新版本');
+          return;
+        }
+
+        destroyPlayer();
+
+        const player = flvjs.default.createPlayer(
+          { type: 'flv', isLive: true, url },
+          { enableWorker: false, enableStashBuffer: false, stashInitialSize: 128, lazyLoad: false, autoCleanupSourceBuffer: true },
+        );
+
+        player.attachMediaElement(videoRef.current!);
+        player.load();
+
+        player.on(flvjs.default.Events.ERROR, (errorType: string, errorDetail: string) => {
+          if (!cancelled) {
+            reportError(`播放中断：${errorType} - ${errorDetail}`);
+          }
+        });
+
+        player.on(flvjs.default.Events.LOADING_COMPLETE, () => {
+          if (!cancelled) {
+            setLoading(false);
+          }
+        });
+
+        if (autoPlay) {
+          try {
+            await player.play();
+          } catch {
+            // Autoplay can be blocked by the browser; the native controls remain usable.
+          }
+        }
+
+        if (cancelled) {
+          try {
+            player.destroy();
+          } catch {
+            // ignore
+          }
+          return;
+        }
+
+        playerRef.current = player;
         setLoading(false);
+      } catch (initError: unknown) {
+        const detail = initError instanceof Error ? initError.message : String(initError);
+        reportError(`播放器初始化失败：${detail}`);
       }
     };
 
-    initPlayer();
+    void initPlayer();
 
     return () => {
+      cancelled = true;
       destroyPlayer();
     };
-  }, [autoPlay, destroyPlayer, onError, type, url]);
+  }, [attempt, autoPlay, destroyPlayer, reportError, type, url]);
+
+  const handleRetry = () => {
+    setAttempt((value) => value + 1);
+  };
 
   return (
     <div style={{ position: 'relative', width, background: '#000', borderRadius: 8, overflow: 'hidden' }}>
-      {loading && (
-        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 10 }}>
-          <Spin tip="鍔犺浇涓?.." />
+      {loading && !error ? (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+            zIndex: 10,
+            color: '#e2e8f0',
+          }}
+        >
+          <Spin />
+          <span style={{ fontSize: 13 }}>正在连接视频流…</span>
         </div>
-      )}
-      {error && (
-        <Alert type="error" message={error} style={{ margin: 8 }} />
-      )}
+      ) : null}
+      {error ? (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11, background: 'rgba(0,0,0,0.72)', padding: 16 }}>
+          <Alert
+            type="error"
+            showIcon
+            message="视频播放失败"
+            description={error}
+            style={{ maxWidth: 420 }}
+            action={(
+              <Button size="small" icon={<ReloadOutlined />} onClick={handleRetry}>
+                重新连接
+              </Button>
+            )}
+          />
+        </div>
+      ) : null}
       <video
         ref={videoRef}
+        aria-label="实时视频"
         style={{ width: '100%', height, display: 'block', background: '#000' }}
         controls
         muted

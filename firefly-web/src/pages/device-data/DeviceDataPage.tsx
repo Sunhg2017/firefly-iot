@@ -1,8 +1,28 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Table, Button, Tag, Space, Card, message, Form, Input, Select, Tabs, Modal, InputNumber } from 'antd';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import type { Dayjs } from 'dayjs';
+import dayjs from 'dayjs';
+import {
+  Alert,
+  Button,
+  Card,
+  DatePicker,
+  Input,
+  InputNumber,
+  Modal,
+  Popconfirm,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tabs,
+  Tag,
+  Tooltip,
+  Typography,
+  message,
+} from 'antd';
 import {
   SearchOutlined,
-  BarChartOutlined,
+  ReloadOutlined,
   DatabaseOutlined,
   FieldTimeOutlined,
   FunctionOutlined,
@@ -12,7 +32,14 @@ import {
 import { deviceApi, deviceDataApi } from '../../services/api';
 import type { ColumnsType } from 'antd/es/table';
 import PageHeader from '../../components/PageHeader';
+import CopyText from '../../components/CopyText';
+import ListEmpty from '../../components/ListEmpty';
+import { formatDateTime, toIsoDateTime } from '../../utils/datetime';
+import { getErrorMessage } from '../../utils/errors';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import useAuthStore from '../../store/useAuthStore';
+
+const { RangePicker } = DatePicker;
 
 interface DeviceOptionRecord {
   id: number;
@@ -28,18 +55,15 @@ interface DeviceOption {
   meta: DeviceOptionRecord;
 }
 
-interface DeviceSelectorSharedProps {
-  deviceOptions: DeviceOption[];
-  deviceOptionsLoading: boolean;
-  onSearchDevices: (keyword?: string) => void;
-}
-
-interface DeviceSelectFieldProps extends DeviceSelectorSharedProps {
+interface DeviceSelectFieldProps {
   value?: number;
   onChange?: (value?: number) => void;
   placeholder: string;
   allowClear?: boolean;
   width?: number;
+  deviceOptions: DeviceOption[];
+  deviceOptionsLoading: boolean;
+  onSearchDevices: (keyword?: string) => void;
 }
 
 interface TelemetryRecord {
@@ -86,9 +110,24 @@ interface RetentionInfo {
   usingDefault: boolean;
 }
 
+interface TabSharedProps {
+  deviceId?: number;
+}
+
+type TimeRange = [Dayjs, Dayjs];
+
 const levelColors: Record<string, string> = { INFO: 'blue', WARNING: 'orange', CRITICAL: 'red' };
 const onlineStatusTextMap: Record<string, string> = { ONLINE: '在线', OFFLINE: '离线', UNKNOWN: '未知' };
 const statusTextMap: Record<string, string> = { ACTIVE: '已激活', INACTIVE: '未激活', DISABLED: '已禁用' };
+const TELEMETRY_PAGE_SIZE = 50;
+const TELEMETRY_LIMIT_OPTIONS = [50, 100, 200, 500];
+
+const buildDefaultRange = (): TimeRange => [dayjs().subtract(24, 'hour'), dayjs()];
+
+const buildTimeRangePayload = (range: TimeRange) => ({
+  startTime: toIsoDateTime(range[0].toDate()),
+  endTime: toIsoDateTime(range[1].toDate()),
+});
 
 const formatSelectedDeviceLabel = (device: DeviceOptionRecord) => {
   const display = device.nickname?.trim();
@@ -144,303 +183,506 @@ const DeviceSelectField: React.FC<DeviceSelectFieldProps> = ({
   />
 );
 
-interface TabSharedProps extends DeviceSelectorSharedProps {
-  deviceNameMap: Map<number, string>;
-}
+const formatTelemetryValue = (record: TelemetryRecord | TelemetryLatest) => {
+  if (record.valueNumber != null) return String(record.valueNumber);
+  if (record.valueBool != null) return record.valueBool ? 'true' : 'false';
+  if (record.valueString != null) return record.valueString;
+  return '-';
+};
 
-const TelemetryTab: React.FC<TabSharedProps> = ({ deviceOptions, deviceOptionsLoading, onSearchDevices }) => {
+const TelemetryTab: React.FC<TabSharedProps> = ({ deviceId }) => {
   const [data, setData] = useState<TelemetryRecord[]>([]);
   const [loading, setLoading] = useState(false);
-  const [deviceId, setDeviceId] = useState<number | undefined>();
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [property, setProperty] = useState<string>('');
+  const [timeRange, setTimeRange] = useState<TimeRange>(buildDefaultRange);
+  const [limit, setLimit] = useState(200);
 
-  const handleQuery = async () => {
+  const handleQuery = useCallback(async () => {
     if (!deviceId) {
-      message.warning('请先选择设备');
+      message.warning('请先在页面顶部选择设备');
       return;
     }
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await deviceDataApi.query({ deviceId, property: property.trim() || undefined, limit: 200 });
+      const res = await deviceDataApi.query({
+        deviceId,
+        property: property.trim() || undefined,
+        limit,
+        ...buildTimeRangePayload(timeRange),
+      });
       setData(res.data.data || []);
-    } catch {
-      message.error('查询失败');
+    } catch (error) {
+      setData([]);
+      setLoadError(getErrorMessage(error, '查询遥测数据失败'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [deviceId, limit, property, timeRange]);
 
-  const formatValue = (record: TelemetryRecord) => {
-    if (record.valueNumber != null) return String(record.valueNumber);
-    if (record.valueBool != null) return record.valueBool ? 'true' : 'false';
-    if (record.valueString != null) return record.valueString;
-    return '-';
-  };
+  useEffect(() => {
+    if (!deviceId) {
+      setData([]);
+      setLoadError(null);
+      return;
+    }
+    void handleQuery();
+    // 仅在设备变化时自动按当前筛选条件查询，避免筛选输入过程中频繁请求。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceId]);
+
+  const hasFilters = property.trim() !== '';
 
   const columns: ColumnsType<TelemetryRecord> = [
-    { title: '时间', dataIndex: 'ts', width: 200 },
-    { title: '属性', dataIndex: 'property', width: 150 },
-    { title: '值', width: 200, render: (_: unknown, record: TelemetryRecord) => formatValue(record) },
+    { title: '时间', dataIndex: 'ts', width: 200, render: (value: string) => <CopyText text={formatDateTime(value)} ellipsis /> },
+    { title: '属性', dataIndex: 'property', width: 180, render: (value: string) => <CopyText text={value} ellipsis /> },
+    { title: '值', width: 220, render: (_: unknown, record: TelemetryRecord) => <CopyText text={formatTelemetryValue(record)} ellipsis /> },
   ];
 
   return (
     <>
       <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Space wrap>
-          <DeviceSelectField
-            value={deviceId}
-            onChange={setDeviceId}
-            placeholder="请选择设备"
-            deviceOptions={deviceOptions}
-            deviceOptionsLoading={deviceOptionsLoading}
-            onSearchDevices={onSearchDevices}
+          <RangePicker
+            showTime
+            allowClear={false}
+            value={timeRange}
+            onChange={(value) => {
+              if (value && value[0] && value[1]) {
+                setTimeRange([value[0], value[1]]);
+              }
+            }}
           />
-          <Input placeholder="属性名（可选）" style={{ width: 180 }} value={property} onChange={(e) => setProperty(e.target.value)} />
-          <Button type="primary" icon={<SearchOutlined />} onClick={handleQuery}>查询</Button>
+          <Input
+            placeholder="属性名（可选）"
+            style={{ width: 180 }}
+            value={property}
+            onChange={(event) => setProperty(event.target.value)}
+            onPressEnter={() => void handleQuery()}
+          />
+          <Select<number>
+            style={{ width: 170 }}
+            value={limit}
+            options={TELEMETRY_LIMIT_OPTIONS.map((value) => ({ value, label: `最近 ${value} 条` }))}
+            onChange={setLimit}
+          />
+          <Button type="primary" icon={<SearchOutlined />} loading={loading} onClick={() => void handleQuery()}>查询</Button>
         </Space>
+        <Typography.Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
+          该接口仅支持 limit 返回最近记录，不支持服务端分页；下表为“最近 {limit} 条”范围内的前端分页。
+        </Typography.Text>
       </Card>
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="查询遥测数据失败"
+          description={loadError}
+          action={<Button size="small" danger onClick={() => void handleQuery()}>重试</Button>}
+        />
+      ) : null}
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Table
           rowKey={(record, index) => `${record.ts}-${record.property}-${index}`}
           columns={columns}
           dataSource={data}
           loading={loading}
-          pagination={{ pageSize: 50, showTotal: (total: number) => `共 ${total} 条` }}
+          locale={{
+            emptyText: loadError ? (
+              '加载失败，请点击上方“重试”'
+            ) : (
+              <ListEmpty
+                hasFilters={hasFilters}
+                emptyText={deviceId ? '该设备在所选时间范围内暂无遥测数据' : '请先在页面顶部选择设备'}
+                filteredText="当前属性筛选下没有遥测数据"
+                onClearFilters={() => setProperty('')}
+              />
+            ),
+          }}
+          pagination={{
+            pageSize: TELEMETRY_PAGE_SIZE,
+            showSizeChanger: true,
+            showTotal: (count: number) => `共 ${count} 条（最近 ${limit} 条内）`,
+          }}
         />
       </Card>
     </>
   );
 };
 
-const LatestTab: React.FC<TabSharedProps> = ({ deviceOptions, deviceOptionsLoading, onSearchDevices }) => {
+const LatestTab: React.FC<TabSharedProps & { active: boolean }> = ({ deviceId, active }) => {
   const [data, setData] = useState<TelemetryLatest[]>([]);
   const [loading, setLoading] = useState(false);
-  const [deviceId, setDeviceId] = useState<number | undefined>();
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const handleQuery = async () => {
+  const fetchLatest = useCallback(async () => {
     if (!deviceId) {
-      message.warning('请先选择设备');
+      setData([]);
       return;
     }
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await deviceDataApi.latest(deviceId);
       setData(res.data.data || []);
-    } catch {
-      message.error('查询失败');
+    } catch (error) {
+      setData([]);
+      setLoadError(getErrorMessage(error, '查询最新遥测数据失败'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [deviceId]);
 
-  const formatValue = (record: TelemetryLatest) => {
-    if (record.valueNumber != null) return String(record.valueNumber);
-    if (record.valueBool != null) return record.valueBool ? 'true' : 'false';
-    if (record.valueString != null) return record.valueString;
-    return '-';
-  };
+  const { paused, togglePaused, lastUpdatedAt, refresh } = useAutoRefresh(fetchLatest, {
+    intervalMs: 10000,
+    enabled: !!deviceId && active,
+    immediate: false,
+  });
+
+  useEffect(() => {
+    if (!deviceId) {
+      setData([]);
+      setLoadError(null);
+      return;
+    }
+    if (active) {
+      void refresh();
+    }
+  }, [active, deviceId, refresh]);
 
   const columns: ColumnsType<TelemetryLatest> = [
-    { title: '属性', dataIndex: 'property', width: 180 },
-    { title: '最新值', width: 200, render: (_: unknown, record: TelemetryLatest) => formatValue(record) },
-    { title: '更新时间', dataIndex: 'ts', width: 200 },
+    { title: '属性', dataIndex: 'property', width: 180, render: (value: string) => <CopyText text={value} ellipsis /> },
+    { title: '最新值', width: 220, render: (_: unknown, record: TelemetryLatest) => <CopyText text={formatTelemetryValue(record)} ellipsis /> },
+    { title: '更新时间', dataIndex: 'ts', width: 200, render: (value: string) => <CopyText text={formatDateTime(value)} ellipsis /> },
   ];
 
   return (
     <>
       <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Space wrap>
-          <DeviceSelectField
-            value={deviceId}
-            onChange={setDeviceId}
-            placeholder="请选择设备"
-            deviceOptions={deviceOptions}
-            deviceOptionsLoading={deviceOptionsLoading}
-            onSearchDevices={onSearchDevices}
-          />
-          <Button type="primary" icon={<SearchOutlined />} onClick={handleQuery}>查询最新值</Button>
+          <Tooltip title={lastUpdatedAt ? `最近刷新：${formatDateTime(lastUpdatedAt)}` : '尚未自动刷新'}>
+            <Switch
+              size="small"
+              checked={!paused}
+              onChange={togglePaused}
+              checkedChildren="自动刷新"
+              unCheckedChildren="已暂停"
+              disabled={!deviceId}
+            />
+          </Tooltip>
+          <Button icon={<ReloadOutlined />} loading={loading} disabled={!deviceId} onClick={() => void refresh()}>刷新最新值</Button>
+          <Typography.Text type="secondary">
+            {lastUpdatedAt ? `最近刷新：${formatDateTime(lastUpdatedAt)}` : '选择设备后每 10 秒自动刷新'}
+          </Typography.Text>
         </Space>
       </Card>
-      <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Table rowKey="property" columns={columns} dataSource={data} loading={loading} pagination={false} />
-      </Card>
-    </>
-  );
-};
-
-const AggregateTab: React.FC<TabSharedProps> = ({ deviceOptions, deviceOptionsLoading, onSearchDevices }) => {
-  const [data, setData] = useState<AggregateRecord[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [form] = Form.useForm();
-
-  const handleQuery = async () => {
-    try {
-      const values = await form.validateFields();
-      setLoading(true);
-      const res = await deviceDataApi.aggregate({
-        deviceId: values.deviceId,
-        property: values.property.trim(),
-        interval: values.interval,
-        startTime: values.startTime || undefined,
-        endTime: values.endTime || undefined,
-      });
-      setData(res.data.data || []);
-    } catch (error) {
-      const isValidationError = typeof error === 'object' && error !== null && 'errorFields' in error;
-      if (!isValidationError) {
-        message.error('查询失败');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const columns: ColumnsType<AggregateRecord> = [
-    { title: '时间桶', dataIndex: 'bucket', width: 200 },
-    { title: '平均值', dataIndex: 'avgVal', width: 120, render: (value: number) => (value != null ? value.toFixed(2) : '-') },
-    { title: '最大值', dataIndex: 'maxVal', width: 120, render: (value: number) => (value != null ? value.toFixed(2) : '-') },
-    { title: '最小值', dataIndex: 'minVal', width: 120, render: (value: number) => (value != null ? value.toFixed(2) : '-') },
-    { title: '数据点', dataIndex: 'count', width: 80 },
-  ];
-
-  return (
-    <>
-      <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <Form form={form} layout="inline">
-          <Form.Item name="deviceId" rules={[{ required: true, message: '请选择设备' }]}>
-            <DeviceSelectField
-              placeholder="请选择设备"
-              deviceOptions={deviceOptions}
-              deviceOptionsLoading={deviceOptionsLoading}
-              onSearchDevices={onSearchDevices}
-            />
-          </Form.Item>
-          <Form.Item name="property" rules={[{ required: true, message: '请输入属性名' }]}>
-            <Input placeholder="属性名" style={{ width: 160 }} />
-          </Form.Item>
-          <Form.Item name="interval" rules={[{ required: true, message: '请选择聚合粒度' }]}>
-            <Select
-              placeholder="聚合粒度"
-              style={{ width: 130 }}
-              options={[
-                { value: '1 minute', label: '1 分钟' },
-                { value: '5 minutes', label: '5 分钟' },
-                { value: '1 hour', label: '1 小时' },
-                { value: '1 day', label: '1 天' },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" icon={<BarChartOutlined />} onClick={handleQuery}>聚合查询</Button>
-          </Form.Item>
-        </Form>
-      </Card>
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="查询最新遥测数据失败"
+          description={loadError}
+          action={<Button size="small" danger onClick={() => void refresh()}>重试</Button>}
+        />
+      ) : null}
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Table
-          rowKey="bucket"
+          rowKey="property"
           columns={columns}
           dataSource={data}
           loading={loading}
-          pagination={{ pageSize: 100, showTotal: (total: number) => `共 ${total} 条` }}
+          locale={{
+            emptyText: loadError ? (
+              '加载失败，请点击上方“重试”'
+            ) : (
+              <ListEmpty
+                emptyText={deviceId ? '该设备暂无最新遥测数据' : '请先在页面顶部选择设备'}
+              />
+            ),
+          }}
+          pagination={false}
         />
       </Card>
     </>
   );
 };
 
-const EventsTab: React.FC<TabSharedProps> = ({ deviceOptions, deviceOptionsLoading, onSearchDevices, deviceNameMap }) => {
+const AggregateTab: React.FC<TabSharedProps> = ({ deviceId }) => {
+  const [data, setData] = useState<AggregateRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [property, setProperty] = useState('');
+  const [interval, setIntervalValue] = useState('1h');
+  const [timeRange, setTimeRange] = useState<TimeRange>(buildDefaultRange);
+
+  const handleQuery = useCallback(async () => {
+    if (!deviceId) {
+      message.warning('请先在页面顶部选择设备');
+      return;
+    }
+    if (!property.trim()) {
+      message.warning('请输入要聚合的属性名');
+      return;
+    }
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await deviceDataApi.aggregate({
+        deviceId,
+        property: property.trim(),
+        interval,
+        ...buildTimeRangePayload(timeRange),
+      });
+      setData(res.data.data || []);
+    } catch (error) {
+      setData([]);
+      setLoadError(getErrorMessage(error, '聚合查询失败'));
+    } finally {
+      setLoading(false);
+    }
+  }, [deviceId, interval, property, timeRange]);
+
+  useEffect(() => {
+    if (!deviceId) {
+      setData([]);
+      setLoadError(null);
+      return;
+    }
+    // 未填写属性时只清空旧设备结果，不弹提示打断用户切换设备。
+    if (!property.trim()) {
+      setData([]);
+      setLoadError(null);
+      return;
+    }
+    void handleQuery();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceId]);
+
+  const hasFilters = interval !== '1h';
+
+  const columns: ColumnsType<AggregateRecord> = [
+    { title: '时间桶', dataIndex: 'bucket', width: 220, render: (value: string) => <CopyText text={formatDateTime(value)} ellipsis /> },
+    { title: '平均值', dataIndex: 'avgVal', width: 120, render: (value: number) => (value != null ? value.toFixed(2) : '-') },
+    { title: '最大值', dataIndex: 'maxVal', width: 120, render: (value: number) => (value != null ? value.toFixed(2) : '-') },
+    { title: '最小值', dataIndex: 'minVal', width: 120, render: (value: number) => (value != null ? value.toFixed(2) : '-') },
+    { title: '数据点', dataIndex: 'count', width: 100, render: (value: number) => (value != null ? <CopyText text={value} /> : '-') },
+  ];
+
+  return (
+    <>
+      <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 10, marginBottom: 16, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+        <Space wrap>
+          <RangePicker
+            showTime
+            allowClear={false}
+            value={timeRange}
+            onChange={(value) => {
+              if (value && value[0] && value[1]) {
+                setTimeRange([value[0], value[1]]);
+              }
+            }}
+          />
+          <Input
+            placeholder="属性名"
+            style={{ width: 160 }}
+            value={property}
+            onChange={(event) => setProperty(event.target.value)}
+            onPressEnter={() => void handleQuery()}
+          />
+          <Select
+            placeholder="聚合粒度"
+            style={{ width: 130 }}
+            value={interval}
+            onChange={setIntervalValue}
+            options={[
+              { value: '1 minute', label: '1 分钟' },
+              { value: '5 minutes', label: '5 分钟' },
+              { value: '1 hour', label: '1 小时' },
+              { value: '1 day', label: '1 天' },
+            ]}
+          />
+          <Button type="primary" icon={<SearchOutlined />} loading={loading} onClick={() => void handleQuery()}>聚合查询</Button>
+        </Space>
+      </Card>
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="聚合查询失败"
+          description={loadError}
+          action={<Button size="small" danger onClick={() => void handleQuery()}>重试</Button>}
+        />
+      ) : null}
+      <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+        <Table
+          rowKey="bucket"
+          columns={columns}
+          dataSource={data}
+          loading={loading}
+          locale={{
+            emptyText: loadError ? (
+              '加载失败，请点击上方“重试”'
+            ) : (
+              <ListEmpty
+                hasFilters={hasFilters}
+                emptyText={!deviceId
+                  ? '请先在页面顶部选择设备'
+                  : !property.trim()
+                    ? '请输入属性名后点击“聚合查询”'
+                    : '该设备在所选时间范围内没有可聚合的数值数据'}
+                filteredText="当前聚合粒度下没有数据，可尝试调整粒度或时间范围"
+              />
+            ),
+          }}
+          pagination={{ pageSize: 100, showTotal: (count: number) => `共 ${count} 条` }}
+        />
+      </Card>
+    </>
+  );
+};
+
+const EventsTab: React.FC<TabSharedProps> = ({ deviceId }) => {
   const [data, setData] = useState<EventRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState({ pageNum: 1, pageSize: 20 });
-  const [draftFilters, setDraftFilters] = useState<{ deviceId?: number; level?: string }>({});
-  const [filters, setFilters] = useState<{ deviceId?: number; level?: string }>({});
+  const [draftLevel, setDraftLevel] = useState<string | undefined>();
+  const [draftTimeRange, setDraftTimeRange] = useState<TimeRange>(buildDefaultRange);
+  const [filters, setFilters] = useState<{ level?: string; timeRange: TimeRange }>({ timeRange: buildDefaultRange() });
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
+    if (!deviceId) {
+      setData([]);
+      setTotal(0);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await deviceDataApi.listEvents({
         ...params,
-        deviceId: filters.deviceId,
+        deviceId,
         level: filters.level,
+        ...buildTimeRangePayload(filters.timeRange),
       });
       const page = res.data.data;
       setData(page.records || []);
       setTotal(page.total || 0);
-    } catch {
-      message.error('加载事件列表失败');
+    } catch (error) {
+      setData([]);
+      setTotal(0);
+      setLoadError(getErrorMessage(error, '加载设备事件失败'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [deviceId, filters.level, filters.timeRange, params]);
+
+  useEffect(() => {
+    setParams((current) => ({ ...current, pageNum: 1 }));
+  }, [deviceId]);
 
   useEffect(() => {
     void fetchData();
-  }, [filters, params.pageNum, params.pageSize]);
+  }, [fetchData]);
 
   const applyFilters = () => {
-    setFilters({
-      deviceId: draftFilters.deviceId,
-      level: draftFilters.level,
-    });
+    setFilters({ level: draftLevel, timeRange: draftTimeRange });
     setParams((current) => ({ ...current, pageNum: 1 }));
   };
 
   const resetFilters = () => {
-    setDraftFilters({});
-    setFilters({});
+    const nextRange = buildDefaultRange();
+    setDraftLevel(undefined);
+    setDraftTimeRange(nextRange);
+    setFilters({ timeRange: nextRange });
     setParams((current) => ({ ...current, pageNum: 1 }));
   };
 
+  const hasFilters = filters.level != null;
+
   const columns: ColumnsType<EventRecord> = [
-    { title: '设备', width: 220, render: (_: unknown, record: EventRecord) => record.deviceName || deviceNameMap.get(record.deviceId) || '设备信息缺失' },
-    { title: '事件类型', dataIndex: 'eventType', width: 140 },
-    { title: '事件名称', dataIndex: 'eventName', width: 180, ellipsis: true, render: (value: string) => value || '-' },
-    { title: '级别', dataIndex: 'level', width: 80, render: (value: string) => <Tag color={levelColors[value]}>{value}</Tag> },
-    { title: '发生时间', dataIndex: 'occurredAt', width: 180 },
-    { title: 'Payload', dataIndex: 'payload', width: 260, ellipsis: true, render: (value: string) => value || '-' },
+    {
+      title: '设备',
+      width: 220,
+      render: (_: unknown, record: EventRecord) => (
+        <CopyText text={record.deviceName || '设备信息缺失'} ellipsis />
+      ),
+    },
+    { title: '事件类型', dataIndex: 'eventType', width: 140, render: (value: string) => <CopyText text={value} ellipsis /> },
+    { title: '事件名称', dataIndex: 'eventName', width: 180, render: (value: string) => (value ? <CopyText text={value} ellipsis /> : '-') },
+    { title: '级别', dataIndex: 'level', width: 90, render: (value: string) => <Tag color={levelColors[value]}>{value}</Tag> },
+    { title: '发生时间', dataIndex: 'occurredAt', width: 190, render: (value: string) => <CopyText text={formatDateTime(value)} ellipsis /> },
+    { title: 'Payload', dataIndex: 'payload', width: 280, render: (value: string) => (value ? <CopyText text={value} ellipsis /> : '-') },
   ];
 
   return (
     <>
       <Card className="ff-query-card">
         <div className="ff-query-bar">
-          <DeviceSelectField
-            allowClear
-            width={280}
-            value={draftFilters.deviceId}
-            onChange={(deviceId) => setDraftFilters((current) => ({ ...current, deviceId }))}
-            placeholder="按设备筛选（可选）"
-            deviceOptions={deviceOptions}
-            deviceOptionsLoading={deviceOptionsLoading}
-            onSearchDevices={onSearchDevices}
+          <RangePicker
+            showTime
+            allowClear={false}
+            value={draftTimeRange}
+            onChange={(value) => {
+              if (value && value[0] && value[1]) {
+                setDraftTimeRange([value[0], value[1]]);
+              }
+            }}
           />
           <Select
             className="ff-query-field"
             placeholder="级别"
             allowClear
             style={{ width: 120 }}
-            value={draftFilters.level}
+            value={draftLevel}
             options={[
               { value: 'INFO', label: 'INFO' },
               { value: 'WARNING', label: 'WARNING' },
               { value: 'CRITICAL', label: 'CRITICAL' },
             ]}
-            onChange={(value) => setDraftFilters((current) => ({ ...current, level: value }))}
+            onChange={setDraftLevel}
           />
           <div className="ff-query-actions">
             <Button onClick={resetFilters}>重置</Button>
-            <Button type="primary" icon={<SearchOutlined />} onClick={applyFilters}>查询</Button>
+            <Button type="primary" icon={<SearchOutlined />} loading={loading} onClick={applyFilters}>查询</Button>
           </div>
         </div>
       </Card>
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="加载设备事件失败"
+          description={loadError}
+          action={<Button size="small" danger onClick={() => void fetchData()}>重试</Button>}
+        />
+      ) : null}
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Table
           rowKey="id"
           columns={columns}
           dataSource={data}
           loading={loading}
-          scroll={{ x: 1000 }}
+          scroll={{ x: 1100 }}
+          locale={{
+            emptyText: loadError ? (
+              '加载失败，请点击上方“重试”'
+            ) : (
+              <ListEmpty
+                hasFilters={hasFilters}
+                emptyText={deviceId ? '该设备在所选时间范围内暂无事件记录' : '请先在页面顶部选择设备'}
+                filteredText="当前级别筛选下没有事件记录"
+                onClearFilters={resetFilters}
+              />
+            ),
+          }}
           pagination={{
             current: params.pageNum,
             pageSize: params.pageSize,
@@ -458,6 +700,9 @@ const EventsTab: React.FC<TabSharedProps> = ({ deviceOptions, deviceOptionsLoadi
 const DeviceDataPage: React.FC = () => {
   const [deviceOptions, setDeviceOptions] = useState<DeviceOption[]>([]);
   const [deviceOptionsLoading, setDeviceOptionsLoading] = useState(false);
+  const [deviceOptionsError, setDeviceOptionsError] = useState<string | null>(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<number>();
+  const [activeTab, setActiveTab] = useState('latest');
   const [retentionOpen, setRetentionOpen] = useState(false);
   const [retentionLoading, setRetentionLoading] = useState(false);
   const [retentionSaving, setRetentionSaving] = useState(false);
@@ -465,6 +710,11 @@ const DeviceDataPage: React.FC = () => {
   const [retentionDays, setRetentionDays] = useState<number | null>(null);
   const hasPermission = useAuthStore((state) => state.hasPermission);
   const canManageRetention = hasPermission('data:retention');
+
+  const selectedDevice = useMemo(
+    () => deviceOptions.find((item) => item.value === selectedDeviceId) ?? null,
+    [deviceOptions, selectedDeviceId],
+  );
 
   const openRetention = async () => {
     setRetentionOpen(true);
@@ -474,8 +724,8 @@ const DeviceDataPage: React.FC = () => {
       const info = res.data.data as RetentionInfo;
       setRetentionInfo(info);
       setRetentionDays(info.retentionDays);
-    } catch {
-      message.error('加载数据保留策略失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载数据保留策略失败'));
       setRetentionOpen(false);
     } finally {
       setRetentionLoading(false);
@@ -493,8 +743,8 @@ const DeviceDataPage: React.FC = () => {
       setRetentionInfo(res.data.data as RetentionInfo);
       message.success('数据保留策略已更新');
       setRetentionOpen(false);
-    } catch {
-      message.error('设置数据保留策略失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '设置数据保留策略失败'));
     } finally {
       setRetentionSaving(false);
     }
@@ -507,20 +757,21 @@ const DeviceDataPage: React.FC = () => {
       setRetentionInfo(res.data.data as RetentionInfo);
       setRetentionDays((res.data.data as RetentionInfo).retentionDays);
       message.success('已重置为全局默认保留策略');
-    } catch {
-      message.error('重置数据保留策略失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '重置数据保留策略失败'));
     } finally {
       setRetentionSaving(false);
     }
   };
 
-  const loadDeviceOptions = async (keyword = '') => {
+  const loadDeviceOptions = useCallback(async (keyword = '') => {
     setDeviceOptionsLoading(true);
+    setDeviceOptionsError(null);
     try {
       const res = await deviceApi.list({
         pageNum: 1,
         pageSize: 30,
-        keyword: keyword || undefined,
+        keyword: keyword.trim() || undefined,
       });
       const records = (res.data.data?.records || []) as DeviceOptionRecord[];
       const nextOptions = records.map((item) => ({
@@ -529,28 +780,16 @@ const DeviceDataPage: React.FC = () => {
         meta: item,
       }));
       setDeviceOptions((current) => mergeDeviceOptions(current, nextOptions));
-    } catch {
-      message.error('加载设备选项失败');
+    } catch (error) {
+      setDeviceOptionsError(getErrorMessage(error, '加载设备选项失败'));
     } finally {
       setDeviceOptionsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void loadDeviceOptions();
-  }, []);
-
-  const deviceNameMap = useMemo(
-    () => new Map(deviceOptions.map((item) => [item.value, item.meta.deviceName])),
-    [deviceOptions],
-  );
-
-  const sharedTabProps: TabSharedProps = {
-    deviceOptions,
-    deviceOptionsLoading,
-    onSearchDevices: loadDeviceOptions,
-    deviceNameMap,
-  };
+  }, [loadDeviceOptions]);
 
   return (
     <div>
@@ -564,29 +803,69 @@ const DeviceDataPage: React.FC = () => {
           ) : undefined
         }
       />
+      <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 12, border: 'none', marginBottom: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+        <Space wrap>
+          <Typography.Text strong>目标设备</Typography.Text>
+          <DeviceSelectField
+            allowClear
+            width={320}
+            value={selectedDeviceId}
+            onChange={(nextDeviceId) => {
+              setSelectedDeviceId(nextDeviceId);
+            }}
+            placeholder="搜索并选择设备（所有 Tab 共用）"
+            deviceOptions={deviceOptions}
+            deviceOptionsLoading={deviceOptionsLoading}
+            onSearchDevices={loadDeviceOptions}
+          />
+          {selectedDevice ? (
+            <Space wrap size={4}>
+              <Tag color="processing" style={{ marginInlineEnd: 0 }}>{selectedDevice.meta.deviceName}</Tag>
+              <Tag color={selectedDevice.meta.onlineStatus === 'ONLINE' ? 'success' : 'default'} style={{ marginInlineEnd: 0 }}>
+                {onlineStatusTextMap[selectedDevice.meta.onlineStatus || 'UNKNOWN']}
+              </Tag>
+              <Tag style={{ marginInlineEnd: 0 }}>{statusTextMap[selectedDevice.meta.status || 'INACTIVE']}</Tag>
+            </Space>
+          ) : (
+            <Typography.Text type="secondary">选择设备后，下方四个 Tab 共享同一设备</Typography.Text>
+          )}
+          <Button icon={<ReloadOutlined />} loading={deviceOptionsLoading} onClick={() => void loadDeviceOptions()}>刷新设备</Button>
+        </Space>
+        {deviceOptionsError ? (
+          <Alert
+            type="error"
+            showIcon
+            style={{ marginTop: 12 }}
+            message="加载设备选项失败"
+            description={deviceOptionsError}
+            action={<Button size="small" danger onClick={() => void loadDeviceOptions()}>重试</Button>}
+          />
+        ) : null}
+      </Card>
       <Card style={{ borderRadius: 12, border: 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Tabs
-          defaultActiveKey="latest"
+          activeKey={activeTab}
+          onChange={setActiveTab}
           items={[
             {
               key: 'latest',
               label: <span><DatabaseOutlined style={{ marginRight: 6 }} />最新数据</span>,
-              children: <LatestTab {...sharedTabProps} />,
+              children: <LatestTab deviceId={selectedDeviceId} active={activeTab === 'latest'} />,
             },
             {
               key: 'telemetry',
               label: <span><FieldTimeOutlined style={{ marginRight: 6 }} />历史数据</span>,
-              children: <TelemetryTab {...sharedTabProps} />,
+              children: <TelemetryTab deviceId={selectedDeviceId} />,
             },
             {
               key: 'aggregate',
               label: <span><FunctionOutlined style={{ marginRight: 6 }} />聚合统计</span>,
-              children: <AggregateTab {...sharedTabProps} />,
+              children: <AggregateTab deviceId={selectedDeviceId} />,
             },
             {
               key: 'events',
               label: <span><AlertOutlined style={{ marginRight: 6 }} />设备事件</span>,
-              children: <EventsTab {...sharedTabProps} />,
+              children: <EventsTab deviceId={selectedDeviceId} />,
             },
           ]}
         />
@@ -601,9 +880,18 @@ const DeviceDataPage: React.FC = () => {
         cancelText="取消"
         footer={(_, { OkBtn, CancelBtn }) => (
           <Space>
-            <Button onClick={() => void resetRetention()} loading={retentionSaving} disabled={retentionLoading}>
-              重置为默认
-            </Button>
+            <Popconfirm
+              title="重置为全局默认保留策略？"
+              description="当前租户单独配置的保留天数会被清除，已清理的历史数据不会恢复。"
+              okText="确认重置"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+              onConfirm={() => resetRetention()}
+            >
+              <Button loading={retentionSaving} disabled={retentionLoading}>
+                重置为默认
+              </Button>
+            </Popconfirm>
             <CancelBtn />
             <OkBtn />
           </Space>

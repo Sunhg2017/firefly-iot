@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertOutlined } from '@ant-design/icons';
-import { Badge, Button, Empty, List, Popover, Space, Tag, Typography } from 'antd';
+import { AlertOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Alert, Badge, Button, Empty, List, Popover, Space, Tag, Typography } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { dashboardApi } from '../services/api';
 import { ALARM_LEVEL_LABELS, ALARM_STATUS_LABELS } from '../pages/alarm/alarmText';
+import { getErrorMessage } from '../utils/errors';
+import { formatDateTime } from '../utils/datetime';
 
 interface AlarmDropdownProps {
   visible: boolean;
@@ -37,6 +39,7 @@ const AlarmDropdown: React.FC<AlarmDropdownProps> = ({ visible }) => {
   const [pendingCount, setPendingCount] = useState(0);
   const [alarms, setAlarms] = useState<AlarmSummaryItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchPendingCount = useCallback(async () => {
     if (!visible) {
@@ -47,7 +50,7 @@ const AlarmDropdown: React.FC<AlarmDropdownProps> = ({ visible }) => {
       const response = await dashboardApi.overview();
       setPendingCount(Number(response.data?.data?.alarmPending ?? 0));
     } catch {
-      setPendingCount(0);
+      // Keep the previous count: showing 0 would falsely tell operators "all clear".
     }
   }, [visible]);
 
@@ -57,11 +60,13 @@ const AlarmDropdown: React.FC<AlarmDropdownProps> = ({ visible }) => {
       return;
     }
     setLoading(true);
+    setLoadError(null);
     try {
       const response = await dashboardApi.recentAlarms(8);
       setAlarms((response.data?.data ?? []) as AlarmSummaryItem[]);
-    } catch {
+    } catch (error) {
       setAlarms([]);
+      setLoadError(getErrorMessage(error, '加载最近告警失败'));
     } finally {
       setLoading(false);
     }
@@ -73,7 +78,9 @@ const AlarmDropdown: React.FC<AlarmDropdownProps> = ({ visible }) => {
     }
     void fetchPendingCount();
     const timer = window.setInterval(() => {
-      void fetchPendingCount();
+      if (document.visibilityState === 'visible') {
+        void fetchPendingCount();
+      }
     }, 30000);
     return () => window.clearInterval(timer);
   }, [fetchPendingCount, visible]);
@@ -115,6 +122,15 @@ const AlarmDropdown: React.FC<AlarmDropdownProps> = ({ visible }) => {
         </Tag>
       </div>
 
+      {loadError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginTop: 12 }}
+          message={loadError}
+          action={<Button size="small" icon={<ReloadOutlined />} onClick={() => { void fetchRecentAlarms(); void fetchPendingCount(); }}>重试</Button>}
+        />
+      ) : null}
       <List
         loading={loading}
         dataSource={alarms}
@@ -136,7 +152,7 @@ const AlarmDropdown: React.FC<AlarmDropdownProps> = ({ visible }) => {
                     {ALARM_LEVEL_LABELS[item.level || ''] || item.level || '告警'}
                   </Tag>
                   <Typography.Text strong style={{ fontSize: 13 }}>
-                    {item.rule_name || `告警 #${item.id}`}
+                    {item.rule_name || '设备告警'}
                   </Typography.Text>
                 </Space>
               )}
@@ -152,8 +168,8 @@ const AlarmDropdown: React.FC<AlarmDropdownProps> = ({ visible }) => {
                     <Tag color={statusColorMap[item.status || ''] || 'default'} style={{ marginRight: 0 }}>
                       {ALARM_STATUS_LABELS[item.status || ''] || item.status || 'UNKNOWN'}
                     </Tag>
-                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                      {item.created_at || '-'}
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {formatDateTime(item.created_at)}
                     </Typography.Text>
                   </Space>
                 </div>
@@ -191,6 +207,8 @@ const AlarmDropdown: React.FC<AlarmDropdownProps> = ({ visible }) => {
         type="button"
         className={open ? 'layout-header-quick-action layout-header-quick-action--active' : 'layout-header-quick-action'}
         aria-label="告警"
+        aria-haspopup="dialog"
+        aria-expanded={open}
       >
         <Badge count={pendingCount} size="small" offset={[-2, 2]}>
           <span

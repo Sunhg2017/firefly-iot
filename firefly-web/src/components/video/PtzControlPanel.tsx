@@ -35,6 +35,12 @@ const PtzControlPanel: React.FC<PtzControlPanelProps> = ({ onControl, disabled =
     onControl(0, 0); // STOP
   };
 
+  // Keyboard activation has no "release" event, so send a short pulse instead of a continuous move.
+  const handleKeyActivate = (command: number) => {
+    onControl(command, speed);
+    window.setTimeout(() => onControl(0, 0), 300);
+  };
+
   return (
     <div style={{ padding: 12, background: '#1a1a2e', borderRadius: 12, display: 'inline-block' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '44px 44px 44px', gap: 4, justifyItems: 'center' }}>
@@ -47,9 +53,12 @@ const PtzControlPanel: React.FC<PtzControlPanelProps> = ({ onControl, disabled =
             icon={<UpOutlined />}
             style={btnStyle}
             disabled={disabled}
-            onMouseDown={() => handleMouseDown(1)}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
+            onPointerDown={() => handleMouseDown(1)}
+            onPointerUp={handleMouseUp}
+            onPointerLeave={handleMouseUp}
+            onPointerCancel={handleMouseUp}
+            onClick={(event) => { if (event.detail === 0) handleKeyActivate(1); }}
+            aria-label="云台上转"
           />
         </Tooltip>
         <div />
@@ -62,9 +71,12 @@ const PtzControlPanel: React.FC<PtzControlPanelProps> = ({ onControl, disabled =
             icon={<LeftOutlined />}
             style={btnStyle}
             disabled={disabled}
-            onMouseDown={() => handleMouseDown(3)}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
+            onPointerDown={() => handleMouseDown(3)}
+            onPointerUp={handleMouseUp}
+            onPointerLeave={handleMouseUp}
+            onPointerCancel={handleMouseUp}
+            onClick={(event) => { if (event.detail === 0) handleKeyActivate(3); }}
+            aria-label="云台左转"
           />
         </Tooltip>
         <Tooltip title="停止">
@@ -74,6 +86,7 @@ const PtzControlPanel: React.FC<PtzControlPanelProps> = ({ onControl, disabled =
             style={{ ...btnStyle, background: '#333', color: '#fff', border: 'none' }}
             disabled={disabled}
             onClick={() => onControl(0, 0)}
+            aria-label="停止转动"
           />
         </Tooltip>
         <Tooltip title="右">
@@ -83,9 +96,12 @@ const PtzControlPanel: React.FC<PtzControlPanelProps> = ({ onControl, disabled =
             icon={<RightOutlined />}
             style={btnStyle}
             disabled={disabled}
-            onMouseDown={() => handleMouseDown(4)}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
+            onPointerDown={() => handleMouseDown(4)}
+            onPointerUp={handleMouseUp}
+            onPointerLeave={handleMouseUp}
+            onPointerCancel={handleMouseUp}
+            onClick={(event) => { if (event.detail === 0) handleKeyActivate(4); }}
+            aria-label="云台右转"
           />
         </Tooltip>
 
@@ -98,9 +114,12 @@ const PtzControlPanel: React.FC<PtzControlPanelProps> = ({ onControl, disabled =
             icon={<DownOutlined />}
             style={btnStyle}
             disabled={disabled}
-            onMouseDown={() => handleMouseDown(2)}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
+            onPointerDown={() => handleMouseDown(2)}
+            onPointerUp={handleMouseUp}
+            onPointerLeave={handleMouseUp}
+            onPointerCancel={handleMouseUp}
+            onClick={(event) => { if (event.detail === 0) handleKeyActivate(2); }}
+            aria-label="云台下转"
           />
         </Tooltip>
         <div />
@@ -114,9 +133,12 @@ const PtzControlPanel: React.FC<PtzControlPanelProps> = ({ onControl, disabled =
             icon={<ZoomOutOutlined />}
             style={{ ...btnStyle, width: 36, height: 36, fontSize: 16 }}
             disabled={disabled}
-            onMouseDown={() => handleMouseDown(6)}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
+            onPointerDown={() => handleMouseDown(6)}
+            onPointerUp={handleMouseUp}
+            onPointerLeave={handleMouseUp}
+            onPointerCancel={handleMouseUp}
+            onClick={(event) => { if (event.detail === 0) handleKeyActivate(6); }}
+            aria-label="画面缩小"
           />
         </Tooltip>
         <Tooltip title="放大">
@@ -125,9 +147,12 @@ const PtzControlPanel: React.FC<PtzControlPanelProps> = ({ onControl, disabled =
             icon={<ZoomInOutlined />}
             style={{ ...btnStyle, width: 36, height: 36, fontSize: 16 }}
             disabled={disabled}
-            onMouseDown={() => handleMouseDown(5)}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
+            onPointerDown={() => handleMouseDown(5)}
+            onPointerUp={handleMouseUp}
+            onPointerLeave={handleMouseUp}
+            onPointerCancel={handleMouseUp}
+            onClick={(event) => { if (event.detail === 0) handleKeyActivate(5); }}
+            aria-label="画面放大"
           />
         </Tooltip>
       </Space>

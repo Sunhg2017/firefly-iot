@@ -4,13 +4,13 @@
   --ff-primary-soft: #eff6ff;
   --ff-primary-border: #bfdbfe;
   --ff-accent: #0ea5e9;
-  --ff-success: #16a34a;
-  --ff-warning: #d97706;
+  --ff-success: #15803d;
+  --ff-warning: #b45309;
   --ff-danger: #dc2626;
 
   --ff-text: #0f172a;
-  --ff-text-secondary: #64748b;
-  --ff-text-tertiary: #94a3b8;
+  --ff-text-secondary: #475569;
+  --ff-text-tertiary: #64748b;
 
   --ff-bg: #edf2f7;
   --ff-surface: #f3f7fb;
@@ -229,7 +229,7 @@ a {
 }
 
 .ant-empty-description {
-  color: var(--ff-text-tertiary) !important;
+  color: var(--ff-text-secondary) !important;
 }
 
 .animate-fade-in {
@@ -511,28 +511,40 @@ a {
 }
 
 .page-tabs-shell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 10px;
 }
 
+/* A single scrollable row: wrapping pushed the page content further down for every opened tab. */
 .page-tabs {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-  padding: 0 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 2px 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.page-tabs-actions {
+  flex: 0 0 auto;
 }
 
 .page-tab {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding: 4px 6px 4px 4px;
   border-radius: 16px;
   border: 1px solid var(--ff-border);
   background: rgba(255, 255, 255, 0.92);
   box-shadow: var(--ff-shadow-sm);
   color: #475569;
-  cursor: pointer;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease, background 0.2s ease;
 }
 
@@ -548,20 +560,38 @@ a {
   box-shadow: 0 12px 24px rgba(37, 99, 235, 0.12);
 }
 
+.page-tab__main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 12px;
+}
+
 .page-tab__close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
   border-radius: 999px;
-  color: #94a3b8;
+  color: #64748b;
+  cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-.page-tab__close:hover {
-  background: rgba(148, 163, 184, 0.16);
-  color: #475569;
+.page-tab__close:hover,
+.page-tab__close:focus-visible {
+  background: rgba(148, 163, 184, 0.2);
+  color: #1e293b;
 }
 
 .page-tab-label {
@@ -581,6 +611,40 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.layout-sider-toggle {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #f8fbff;
+  color: #475569;
+  cursor: pointer;
+}
+
+.layout-sider-toggle:hover,
+.layout-sider-toggle:focus-visible {
+  color: var(--ff-primary);
+  border-color: var(--ff-primary-border);
+}
+
+.breadcrumb-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: #64748b;
+  font: inherit;
+  cursor: pointer;
+}
+
+.breadcrumb-link:hover,
+.breadcrumb-link:focus-visible {
+  color: var(--ff-primary);
+  text-decoration: underline;
 }
 
 .page-content-shell {
@@ -1324,5 +1388,34 @@ a {
   .rule-engine-list-cell__header {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+
+/* Visible keyboard focus everywhere, including custom buttons that antd does not own. */
+:where(button, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--ff-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-fade-in,
+  .animate-fade-in-up {
+    animation: none !important;
+  }
+
+  .layout-header-quick-action:hover,
+  .layout-user-inline:hover,
+  .page-tab:hover {
+    transform: none !important;
   }
 }

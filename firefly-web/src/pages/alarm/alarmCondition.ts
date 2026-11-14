@@ -499,7 +499,7 @@ export const describeAlarmConditionExpr = (
 ): string => {
   const group = parseStructuredConditionGroup(conditionExpr);
   if (!group || group.groups.length === 0) {
-    return '无效规则配置';
+    return '条件格式无效，请编辑规则后重新保存';
   }
 
   return describeAlarmConditionValues(parseAlarmConditionExpr(conditionExpr), metricLabelMap);

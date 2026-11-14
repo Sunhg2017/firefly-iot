@@ -27,6 +27,8 @@ import {
   UsbOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
+import { useConfirmDiscard, useDirtyGuard } from '../../hooks/useDirtyGuard';
+import { getErrorMessage } from '../../utils/errors';
 import { deviceAccessApi, productApi } from '../../services/api';
 
 type AccessMode = 'secret' | 'register' | null;
@@ -55,13 +57,18 @@ interface DeviceLocatorFormItem {
   primaryLocator?: boolean;
 }
 
+interface TagFormPair {
+  key?: string;
+  value?: string;
+}
+
 interface DynamicRegisterFormValues {
   productKey?: string;
   productSecret?: string;
   deviceName?: string;
   nickname?: string;
   description?: string;
-  tags?: string;
+  tags?: TagFormPair[];
   locators?: DeviceLocatorFormItem[];
 }
 
@@ -121,14 +128,20 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   INVALID_DEVICE_NAME: DEVICE_NAME_RULE_MESSAGE,
 };
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const response = (error as { response?: { data?: { message?: string } } }).response;
-    if (response?.data?.message) {
-      return ERROR_MESSAGE_MAP[response.data.message] || response.data.message;
-    }
+const resolveAccessErrorMessage = (error: unknown, fallback: string) => {
+  const errorMessage = getErrorMessage(error, fallback);
+  return ERROR_MESSAGE_MAP[errorMessage] || errorMessage;
+};
+
+const buildTagsPayload = (tags?: TagFormPair[]) => {
+  const pairs = (tags || [])
+    .map((tag) => ({ key: tag.key?.trim(), value: tag.value?.trim() }))
+    .filter((tag): tag is { key: string; value: string } => Boolean(tag.key && tag.value));
+  if (pairs.length === 0) {
+    return undefined;
   }
-  return fallback;
+  // Device.tags stores a snapshot of "key:value" entries; dynamic tag rules parse this JSON array.
+  return JSON.stringify(pairs.map((tag) => `${tag.key}:${tag.value}`));
 };
 
 const normalizeLocatorInputs = (locators?: DeviceLocatorFormItem[]) => {
@@ -424,7 +437,9 @@ const ProductAccessDrawer: React.FC<Props> = ({
   const [productSecret, setProductSecret] = useState('');
   const [registerSubmitting, setRegisterSubmitting] = useState(false);
   const [registerResult, setRegisterResult] = useState<DynamicRegisterResult | null>(null);
+  const [formDirty, setFormDirty] = useState(false);
   const [form] = Form.useForm<DynamicRegisterFormValues>();
+  const confirmDiscard = useConfirmDiscard();
 
   const isVideoProductAccess = isVideoProtocol(product?.protocol);
   const supportsProductSecret = !isVideoProductAccess && product?.deviceAuthType === 'PRODUCT_SECRET';
@@ -481,6 +496,20 @@ const ProductAccessDrawer: React.FC<Props> = ({
     };
   }, [canRegister, isVideoProductAccess, product, supportsProductSecret]);
 
+  useDirtyGuard(open && (formDirty || form.isFieldsTouched()));
+
+  const confirmClose = (afterClose?: () => void) => {
+    confirmDiscard(formDirty || form.isFieldsTouched(), () => {
+      onClose();
+      afterClose?.();
+    }, {
+      title: '放弃未提交的动态注册信息？',
+      content: '关闭后本次填写的设备名称、昵称、描述、设备标识和扩展标签将丢失。',
+    });
+  };
+
+  const requestClose = () => confirmClose();
+
   const syncFormValues = (secret: string) => {
     if (!product) {
       return;
@@ -515,7 +544,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
       syncFormValues(secret);
       return secret;
     } catch (error) {
-      message.error(getErrorMessage(error, '获取 ProductSecret 失败'));
+      message.error(resolveAccessErrorMessage(error, '获取 ProductSecret 失败'));
       setProductSecret('');
       syncFormValues('');
       return '';
@@ -531,6 +560,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
 
     setActiveTab(mode === 'register' && supportsProductSecret ? 'register' : 'guide');
     setRegisterResult(null);
+    setFormDirty(false);
     form.resetFields();
 
     if (!isVideoProductAccess && product.deviceAuthType === 'PRODUCT_SECRET') {
@@ -570,37 +600,33 @@ const ProductAccessDrawer: React.FC<Props> = ({
         deviceName,
         nickname: values.nickname,
         description: values.description,
-        tags: values.tags,
+        tags: buildTagsPayload(values.tags),
         locators: normalizeLocatorInputs(values.locators),
       });
       const payload = res.data.data as DynamicRegisterResult;
       setRegisterResult(payload);
       message.success('动态注册成功，已生成设备密钥');
-      form.setFieldValue('deviceName', undefined);
-      form.setFieldValue('nickname', undefined);
-      form.setFieldValue('description', undefined);
-      form.setFieldValue('tags', undefined);
-      form.setFieldValue('locators', undefined);
+      // Reset touched state so the just-cleared form does not ask to discard on close.
+      form.resetFields();
+      syncFormValues(productSecret);
+      setFormDirty(false);
     } catch (error) {
-      message.error(getErrorMessage(error, '动态注册失败'));
+      message.error(resolveAccessErrorMessage(error, '动态注册失败'));
     } finally {
       setRegisterSubmitting(false);
     }
   };
 
   const handleOpenDeviceManager = () => {
-    onClose();
-    onOpenDeviceManager?.();
+    confirmClose(onOpenDeviceManager);
   };
 
   const handleOpenProtocolParser = () => {
-    onClose();
-    onOpenProtocolParser?.();
+    confirmClose(onOpenProtocolParser);
   };
 
   const handleOpenVideoManager = () => {
-    onClose();
-    onOpenVideoManager?.();
+    confirmClose(onOpenVideoManager);
   };
 
   const tabItems = [
@@ -755,7 +781,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
               }
             />
 
-            <Form form={form} layout="vertical" onFinish={handleSubmitRegister} disabled={!canRegister}>
+            <Form form={form} layout="vertical" onFinish={handleSubmitRegister} onValuesChange={() => setFormDirty(true)} disabled={!canRegister}>
               <Form.Item label="ProductKey" name="productKey">
                 <Input readOnly />
               </Form.Item>
@@ -810,15 +836,48 @@ const ProductAccessDrawer: React.FC<Props> = ({
                   )}
                 </Form.List>
               </Form.Item>
-              <Form.Item
-                label="扩展标签"
-                name="tags"
-                extra="如需一次性写入简单标签，可使用 key=value,key2=value2 的文本格式。"
-              >
-                <Input placeholder="例如：area=room1,type=test" maxLength={255} />
+              <Form.Item label="扩展标签" extra="标签会写入设备标签快照，用于动态分组匹配；如需在设备标签页维护绑定，请在注册后绑定。">
+                <Form.List name="tags">
+                  {(fields, { add, remove }) => (
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                      {fields.map((field, index) => (
+                        <Space key={field.key} align="baseline" wrap>
+                          <Form.Item
+                            name={[field.name, 'key']}
+                            rules={[
+                              { required: true, message: '请输入标签键' },
+                              { pattern: /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/, message: '标签键需以字母或数字开头，仅支持字母、数字、下划线、中划线和点' },
+                            ]}
+                            style={{ marginBottom: 0 }}
+                          >
+                            <Input placeholder={index === 0 ? '标签键，例如 area' : '标签键'} maxLength={64} style={{ width: 220 }} />
+                          </Form.Item>
+                          <Form.Item
+                            name={[field.name, 'value']}
+                            rules={[{ required: true, message: '请输入标签值' }]}
+                            style={{ marginBottom: 0 }}
+                          >
+                            <Input placeholder={index === 0 ? '标签值，例如 room1' : '标签值'} maxLength={128} style={{ width: 280 }} />
+                          </Form.Item>
+                          <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} aria-label={`删除标签 ${index + 1}`}>
+                            删除
+                          </Button>
+                        </Space>
+                      ))}
+                      <Button
+                        type="dashed"
+                        icon={<PlusOutlined />}
+                        disabled={fields.length >= 10}
+                        onClick={() => add({ key: '', value: '' })}
+                      >
+                        新增标签
+                      </Button>
+                    </Space>
+                  )}
+                </Form.List>
               </Form.Item>
               <Space wrap>
-                <Button type="primary" htmlType="submit" loading={registerSubmitting} disabled={!canRegister}>
+                <Button type="primary" htmlType="submit" loading={registerSubmitting} disabled={!canRegister || secretLoading}>
                   执行动态注册
                 </Button>
                 <Button onClick={() => setActiveTab('protocol')}>查看协议参数</Button>
@@ -865,7 +924,7 @@ const ProductAccessDrawer: React.FC<Props> = ({
     <Drawer
       title={drawerTitle}
       open={open}
-      onClose={onClose}
+      onClose={requestClose}
       width={760}
       destroyOnHidden
       extra={

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Card,
@@ -6,19 +6,24 @@ import {
   Form,
   Input,
   InputNumber,
-  Popconfirm,
+  Modal,
   Select,
   Space,
   Statistic,
   Switch,
   Table,
   Tag,
+  Typography,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import PageHeader from '../../components/PageHeader';
+import ListEmpty from '../../components/ListEmpty';
+import { useConfirmDiscard, useDirtyGuard } from '../../hooks/useDirtyGuard';
+import { usePageActivation } from '../../hooks/usePageActivation';
 import { permissionResourceApi } from '../../services/api';
+import { getErrorMessage } from '../../utils/errors';
 
 interface ResourceItem {
   id: number;
@@ -46,11 +51,23 @@ const typeColors: Record<string, string> = {
   API: 'orange',
 };
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-  if (error instanceof Error && error.message) {
-    return error.message;
+/**
+ * 收集某个节点及其全部子孙的 id，用于在编辑父级时排除自身和子树。
+ * 使用扁平列表按 parentId 收敛，避免依赖 tree 接口是否返回完整 children。
+ */
+const collectDescendantIds = (items: ResourceItem[], rootId: number): Set<number> => {
+  const result = new Set<number>([rootId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    items.forEach((item) => {
+      if (result.has(item.parentId) && !result.has(item.id)) {
+        result.add(item.id);
+        changed = true;
+      }
+    });
   }
-  return fallback;
+  return result;
 };
 
 const PermissionResourcePage: React.FC = () => {
@@ -58,9 +75,30 @@ const PermissionResourcePage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerDirty, setDrawerDirty] = useState(false);
   const [resourceTree, setResourceTree] = useState<ResourceItem[]>([]);
   const [resourceList, setResourceList] = useState<ResourceItem[]>([]);
   const [editingRecord, setEditingRecord] = useState<ResourceItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ResourceItem | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
+
+  const confirmDiscard = useConfirmDiscard();
+  useDirtyGuard(drawerOpen && drawerDirty);
+  // 布局在切换页签时会广播激活事件；忽略与首次挂载同一轮触发的事件，避免刚打开页面就请求两次。
+  const activationReadyRef = useRef(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      activationReadyRef.current = true;
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  usePageActivation(() => {
+    if (!activationReadyRef.current) {
+      return;
+    }
+    setReloadToken((current) => current + 1);
+  });
 
   const fetchResources = async () => {
     setLoading(true);
@@ -77,7 +115,7 @@ const PermissionResourcePage: React.FC = () => {
 
   useEffect(() => {
     void fetchResources();
-  }, []);
+  }, [reloadToken]);
 
   const stats = useMemo(
     () => ({
@@ -88,18 +126,20 @@ const PermissionResourcePage: React.FC = () => {
     [resourceList],
   );
 
-  const parentOptions = useMemo(
-    () => [
+  const parentOptions = useMemo(() => {
+    // 编辑时必须排除当前节点及其全部子孙，否则把父级设成自己的下级会形成环。
+    const excludedIds = editingRecord ? collectDescendantIds(resourceList, editingRecord.id) : new Set<number>();
+    return [
       { value: 0, label: '顶级资源' },
       ...resourceList
-        .filter((item) => item.type === 'MENU')
-        .map((item) => ({ value: item.id, label: `${item.name} (${item.code})` })),
-    ],
-    [resourceList],
-  );
+        .filter((item) => item.type === 'MENU' && !excludedIds.has(item.id))
+        .map((item) => ({ value: item.id, label: `${item.name}（${item.code}）` })),
+    ];
+  }, [editingRecord, resourceList]);
 
   const openCreateDrawer = (parentId?: number) => {
     setEditingRecord(null);
+    setDrawerDirty(false);
     form.resetFields();
     form.setFieldsValue({
       parentId: parentId ?? 0,
@@ -112,17 +152,43 @@ const PermissionResourcePage: React.FC = () => {
 
   const openEditDrawer = (record: ResourceItem) => {
     setEditingRecord(record);
-    form.setFieldsValue(record);
+    setDrawerDirty(false);
+    form.resetFields();
+    form.setFieldsValue({
+      parentId: record.parentId ?? 0,
+      code: record.code,
+      name: record.name,
+      type: record.type,
+      sortOrder: record.sortOrder ?? 0,
+      enabled: record.enabled !== false,
+      icon: record.icon,
+      path: record.path,
+      description: record.description,
+    });
     setDrawerOpen(true);
   };
 
-  const handleDelete = async (id: number) => {
+  const closeDrawer = () => {
+    confirmDiscard(drawerDirty, () => {
+      setDrawerOpen(false);
+      setDrawerDirty(false);
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) {
+      return;
+    }
+    setDeleteSubmitting(true);
     try {
-      await permissionResourceApi.delete(id);
+      await permissionResourceApi.delete(deleteTarget.id);
       message.success('权限资源已删除');
-      void fetchResources();
+      setDeleteTarget(null);
+      await fetchResources();
     } catch (error) {
       message.error(getErrorMessage(error, '删除失败，请先清理下级权限资源'));
+    } finally {
+      setDeleteSubmitting(false);
     }
   };
 
@@ -137,9 +203,10 @@ const PermissionResourcePage: React.FC = () => {
         await permissionResourceApi.create(values);
         message.success('权限资源已创建');
       }
+      setDrawerDirty(false);
       setDrawerOpen(false);
       form.resetFields();
-      void fetchResources();
+      await fetchResources();
     } catch (error) {
       if (typeof error === 'object' && error !== null && 'errorFields' in error) {
         return;
@@ -196,11 +263,9 @@ const PermissionResourcePage: React.FC = () => {
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEditDrawer(record)}>
             编辑
           </Button>
-          <Popconfirm title="确认删除该权限资源？" onConfirm={() => void handleDelete(record.id)}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
-          </Popconfirm>
+          <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => setDeleteTarget(record)}>
+            删除
+          </Button>
         </Space>
       ),
     },
@@ -211,9 +276,14 @@ const PermissionResourcePage: React.FC = () => {
       <PageHeader
         title="权限资源"
         extra={(
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreateDrawer()}>
-            新建权限
-          </Button>
+          <Space>
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void fetchResources()}>
+              刷新
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreateDrawer()}>
+              新建权限
+            </Button>
+          </Space>
         )}
       />
 
@@ -238,6 +308,7 @@ const PermissionResourcePage: React.FC = () => {
           pagination={false}
           defaultExpandAllRows
           scroll={{ x: 1200 }}
+          locale={{ emptyText: <ListEmpty emptyText="暂无权限资源，请先新建菜单或接口权限" /> }}
         />
       </Card>
 
@@ -245,20 +316,25 @@ const PermissionResourcePage: React.FC = () => {
         title={editingRecord ? '编辑权限资源' : '新建权限资源'}
         open={drawerOpen}
         width={520}
-        onClose={() => setDrawerOpen(false)}
+        onClose={closeDrawer}
         destroyOnClose
         extra={(
           <Space>
-            <Button onClick={() => setDrawerOpen(false)}>取消</Button>
+            <Button onClick={closeDrawer} disabled={saving}>取消</Button>
             <Button type="primary" loading={saving} onClick={() => void handleSave()}>
               保存
             </Button>
           </Space>
         )}
       >
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" onValuesChange={() => setDrawerDirty(true)}>
           <Form.Item name="parentId" label="父级资源" rules={[{ required: true, message: '请选择父级资源' }]}>
-            <Select options={parentOptions} />
+            <Select
+              showSearch
+              optionFilterProp="label"
+              options={parentOptions}
+              placeholder="输入资源名称或编码搜索"
+            />
           </Form.Item>
           <Form.Item
             name="code"
@@ -285,7 +361,7 @@ const PermissionResourcePage: React.FC = () => {
               />
             </Form.Item>
             <Form.Item name="sortOrder" label="排序" style={{ minWidth: 120 }}>
-              <InputNumber style={{ width: '100%' }} />
+              <InputNumber style={{ width: '100%' }} min={0} precision={0} />
             </Form.Item>
             <Form.Item name="enabled" label="启用状态" valuePropName="checked" style={{ minWidth: 120 }}>
               <Switch checkedChildren="启用" unCheckedChildren="停用" />
@@ -302,6 +378,35 @@ const PermissionResourcePage: React.FC = () => {
           </Form.Item>
         </Form>
       </Drawer>
+
+      <Modal
+        open={Boolean(deleteTarget)}
+        title="删除权限资源"
+        okText="删除"
+        cancelText="取消"
+        okButtonProps={{ danger: true }}
+        confirmLoading={deleteSubmitting}
+        maskClosable={!deleteSubmitting}
+        onCancel={() => {
+          if (!deleteSubmitting) {
+            setDeleteTarget(null);
+          }
+        }}
+        onOk={() => void handleConfirmDelete()}
+        destroyOnClose
+      >
+        {deleteTarget ? (
+          <Space direction="vertical" size={8}>
+            <Typography.Text>
+              确认删除权限资源 <Typography.Text strong>{deleteTarget.name}</Typography.Text>（{deleteTarget.code}）？
+            </Typography.Text>
+            <Typography.Text>删除后该权限编码会从角色授权和菜单绑定中失效，且不可恢复。</Typography.Text>
+            <Typography.Text type="secondary">
+              存在下级资源时删除会失败，请先删除或迁移下级资源。
+            </Typography.Text>
+          </Space>
+        ) : null}
+      </Modal>
     </div>
   );
 };
