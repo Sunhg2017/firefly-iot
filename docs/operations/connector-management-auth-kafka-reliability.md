@@ -59,3 +59,11 @@
 - 回退 `firefly-connector` / `firefly-gateway` / `firefly-common` 及各业务服务镜像。
 - 若需临时恢复 9070 公网访问，可在 Compose 重新加入 `"9070:9070"`，但不建议在生产使用。
 - 死信 topic 与重试配置为运行期参数，回滚代码后仍保留。
+
+---
+
+## 规则转发失败传播（ACC-002）
+
+- `DeviceMessageProducer` 发送方法返回 `CompletableFuture`，Kafka 异步发送失败不再只记日志。
+- `MessageRouterService.forwardToRuleEngine` 等待发送结果（`firefly.kafka.rule-forward-timeout-ms`，默认 5000ms），失败抛出使消费进入重试/死信。
+- 上行/下行其它链路保持异步发送，失败会记录日志；需要可靠投递的链路应等待 future。

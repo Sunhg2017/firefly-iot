@@ -92,7 +92,7 @@ public class DeviceImportService {
             // 设置上下文（异步线程中需要重新设置）
             AsyncContextHelper.setContext(tenantId, userId);
 
-            asyncTaskClient.updateProgress(taskId, 10);
+            ensureTaskActive(taskId, 10);
 
             // 获取文件预签名URL并下载
             R<Map<String, String>> presignedResult = fileClient.getPresignedUrl(dto.getFileKey());
@@ -101,7 +101,7 @@ public class DeviceImportService {
             }
             String fileUrl = presignedResult.getData().get("url");
 
-            asyncTaskClient.updateProgress(taskId, 20);
+            ensureTaskActive(taskId, 20);
 
             // 下载并解析文件
             List<DeviceBatchCreateItemDTO> devices = downloadAndParseFile(fileUrl, dto.getFileFormat());
@@ -110,7 +110,7 @@ public class DeviceImportService {
                 return;
             }
 
-            asyncTaskClient.updateProgress(taskId, 40);
+            ensureTaskActive(taskId, 40);
 
             // 批量创建设备
             int successCount = 0;
@@ -118,6 +118,7 @@ public class DeviceImportService {
             List<String> errors = new ArrayList<>();
 
             for (int i = 0; i < devices.size(); i += BATCH_SIZE) {
+                ensureTaskActive(taskId, Math.min(40 + (int) ((double) i / devices.size() * 50), 90));
                 int end = Math.min(i + BATCH_SIZE, devices.size());
                 List<DeviceBatchCreateItemDTO> batch = devices.subList(i, end);
 
@@ -138,9 +139,9 @@ public class DeviceImportService {
                     log.warn("批量导入失败: rows {}-{}, error={}", i + 1, end, e.getMessage());
                 }
 
-                // 更新进度
+                // 每批结束后检查任务是否仍在执行；已取消/已结束时立即停止后续批次。
                 int progress = 40 + (int) ((double) (i + batch.size()) / devices.size() * 50);
-                asyncTaskClient.updateProgress(taskId, Math.min(progress, 90));
+                ensureTaskActive(taskId, Math.min(progress, 90));
             }
 
             // 完成任务
@@ -157,11 +158,24 @@ public class DeviceImportService {
                 log.error("设备导入失败: taskId={}, errors={}", taskId, errors);
             }
 
+        } catch (AsyncTaskCancelledException e) {
+            // 任务中心已处于终态（取消/完成/失败），这里只停止线程，不再改写任务状态。
+            log.info("设备导入任务已终止，停止执行: taskId={}, reason={}", taskId, e.getMessage());
         } catch (Exception e) {
             log.error("设备导入异常: taskId={}, error={}", taskId, e.getMessage(), e);
             asyncTaskClient.failTask(taskId, truncateMessage("导入失败: " + e.getMessage()));
         } finally {
             AsyncContextHelper.clearContext();
+        }
+    }
+
+    /**
+     * 上报进度并检查任务是否仍可继续；任务中心返回 false 表示已取消或已结束。
+     */
+    private void ensureTaskActive(Long taskId, int progress) {
+        R<Boolean> result = asyncTaskClient.updateProgress(taskId, progress);
+        if (result == null || !Boolean.TRUE.equals(result.getData())) {
+            throw new AsyncTaskCancelledException("导入任务已取消或已结束: taskId=" + taskId);
         }
     }
 

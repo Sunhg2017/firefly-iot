@@ -2,7 +2,11 @@ package com.songhg.firefly.iot.device.service;
 
 import com.songhg.firefly.iot.api.dto.DeviceLocatorInputDTO;
 import com.songhg.firefly.iot.api.dto.InternalDeviceCreateDTO;
+import com.songhg.firefly.iot.common.context.AppContext;
 import com.songhg.firefly.iot.common.context.AppContextHolder;
+import com.songhg.firefly.iot.common.enums.DataScopeType;
+import com.songhg.firefly.iot.common.exception.BizException;
+import com.songhg.firefly.iot.common.mybatis.DataScopeContext;
 import com.songhg.firefly.iot.common.enums.DeviceStatus;
 import com.songhg.firefly.iot.common.enums.NodeType;
 import com.songhg.firefly.iot.common.enums.OnlineStatus;
@@ -28,6 +32,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -302,5 +307,54 @@ class DeviceServiceTest {
         product.setProductKey(productKey);
         product.setNodeType(nodeType);
         return product;
+    }
+
+    @Test
+    void projectScopeShouldNotGrantCrossProjectDeviceViaSharedProduct() {
+        Device device = new Device();
+        device.setId(11L);
+        device.setProjectId(101L);
+        device.setProductId(200L);
+        device.setDeviceName("dev-011");
+        when(deviceMapper.selectById(11L)).thenReturn(device);
+
+        AppContext context = new AppContext();
+        context.setUserId(5L);
+        context.setTenantId(1L);
+        AppContextHolder.set(context);
+
+        DataScopeContext scope = new DataScopeContext();
+        scope.setScopeType(DataScopeType.CUSTOM);
+        scope.setProjectIds(List.of(100L));
+        scope.setProductIds(List.of(200L));
+        scope.setDeviceIds(List.of(10L));
+        when(dataScopeResolver.resolve(5L, 1L)).thenReturn(scope);
+
+        assertThrows(BizException.class, () -> service.getDeviceSecret(11L));
+    }
+
+    @Test
+    void projectScopeAllowsDeviceInAuthorizedProject() {
+        Device device = new Device();
+        device.setId(10L);
+        device.setProjectId(100L);
+        device.setProductId(200L);
+        device.setDeviceName("dev-010");
+        device.setDeviceSecret("secret-010");
+        when(deviceMapper.selectById(10L)).thenReturn(device);
+
+        AppContext context = new AppContext();
+        context.setUserId(5L);
+        context.setTenantId(1L);
+        AppContextHolder.set(context);
+
+        DataScopeContext scope = new DataScopeContext();
+        scope.setScopeType(DataScopeType.CUSTOM);
+        scope.setProjectIds(List.of(100L));
+        scope.setProductIds(List.of(200L));
+        scope.setDeviceIds(List.of(10L));
+        when(dataScopeResolver.resolve(5L, 1L)).thenReturn(scope);
+
+        assertEquals("secret-010", service.getDeviceSecret(10L));
     }
 }

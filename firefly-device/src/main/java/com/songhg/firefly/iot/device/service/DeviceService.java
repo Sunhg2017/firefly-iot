@@ -1075,9 +1075,9 @@ public class DeviceService {
             }
             throw new BizException(ResultCode.PERMISSION_DENIED);
         }
-        if (containsId(scope.getProjectIds(), device.getProjectId())
-                || containsId(scope.getProductIds(), device.getProductId())
-                || containsId(scope.getDeviceIds(), device.getId())) {
+        // 设备授权只认「项目归属」与「设备本身（分组/显式授权）」；
+        // 产品关系只用于产品域数据范围，不能变成对同产品其他项目设备的授权。
+        if (scope.allowsDevice(device.getProjectId(), device.getId())) {
             return;
         }
         throw new BizException(ResultCode.PERMISSION_DENIED);

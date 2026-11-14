@@ -454,3 +454,12 @@ firefly-common/src/main/java/.../common/enums/
 | **ProductKey 唯一性** | 数据库 UNIQUE 约束 + 应用层重试 |
 | **缓存** | 产品信息 L1 本地缓存 (5min) + L2 Redis 缓存 (30min) |
 | **配额** | 每租户最多创建 1000 个产品 |
+
+---
+
+## 参数清单解析异步化（ACC-006）
+
+- `POST /products/{id}/thing-model/parse-parameters` 改为注册异步任务，返回 taskId。
+- 后台从 MinIO 下载并解析 CSV/Excel，结果写入 Redis `thingmodel:parse:{taskId}`（1 小时），任务中心记录进度、行数、失败原因。
+- `GET /products/{id}/thing-model/parse-parameters/{taskId}` 读取解析结果。
+- 取消/结束的任务在下载前即停止，不再继续解析。

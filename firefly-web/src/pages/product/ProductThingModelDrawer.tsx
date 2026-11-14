@@ -1906,8 +1906,40 @@ const ProductThingModelDrawer: React.FC<Props> = ({ product, open, onClose }) =>
         throw new Error('上传文件失败');
       }
       const fileFormat = lowerName.endsWith('.csv') ? 'CSV' : 'XLSX';
+      // 参数清单解析改走异步任务中心：注册任务后轮询进度，再按 taskId 读取解析结果。
+      setImportingProgress(20);
       const parseRes = await productApi.parseParameterRows(product.id, { fileKey, fileFormat });
-      const rows = (parseRes.data.data || []) as Record<string, unknown>[];
+      const parseTaskId = parseRes.data.data as number;
+      setImportingProgress(30);
+
+      let parseCompleted = false;
+      let attempts = 0;
+      const maxAttempts = 120;
+      while (attempts < maxAttempts) {
+        const taskRes = await asyncTaskApi.get(parseTaskId);
+        const task = taskRes.data.data as { status: string; progress?: number; errorMessage?: string };
+        if (task.status === 'COMPLETED' || task.status === 'SUCCESS') {
+          parseCompleted = true;
+          break;
+        }
+        if (task.status === 'FAILED') {
+          throw new Error(task.errorMessage || '参数清单解析失败');
+        }
+        if (task.status === 'CANCELLED') {
+          throw new Error('参数清单解析任务已取消');
+        }
+        if (task.progress !== undefined) {
+          setImportingProgress(Math.max(30, Math.min(95, task.progress)));
+        }
+        attempts += 1;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+      if (!parseCompleted) {
+        throw new Error('参数清单解析超时，请在任务中心查看');
+      }
+      const rowsRes = await productApi.getThingModelParseResult(product.id, parseTaskId);
+      const rows = (rowsRes.data.data || []) as Record<string, unknown>[];
+      setImportingProgress(null);
       if (rows.length === 0) {
         message.warning('导入文件没有可识别的数据行');
         return;

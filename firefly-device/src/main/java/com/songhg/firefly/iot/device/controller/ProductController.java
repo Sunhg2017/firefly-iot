@@ -137,11 +137,20 @@ public class ProductController {
 
     @PostMapping("/{id}/thing-model/parse-parameters")
     @RequiresPermission("product:update")
-    @Operation(summary = "服务端解析参数清单文件")
-    public R<List<Map<String, String>>> parseParameterRows(
+    @Operation(summary = "注册参数清单解析任务", description = "上传文件到 MinIO 后注册异步解析任务，返回 taskId；结果通过 taskId 查询")
+    public R<Long> parseParameterRows(
             @Parameter(description = "产品编号", required = true) @PathVariable Long id,
             @Valid @RequestBody ThingModelImportDTO dto) {
-        return R.ok(thingModelImportService.parseParameterRows(dto.getFileKey(), dto.getFileFormat()));
+        return R.ok(thingModelImportService.registerParameterParseTask(id, dto));
+    }
+
+    @GetMapping("/{id}/thing-model/parse-parameters/{taskId}")
+    @RequiresPermission("product:update")
+    @Operation(summary = "读取参数清单解析结果", description = "解析任务完成后按 taskId 读取解析行，结果 1 小时内有效")
+    public R<List<Map<String, String>>> getParseParameterRows(
+            @Parameter(description = "产品编号", required = true) @PathVariable Long id,
+            @Parameter(description = "解析任务编号", required = true) @PathVariable Long taskId) {
+        return R.ok(thingModelImportService.getParameterParseResult(taskId));
     }
 
     @PostMapping("/{id}/thing-model/import")

@@ -931,6 +931,8 @@ export const productApi = {
     }),
   parseParameterRows: (id: number, data: { fileKey: string; fileFormat: string }) =>
     deviceRequest.post(`/products/${id}/thing-model/parse-parameters`, data),
+  getThingModelParseResult: (id: number, taskId: number) =>
+    deviceRequest.get(`/products/${id}/thing-model/parse-parameters/${taskId}`),
   importThingModel: (id: number, data: { fileKey: string; fileFormat: string; importType?: string }) =>
     deviceRequest.post(`/products/${id}/thing-model/import`, data),
 };

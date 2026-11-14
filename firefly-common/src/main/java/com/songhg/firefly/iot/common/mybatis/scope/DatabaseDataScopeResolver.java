@@ -97,6 +97,8 @@ public class DatabaseDataScopeResolver implements DataScopeResolver {
             return buildSelfContext(userId);
         }
 
+        // projectIds/deviceIds 是设备授权依据；productIds 仅供产品域数据范围使用，
+        // 后者包含「授权项目下设备所属产品」，不能反向用于设备授权（见 DataScopeContext.allowsDevice）。
         Set<Long> projectIds = new LinkedHashSet<>(configuredProjectIds);
         Set<Long> productIds = new LinkedHashSet<>();
         Set<Long> deviceIds = new LinkedHashSet<>();

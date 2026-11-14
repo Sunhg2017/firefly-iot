@@ -140,3 +140,11 @@ CREATE TABLE tenant_telemetry_retention (
 - [运维说明](../operations/telemetry-governance-operations.md)
 - [使用说明](../user-guide/telemetry-governance.md)
 - [设备数据详细设计](detailed-design-device-data.md)
+
+---
+
+## 消费重试去重键（ACC-003）
+
+- 唯一索引由 `(message_id, property, ts)` 调整为 `(tenant_id, device_id, message_id, property, ts)`（迁移 `V31__fix_telemetry_dedup_key.sql`）。
+- 同一设备同一消息重试只保留一条；不同设备/租户使用相同局部消息 ID 时不再冲突。
+- `message_id` 为空的手工写入不参与去重（PostgreSQL 唯一索引对 NULL 不冲突）。

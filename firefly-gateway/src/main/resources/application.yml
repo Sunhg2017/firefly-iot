@@ -143,6 +143,9 @@ auth:
 firefly:
   internal:
     token: ${FIREFLY_INTERNAL_TOKEN:firefly-internal-dev}
+  gateway:
+    # 权限缓存缺失时触发重建的 system 内部地址（容器网络内的服务名）
+    system-url: ${FIREFLY_SYSTEM_URL:http://firefly-system:8081}
   openapi:
     appkey:
       signature-window-seconds: 300

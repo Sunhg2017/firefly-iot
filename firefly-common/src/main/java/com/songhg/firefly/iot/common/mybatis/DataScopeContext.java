@@ -42,6 +42,24 @@ public class DataScopeContext {
      */
     private List<String> groupIds;
 
+    /**
+     * 统一的设备可访问谓词：设备授权只来源于「项目归属」与「设备本身（分组/显式授权）」，
+     * 产品维度只用于产品域数据范围，不能因为设备属于某产品而跨项目授权其设备。
+     */
+    public boolean allowsDevice(Long projectId, Long deviceId) {
+        if (scopeType == null || scopeType == DataScopeType.ALL) {
+            return true;
+        }
+        if (scopeType == DataScopeType.SELF) {
+            return false;
+        }
+        return contains(projectIds, projectId) || contains(deviceIds, deviceId);
+    }
+
+    private static boolean contains(List<Long> ids, Long value) {
+        return value != null && ids != null && ids.contains(value);
+    }
+
     // ---- 来自 @DataScope 注解的列配置 ----
 
     /**

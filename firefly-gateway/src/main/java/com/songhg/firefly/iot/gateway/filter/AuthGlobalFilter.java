@@ -89,6 +89,9 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     @Value("${firefly.internal.token:}")
     private String internalToken;
 
+    @Value("${firefly.gateway.system-url:http://firefly-system:8081}")
+    private String systemServiceUrl;
+
     private PublicKey publicKey;
 
     @PostConstruct
@@ -295,7 +298,49 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
                 .header(AuthConstants.HEADER_TENANT_ID, tenantId)
                 .header(AuthConstants.HEADER_PLATFORM, StringUtils.hasText(platform) ? platform : "")
                 .build();
-        return chain.filter(exchange.mutate().request(mutated).build());
+        // 业务服务在无本地 PermissionChecker 时直接读 Redis 权限集合；
+        // 集合缺失（过期/逐出/Redis 重启/权限事件后）会把合法用户误判为无权限，因此转发前触发一次重建。
+        return ensureUserPermissionCache(userId)
+                .then(chain.filter(exchange.mutate().request(mutated).build()));
+    }
+
+    /**
+     * 确保用户权限集合存在于 Redis；缺失时调用 system 内部接口重建。
+     * 重建失败不阻断请求：业务侧仍按“无权限即拒绝”处理，保持 fail-closed。
+     */
+    private Mono<Void> ensureUserPermissionCache(String userId) {
+        if (!StringUtils.hasText(userId)) {
+            return Mono.empty();
+        }
+        String key = AuthConstants.REDIS_PERM_USER + userId;
+        return redisTemplate.opsForSet().size(key)
+                .defaultIfEmpty(0L)
+                .flatMap(size -> (size != null && size > 0) ? Mono.empty() : rebuildUserPermissionCache(userId))
+                .onErrorResume(ex -> {
+                    log.warn("Failed to check permission cache for userId={}: {}", userId, ex.getMessage());
+                    return Mono.empty();
+                })
+                .then();
+    }
+
+    private Mono<Void> rebuildUserPermissionCache(String userId) {
+        if (!StringUtils.hasText(internalToken)) {
+            log.warn("Skip permission cache rebuild because firefly.internal.token is empty");
+            return Mono.empty();
+        }
+        return webClientBuilder.build()
+                .get()
+                .uri(systemServiceUrl + "/api/v1/internal/permissions/users/{userId}", userId)
+                .header(AuthConstants.HEADER_INTERNAL_TOKEN, internalToken)
+                .retrieve()
+                .bodyToMono(String.class)
+                .timeout(Duration.ofSeconds(2))
+                .doOnSuccess(body -> log.info("Permission cache rebuilt for userId={}", userId))
+                .onErrorResume(ex -> {
+                    log.warn("Failed to rebuild permission cache for userId={}: {}", userId, ex.getMessage());
+                    return Mono.empty();
+                })
+                .then();
     }
 
     private Mono<Void> forwardWithAppKeyHeaders(ServerWebExchange exchange, GatewayFilterChain chain,

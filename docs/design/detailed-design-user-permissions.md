@@ -1051,3 +1051,13 @@ Content-Type: application/json
 ---
 
 > **文档维护**: 本文档随项目迭代持续更新，最新版本请以仓库 `docs/design/detailed-design-user-permissions.md` 为准。
+
+---
+
+## 权限缓存一致性（ACC-004）
+
+- L1（Caffeine 5 分钟）+ L2（Redis 12 小时）。
+- **L1 命中写穿 L2**：命中 L1 时若 Redis 集合缺失，用 L1 内容回填 L2，避免业务服务读 Redis 时把合法用户判为无权限。
+- **权限事件重建**：`PermissionEventConsumer` 对受影响用户执行 `refreshUserPermissions`（清 L1、重算数据库权限、回写 L2）；角色删除且未携带用户列表时清空本实例 L1，下次查询重建。
+- **网关兜底**：JWT 请求转发前检查 `perm:user:{id}`，缺失时调用 system 内部接口 `/api/v1/internal/permissions/users/{id}` 触发重建；重建失败不阻断请求，业务侧仍 fail-closed。
+- 无权限源或空集合仍拒绝访问。

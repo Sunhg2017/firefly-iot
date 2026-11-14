@@ -6,10 +6,12 @@ import com.songhg.firefly.iot.common.message.DeviceMessage;
 import com.songhg.firefly.iot.common.message.KafkaTopics;
 import com.songhg.firefly.iot.common.message.PlatformEventPublisher;
 import com.songhg.firefly.iot.device.mapper.RemoteConfigAssignmentMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -18,6 +20,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 
 class MessageRouterServiceTest {
@@ -33,6 +36,12 @@ class MessageRouterServiceTest {
     private final MessageRouterService routerService =
             new MessageRouterService(shadowService, deviceDataService, deviceService, deviceLocationService, messageProducer,
                     platformEventPublisher, remoteConfigAssignmentMapper, otaProgressService);
+
+    @BeforeEach
+    void setUpRuleForwarding() {
+        when(messageProducer.publishToTopic(any(), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+    }
 
     @Test
     void shouldForwardEventReportToRuleEngineTopic() {
@@ -112,6 +121,25 @@ class MessageRouterServiceTest {
                 eq(KafkaTopics.RULE_ENGINE_INPUT),
                 argThat(ruleMessage -> ruleMessage != null && params.equals(ruleMessage.getPayload()))
         );
+    }
+
+    @Test
+    void shouldPropagateErrorWhenRuleForwardSendFails() {
+        when(messageProducer.publishToTopic(any(), any()))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("kafka down")));
+        DeviceMessage message = DeviceMessage.builder()
+                .messageId("msg-9")
+                .tenantId(1L)
+                .productId(2L)
+                .deviceId(3L)
+                .deviceName("dev-001")
+                .type(DeviceMessage.MessageType.EVENT_REPORT)
+                .topic("/sys/pk/dev-001/thing/event/post")
+                .payload(Map.of("event", "overheat"))
+                .timestamp(123456789L)
+                .build();
+
+        assertThrows(IllegalStateException.class, () -> routerService.routeUpstream(message));
     }
 
     @Test

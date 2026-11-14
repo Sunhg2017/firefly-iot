@@ -1,5 +1,6 @@
 package com.songhg.firefly.iot.device.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -20,7 +21,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -28,6 +31,7 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.*;
 
 /**
@@ -48,8 +52,15 @@ public class ThingModelImportService {
     private final ObjectMapper objectMapper;
     private final ThingModelBuiltinDefinitionSupport thingModelBuiltinDefinitionSupport;
     private final ImportTaskDispatcher importTaskDispatcher;
+    private final StringRedisTemplate redisTemplate;
 
     private static final int MAX_ERROR_MESSAGE_LENGTH = 500;
+
+    /**
+     * 参数清单解析结果缓存前缀：任务完成后前端按 taskId 读取解析行，避免浏览器解析文件。
+     */
+    private static final String PARAMETER_PARSE_RESULT_PREFIX = "thingmodel:parse:";
+    private static final Duration PARAMETER_PARSE_RESULT_TTL = Duration.ofHours(1);
 
     /**
      * 注册物模型异步导入任务
@@ -94,7 +105,7 @@ public class ThingModelImportService {
         try {
             AsyncContextHelper.setContext(tenantId, userId);
 
-            asyncTaskClient.updateProgress(taskId, 10);
+            ensureTaskActive(taskId, 10);
 
             // 获取文件预签名URL并下载
             R<Map<String, String>> presignedResult = fileClient.getPresignedUrl(dto.getFileKey());
@@ -103,7 +114,7 @@ public class ThingModelImportService {
             }
             String fileUrl = presignedResult.getData().get("url");
 
-            asyncTaskClient.updateProgress(taskId, 30);
+            ensureTaskActive(taskId, 30);
 
             // 获取当前产品
             Product product = productMapper.selectById(productId);
@@ -120,23 +131,103 @@ public class ThingModelImportService {
                 thingModel = downloadAndParseExcel(fileUrl, dto.getImportType(), product.getThingModel());
             }
 
-            asyncTaskClient.updateProgress(taskId, 70);
+            ensureTaskActive(taskId, 70);
 
             // 更新物模型
             product.setThingModel(objectMapper.writeValueAsString(thingModelBuiltinDefinitionSupport.ensureBuiltinDefinitions(thingModel)));
             productMapper.updateById(product);
 
-            asyncTaskClient.updateProgress(taskId, 90);
+            ensureTaskActive(taskId, 90);
 
             // 完成任务
             asyncTaskClient.completeTask(taskId, true, null, null, 1, null);
             log.info("物模型导入完成: taskId={}, productId={}", taskId, productId);
 
+        } catch (AsyncTaskCancelledException e) {
+            log.info("物模型导入任务已终止，停止执行: taskId={}, reason={}", taskId, e.getMessage());
         } catch (Exception e) {
             log.error("物模型导入异常: taskId={}, error={}", taskId, e.getMessage(), e);
             asyncTaskClient.failTask(taskId, truncateMessage("导入失败: " + e.getMessage()));
         } finally {
             AsyncContextHelper.clearContext();
+        }
+    }
+
+    /**
+     * 注册参数清单解析任务：上传文件到 MinIO 后调用，立即返回 taskId。
+     */
+    public Long registerParameterParseTask(Long productId, ThingModelImportDTO dto) {
+        Product product = productMapper.selectById(productId);
+        if (product == null) {
+            throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
+        }
+        AsyncTaskCreateDTO createDTO = new AsyncTaskCreateDTO();
+        createDTO.setTaskName("参数清单解析: " + product.getName());
+        createDTO.setTaskType("IMPORT");
+        createDTO.setBizType("THING_MODEL_PARSE");
+        createDTO.setFileFormat(dto.getFileFormat());
+        createDTO.setExtraData(productId + ":" + dto.getFileKey());
+
+        R<AsyncTaskVO> taskResult = asyncTaskClient.createTask(createDTO);
+        if (taskResult == null || taskResult.getData() == null) {
+            throw new BizException(ResultCode.INTERNAL_ERROR, "创建参数解析任务失败");
+        }
+        Long taskId = taskResult.getData().getId();
+        Long tenantId = AppContextHolder.getTenantId();
+        Long userId = AppContextHolder.getUserId();
+        importTaskDispatcher.dispatch(() -> executeParameterParse(taskId, dto, tenantId, userId));
+        log.info("参数清单解析任务已注册: taskId={}, productId={}, fileKey={}", taskId, productId, dto.getFileKey());
+        return taskId;
+    }
+
+    /**
+     * 异步执行参数清单解析：解析结果写入 Redis（1 小时），任务中心只记录进度与行数。
+     */
+    public void executeParameterParse(Long taskId, ThingModelImportDTO dto, Long tenantId, Long userId) {
+        try {
+            AsyncContextHelper.setContext(tenantId, userId);
+            ensureTaskActive(taskId, 10);
+            List<Map<String, String>> rows = parseParameterRows(dto.getFileKey(), dto.getFileFormat());
+            ensureTaskActive(taskId, 80);
+            redisTemplate.opsForValue().set(
+                    PARAMETER_PARSE_RESULT_PREFIX + taskId,
+                    objectMapper.writeValueAsString(rows),
+                    PARAMETER_PARSE_RESULT_TTL);
+            asyncTaskClient.completeTask(taskId, true, null, null, rows.size(), null);
+            log.info("参数清单解析完成: taskId={}, rows={}", taskId, rows.size());
+        } catch (AsyncTaskCancelledException e) {
+            log.info("参数清单解析任务已终止: taskId={}, reason={}", taskId, e.getMessage());
+        } catch (Exception e) {
+            log.error("参数清单解析异常: taskId={}, error={}", taskId, e.getMessage(), e);
+            asyncTaskClient.failTask(taskId, truncateMessage("参数清单解析失败: " + e.getMessage()));
+        } finally {
+            AsyncContextHelper.clearContext();
+        }
+    }
+
+    /**
+     * 读取参数清单解析结果（按 taskId，1 小时内有效）。
+     */
+    public List<Map<String, String>> getParameterParseResult(Long taskId) {
+        String json = redisTemplate.opsForValue().get(PARAMETER_PARSE_RESULT_PREFIX + taskId);
+        if (!StringUtils.hasText(json)) {
+            throw new BizException(ResultCode.NOT_FOUND, "解析结果不存在或已过期，请重新解析");
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<Map<String, String>>>() {
+            });
+        } catch (Exception e) {
+            throw new BizException(ResultCode.INTERNAL_ERROR, "解析结果读取失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 上报进度并检查任务是否仍可继续；任务中心返回 false 表示已取消或已结束。
+     */
+    private void ensureTaskActive(Long taskId, int progress) {
+        R<Boolean> result = asyncTaskClient.updateProgress(taskId, progress);
+        if (result == null || !Boolean.TRUE.equals(result.getData())) {
+            throw new AsyncTaskCancelledException("导入任务已取消或已结束: taskId=" + taskId);
         }
     }
 

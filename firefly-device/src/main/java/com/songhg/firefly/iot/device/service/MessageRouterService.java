@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -31,6 +32,9 @@ public class MessageRouterService {
     private final PlatformEventPublisher platformEventPublisher;
     private final com.songhg.firefly.iot.device.mapper.RemoteConfigAssignmentMapper remoteConfigAssignmentMapper;
     private final OtaProgressService otaProgressService;
+
+    @org.springframework.beans.factory.annotation.Value("${firefly.kafka.rule-forward-timeout-ms:5000}")
+    private long ruleForwardTimeoutMs;
 
     /**
      * Routes upstream device messages to the correct persistence and runtime flows.
@@ -137,21 +141,29 @@ public class MessageRouterService {
     }
 
     private void forwardToRuleEngine(DeviceMessage message) {
+        DeviceMessage ruleMsg = DeviceMessage.builder()
+                .messageId(message.getMessageId())
+                .tenantId(message.getTenantId())
+                .productId(message.getProductId())
+                .deviceId(message.getDeviceId())
+                .deviceName(message.getDeviceName())
+                .type(message.getType())
+                .topic(message.getTopic())
+                .payload(message.getPayload())
+                .timestamp(message.getTimestamp())
+                .build();
+        // 规则入队失败必须让消费失败：等待发送结果并在异常 future 上抛出，
+        // 由统一 ErrorHandler 重试/死信，避免“持久化成功但规则消息未投递”被当作整体成功。
         try {
-            DeviceMessage ruleMsg = DeviceMessage.builder()
-                    .messageId(message.getMessageId())
-                    .tenantId(message.getTenantId())
-                    .productId(message.getProductId())
-                    .deviceId(message.getDeviceId())
-                    .deviceName(message.getDeviceName())
-                    .type(message.getType())
-                    .topic(message.getTopic())
-                    .payload(message.getPayload())
-                    .timestamp(message.getTimestamp())
-                    .build();
-            messageProducer.publishToTopic(KafkaTopics.RULE_ENGINE_INPUT, ruleMsg);
+            messageProducer.publishToTopic(KafkaTopics.RULE_ENGINE_INPUT, ruleMsg)
+                    .get(ruleForwardTimeoutMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while forwarding message to rule engine: messageId="
+                    + message.getMessageId(), ex);
         } catch (Exception ex) {
-            log.error("Failed to forward message to rule engine: {}", ex.getMessage());
+            throw new IllegalStateException("Failed to forward message to rule engine: messageId="
+                    + message.getMessageId(), ex);
         }
     }
 

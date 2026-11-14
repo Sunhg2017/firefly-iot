@@ -57,9 +57,11 @@ public class PermissionService implements PermissionChecker {
             return Collections.emptySet();
         }
 
-        // L1: Caffeine
+        // L1: Caffeine。命中时仍需保证 L2 存在：业务服务在无本地 PermissionChecker 时
+        // 直接读 Redis 集合做校验，L2 缺失会把合法用户误判为无权限。
         Set<String> perms = l1Cache.getIfPresent(userId);
         if (perms != null) {
+            ensureL2Cached(userId, perms);
             return perms;
         }
 
@@ -81,11 +83,52 @@ public class PermissionService implements PermissionChecker {
         if (!perms.isEmpty()) {
             redisTemplate.opsForSet().add(redisKey, perms.toArray(new String[0]));
             // 其他业务服务在无本地 PermissionChecker 时直接读取该集合做权限校验，
-            // 因此保留期需覆盖正常会话周期；权限变更由 PermissionEventConsumer 主动删除。
+            // 因此保留期需覆盖正常会话周期；权限变更由 PermissionEventConsumer 主动重建。
             redisTemplate.expire(redisKey, 12, TimeUnit.HOURS);
         }
         l1Cache.put(userId, perms);
 
         return perms;
+    }
+
+    /**
+     * 权限变更后重建用户缓存：清 L1、重算数据库权限、回写 L2。
+     * 由权限事件消费者调用，保证撤权/授权在 Redis 侧立即生效，而不是等待下一次查询。
+     */
+    public void refreshUserPermissions(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        String redisKey = REDIS_PERM_USER + userId;
+        l1Cache.invalidate(userId);
+        redisTemplate.delete(redisKey);
+        Set<String> perms = rolePermissionMapper.findPermissionsByUserId(userId);
+        if (perms == null) {
+            perms = Collections.emptySet();
+        }
+        if (!perms.isEmpty()) {
+            redisTemplate.opsForSet().add(redisKey, perms.toArray(new String[0]));
+            redisTemplate.expire(redisKey, 12, TimeUnit.HOURS);
+        }
+        l1Cache.put(userId, perms);
+        log.info("Permission cache refreshed: userId={}, permissionCount={}", userId, perms.size());
+    }
+
+    private void ensureL2Cached(Long userId, Set<String> permissions) {
+        if (permissions == null || permissions.isEmpty()) {
+            return;
+        }
+        String redisKey = REDIS_PERM_USER + userId;
+        try {
+            if (Boolean.TRUE.equals(redisTemplate.hasKey(redisKey))) {
+                return;
+            }
+            redisTemplate.opsForSet().add(redisKey, permissions.toArray(new String[0]));
+            redisTemplate.expire(redisKey, 12, TimeUnit.HOURS);
+            log.info("Rebuilt missing permission cache from L1: userId={}", userId);
+        } catch (Exception ex) {
+            // L2 不可用时保持 L1 结果，避免因缓存故障放大为业务不可用。
+            log.warn("Failed to rebuild permission cache for userId={}: {}", userId, ex.getMessage());
+        }
     }
 }

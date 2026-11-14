@@ -3,6 +3,7 @@ package com.songhg.firefly.iot.system.consumer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.event.EventTopics;
+import com.songhg.firefly.iot.system.service.PermissionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -13,10 +14,12 @@ import java.util.List;
 import java.util.stream.StreamSupport;
 
 import static com.songhg.firefly.iot.common.constant.AuthConstants.REDIS_PERM_ROLE;
-import static com.songhg.firefly.iot.common.constant.AuthConstants.REDIS_PERM_USER;
 
 /**
- * 权限事件消费者：消费角色权限变更事件，清除受影响用户的权限缓存。
+ * 权限事件消费者：消费角色权限变更事件，重建受影响用户权限缓存。
+ *
+ * <p>只删除 Redis 集合会让业务服务在权限缓存未命中时拒绝合法用户，
+ * 因此这里在删除后立即从数据库重算并回写 L2，同时清理 L1。</p>
  */
 @Slf4j
 @Component
@@ -25,6 +28,7 @@ public class PermissionEventConsumer {
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final PermissionService permissionService;
 
     @KafkaListener(topics = EventTopics.PERMISSION_EVENTS, groupId = "firefly-system-perm")
     public void onPermissionEvent(String message) {
@@ -35,22 +39,10 @@ public class PermissionEventConsumer {
 
             log.info("[权限变更] action={}, roleId={}", action, roleId);
 
-            // 清除角色权限缓存
             if (roleId > 0) {
                 redisTemplate.delete(REDIS_PERM_ROLE + roleId);
             }
-
-            // 清除受影响用户的权限缓存
-            JsonNode affectedUsers = node.path("affectedUserIds");
-            if (affectedUsers.isArray()) {
-                List<Long> userIds = StreamSupport.stream(affectedUsers.spliterator(), false)
-                        .map(JsonNode::asLong)
-                        .toList();
-                for (Long userId : userIds) {
-                    redisTemplate.delete(REDIS_PERM_USER + userId);
-                    log.debug("Evicted permission cache for userId={}", userId);
-                }
-            }
+            refreshAffectedUsers(node.path("affectedUserIds"));
         } catch (Exception e) {
             log.error("Failed to process permission event: {}", message, e);
             throw new IllegalStateException("Permission event processing failed", e);
@@ -66,18 +58,30 @@ public class PermissionEventConsumer {
             if ("ROLE_DELETED".equals(action)) {
                 Long roleId = node.path("roleId").asLong(0);
                 redisTemplate.delete(REDIS_PERM_ROLE + roleId);
-
-                JsonNode affectedUsers = node.path("affectedUserIds");
-                if (affectedUsers.isArray()) {
-                    StreamSupport.stream(affectedUsers.spliterator(), false)
-                            .map(JsonNode::asLong)
-                            .forEach(userId -> redisTemplate.delete(REDIS_PERM_USER + userId));
+                boolean refreshed = refreshAffectedUsers(node.path("affectedUserIds"));
+                if (!refreshed) {
+                    // 事件未携带受影响用户时清空本实例 L1，下一次查询会从数据库重算并回写 L2。
+                    permissionService.evictAllL1Cache();
                 }
-                log.info("[角色删除] roleId={}, 已清除缓存", roleId);
+                log.info("[角色删除] roleId={}, 权限缓存已重建", roleId);
             }
         } catch (Exception e) {
             log.error("Failed to process role event: {}", message, e);
             throw new IllegalStateException("Role event processing failed", e);
         }
+    }
+
+    private boolean refreshAffectedUsers(JsonNode affectedUsers) {
+        if (affectedUsers == null || !affectedUsers.isArray()) {
+            return false;
+        }
+        List<Long> userIds = StreamSupport.stream(affectedUsers.spliterator(), false)
+                .map(JsonNode::asLong)
+                .filter(userId -> userId != null && userId > 0)
+                .toList();
+        for (Long userId : userIds) {
+            permissionService.refreshUserPermissions(userId);
+        }
+        return !userIds.isEmpty();
     }
 }
