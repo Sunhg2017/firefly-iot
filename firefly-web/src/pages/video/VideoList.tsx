@@ -25,7 +25,9 @@ import {
   CheckCircleOutlined,
   DeleteOutlined,
   DisconnectOutlined,
+  DownloadOutlined,
   EditOutlined,
+  HistoryOutlined,
   InfoCircleOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
@@ -92,6 +94,14 @@ interface VideoChannelRecord {
   createdAt?: string;
 }
 
+interface VideoRecordingRecord {
+  fileName: string;
+  fileSize?: number;
+  startTime?: number;
+  durationSeconds?: number;
+  channelId?: string;
+}
+
 interface VideoProductContext {
   productId?: number;
   productKey: string;
@@ -149,6 +159,19 @@ const trimOptionalValue = (value?: string) => {
   }
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
+};
+
+const formatFileSize = (bytes?: number) => {
+  if (bytes === undefined || bytes === null) {
+    return '-';
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 };
 
 const normalizeOptionalPort = (value?: number | string) => {
@@ -320,6 +343,13 @@ const VideoList: React.FC<VideoListProps> = () => {
   const [playerLoading, setPlayerLoading] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordingLoading, setRecordingLoading] = useState(false);
+  const [recordingDrawerOpen, setRecordingDrawerOpen] = useState(false);
+  const [recordingDevice, setRecordingDevice] = useState<VideoDeviceRecord | null>(null);
+  const [recordings, setRecordings] = useState<VideoRecordingRecord[]>([]);
+  const [recordingsLoading, setRecordingsLoading] = useState(false);
+  const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
+  const [playbackTitle, setPlaybackTitle] = useState('');
+  const [playbackOpen, setPlaybackOpen] = useState(false);
   const [channelDrawerOpen, setChannelDrawerOpen] = useState(false);
   const [channelDevice, setChannelDevice] = useState<VideoDeviceRecord | null>(null);
   const [channelLoading, setChannelLoading] = useState(false);
@@ -750,6 +780,57 @@ const VideoList: React.FC<VideoListProps> = () => {
     }
   };
 
+  const openRecordingDrawer = async (record: VideoDeviceRecord) => {
+    setRecordingDevice(record);
+    setRecordingDrawerOpen(true);
+    setRecordingsLoading(true);
+    setRecordings([]);
+    try {
+      const response = await videoControlApi.listRecordings(record.id);
+      const data = unwrapBusinessResponse<VideoRecordingRecord[]>(response, '加载录像列表失败');
+      setRecordings(data || []);
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载录像列表失败'));
+    } finally {
+      setRecordingsLoading(false);
+    }
+  };
+
+  const handlePlayRecording = async (record: VideoRecordingRecord) => {
+    if (!recordingDevice) return;
+    const startEpoch = record.startTime ?? 0;
+    try {
+      const response = await videoControlApi.playRecording(recordingDevice.id, record.fileName, startEpoch);
+      if (playbackUrl) {
+        window.URL.revokeObjectURL(playbackUrl);
+      }
+      const url = window.URL.createObjectURL(response.data);
+      setPlaybackUrl(url);
+      setPlaybackTitle(`${recordingDevice.name} - ${record.fileName}`);
+      setPlaybackOpen(true);
+    } catch (error) {
+      message.error(getErrorMessage(error, '加载录像失败'));
+    }
+  };
+
+  const handleDownloadRecording = async (record: VideoRecordingRecord) => {
+    if (!recordingDevice) return;
+    const startEpoch = record.startTime ?? 0;
+    try {
+      const response = await videoControlApi.downloadRecording(recordingDevice.id, record.fileName, startEpoch);
+      const url = window.URL.createObjectURL(response.data);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = record.fileName || 'recording.mp4';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      message.error(getErrorMessage(error, '下载录像失败'));
+    }
+  };
+
   const columns: ColumnsType<VideoDeviceRecord> = [
     {
       title: '产品',
@@ -807,6 +888,9 @@ const VideoList: React.FC<VideoListProps> = () => {
               </Button>
             </>
           ) : null}
+          <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => void openRecordingDrawer(record)}>
+            录像
+          </Button>
           <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>
             删除
           </Button>
@@ -1374,6 +1458,97 @@ const VideoList: React.FC<VideoListProps> = () => {
           </div>
         ) : null}
       </Drawer>
+
+      <Drawer
+        title={recordingDevice ? `录像回放 - ${recordingDevice.name}` : '录像回放'}
+        placement="right"
+        width={760}
+        open={recordingDrawerOpen}
+        destroyOnClose
+        onClose={() => {
+          setRecordingDrawerOpen(false);
+          setRecordingDevice(null);
+          setRecordings([]);
+        }}
+        extra={
+          recordingDevice ? (
+            <Button icon={<ReloadOutlined />} onClick={() => void openRecordingDrawer(recordingDevice)}>
+              刷新
+            </Button>
+          ) : undefined
+        }
+      >
+        <Table<VideoRecordingRecord>
+          rowKey={(record) => `${record.fileName}-${record.startTime ?? 0}`}
+          loading={recordingsLoading}
+          dataSource={recordings}
+          pagination={false}
+          locale={{ emptyText: <ListEmpty compact emptyText="暂无录像记录，可先在实时播放中点击「开始录像」" /> }}
+          columns={[
+            {
+              title: '文件名',
+              dataIndex: 'fileName',
+              width: 180,
+              ellipsis: true,
+              render: (value: string) => (value ? <CopyText text={value} ellipsis /> : '-'),
+            },
+            {
+              title: '开始时间',
+              dataIndex: 'startTime',
+              width: 170,
+              render: (value: number) => (value ? new Date(value).toLocaleString() : '-'),
+            },
+            {
+              title: '时长',
+              dataIndex: 'durationSeconds',
+              width: 90,
+              render: (value: number) => (value != null ? `${Math.round(value)}s` : '-'),
+            },
+            {
+              title: '大小',
+              dataIndex: 'fileSize',
+              width: 110,
+              render: (value: number) => (value != null ? formatFileSize(value) : '-'),
+            },
+            { title: '通道', dataIndex: 'channelId', width: 150, ellipsis: true, render: (value: string) => value || '-' },
+            {
+              title: '操作',
+              width: 140,
+              fixed: 'right',
+              render: (_: unknown, record: VideoRecordingRecord) => (
+                <Space>
+                  <Button type="link" size="small" icon={<PlayCircleOutlined />} onClick={() => void handlePlayRecording(record)}>
+                    回放
+                  </Button>
+                  <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => void handleDownloadRecording(record)}>
+                    下载
+                  </Button>
+                </Space>
+              ),
+            },
+          ]}
+          scroll={{ x: 840 }}
+        />
+      </Drawer>
+
+      <Modal
+        title={playbackTitle || '录像回放'}
+        open={playbackOpen}
+        footer={null}
+        width={760}
+        destroyOnClose
+        onCancel={() => {
+          setPlaybackOpen(false);
+          if (playbackUrl) {
+            window.URL.revokeObjectURL(playbackUrl);
+            setPlaybackUrl(null);
+          }
+        }}
+      >
+        {playbackUrl ? (
+          <video controls autoPlay src={playbackUrl} style={{ width: '100%', borderRadius: 8, background: '#000' }} />
+        ) : null}
+      </Modal>
     </div>
   );
 };

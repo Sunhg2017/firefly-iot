@@ -320,14 +320,17 @@ lines = config_path.read_text().splitlines()
 updated = []
 in_api = False
 in_rtp_proxy = False
+in_hook = False
 secret_updated = False
 rtp_port_updated = False
+record_hook_updated = False
 
 for line in lines:
     stripped = line.strip()
     if stripped.startswith("[") and stripped.endswith("]"):
         in_api = stripped == "[api]"
         in_rtp_proxy = stripped == "[rtp_proxy]"
+        in_hook = stripped == "[hook]"
 
     if in_api and stripped.startswith("secret="):
         updated.append(f"secret={secret}")
@@ -337,6 +340,13 @@ for line in lines:
         # so the default RTP proxy listener must stay disabled.
         updated.append("port=0")
         rtp_port_updated = True
+    elif in_hook and stripped.startswith("enable="):
+        # 开启 hook 框架；只配置 on_record_mp4，其余 hook 保持空 URL 不触发。
+        updated.append("enable=1")
+    elif in_hook and stripped.startswith("on_record_mp4="):
+        # 录像完成回调写入平台录像元数据，支撑录像检索/回放/下载。
+        updated.append("on_record_mp4=http://firefly-media:9040/api/v1/video/hook/on_record_mp4")
+        record_hook_updated = True
     else:
         updated.append(line)
 
@@ -344,6 +354,8 @@ if not secret_updated:
     raise SystemExit("Failed to locate api.secret in ZLMediaKit config.ini")
 if not rtp_port_updated:
     raise SystemExit("Failed to locate rtp_proxy.port in ZLMediaKit config.ini")
+if not record_hook_updated:
+    raise SystemExit("Failed to locate on_record_mp4 in ZLMediaKit config.ini")
 
 config_path.write_text("\n".join(updated) + "\n")
 PY

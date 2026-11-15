@@ -1,4 +1,4 @@
-﻿server:
+server:
   port: 9050
   servlet:
     encoding:
@@ -36,7 +36,11 @@ spring:
 
   flyway:
     connect-retries: ${FLYWAY_CONNECT_RETRIES:30}
-    enabled: false
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+    table: flyway_data_history
 
   cloud:
     nacos:

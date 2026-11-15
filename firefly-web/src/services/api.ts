@@ -1,5 +1,22 @@
 import request, { deviceRequest, ruleRequest, dataRequest, supportRequest, mediaRequest, connectorRequest } from '../utils/request';
+import axios from 'axios';
+import { getAccessToken } from '../utils/authStorage';
 // authRequest removed: auth merged into system; notification/template moved to support
+
+// 二进制下载专用实例：业务 axios 实例的响应拦截器会把对象统一递归归一化，
+// 会破坏 Blob 响应，因此录像回放/下载走一个不带该拦截器的独立实例。
+const mediaBlobRequest = axios.create({
+  baseURL: '/MEDIA/api/v1',
+  timeout: 120000,
+});
+mediaBlobRequest.interceptors.request.use((config) => {
+  const token = getAccessToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  config.headers['X-Platform'] = 'WEB';
+  return config;
+});
 
 type TenantStatus = 'PENDING' | 'INITIALIZING' | 'ACTIVE' | 'SUSPENDED' | 'MAINTENANCE' | 'DEACTIVATING' | 'DELETED';
 type IsolationLevel = 'SHARED_RLS' | 'SCHEMA' | 'DATABASE';
@@ -436,6 +453,18 @@ export const videoControlApi = {
   queryDeviceInfo: (id: number) => mediaRequest.post(`/video/devices/${id}/device-info`),
   startRecording: (id: number) => mediaRequest.post(`/video/devices/${id}/record/start`),
   stopRecording: (id: number) => mediaRequest.post(`/video/devices/${id}/record/stop`),
+  listRecordings: (id: number, start?: string, end?: string) =>
+    mediaRequest.get(`/video/devices/${id}/recordings`, { params: { start, end } }),
+  playRecording: (id: number, fileName: string, startTime: number) =>
+    mediaBlobRequest.get(`/video/devices/${id}/recordings/play`, {
+      params: { fileName, startTime },
+      responseType: 'blob',
+    }),
+  downloadRecording: (id: number, fileName: string, startTime: number) =>
+    mediaBlobRequest.get(`/video/devices/${id}/recordings/download`, {
+      params: { fileName, startTime },
+      responseType: 'blob',
+    }),
 };
 
 // ==================== System Settings API ====================
@@ -720,6 +749,16 @@ export const dashboardApi = {
   alarmDistribution: () => dataRequest.get('/dashboard/alarm-distribution'),
   recentAlarms: (limit?: number) => dataRequest.get('/dashboard/recent-alarms', { params: { limit } }),
   deviceByProduct: () => dataRequest.get('/dashboard/device-by-product'),
+};
+
+export const customDashboardApi = {
+  list: () => dataRequest.get('/dashboard/custom'),
+  get: (slug: string) => dataRequest.get(`/dashboard/custom/${slug}`),
+  create: (data: Record<string, unknown>) => dataRequest.post('/dashboard/custom', data),
+  update: (slug: string, data: Record<string, unknown>) => dataRequest.put(`/dashboard/custom/${slug}`, data),
+  delete: (slug: string) => dataRequest.delete(`/dashboard/custom/${slug}`),
+  setShare: (slug: string, enabled: boolean) => dataRequest.post(`/dashboard/custom/${slug}/share`, null, { params: { enabled } }),
+  getByShareToken: (token: string) => dataRequest.get(`/dashboard/custom/share/${token}`),
 };
 
 // ==================== Data Analysis API ====================

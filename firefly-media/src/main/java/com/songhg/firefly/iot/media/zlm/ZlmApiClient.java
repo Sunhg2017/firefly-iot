@@ -11,10 +11,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -387,6 +390,68 @@ public class ZlmApiClient {
             return objectMapper.readValue(json, new TypeReference<>() {});
         } catch (JsonProcessingException e) {
             throw new BizException(ResultCode.INTERNAL_ERROR, "解析 ZLM stopRecord 响应失败");
+        }
+    }
+
+    /**
+     * 下载/点播 ZLM 已录制的 MP4 文件（流式读取，不整体载入内存）。
+     * <p>
+     * 参考 ZLMediaKit 接口：GET /index/api/getMp4RecordFile，
+     * 该接口返回文件二进制而非 JSON，因此不走 {@link #doGet} 的统一 JSON 解析。
+     *
+     * @param app      录制流应用名（live/rtp）
+     * @param stream   录制流 ID
+     * @param filePath ZLM 磁盘上的绝对路径（来自 on_record_mp4 回调的 file_path）
+     */
+    public ZlmMp4RecordDownload openMp4RecordFile(String app, String stream, String filePath) {
+        String url = zlmProperties.getApiUrl() + "/index/api/getMp4RecordFile"
+                + "?secret=" + encodeQueryParam(zlmProperties.getSecret())
+                + "&vhost=" + encodeQueryParam(DEFAULT_VHOST)
+                + "&app=" + encodeQueryParam(app)
+                + "&stream=" + encodeQueryParam(stream)
+                + "&file_path=" + encodeQueryParam(filePath);
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(30))
+                    .GET()
+                    .build();
+            HttpResponse<InputStream> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                closeQuietly(response.body());
+                throw new BizException(ResultCode.INTERNAL_ERROR,
+                        "ZLMediaKit 录像下载失败: status=" + response.statusCode());
+            }
+            return new ZlmMp4RecordDownload(response.body(), resolveContentLength(response));
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            throw new BizException(ResultCode.INTERNAL_ERROR,
+                    "ZLMediaKit 录像下载失败: " + resolveExceptionMessage(e));
+        }
+    }
+
+    private long resolveContentLength(HttpResponse<?> response) {
+        try {
+            return response.headers().firstValueAsLong("Content-Length").orElse(-1L);
+        } catch (Exception ex) {
+            return -1L;
+        }
+    }
+
+    private String encodeQueryParam(String value) {
+        return value == null ? "" : URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private void closeQuietly(InputStream inputStream) {
+        if (inputStream == null) {
+            return;
+        }
+        try {
+            inputStream.close();
+        } catch (IOException ignored) {
+            // 忽略关闭失败
         }
     }
 

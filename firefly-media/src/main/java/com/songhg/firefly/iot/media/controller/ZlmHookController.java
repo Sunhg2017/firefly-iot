@@ -8,7 +8,9 @@ import com.songhg.firefly.iot.common.event.EventPublisher;
 import com.songhg.firefly.iot.common.event.EventTopics;
 import com.songhg.firefly.iot.common.event.VideoDeviceStatusChangedEvent;
 import com.songhg.firefly.iot.media.entity.StreamSession;
+import com.songhg.firefly.iot.media.entity.VideoRecording;
 import com.songhg.firefly.iot.media.mapper.StreamSessionMapper;
+import com.songhg.firefly.iot.media.mapper.VideoRecordingMapper;
 import com.songhg.firefly.iot.media.service.VideoDeviceFacade;
 import com.songhg.firefly.iot.media.service.VideoService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -56,6 +58,7 @@ public class ZlmHookController {
     private final VideoDeviceFacade videoDeviceFacade;
     private final VideoService videoService;
     private final EventPublisher eventPublisher;
+    private final VideoRecordingMapper videoRecordingMapper;
 
     /**
      * 流变化回调 (注册/注销)
@@ -190,6 +193,101 @@ public class ZlmHookController {
         }
 
         return Map.of("code", 0, "msg", "success");
+    }
+
+    /**
+     * 录像完成回调 (on_record_mp4)
+     * ZLMediaKit 在 MP4 录像切片完成后调用，用于把录像元数据写入平台，支撑录像检索/回放/下载。
+     */
+    @PostMapping("/on_record_mp4")
+    @Operation(summary = "录像完成回调")
+    public Map<String, Object> onRecordMp4(@RequestBody Map<String, Object> params) {
+        String app = trimToNull((String) params.get("app"));
+        String stream = trimToNull((String) params.get("stream"));
+        String filePath = trimToNull((String) params.get("file_path"));
+        String fileName = trimToNull((String) params.get("file_name"));
+
+        log.info("ZLM hook on_record_mp4: app={}, stream={}, filePath={}, fileName={}", app, stream, filePath, fileName);
+
+        // stream 由平台 buildStreamId 生成，格式为 {tenantId}_{deviceId}_{channelId}，
+        // 据此恢复录像归属，避免依赖可能已关闭的 stream_sessions。
+        DeviceIdentity identity = parseDeviceIdentity(stream);
+        if (identity == null) {
+            log.warn("Ignore on_record_mp4 because stream id is not a managed device stream: stream={}", stream);
+            return Map.of("code", 0, "msg", "success");
+        }
+
+        VideoRecording recording = new VideoRecording();
+        recording.setTenantId(identity.tenantId());
+        recording.setDeviceId(identity.deviceId());
+        recording.setChannelId(identity.channelId());
+        recording.setApp(app);
+        recording.setStream(stream);
+        recording.setFileName(fileName);
+        recording.setFilePath(filePath);
+        recording.setFileSize(asLong(params.get("file_size")));
+        Long startTimeSeconds = asLong(params.get("start_time"));
+        recording.setStartTime(startTimeSeconds == null ? null : startTimeSeconds * 1000);
+        recording.setDurationSeconds(asDouble(params.get("time_len")));
+
+        int inserted = videoRecordingMapper.insertIgnore(recording);
+        log.info("Recording metadata persisted: inserted={}, app={}, stream={}, filePath={}",
+                inserted, app, stream, filePath);
+        return Map.of("code", 0, "msg", "success");
+    }
+
+    private DeviceIdentity parseDeviceIdentity(String streamId) {
+        if (streamId == null || streamId.isBlank()) {
+            return null;
+        }
+        int first = streamId.indexOf('_');
+        if (first <= 0) {
+            return null;
+        }
+        int second = streamId.indexOf('_', first + 1);
+        if (second <= first) {
+            return null;
+        }
+        try {
+            long tenantId = Long.parseLong(streamId.substring(0, first));
+            long deviceId = Long.parseLong(streamId.substring(first + 1, second));
+            String channelId = streamId.substring(second + 1);
+            return new DeviceIdentity(tenantId, deviceId,
+                    channelId.isBlank() || "0".equals(channelId) ? null : channelId);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private Long asLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private Double asDouble(Object value) {
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(String.valueOf(value));
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private record DeviceIdentity(long tenantId, long deviceId, String channelId) {
     }
 
     private Map<String, Object> authenticateManagedLocalProxy(Map<String, Object> params, boolean publishHook) {

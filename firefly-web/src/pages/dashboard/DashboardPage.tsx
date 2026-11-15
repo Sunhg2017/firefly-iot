@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Col, Row, Space, Spin, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Col, Row, Space, Spin, Table, Tabs, Tag, Typography } from 'antd';
 import {
   AlertOutlined,
   AppstoreOutlined,
@@ -14,6 +14,7 @@ import ListEmpty from '../../components/ListEmpty';
 import { dashboardApi } from '../../services/api';
 import { getErrorMessage } from '../../utils/errors';
 import { formatDateTime } from '../../utils/datetime';
+import CustomDashboardPanel from './CustomDashboardPanel';
 
 const { Text } = Typography;
 
@@ -304,7 +305,14 @@ const DashboardPage: React.FC = () => {
 
   return (
     <div className="animate-fade-in">
-      {header}
+      <Tabs
+        items={[
+          {
+            key: 'overview',
+            label: '总览',
+            children: (
+              <div>
+                {header}
 
       {loadError ? (
         <Alert
@@ -456,6 +464,12 @@ const DashboardPage: React.FC = () => {
           </Space>
         </Col>
       </Row>
+              </div>
+            ),
+          },
+          { key: 'custom', label: '自定义看板', children: <CustomDashboardPanel /> },
+        ]}
+      />
     </div>
   );
 };
