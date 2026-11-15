@@ -6,6 +6,7 @@ public final class KafkaTopics {
 
     public static final String DEVICE_MESSAGE_UP = "device.message.up";
     public static final String DEVICE_MESSAGE_DOWN = "device.message.down";
+    public static final String DEVICE_MESSAGE_DOWN_ACK = "device.message.down.ack";
     public static final String DEVICE_PROPERTY_REPORT = "device.property.report";
     public static final String DEVICE_EVENT_REPORT = "device.event.report";
     public static final String DEVICE_LIFECYCLE = "device.lifecycle";

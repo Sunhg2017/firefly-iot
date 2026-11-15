@@ -7,6 +7,7 @@ import com.songhg.firefly.iot.connector.config.MqttProperties;
 import com.songhg.firefly.iot.connector.protocol.downstream.DownlinkPendingQueue;
 import com.songhg.firefly.iot.connector.protocol.downstream.NonMqttDownstreamDispatcher;
 import com.songhg.firefly.iot.connector.protocol.dto.MqttSessionRoute;
+import com.songhg.firefly.iot.connector.service.DeviceMessageProducer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -23,6 +24,7 @@ public class MqttDownstreamConsumer {
     private final MqttProperties mqttProperties;
     private final NonMqttDownstreamDispatcher nonMqttDownstreamDispatcher;
     private final DownlinkPendingQueue pendingQueue;
+    private final DeviceMessageProducer deviceMessageProducer;
     private final Optional<MqttSessionRouteRegistry> routeRegistry;
     private final Optional<EmbeddedMqttBroker> embeddedMqttBroker;
     private final Optional<EmbeddedMqttConnectionManager> connectionManager;
@@ -46,11 +48,13 @@ public class MqttDownstreamConsumer {
         }
 
         if (tryDispatchByMqtt(payload, message)) {
+            deviceMessageProducer.publishDownlinkAck(message.getDeviceId(), message.getMessageId());
             return;
         }
 
         if (nonMqttDownstreamDispatcher.dispatch(message)) {
             log.debug("Delivered downstream message through non-MQTT transport: deviceId={}", message.getDeviceId());
+            deviceMessageProducer.publishDownlinkAck(message.getDeviceId(), message.getMessageId());
             return;
         }
 

@@ -20,6 +20,7 @@ public class DeviceMessageProducer {
 
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
+    private final DownlinkOutboxService downlinkOutboxService;
 
     /**
      * 发布设备上行消息到统一入口 topic。
@@ -60,6 +61,9 @@ public class DeviceMessageProducer {
             message.setMessageId(UUID.randomUUID().toString());
         }
         message.setTimestamp(System.currentTimeMillis());
+        // 先落 outbox（持久化权威来源），再发布 Kafka；connector 投递成功会回执 DELIVERED，
+        // 未回执的由 DownlinkOutboxRetryJob 兜底重发，避免 connector/Redis 重启丢指令。
+        downlinkOutboxService.record(message);
         Metrics.increment("firefly.device.message.downstream",
                 "type", message.getType() == null ? "UNKNOWN" : message.getType().name());
         return send(KafkaTopics.DEVICE_MESSAGE_DOWN, String.valueOf(message.getDeviceId()), message);

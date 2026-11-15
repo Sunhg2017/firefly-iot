@@ -4,6 +4,7 @@ import com.songhg.firefly.iot.common.message.DeviceMessage;
 import com.songhg.firefly.iot.common.metrics.Metrics;
 import com.songhg.firefly.iot.connector.protocol.dto.MqttSessionRoute;
 import com.songhg.firefly.iot.connector.protocol.mqtt.EmbeddedMqttBroker;
+import com.songhg.firefly.iot.connector.service.DeviceMessageProducer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +24,7 @@ public class DownlinkPendingFlusher {
 
     private final DownlinkPendingQueue pendingQueue;
     private final Optional<EmbeddedMqttBroker> embeddedMqttBroker;
+    private final DeviceMessageProducer deviceMessageProducer;
 
     @Value("${firefly.downlink.flush-batch-size:50}")
     private int flushBatchSize;
@@ -52,6 +54,7 @@ public class DownlinkPendingFlusher {
                     break;
                 }
                 delivered++;
+                deviceMessageProducer.publishDownlinkAck(message.getDeviceId(), message.getMessageId());
             } catch (Exception ex) {
                 requeueFrom(event.deviceId(), messages, i);
                 log.warn("Stop flushing pending downlink because publish error: deviceId={}, error={}",

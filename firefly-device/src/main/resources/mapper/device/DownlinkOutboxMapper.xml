@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.songhg.firefly.iot.device.mapper.DownlinkOutboxMapper">
+
+    <insert id="insertIgnore" parameterType="com.songhg.firefly.iot.device.entity.DownlinkOutbox">
+        INSERT INTO downlink_outbox (
+            tenant_id, device_id, message_id, type, topic, payload,
+            status, attempts, max_attempts, next_retry_at, created_at, updated_at
+        ) VALUES (
+            #{tenantId}, #{deviceId}, #{messageId}, #{type}, #{topic}, #{payload},
+            #{status}, #{attempts}, #{maxAttempts}, #{nextRetryAt}, now(), now()
+        )
+        ON CONFLICT (device_id, message_id) DO NOTHING
+    </insert>
+
+</mapper>

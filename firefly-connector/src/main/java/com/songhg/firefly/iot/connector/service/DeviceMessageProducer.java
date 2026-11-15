@@ -2,6 +2,7 @@ package com.songhg.firefly.iot.connector.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.songhg.firefly.iot.common.message.DeviceMessage;
+import com.songhg.firefly.iot.common.message.DownlinkAck;
 import com.songhg.firefly.iot.common.message.KafkaTopics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +42,29 @@ public class DeviceMessageProducer {
         }
         message.setTimestamp(System.currentTimeMillis());
         send(KafkaTopics.DEVICE_MESSAGE_DOWN, String.valueOf(message.getDeviceId()), message);
+    }
+
+    /**
+     * 发布下行投递回执：本节点成功把下行消息投递给设备后调用，
+     * firefly-device 据此把 outbox 记录标记为 DELIVERED。
+     */
+    public void publishDownlinkAck(Long deviceId, String messageId) {
+        if (deviceId == null || messageId == null || messageId.isBlank()) {
+            return;
+        }
+        try {
+            String json = objectMapper.writeValueAsString(new DownlinkAck(deviceId, messageId));
+            kafkaTemplate.send(KafkaTopics.DEVICE_MESSAGE_DOWN_ACK, String.valueOf(deviceId), json)
+                    .whenComplete((result, ex) -> {
+                        if (ex != null) {
+                            log.warn("Failed to publish downlink ack: deviceId={}, messageId={}, error={}",
+                                    deviceId, messageId, ex.getMessage());
+                        }
+                    });
+        } catch (Exception e) {
+            log.error("Failed to serialize downlink ack: deviceId={}, messageId={}, error={}",
+                    deviceId, messageId, e.getMessage());
+        }
     }
 
     /**
