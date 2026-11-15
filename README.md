@@ -133,6 +133,14 @@ npm run build
 - 一型一密产品：设备先调用动态注册接口换取设备密钥，再按一机一密建立 MQTT 连接。
 - 动态注册接口：`/CONNECTOR/api/v1/protocol/device/register`
 
+### TLS 与双向认证（mTLS）
+
+- 内置 Broker 支持在 `8883` 上启用 TLS；默认关闭，生产环境建议开启，避免设备口令（`deviceSecret`）明文过网。
+- 仅服务端证书（单向 TLS）：设置 `FIREFLY_MQTT_SSL_ENABLED=true` 并配置 `FIREFLY_MQTT_KEY_STORE_*`。
+- 双向认证（mTLS）：额外设置 `FIREFLY_MQTT_CLIENT_AUTH=REQUIRE` 并配置 `FIREFLY_MQTT_TRUST_STORE_*`，设备必须持有由信任 CA 签发的客户端证书才能建立连接。
+- TLS 协议默认只允许 `TLSv1.2`/`TLSv1.3`，可通过 `FIREFLY_MQTT_PROTOCOLS` 调整。
+- 服务端证书与客户端 CA 分离管理（keystore / truststore），口令与轮换生命周期互不影响；详细配置、证书生成与运维步骤见 [MQTT TLS/mTLS 设计说明](docs/design/mqtt-tls-mutual-auth.md)、[运维说明](docs/operations/mqtt-tls-mutual-auth.md) 与 [使用说明](docs/user-guide/mqtt-tls-mutual-auth.md)。
+
 ### 兼容入口
 
 `firefly-connector` 仍保留 `/CONNECTOR/api/v1/protocol/mqtt/*` Webhook 接口，用于兼容外部 MQTT Broker 的 `auth`、`acl`、`message`、`disconnect` 回调，但内置 Broker 已是默认实现。
@@ -226,6 +234,17 @@ GitHub 仓库和服务器的具体配置步骤请查看：
 | `FIREFLY_MQTT_NODE_HEARTBEAT_INTERVAL_SECONDS` | `15` | 节点心跳刷新周期 |
 | `FIREFLY_MQTT_DOWNSTREAM_QOS` | `1` | 下行投递 QoS |
 | `FIREFLY_MQTT_RELAY_CHANNEL_PREFIX` | `connector:mqtt:downstream:` | Redis 转发通道前缀 |
+| `FIREFLY_MQTT_SSL_ENABLED` | `false` | 是否启用 TLS 监听（8883） |
+| `FIREFLY_MQTT_SSL_PORT` | `8883` | TLS 监听端口 |
+| `FIREFLY_MQTT_KEY_STORE_TYPE` | `JKS` | 服务端 keystore 类型（`JKS`/`PKCS12`） |
+| `FIREFLY_MQTT_KEY_STORE_PATH` | 空 | 服务端 keystore 路径（容器内推荐 `/etc/firefly/certs/*.jks`） |
+| `FIREFLY_MQTT_KEY_STORE_PASSWORD` | 空 | 服务端 keystore 口令 |
+| `FIREFLY_MQTT_KEY_MANAGER_PASSWORD` | 空 | 服务端私钥口令，留空回退到 keystore 口令 |
+| `FIREFLY_MQTT_CLIENT_AUTH` | `NONE` | 客户端证书校验：`NONE`/`OPTIONAL`/`REQUIRE`；`REQUIRE` 即双向认证 |
+| `FIREFLY_MQTT_TRUST_STORE_TYPE` | `JKS` | 客户端 CA truststore 类型 |
+| `FIREFLY_MQTT_TRUST_STORE_PATH` | 空 | 客户端 CA truststore 路径（`CLIENT_AUTH` 非 `NONE` 时必填） |
+| `FIREFLY_MQTT_TRUST_STORE_PASSWORD` | 空 | 客户端 CA truststore 口令 |
+| `FIREFLY_MQTT_PROTOCOLS` | `TLSv1.2,TLSv1.3` | 允许的 TLS 协议，逗号分隔 |
 
 ### 水平扩容说明
 
@@ -265,6 +284,9 @@ GitHub 仓库和服务器的具体配置步骤请查看：
 - [Connector 管理面鉴权与 Kafka 重试/死信设计](docs/design/connector-management-auth-kafka-reliability.md)
 - [Connector 管理面鉴权与 Kafka 重试/死信运维说明](docs/operations/connector-management-auth-kafka-reliability.md)
 - [Connector 管理面鉴权与 Kafka 重试/死信使用说明](docs/user-guide/connector-management-auth-kafka-reliability.md)
+- [MQTT TLS/mTLS 设计说明](docs/design/mqtt-tls-mutual-auth.md)
+- [MQTT TLS/mTLS 运维说明](docs/operations/mqtt-tls-mutual-auth.md)
+- [MQTT TLS/mTLS 使用说明](docs/user-guide/mqtt-tls-mutual-auth.md)
 - [可观测性设计](docs/design/observability.md)
 - [可观测性运维说明](docs/operations/observability.md)
 - [可观测性使用说明](docs/user-guide/observability.md)

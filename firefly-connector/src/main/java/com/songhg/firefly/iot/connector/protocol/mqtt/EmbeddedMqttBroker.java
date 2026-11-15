@@ -7,6 +7,8 @@ import com.songhg.firefly.iot.connector.parser.model.ProtocolEncodeOutcome;
 import com.songhg.firefly.iot.connector.parser.service.ProtocolDownlinkEncodeService;
 import com.songhg.firefly.iot.connector.protocol.MessageCodec;
 import com.songhg.firefly.iot.connector.protocol.dto.MqttSessionRoute;
+import io.moquette.BrokerConstants;
+import io.moquette.broker.ISslContextCreator;
 import io.moquette.broker.Server;
 import io.moquette.broker.config.IConfig;
 import io.moquette.broker.config.MemoryConfig;
@@ -66,18 +68,23 @@ public class EmbeddedMqttBroker {
         config.setProperty(IConfig.ENABLE_TELEMETRY_NAME, "false");
         config.setProperty(IConfig.PERSISTENT_QUEUE_TYPE_PROPERTY_NAME, "segmented");
 
-        // 可选 TLS 监听：启用时必须提供 keystore，否则拒绝启动，避免“配置了 HTTPS 却明文监听”的错觉。
+        // 可选 TLS 监听：启用时必须提供 keystore；开启双向认证时还必须提供 truststore，否则拒绝启动，
+        // 避免“配置了 TLS 却明文监听”或“声明 mTLS 却只做单向认证”的静默降级。
+        mqttProperties.validateTlsConfig();
+        ISslContextCreator sslContextCreator = null;
         if (mqttProperties.isSslEnabled()) {
-            if (mqttProperties.getKeyStorePath() == null || mqttProperties.getKeyStorePath().isBlank()) {
-                throw new IllegalStateException("firefly.mqtt.ssl-enabled=true 时必须配置 firefly.mqtt.key-store-path");
-            }
             config.setProperty(IConfig.SSL_PORT_PROPERTY_NAME, String.valueOf(mqttProperties.getSslPort()));
             config.setProperty(IConfig.JKS_PATH_PROPERTY_NAME, mqttProperties.getKeyStorePath());
+            config.setProperty(IConfig.KEY_STORE_TYPE, mqttProperties.getKeyStoreType());
             config.setProperty(IConfig.KEY_STORE_PASSWORD_PROPERTY_NAME, mqttProperties.getKeyStorePassword());
             config.setProperty(IConfig.KEY_MANAGER_PASSWORD_PROPERTY_NAME,
-                    mqttProperties.getKeyManagerPassword() == null || mqttProperties.getKeyManagerPassword().isBlank()
-                            ? mqttProperties.getKeyStorePassword()
-                            : mqttProperties.getKeyManagerPassword());
+                    mqttProperties.effectiveKeyManagerPassword());
+            // Moquette 的 createSslHandler 依据 need_client_auth 决定是否调用 sslEngine.setNeedClientAuth(true)。
+            // REQUIRE 必须置 true；OPTIONAL 由自定义 SSL 上下文的 clientAuth(OPTIONAL) 表达“请求但不强制”。
+            if (mqttProperties.getClientAuth() == MqttProperties.ClientAuthMode.REQUIRE) {
+                config.setProperty(BrokerConstants.NEED_CLIENT_AUTH, "true");
+            }
+            sslContextCreator = new FireflyMqttSslContextCreator(mqttProperties);
         }
 
         brokerServer = new Server();
@@ -85,7 +92,7 @@ public class EmbeddedMqttBroker {
             brokerServer.startServer(
                     new MemoryConfig(config),
                     List.of(interceptHandler),
-                    null,
+                    sslContextCreator,
                     authenticator,
                     authorizator
             );

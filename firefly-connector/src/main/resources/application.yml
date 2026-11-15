@@ -1,4 +1,4 @@
-﻿server:
+server:
   port: 9070
   servlet:
     encoding:
@@ -81,6 +81,21 @@ firefly:
     enabled: true
     host: 0.0.0.0
     port: 1883
+    # TLS 监听（默认关闭）：生产环境建议启用，避免设备口令明文过网。
+    # 启用后 1883 明文端口是否保留由部署层决定（可只暴露 8883）。
+    ssl-enabled: ${FIREFLY_MQTT_SSL_ENABLED:false}
+    ssl-port: ${FIREFLY_MQTT_SSL_PORT:8883}
+    key-store-type: ${FIREFLY_MQTT_KEY_STORE_TYPE:JKS}
+    key-store-path: ${FIREFLY_MQTT_KEY_STORE_PATH:}
+    key-store-password: ${FIREFLY_MQTT_KEY_STORE_PASSWORD:}
+    key-manager-password: ${FIREFLY_MQTT_KEY_MANAGER_PASSWORD:}
+    # 双向认证（mTLS）：NONE=仅服务端证书；OPTIONAL=请求但不强制客户端证书；REQUIRE=强制客户端证书。
+    client-auth: ${FIREFLY_MQTT_CLIENT_AUTH:NONE}
+    trust-store-type: ${FIREFLY_MQTT_TRUST_STORE_TYPE:JKS}
+    trust-store-path: ${FIREFLY_MQTT_TRUST_STORE_PATH:}
+    trust-store-password: ${FIREFLY_MQTT_TRUST_STORE_PASSWORD:}
+    # 允许的 TLS 协议版本，逗号分隔；默认只允许 TLSv1.2/TLSv1.3。
+    protocols: ${FIREFLY_MQTT_PROTOCOLS:TLSv1.2,TLSv1.3}
     allow-anonymous: false
     persistence-enabled: false
     data-path: data/mqtt

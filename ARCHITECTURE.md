@@ -114,6 +114,16 @@ flowchart LR
 
 这些接口用于兼容外部 MQTT Broker 的 HTTP 回调模式，但当前默认部署不再需要 EMQX。
 
+### 4.4 TLS 与双向认证（mTLS）
+
+- Broker 支持在 `ssl-port`（默认 `8883`）上启用 TLS；默认关闭，生产环境建议开启，避免设备口令明文过网。
+- 服务端证书（keystore）与客户端受信任 CA（truststore）分离，由自定义 `FireflyMqttSslContextCreator` 构建 `SslContext`：
+  - `client-auth=NONE`：仅服务端证书（单向 TLS）。
+  - `client-auth=OPTIONAL`：请求但不强制客户端证书。
+  - `client-auth=REQUIRE`：强制客户端证书（双向认证 / mTLS），Moquette 层同步置 `need_client_auth=true`。
+- TLS 协议默认钉在 `TLSv1.2` / `TLSv1.3`，不回落已废弃版本。
+- 配置校验 fail-fast：`ssl-enabled=true` 但缺 keystore，或 `client-auth != NONE` 但缺 truststore，均拒绝启动，避免静默降级。
+
 ## 5. Kafka Topics
 
 | Topic | 生产者 | 消费者 | 用途 |
@@ -232,6 +242,14 @@ deploy/
 | `FIREFLY_MQTT_NODE_HEARTBEAT_INTERVAL_SECONDS` | `15` | 节点心跳刷新周期 |
 | `FIREFLY_MQTT_DOWNSTREAM_QOS` | `1` | 下行 QoS |
 | `FIREFLY_MQTT_RELAY_CHANNEL_PREFIX` | `connector:mqtt:downstream:` | Redis 转发通道前缀 |
+| `FIREFLY_MQTT_SSL_ENABLED` | `false` | 启用 MQTT TLS（8883） |
+| `FIREFLY_MQTT_SSL_PORT` | `8883` | MQTT TLS 端口 |
+| `FIREFLY_MQTT_KEY_STORE_PATH` | 空 | 服务端 keystore 路径 |
+| `FIREFLY_MQTT_KEY_STORE_PASSWORD` | 空 | 服务端 keystore 口令 |
+| `FIREFLY_MQTT_CLIENT_AUTH` | `NONE` | 客户端证书校验：`NONE`/`OPTIONAL`/`REQUIRE` |
+| `FIREFLY_MQTT_TRUST_STORE_PATH` | 空 | 客户端 CA truststore 路径 |
+| `FIREFLY_MQTT_TRUST_STORE_PASSWORD` | 空 | 客户端 CA truststore 口令 |
+| `FIREFLY_MQTT_PROTOCOLS` | `TLSv1.2,TLSv1.3` | 允许的 TLS 协议 |
 
 ### 8.5 单机与多机部署差异
 

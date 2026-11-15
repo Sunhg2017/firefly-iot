@@ -24,9 +24,19 @@ public class MqttProperties implements EnvironmentAware {
 
     private boolean sslEnabled = false;
     private int sslPort = 8883;
+    private String keyStoreType = "JKS";
     private String keyStorePath;
     private String keyStorePassword;
     private String keyManagerPassword;
+
+    /** 双向认证模式：NONE=仅服务端证书（单向 TLS）；OPTIONAL=请求但不强制客户端证书；REQUIRE=强制客户端证书（双向认证）。 */
+    private ClientAuthMode clientAuth = ClientAuthMode.NONE;
+    private String trustStoreType = "JKS";
+    private String trustStorePath;
+    private String trustStorePassword;
+    /** 允许的 TLS 协议，逗号分隔；默认只允许 TLSv1.2 / TLSv1.3。 */
+    private String protocols = "TLSv1.2,TLSv1.3";
+
     private String webhookToken;
 
     private boolean allowAnonymous = false;
@@ -151,5 +161,54 @@ public class MqttProperties implements EnvironmentAware {
             }
         }
         return null;
+    }
+
+    /**
+     * 校验 TLS/mTLS 配置的完整性与组合约束，缺失关键项时 fail-fast 拒绝启动，
+     * 避免“配置了 TLS 却明文监听”或“声明双向认证却未提供信任库”的静默降级。
+     */
+    public void validateTlsConfig() {
+        if (!sslEnabled) {
+            return;
+        }
+        if (isBlank(keyStorePath)) {
+            throw new IllegalStateException(
+                    "firefly.mqtt.ssl-enabled=true 时必须配置 firefly.mqtt.key-store-path");
+        }
+        if (isBlank(keyStorePassword)) {
+            throw new IllegalStateException(
+                    "firefly.mqtt.ssl-enabled=true 时必须配置 firefly.mqtt.key-store-password");
+        }
+        if (clientAuth != ClientAuthMode.NONE) {
+            if (isBlank(trustStorePath)) {
+                throw new IllegalStateException(
+                        "firefly.mqtt.client-auth=" + clientAuth + " 时必须配置 firefly.mqtt.trust-store-path");
+            }
+            if (isBlank(trustStorePassword)) {
+                throw new IllegalStateException(
+                        "firefly.mqtt.client-auth=" + clientAuth + " 时必须配置 firefly.mqtt.trust-store-password");
+            }
+        }
+    }
+
+    /**
+     * key-manager-password 留空时回退到 key-store-password，与 Moquette 默认语义保持一致，
+     * 供 SSL 上下文构建复用同一份口令。
+     */
+    public String effectiveKeyManagerPassword() {
+        return isBlank(keyManagerPassword) ? keyStorePassword : keyManagerPassword;
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    public enum ClientAuthMode {
+        /** 仅服务端证书，不校验客户端证书（单向 TLS）。 */
+        NONE,
+        /** 请求客户端证书，但不强制（可选双向认证）。 */
+        OPTIONAL,
+        /** 强制客户端证书，客户端必须提供受信任证书（双向认证）。 */
+        REQUIRE
     }
 }

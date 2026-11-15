@@ -125,3 +125,7 @@ test-results/
 *.p12
 *.jks
 *.keystore
+
+# 测试用证书 fixture（自签名、公开口令，仅用于单测，非生产密钥）
+!firefly-connector/src/test/resources/mqtt-tls/server.jks
+!firefly-connector/src/test/resources/mqtt-tls/truststore.jks
