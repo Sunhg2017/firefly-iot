@@ -394,42 +394,15 @@ const defaultTemplates: DataTemplate[] = [
 // Store
 // ============================================================
 
-interface SimulatorState {
-  devices: SimDevice[];
-  logs: LogEntry[];
-  templates: DataTemplate[];
-  selectedDeviceId: string | null;
-
-  addDevice: (device: Partial<SimDevice>) => void;
-  removeDevice: (id: string) => void;
-  updateDevice: (id: string, patch: Partial<SimDevice>) => void;
-  adjustDeviceStats: (id: string, delta: { sentCount?: number; errorCount?: number }) => void;
-  selectDevice: (id: string | null) => void;
-
-  addLog: (deviceId: string, deviceName: string, level: LogEntry['level'], message: string) => void;
-  clearLogs: () => void;
-
-  addTemplate: (tpl: DataTemplate) => void;
-  removeTemplate: (id: string) => void;
-}
-
-export const useSimStore = create<SimulatorState>()(
-  persist(
-    (set, get) => ({
-  devices: [],
-  logs: [],
-  templates: defaultTemplates,
-  selectedDeviceId: null,
-
-  addDevice: (partial) => {
-    const draft = partial as SimDeviceDraft;
-    const id = uuidv4();
-    const normalizedVideoMode = normalizeVideoStreamMode(draft.streamMode);
-    const defaultVideoSourceType: VideoSourceType = normalizedVideoMode === 'GB28181' ? 'LOCAL_CAMERA' : 'REMOTE_SOURCE';
-    const device: SimDevice = {
+function buildSimDevice(partial: Partial<SimDevice>, index: number): SimDevice {
+  const draft = partial as SimDeviceDraft;
+  const id = uuidv4();
+  const normalizedVideoMode = normalizeVideoStreamMode(draft.streamMode);
+  const defaultVideoSourceType: VideoSourceType = normalizedVideoMode === 'GB28181' ? 'LOCAL_CAMERA' : 'REMOTE_SOURCE';
+  const device: SimDevice = {
       id,
-      nickname: draft.nickname || draft.name || `device-${get().devices.length + 1}`,
-      name: draft.name || `设备-${get().devices.length + 1}`,
+      nickname: draft.nickname || draft.name || `device-${index + 1}`,
+      name: draft.name || `设备-${index + 1}`,
       protocol: draft.protocol || 'HTTP',
       status: 'offline',
       restoreOnLaunch: draft.restoreOnLaunch ?? false,
@@ -515,8 +488,66 @@ export const useSimStore = create<SimulatorState>()(
       dynamicRegistered: draft.dynamicRegistered ?? false,
       thingModelSimulationRules: draft.thingModelSimulationRules || {},
     };
-    set((s) => ({ devices: [...s.devices, device], selectedDeviceId: id }));
+    return device;
+}
+
+interface SimulatorState {
+  devices: SimDevice[];
+  logs: LogEntry[];
+  templates: DataTemplate[];
+  selectedDeviceId: string | null;
+
+  addDevice: (device: Partial<SimDevice>) => void;
+  addDevices: (devices: Partial<SimDevice>[]) => string[];
+  removeDevice: (id: string) => void;
+  removeDevices: (ids: string[]) => void;
+  updateDevices: (ids: string[], patch: Partial<SimDevice>) => void;
+  updateDevice: (id: string, patch: Partial<SimDevice>) => void;
+  adjustDeviceStats: (id: string, delta: { sentCount?: number; errorCount?: number }) => void;
+  adjustDeviceStatsBatch: (updates: Record<string, { sentCount?: number; errorCount?: number }>) => void;
+  selectDevice: (id: string | null) => void;
+
+  addLog: (deviceId: string, deviceName: string, level: LogEntry['level'], message: string) => void;
+  clearLogs: () => void;
+
+  addTemplate: (tpl: DataTemplate) => void;
+  removeTemplate: (id: string) => void;
+}
+
+export const useSimStore = create<SimulatorState>()(
+  persist(
+    (set, get) => ({
+  devices: [],
+  logs: [],
+  templates: defaultTemplates,
+  selectedDeviceId: null,
+
+  addDevice: (partial) => {
+    const device = buildSimDevice(partial, get().devices.length);
+    set((s) => ({ devices: [...s.devices, device], selectedDeviceId: device.id }));
   },
+
+  addDevices: (partials) => {
+    if (!Array.isArray(partials) || partials.length === 0) {
+      return [];
+    }
+    const startIndex = get().devices.length;
+    const created = partials.map((partial, offset) => buildSimDevice(partial, startIndex + offset));
+    set((s) => ({
+      devices: [...s.devices, ...created],
+      selectedDeviceId: created[0]?.id ?? s.selectedDeviceId,
+    }));
+    return created.map((device) => device.id);
+  },
+
+  removeDevices: (ids) => set((s) => ({
+    devices: s.devices.filter((device) => !ids.includes(device.id)),
+    selectedDeviceId: s.selectedDeviceId && ids.includes(s.selectedDeviceId) ? null : s.selectedDeviceId,
+  })),
+
+  updateDevices: (ids, patch) => set((s) => ({
+    devices: s.devices.map((device) => (ids.includes(device.id) ? { ...device, ...patch } : device)),
+  })),
 
   removeDevice: (id) =>
     set((s) => ({
@@ -542,6 +573,20 @@ export const useSimStore = create<SimulatorState>()(
         };
       }),
     })),
+
+  adjustDeviceStatsBatch: (updates) => set((s) => ({
+    devices: s.devices.map((device) => {
+      const delta = updates[device.id];
+      if (!delta) {
+        return device;
+      }
+      return {
+        ...device,
+        sentCount: Math.max(0, device.sentCount + (delta.sentCount ?? 0)),
+        errorCount: Math.max(0, device.errorCount + (delta.errorCount ?? 0)),
+      };
+    }),
+  })),
 
   selectDevice: (id) => set({ selectedDeviceId: id }),
 

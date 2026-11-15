@@ -1,56 +1,36 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { Card, Space, Typography } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
+import { Badge, Button, Drawer, Menu, Space, Tag, Typography } from 'antd';
+import {
+  AppstoreOutlined, BugOutlined, ExperimentOutlined, ToolOutlined,
+} from '@ant-design/icons';
 import { useSimStore } from './store';
 import { restorePersistedConnections } from './utils/runtime';
 import {
   DeviceListPanel,
   DeviceControlPanel,
   LogPanel,
-  StressTestPanel,
-  ScenarioPanel,
-  TemplateEditorPanel,
+  StressCenterPanel,
+  ToolsPanel,
   SimulatorAccessGate,
 } from './components';
 import { getActiveEnvironment, useSimWorkspaceStore } from './workspaceStore';
 
 const { Text } = Typography;
 
-const FRAME_WIDTH = 1760;
-const FRAME_HEIGHT = 960;
-const STAGE_PADDING = 8;
-const MAX_STAGE_SCALE = 1.2;
+type SimPage = 'devices' | 'stress' | 'logs' | 'tools';
 
-const PANEL_SHELL_STYLE: CSSProperties = {
-  minHeight: 0,
-  overflow: 'hidden',
-  borderRadius: 24,
-  border: '1px solid #dbe4ee',
-  background: '#ffffff',
-  boxShadow: '0 10px 22px rgba(15,23,42,0.04)',
+const PAGE_STORAGE_KEY = 'firefly-simulator:page';
+
+const PAGE_META: Record<SimPage, { label: string; icon: React.ReactNode }> = {
+  devices: { label: '设备管理', icon: <AppstoreOutlined /> },
+  stress: { label: '压测中心', icon: <ExperimentOutlined /> },
+  logs: { label: '运行日志', icon: <BugOutlined /> },
+  tools: { label: '工具', icon: <ToolOutlined /> },
 };
 
-const TOOL_CARD_ROW_STYLE: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 14,
-  padding: '12px 14px',
-  borderRadius: 16,
-  border: '1px solid #e2e8f0',
-  background: '#f8fbff',
-};
-
-function readViewportSize() {
-  if (typeof window === 'undefined') {
-    return {
-      width: FRAME_WIDTH,
-      height: FRAME_HEIGHT,
-    };
-  }
-  return {
-    width: window.innerWidth,
-    height: window.innerHeight,
-  };
+function readInitialPage(): SimPage {
+  const saved = localStorage.getItem(PAGE_STORAGE_KEY);
+  return saved === 'stress' || saved === 'logs' || saved === 'tools' ? saved : 'devices';
 }
 
 export default function App() {
@@ -62,15 +42,31 @@ export default function App() {
     [activeEnvironmentId, environments],
   );
   const activeSession = sessions[activeEnvironment.id];
-  const [viewportSize, setViewportSize] = useState(readViewportSize);
+  const devices = useSimStore((state) => state.devices);
+  const selectedDeviceId = useSimStore((state) => state.selectedDeviceId);
+  const selectDevice = useSimStore((state) => state.selectDevice);
+  const [page, setPage] = useState<SimPage>(readInitialPage);
+  const [detailDeviceId, setDetailDeviceId] = useState<string | null>(null);
+  const [stressSeedIds, setStressSeedIds] = useState<string[] | undefined>();
+  const onlineCount = devices.filter((device) => device.status === 'online').length;
 
   useEffect(() => {
-    const handleResize = () => {
-      setViewportSize(readViewportSize());
+    localStorage.setItem(PAGE_STORAGE_KEY, page);
+  }, [page]);
+
+  useEffect(() => {
+    if (!activeSession?.accessToken) {
+      return undefined;
+    }
+    const restore = () => {
+      void restorePersistedConnections();
     };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    if (useSimStore.persist.hasHydrated()) {
+      restore();
+      return undefined;
+    }
+    return useSimStore.persist.onFinishHydration(() => restore());
+  }, [activeSession?.accessToken]);
 
   useEffect(() => {
     if (!activeSession?.accessToken) {
@@ -95,178 +91,108 @@ export default function App() {
   }, [activeSession?.accessToken]);
 
   useEffect(() => {
-    if (!activeSession?.accessToken) {
-      return undefined;
-    }
-    const restore = () => {
-      void restorePersistedConnections();
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ deviceIds?: string[] }>).detail;
+      setStressSeedIds(detail?.deviceIds);
+      setPage('stress');
     };
+    window.addEventListener('sim:open-stress', handler);
+    return () => window.removeEventListener('sim:open-stress', handler);
+  }, []);
 
-    if (useSimStore.persist.hasHydrated()) {
-      restore();
-      return undefined;
+  useEffect(() => {
+    if (!detailDeviceId) {
+      return;
     }
-
-    const unsubscribe = useSimStore.persist.onFinishHydration(() => {
-      restore();
-    });
-    return unsubscribe;
-  }, [activeSession?.accessToken]);
+    if (!devices.some((device) => device.id === detailDeviceId)) {
+      setDetailDeviceId(null);
+    }
+  }, [detailDeviceId, devices]);
 
   if (!activeSession?.accessToken) {
     return <SimulatorAccessGate />;
   }
 
-  const shellGap = 16;
-  const appShellStyle: CSSProperties = {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: shellGap,
-    width: '100%',
-    height: '100%',
-    minHeight: 0,
-    padding: shellGap,
-    borderRadius: 26,
-    border: '1px solid #dbe4ee',
-    background: '#f3f7fb',
-    boxShadow: '0 14px 36px rgba(15,23,42,0.06)',
-    overflow: 'hidden',
+  const openDevice = (deviceId: string) => {
+    selectDevice(deviceId);
+    setDetailDeviceId(deviceId);
   };
 
-  const toolboxCard = (
-    <Card
-      style={PANEL_SHELL_STYLE}
-      styles={{ body: { padding: 18 } }}
-      title={(
-        <Space direction="vertical" size={2}>
-          <Text strong style={{ color: '#0f172a' }}>快捷工具</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            按需打开压测、场景编排或数据模板。
-          </Text>
-        </Space>
-      )}
-    >
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
-        <div style={TOOL_CARD_ROW_STYLE}>
-          <Space direction="vertical" size={2}>
-            <Text strong style={{ color: '#0f172a' }}>压力测试</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>批量发送并查看吞吐、成功率和耗时。</Text>
-          </Space>
-          <StressTestPanel />
-        </div>
-        <div style={TOOL_CARD_ROW_STYLE}>
-          <Space direction="vertical" size={2}>
-            <Text strong style={{ color: '#0f172a' }}>场景编排</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>按步骤执行连接、发送、等待和断开。</Text>
-          </Space>
-          <ScenarioPanel />
-        </div>
-        <div style={TOOL_CARD_ROW_STYLE}>
-          <Space direction="vertical" size={2}>
-            <Text strong style={{ color: '#0f172a' }}>数据模板</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>维护常用上报模板，减少重复录入。</Text>
-          </Space>
-          <TemplateEditorPanel />
-        </div>
-      </Space>
-    </Card>
-  );
-
-  const logCard = (
-    <Card
-      style={{ ...PANEL_SHELL_STYLE, height: '100%', display: 'flex', flexDirection: 'column' }}
-      styles={{ body: { padding: 0, flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' } }}
-      title={(
-        <Space direction="vertical" size={2}>
-          <Text strong style={{ color: '#0f172a' }}>运行日志</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            支持按当前设备筛选、导出和清空。
-          </Text>
-        </Space>
-      )}
-    >
-      <LogPanel />
-    </Card>
-  );
-
-  const availableWidth = Math.max(320, viewportSize.width - STAGE_PADDING * 2);
-  const availableHeight = Math.max(320, viewportSize.height - STAGE_PADDING * 2);
-  const stageScale = Math.min(
-    availableWidth / FRAME_WIDTH,
-    availableHeight / FRAME_HEIGHT,
-    MAX_STAGE_SCALE,
-  );
-
   return (
-    <div
-      style={{
-        height: '100dvh',
-        minHeight: '100dvh',
-        overflow: 'hidden',
-        padding: STAGE_PADDING,
-        background: '#edf2f7',
-      }}
-    >
+    <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: '#f3f7fb' }}>
       <div
         style={{
-          width: '100%',
-          height: '100%',
+          height: 64,
+          flex: '0 0 auto',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
+          gap: 20,
+          padding: '0 20px',
+          background: '#ffffff',
+          borderBottom: '1px solid #dbe4ee',
+          boxShadow: '0 6px 18px rgba(15,23,42,0.04)',
+          zIndex: 10,
         }}
       >
-        <div
-          style={{
-            width: FRAME_WIDTH * stageScale,
-            height: FRAME_HEIGHT * stageScale,
-            flex: '0 0 auto',
-          }}
-        >
+        <Space size={10} style={{ flex: '0 0 auto' }}>
           <div
             style={{
-              width: FRAME_WIDTH,
-              height: FRAME_HEIGHT,
-              transform: `scale(${stageScale})`,
-              transformOrigin: 'top left',
+              width: 36, height: 36, borderRadius: 12, display: 'flex', alignItems: 'center',
+              justifyContent: 'center', color: '#2563eb', fontWeight: 800,
+              background: 'linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%)',
+              border: '1px solid #bfdbfe',
             }}
           >
-            <div style={appShellStyle}>
-              <div
-                style={{
-                  flex: 1,
-                  minHeight: 0,
-                  display: 'grid',
-                  gap: shellGap,
-                  gridTemplateColumns: '352px minmax(0, 1fr) 356px',
-                  alignItems: 'stretch',
-                  overflow: 'hidden',
-                }}
-              >
-                <div style={{ ...PANEL_SHELL_STYLE, minHeight: 0 }}>
-                  <DeviceListPanel />
-                </div>
-                <div style={{ ...PANEL_SHELL_STYLE, minHeight: 0 }}>
-                  <DeviceControlPanel />
-                </div>
-                <div
-                  style={{
-                    minHeight: 0,
-                    display: 'grid',
-                    gap: shellGap,
-                    gridTemplateRows: '280px minmax(0, 1fr)',
-                    overflow: 'hidden',
-                  }}
-                >
-                  {toolboxCard}
-                  {logCard}
-                </div>
-              </div>
-            </div>
+            FS
           </div>
-        </div>
+          <Space direction="vertical" size={0}>
+            <Text strong style={{ fontSize: 15 }}>Firefly Simulator</Text>
+            <Text type="secondary" style={{ fontSize: 11 }}>设备模拟与批量压测</Text>
+          </Space>
+        </Space>
+
+        <Menu
+          mode="horizontal"
+          selectedKeys={[page]}
+          onClick={({ key }) => setPage(key as SimPage)}
+          items={Object.entries(PAGE_META).map(([key, meta]) => ({ key, icon: meta.icon, label: meta.label }))}
+          style={{ flex: 1, minWidth: 0, borderBottom: 'none' }}
+        />
+
+        <Space size={12} wrap>
+          <Badge status={onlineCount > 0 ? 'success' : 'default'} text={`在线 ${onlineCount}/${devices.length}`} />
+          <Tag color="blue" style={{ margin: 0 }}>{activeEnvironment.name}</Tag>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {activeSession.user?.realName || activeSession.user?.username || '当前用户'}
+          </Text>
+        </Space>
       </div>
+
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 16 }}>
+        {page === 'devices' ? (
+          <div style={{ height: '100%', background: '#ffffff', borderRadius: 18, border: '1px solid #dbe4ee', overflow: 'hidden' }}>
+            <DeviceListPanel onOpenDevice={openDevice} />
+          </div>
+        ) : null}
+        {page === 'stress' ? <StressCenterPanel seedDeviceIds={stressSeedIds} /> : null}
+        {page === 'logs' ? (
+          <div style={{ height: '100%', background: '#ffffff', borderRadius: 18, border: '1px solid #dbe4ee', overflow: 'hidden' }}>
+            <LogPanel />
+          </div>
+        ) : null}
+        {page === 'tools' ? <ToolsPanel /> : null}
+      </div>
+
+      <Drawer
+        title={selectedDeviceId ? `设备详情 · ${devices.find((device) => device.id === selectedDeviceId)?.name || ''}` : '设备详情'}
+        open={Boolean(detailDeviceId)}
+        onClose={() => setDetailDeviceId(null)}
+        width="min(1280px, 96vw)"
+        destroyOnHidden
+        styles={{ body: { padding: 0, background: '#f8fbff' } }}
+      >
+        {detailDeviceId ? <DeviceControlPanel /> : null}
+      </Drawer>
     </div>
   );
 }

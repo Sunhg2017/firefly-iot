@@ -1,8 +1,11 @@
 export { default as DeviceListPanel } from './DeviceListPanel';
+export { default as DeviceFleetTable } from './DeviceFleetTable';
 export { default as DeviceControlPanel } from './DeviceControlPanel';
 export { default as AddDeviceModal } from './AddDeviceModal';
+export { default as BulkCreateDevicesDrawer } from './BulkCreateDevicesDrawer';
 export { default as LogPanel } from './LogPanel';
-export { default as StressTestPanel } from './StressTestPanel';
+export { default as StressCenterPanel } from './StressCenterPanel';
 export { default as ScenarioPanel } from './ScenarioPanel';
 export { default as TemplateEditorPanel } from './TemplateEditorPanel';
+export { default as ToolsPanel } from './ToolsPanel';
 export { default as SimulatorAccessGate } from './SimulatorAccessGate';

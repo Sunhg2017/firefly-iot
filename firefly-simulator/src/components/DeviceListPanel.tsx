@@ -10,6 +10,7 @@ import {
   Input,
   InputNumber,
   List,
+  Modal,
   Popconfirm,
   Select,
   Space,
@@ -39,12 +40,14 @@ import {
   useSimWorkspaceStore,
 } from '../workspaceStore';
 import AddDeviceModal from './AddDeviceModal';
+import DeviceFleetTable from './DeviceFleetTable';
 import {
   shouldCleanupDynamicRegistration,
   unregisterDynamicDevice,
 } from '../utils/mqtt';
 import { getDeviceAccessMissingFields } from '../utils/deviceAccess';
 import { connectSimDevice, disconnectSimDevice, isRestorableProtocol } from '../utils/runtime';
+import { connectDevices, disconnectDevices } from '../utils/fleetOps';
 import { normalizeVideoStreamMode } from '../utils/video';
 
 const { Search } = Input;
@@ -212,7 +215,11 @@ type LoginFormValues = {
   rememberMe: boolean;
 };
 
-export default function DeviceListPanel() {
+interface DeviceListPanelProps {
+  onOpenDevice: (deviceId: string) => void;
+}
+
+export default function DeviceListPanel({ onOpenDevice }: DeviceListPanelProps) {
   const { devices, selectedDeviceId, selectDevice, removeDevice, addLog } = useSimStore();
   const environments = useSimWorkspaceStore((state) => state.environments);
   const activeEnvironmentId = useSimWorkspaceStore((state) => state.activeEnvironmentId);
@@ -535,20 +542,17 @@ export default function DeviceListPanel() {
 
     setBatchConnecting(true);
     addLog('system', 'System', 'info', `开始批量连接 ${connectable.length} 台模拟设备`);
-    let ok = 0;
-    let fail = 0;
-    for (const target of connectable) {
-      const result = await connectSimDevice(target.id, { silent: true });
-      if (result.success) {
-        addLog(target.id, target.name, 'success', `${target.protocol} 批量连接成功`);
-        ok += 1;
-      } else {
-        fail += 1;
-      }
-    }
+    const result = await connectDevices(connectable.map((device) => device.id), { concurrency: 8 });
     setBatchConnecting(false);
-    addLog('system', 'System', 'success', `批量连接完成：成功 ${ok}，失败 ${fail}`);
-    message.success(`批量连接完成：成功 ${ok}，失败 ${fail}`);
+    addLog('system', 'System', 'success', `批量连接完成：成功 ${result.succeeded}，失败 ${result.failed}`);
+    if (result.failed > 0) {
+      Modal.error({
+        title: '批量连接部分失败',
+        content: result.errors.slice(0, 8).map((item) => `${item.deviceName}：${item.message}`).join('\n'),
+      });
+    } else {
+      message.success(`批量连接完成：成功 ${result.succeeded}`);
+    }
   };
 
   const handleBatchDisconnect = async () => {
@@ -558,11 +562,9 @@ export default function DeviceListPanel() {
       return;
     }
 
-    for (const target of onlineDevices) {
-      await disconnectSimDevice(target.id, { silent: true });
-    }
-    addLog('system', 'System', 'info', `已断开 ${onlineDevices.length} 台模拟设备`);
-    message.success(`已断开 ${onlineDevices.length} 台模拟设备`);
+    const result = await disconnectDevices(onlineDevices.map((device) => device.id), { concurrency: 8 });
+    addLog('system', 'System', 'info', `已断开 ${result.succeeded} 台模拟设备`);
+    message.success(`已断开 ${result.succeeded} 台模拟设备`);
   };
 
   const handleClone = (device: SimDevice) => {
@@ -936,148 +938,15 @@ export default function DeviceListPanel() {
         </Space>
       </div>
 
-      <List
-        dataSource={filteredDevices}
-        locale={{
-          emptyText: (
-            <div style={{ padding: '48px 12px 28px' }}>
-              <Empty
-                description={searchKey || filterProto !== 'all' || filterStatus !== 'all' ? '没有匹配的模拟设备' : '先创建一台模拟设备开始联调'}
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-              />
-            </div>
-          ),
-        }}
-        style={{ padding: '14px 14px 0', overflow: 'auto', flex: 1, minHeight: 0 }}
-        renderItem={(device) => {
-          const selected = selectedDeviceId === device.id;
-          const statusMeta = STATUS_META[device.status];
-          return (
-            <List.Item
-              key={device.id}
-              onClick={() => selectDevice(device.id)}
-              style={{
-                cursor: 'pointer',
-                padding: 0,
-                border: 'none',
-                marginBottom: 12,
-              }}
-            >
-              <div
-                style={{
-                  width: '100%',
-                  padding: '16px 16px 14px',
-                  borderRadius: 24,
-                  border: selected ? '1px solid rgba(96,165,250,0.50)' : '1px solid rgba(226,232,240,0.92)',
-                  background: selected
-                    ? 'linear-gradient(135deg, rgba(239,246,255,1) 0%, rgba(248,251,255,1) 100%)'
-                    : 'linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)',
-                  boxShadow: selected ? '0 18px 40px rgba(59,130,246,0.12)' : '0 10px 26px rgba(15,23,42,0.05)',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-                  <div
-                    style={{
-                      width: 42,
-                      height: 42,
-                      borderRadius: 16,
-                      background: `linear-gradient(135deg, ${statusMeta.accent}18 0%, #ffffff 100%)`,
-                      border: `1px solid ${statusMeta.accent}33`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: statusMeta.accent,
-                      fontWeight: 700,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {device.protocol.slice(0, 2)}
-                  </div>
-
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                      <Space size={8} wrap>
-                        <Space size={6}>
-                          <Badge status={STATUS_COLOR[device.status]} />
-                          <Text strong style={{ fontSize: 14, color: '#0f172a' }}>
-                            {device.name}
-                          </Text>
-                        </Space>
-                        <Tag color={PROTOCOL_COLORS[device.protocol] || 'default'} style={{ margin: 0 }}>
-                          {device.protocol}
-                        </Tag>
-                        <Tag
-                          style={{
-                            margin: 0,
-                            borderColor: `${statusMeta.accent}33`,
-                            color: statusMeta.accent,
-                            background: statusMeta.background,
-                          }}
-                        >
-                          {statusMeta.label}
-                        </Tag>
-                      </Space>
-
-                      <Space size={2}>
-                        <Tooltip title="编辑设备">
-                          <Button
-                            type="text"
-                            size="small"
-                            icon={<EditOutlined />}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openEditDevice(device.id);
-                            }}
-                          />
-                        </Tooltip>
-                        <Tooltip title="复制设备">
-                          <Button
-                            type="text"
-                            size="small"
-                            icon={<CopyOutlined />}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleClone(device);
-                            }}
-                          />
-                        </Tooltip>
-                        <Popconfirm title="确认删除当前模拟设备吗？" onConfirm={() => handleRemove(device)}>
-                          <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={(event) => event.stopPropagation()} />
-                        </Popconfirm>
-                      </Space>
-                    </div>
-
-                    <Paragraph
-                      ellipsis={{ rows: 1 }}
-                      style={{ margin: '8px 0 12px', color: '#64748b', fontSize: 12 }}
-                    >
-                      {getDeviceSubtitle(device)}
-                    </Paragraph>
-
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                      <Space size={12} wrap>
-                        <Text type="secondary" style={{ fontSize: 11 }}>
-                          已发送 {device.sentCount}
-                        </Text>
-                        <Text type="secondary" style={{ fontSize: 11 }}>
-                          错误 {device.errorCount}
-                        </Text>
-                        {device.autoReport ? (
-                          <Tag color="processing" style={{ margin: 0 }}>
-                            自动上报中
-                          </Tag>
-                        ) : null}
-                      </Space>
-                      {selected ? <Text style={{ fontSize: 11, color: '#2563eb' }}>当前选中</Text> : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </List.Item>
-          );
-        }}
-      />
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '0 18px 18px' }}>
+        <DeviceFleetTable
+          devices={filteredDevices}
+          onOpenDevice={onOpenDevice}
+          onEdit={openEditDevice}
+          onClone={handleClone}
+          onRemove={handleRemove}
+        />
+      </div>
 
       <Drawer
         title="环境管理"
