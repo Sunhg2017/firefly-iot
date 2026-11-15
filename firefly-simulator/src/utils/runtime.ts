@@ -315,7 +315,11 @@ export async function connectSimDevice(
           deviceSecret: registerResult.deviceSecret,
           dynamicRegistered: true,
         });
+        if (!options?.silent) {
+          if (!options?.silent) {
         store.addLog(device.id, device.name, 'success', `Dynamic registration succeeded: ${registerResult.deviceName}`);
+      }
+        }
       }
       let result = await window.electronAPI.httpAuth(
         target.httpBaseUrl,
@@ -508,7 +512,9 @@ export async function connectSimDevice(
         deviceSecret: registerResult.deviceSecret,
         dynamicRegistered: true,
       });
-      store.addLog(device.id, device.name, 'success', `Dynamic registration succeeded: ${registerResult.deviceName}`);
+      if (!options?.silent) {
+        store.addLog(device.id, device.name, 'success', `Dynamic registration succeeded: ${registerResult.deviceName}`);
+      }
     }
 
     const identity = resolveMqttIdentity(target);
